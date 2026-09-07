@@ -1018,7 +1018,7 @@ def _reparse_metadata(session: Session, file_id: int) -> bool:
     ):
         return row is not None
     try:
-        with resolve(row).materialize() as path:
+        with resolve(row).materialize(authoritative=True) as path:
             strategy = strategy_for_artifact(row.file_type)
             values, _thumbnail = strategy.process(path, lambda _label: None)
     except ArtifactContentError:

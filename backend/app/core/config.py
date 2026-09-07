@@ -82,6 +82,14 @@ class Settings(BaseSettings):
         default=0, ge=0, le=100, allow_inf_nan=False
     )
     staging_dir: Path = Path("/data/staging")
+    artifact_cache_enabled: bool = False
+    artifact_cache_root: Path = Path("/data/artifact-cache")
+    artifact_cache_max_bytes: int = Field(default=10 * 1024**3, ge=0)
+    artifact_cache_max_entries: int = Field(default=10000, ge=0)
+    artifact_cache_max_fills: int = Field(default=2, ge=1, le=64)
+    artifact_cache_headroom_bytes: int = Field(default=1024**3, ge=0)
+    artifact_cache_verify_every_hits: int = Field(default=100, ge=0)
+
 
     s3_bucket: str = ""
     s3_endpoint_url: str = ""

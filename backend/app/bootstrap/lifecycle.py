@@ -6,6 +6,7 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from functools import partial
+from pathlib import Path
 
 from fastapi import FastAPI
 from sqlalchemy.engine.url import make_url
@@ -254,6 +255,15 @@ async def lifespan(app: FastAPI):
         recover_publications=not restore_maintenance,
         recovery_only=restore_maintenance,
     )
+    from app.modules.administration.artifact_cache_config import live_policy
+    from app.modules.storage.artifact_materializer import ArtifactMaterializer
+    from app.modules.storage.materializer_runtime import bind_materializer
+
+    try:
+        bind_materializer(ArtifactMaterializer(Path(settings.artifact_cache_root), live_policy))
+    except (OSError, RuntimeError):
+        logger.exception("artifact cache unavailable; source reads remain enabled")
+        bind_materializer(None)
     from app.runtime.jobs import reconcile_interrupted_jobs
 
     interrupted_jobs = reconcile_interrupted_jobs() if not restore_maintenance else 0
@@ -310,6 +320,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("library watcher failed to start; scheduled scans still run")
     yield
+    bind_materializer(None)
     logger.info("shutting down printer hub")
     await _cancel_tasks(
         app.state.gc_task,

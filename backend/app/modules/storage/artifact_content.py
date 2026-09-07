@@ -11,8 +11,9 @@ import hashlib
 import inspect
 import os
 import secrets
+import sqlite3
 import tempfile
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -24,6 +25,13 @@ from app.modules.sources.library_source import (
     SourceEntry,
     source_for_file,
 )
+from app.modules.storage.artifact_materializer import (
+    CacheLease,
+    CacheUnavailable,
+    Representation,
+    RepresentationChanged,
+)
+from app.modules.storage.materializer_runtime import get_materializer
 from app.modules.storage.storage_backend.contracts import StorageBackend
 from app.modules.storage.storage_backend.runtime import get_backend
 
@@ -156,7 +164,27 @@ class ArtifactHandle:
                 pass
             raise
 
-    def stream(self, chunk_size: int = _CHUNK_SIZE) -> Iterator[bytes]:
+    def cache_representation(self) -> Representation | None:
+        """Only original immutable managed remote Artifact bytes are eligible."""
+        if self.file.is_external or self.backend is None or self.backend.direct_path(self.file.path) is not None:
+            return None
+        try:
+            return Representation("artifact", 1, self.file.sha256.lower(), self.file.size_bytes)
+        except ValueError:
+            return None
+
+    def cached_path(self) -> CacheLease | None:
+        """Acquire before returning: the HTTP adapter closes after the response."""
+        cache = get_materializer()
+        representation = self.cache_representation()
+        if cache is None or representation is None:
+            return None
+        try:
+            return cache.acquire(representation)
+        except (CacheUnavailable, OSError, sqlite3.Error):
+            return None
+
+    def stream(self, chunk_size: int = _CHUNK_SIZE, *, authoritative: bool = False) -> Iterator[bytes]:
         """Return a streaming iterator over immutable content.
 
         External bytes are copied and verified before the iterator is returned,
@@ -192,49 +220,97 @@ class ArtifactHandle:
             raise ArtifactContentMissingError(self.file.path) from exc
 
         def managed_chunks() -> Iterator[bytes]:
+            fill = None
+            cache = get_materializer()
+            representation = None if authoritative else self.cache_representation()
             try:
-                yield first
-                yield from chunks
+                if cache is not None and representation is not None:
+                    try:
+                        fill = cache.begin_fill(representation)
+                    except (CacheUnavailable, OSError, sqlite3.Error):
+                        pass
+                for chunk in _prepend(first, chunks):
+                    if fill is not None:
+                        try:
+                            fill.write(chunk)
+                        except (CacheUnavailable, RepresentationChanged, OSError, sqlite3.Error):
+                            fill.close()
+                            fill = None
+                    yield chunk
+                if fill is not None:
+                    try:
+                        lease = fill.complete()
+                        if lease:
+                            lease.close()
+                    except (CacheUnavailable, RepresentationChanged, OSError, sqlite3.Error):
+                        pass
             finally:
+                if fill is not None:
+                    fill.close()
                 close = getattr(chunks, "close", None)
                 if close is not None:
                     close()
 
-        return managed_chunks()
+        return _ClosingIterator(managed_chunks(), chunks)
 
     @contextmanager
-    def materialize(self, *, capacity_claimed: bool = False) -> Iterator[Path]:
+    def materialize(
+        self,
+        *,
+        authoritative: bool = False,
+        capacity_claimed: bool = False,
+    ) -> Iterator[Path]:
         """Yield a stable local file for consumers that require a path."""
-        direct_path = getattr(self.backend, "direct_path", lambda _key: None)
-        direct = (
-            None
-            if inspect.iscoroutinefunction(direct_path)
-            else direct_path(self.file.path)
-        )
-        needs_copy = self.file.is_external or (
-            self.backend is not None and direct is None
-        )
-        claim = (
-            self._temporary_capacity_claim("materialization")
-            if needs_copy and not capacity_claimed
-            else None
-        )
-        try:
-            if self.file.is_external:
+        if self.file.is_external:
+            claim = (
+                None
+                if capacity_claimed
+                else self._temporary_capacity_claim("materialization")
+            )
+            try:
                 temp = self._verified_external_content()
                 try:
                     yield temp
                 finally:
                     temp.unlink(missing_ok=True)
-                return
+            finally:
+                if claim is not None:
+                    claim.release()
+            return
 
-            if self.backend is None or not self.backend.exists(self.file.path):
-                raise ArtifactContentMissingError(self.file.path)
-            with self.backend.local_path(self.file.path) as path:
-                yield path
-        finally:
-            if claim is not None:
-                claim.release()
+        if self.backend is None or not self.backend.exists(self.file.path):
+            raise ArtifactContentMissingError(self.file.path)
+        backend = self.backend
+        cache = get_materializer()
+        representation = None if authoritative else self.cache_representation()
+        with ExitStack() as stack:
+            path = None
+            if cache is not None and representation is not None:
+                try:
+                    path = stack.enter_context(
+                        cache.materialize(
+                            representation,
+                            lambda: iter(
+                                backend.stream_chunks(self.file.path, _CHUNK_SIZE)
+                            ),
+                        )
+                    )
+                except RepresentationChanged as exc:
+                    raise ArtifactContentChangedError(self.file.path) from exc
+                except (CacheUnavailable, OSError, sqlite3.Error):
+                    pass
+            if path is None:
+                direct_path = getattr(backend, "direct_path", lambda _key: None)
+                direct = (
+                    None
+                    if inspect.iscoroutinefunction(direct_path)
+                    else direct_path(self.file.path)
+                )
+                if direct is None and not capacity_claimed:
+                    claim = self._temporary_capacity_claim("materialization")
+                    stack.callback(claim.release)
+                path = stack.enter_context(backend.local_path(self.file.path))
+            yield path
 
 
 def resolve(file: File, *, backend: StorageBackend | None = None) -> ArtifactHandle:
@@ -247,3 +323,29 @@ def resolve(file: File, *, backend: StorageBackend | None = None) -> ArtifactHan
             else (backend if backend is not None else get_backend())
         ),
     )
+def _prepend(first: bytes, chunks: Iterator[bytes]) -> Iterator[bytes]:
+    yield first
+    yield from chunks
+
+
+class _ClosingIterator:
+    """Always close the primed source, including before the first consumer read."""
+    def __init__(self, chunks: Iterator[bytes], source: Iterator[bytes]):
+        self.chunks = chunks
+        self.source = source
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self
+
+    def __next__(self) -> bytes:
+        return next(self.chunks)
+
+    def close(self) -> None:
+        try:
+            close = getattr(self.chunks, "close", None)
+            if close:
+                close()
+        finally:
+            close = getattr(self.source, "close", None)
+            if close:
+                close()

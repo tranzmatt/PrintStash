@@ -47,6 +47,8 @@ class SystemConfig(SQLModel, table=True):
     # this database. It is generated once and never derived from a path.
     storage_identity: Optional[str] = Field(default=None, max_length=64, index=True)
 
+    artifact_cache_policy_json: Optional[str] = Field(default=None)
+
     # Local storage paths (overridden at runtime)
     data_dir: Optional[str] = Field(default=None, max_length=1024)
     thumb_dir: Optional[str] = Field(default=None, max_length=1024)
