@@ -95,3 +95,26 @@ class TestCacheDelivery:
         assert plan.status == 307
         assert plan.redirect == target.url
         assert cache.status()["leases"] == 0
+
+    def test_converts_cached_obj_using_artifact_format(
+        self, client, auth_headers, cached_artifact, db_session
+    ):
+        import struct
+        from pathlib import Path
+
+        from app.db.models import FileType
+
+        row, _, _ = cached_artifact
+        payload = b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n"
+        Path(row.path).write_bytes(payload)
+        row.original_filename = "triangle.obj"
+        row.file_type = FileType.OBJ
+        row.size_bytes = len(payload)
+        row.sha256 = hashlib.sha256(payload).hexdigest()
+        db_session.add(row)
+        db_session.commit()
+        with resolve(row).materialize() as path:
+            assert path.suffix == ".blob"
+        response = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)
+        assert response.status_code == 200
+        assert struct.unpack_from("<I", response.content, 80) == (1,)

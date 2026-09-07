@@ -38,3 +38,30 @@ to `backend/tests/`.
 | 30 | Preserves configuration upgrade | Edge | Prior schema with EUR currency | Upgrade retains EUR; cache override null | Integration | ✅ `integration/db/migrations/test_artifact_cache_policy.py::TestArtifactCachePolicyMigration::test_preserves_existing_configuration_on_upgrade` |
 | 31 | Closes unstarted streamed response | Edge | Primed provider; no body consumption | No open provider reader | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_closes_primed_source_without_consuming_response` |
 | 32 | Closes unstarted cached response | Edge | Selected lease; no body consumption | No outstanding lease | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_closes_selected_cache_lease_before_first_read` |
+| 33 | Converts cached mesh by declared format | Edge | Cached OBJ has private `.blob` filename | Binary STL contains the original triangle | Integration | ✅ `integration/api/v1/files/test_cache_delivery.py::TestCacheDelivery::test_converts_cached_obj_using_artifact_format` |
+| 34 | Reads fresh cache policy | Happy | Repeated client reads | Two requests; current policy | Frontend unit | ✅ `frontend/src/lib/api/__tests__/artifact-cache.test.ts::reads current policy without reusing a prior response` |
+| 35 | Saves complete cache policy | Happy | Client saves policy | PUT contains every policy field | Frontend unit | ✅ `frontend/src/lib/api/__tests__/artifact-cache.test.ts::persists the complete cache policy` |
+| 36 | Reads defaults after client reset | Happy | Client reset | DELETE followed by fresh GET | Frontend unit | ✅ `frontend/src/lib/api/__tests__/artifact-cache.test.ts::reads effective defaults after resetting overrides` |
+| 37 | Uses explicit cache clear action | Happy | Client clear | POST to clear endpoint | Frontend unit | ✅ `frontend/src/lib/api/__tests__/artifact-cache.test.ts::clears cache through the explicit clear action` |
+| 38 | Falls back from exhausted cache quota | Edge | Cache quota exhausted; temporary volume available | Separately reserved temporary file; exact source bytes | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_cache_capacity_denial_uses_separately_budgeted_temp` |
+| 39 | Preserves other admission failures | Error | Reservation unavailable for noncapacity reason | Original error; zero source bytes | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_noncapacity_admission_error_remains_visible` |
+
+## Focused execution
+
+The coordinated cache run passed 61 backend tests (two workers), including the
+actual remote-corruption audit and repeated-download E2E cases. Cached mesh
+conversion regression checks passed 13 tests. Frontend component and API-client
+checks passed four tests each. The real Settings browser lifecycle passed one
+Chromium test against the actual backend. Its earlier failed attempts recorded
+`net::ERR_NETWORK_CHANGED` during concurrent container teardown; the coordinated
+stable-network rerun passed.
+
+Frontend typechecking, owned-file lint, and the backend architecture check passed
+with zero architecture debt. The expanded backend typecheck still reports 15
+existing errors in `vault_audit.py`; the new cache modules pass their focused
+check. Full suites, coverage ratchets, and combined API snapshot validation are
+reserved for the coordinator's final integration gate.
+
+The final conversion route file passed 10 tests. The exhausted-cache admission
+regression failed with `storage_capacity_exceeded` before the fix, then the
+managed-content group passed all 9 tests with the narrow capacity-only fallback.

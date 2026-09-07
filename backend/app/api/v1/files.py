@@ -362,7 +362,7 @@ def stl_response(
     ):
         try:
             with resolve(f).materialize(capacity_claimed=True) as path:
-                data = mesh_processing.to_stl_bytes(path)
+                data = mesh_processing.to_stl_bytes(path, file_type=f.file_type.value)
         except ArtifactContentMissingError as exc:
             raise HTTPException(status_code=410, detail="file_blob_missing") from exc
         if data is None:

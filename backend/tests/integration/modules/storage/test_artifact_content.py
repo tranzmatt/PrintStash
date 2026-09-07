@@ -326,6 +326,44 @@ def managed_cache_content(make_model, make_file, tmp_path):
 
 
 class TestManagedCacheContent:
+    def test_cache_capacity_denial_uses_separately_budgeted_temp(
+        self, managed_cache_content
+    ):
+        from app.db.session import get_session_factory
+        from app.modules.storage.capacity import CapacityManager, CapacityResource
+
+        handle, cache, source, backend = managed_cache_content
+        # The cache has an exhausted independent quota; the temporary filesystem
+        # still goes through its real local-volume reservation and free-space probe.
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        cache.reserve = lambda token, root, size: manager.hold(
+            f"cache:{token}",
+            [CapacityResource.for_quota("cache-volume", size, 0, role="cache")],
+        )
+        with handle.materialize() as path:
+            assert path.read_bytes() == source.read_bytes()
+            assert path.parent != cache.root
+            assert manager.reserved_bytes()
+        assert backend.bytes_read == source.stat().st_size
+        assert cache.status()["entries"] == 0
+        assert manager.reserved_bytes() == {}
+
+    def test_noncapacity_admission_error_remains_visible(
+        self, managed_cache_content
+    ):
+        from app.core.errors import ErrorKind, OperationError
+
+        handle, cache, _, backend = managed_cache_content
+
+        def unavailable_reservation(token, root, size):
+            raise OperationError("reservation_failure", kind=ErrorKind.UNAVAILABLE)
+
+        cache.reserve = unavailable_reservation
+        with pytest.raises(OperationError, match="reservation_failure"):
+            with handle.materialize():
+                pytest.fail("unexpected admission error hidden")
+        assert backend.bytes_read == 0
+
     def test_unavailable_index_falls_back_to_source(self, managed_cache_content):
         handle, cache, source, backend = managed_cache_content
         (cache.root / "index.sqlite3").write_bytes(b"broken index")

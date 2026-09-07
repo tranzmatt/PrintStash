@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Callable, Iterator
 
-from app.core.errors import OperationError
+from app.core.errors import ErrorKind, OperationError
 from app.db.models import File
 from app.db.session import get_session_factory
 from app.modules.sources.library_source import (
@@ -320,6 +320,11 @@ class ArtifactHandle:
                     )
                 except RepresentationChanged as exc:
                     raise ArtifactContentChangedError(self.file.path) from exc
+                except OperationError as exc:
+                    if exc.kind is not ErrorKind.CAPACITY:
+                        raise
+                    # The optional cache can occupy a different volume. The
+                    # fallback below independently reserves its actual temp root.
                 except (CacheUnavailable, OSError, sqlite3.Error):
                     pass
             if path is None:
