@@ -53,3 +53,19 @@ and remain charged. Cleanup refreshes the saved inventory. Library artifacts, tr
 backups and other authoritative data are never automatically deleted by this policy.
 
 The [behavior matrix](storage-capacity-test-matrix.md) records the feature verification.
+
+## Percentage headroom and durable work
+
+`STORAGE_MIN_FREE_PERCENT` (0–100, default 0) reserves a percentage of each
+measured filesystem or quota domain. Admission uses the larger of that amount
+and the configured minimum free bytes, once per domain. Unknown provider quota
+remains a warning; an unavailable local measurement prevents unsafe admission.
+A capacity rejection includes numeric required, available, reserved and headroom
+bytes plus a refresh hint. Neither the response nor telemetry needs object keys.
+
+Resumable work uses `CapacityManager.reserve(..., durable=True)`. Its estimate
+survives the creator process and automatic expiry reconciliation. The workflow
+owner releases it only after completing or safely cleaning its surviving bytes.
+Older upload, PostgreSQL restore and Vault migration claims are conservatively
+retained too. Process-scoped scratch work still reconciles after a proven exit.
+Reservations remain budget evidence and never authorize storage deletion.

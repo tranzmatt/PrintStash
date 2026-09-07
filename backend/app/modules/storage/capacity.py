@@ -27,6 +27,7 @@ from app.core.errors import ErrorKind, OperationError
 from app.core.time import ensure_utc, utcnow
 from app.db.models import CapacityLock, CapacityReservation
 from app.db.session import SessionFactory
+from app.modules.storage.capacity_policy import CapacityPolicy
 
 
 @dataclass(frozen=True)
@@ -36,12 +37,14 @@ class CapacityResource:
     available_bytes: int | None
     role: str
     path: str | None = None
+    total_bytes: int | None = None
 
     def __post_init__(self) -> None:
         if (
             not self.domain_id
             or self.required_bytes < 0
             or (self.available_bytes is not None and self.available_bytes < 0)
+            or (self.total_bytes is not None and self.total_bytes < 0)
         ):
             raise ValueError("invalid capacity resource")
 
@@ -74,12 +77,22 @@ class CapacityResource:
         available_bytes: int | None,
         *,
         role: str,
+        total_bytes: int | None = None,
     ) -> CapacityResource:
-        return cls(f"quota:{domain_id}", required_bytes, available_bytes, role)
+        return cls(
+            f"quota:{domain_id}",
+            required_bytes,
+            available_bytes,
+            role,
+            total_bytes=total_bytes,
+        )
 
     def probe(self) -> int | None:
+        return self.measure()[0]
+
+    def measure(self) -> tuple[int | None, int | None]:
         if self.path is None:
-            return self.available_bytes
+            return self.available_bytes, self.total_bytes
         import os
 
         candidate = Path(self.path).resolve(strict=False)
@@ -91,7 +104,7 @@ class CapacityResource:
                     "storage_capacity_volume_changed", kind=ErrorKind.CAPACITY
                 )
             stats = os.statvfs(candidate)
-            return stats.f_bavail * stats.f_frsize
+            return stats.f_bavail * stats.f_frsize, stats.f_blocks * stats.f_frsize
         except OSError as exc:
             raise OperationError(
                 "storage_capacity_unavailable", kind=ErrorKind.CAPACITY
@@ -117,6 +130,8 @@ def _process_identity() -> dict[str, str | int]:
 
 def _owner_stopped(payload: str) -> bool:
     identity = json.loads(payload)
+    if identity.get("lifetime") == "workflow":
+        return False
     current = _process_identity()
     if not identity or identity.get("host") != current.get("host"):
         return False
@@ -163,7 +178,11 @@ class CapacityReservationHandle:
 
 class CapacityManager:
     def __init__(
-        self, session_factory: SessionFactory, *, headroom_bytes: int | None = None
+        self,
+        session_factory: SessionFactory,
+        *,
+        headroom_bytes: int | None = None,
+        headroom_percent: float | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.headroom_bytes = (
@@ -171,8 +190,12 @@ class CapacityManager:
             if headroom_bytes is None
             else headroom_bytes
         )
-        if self.headroom_bytes < 0:
-            raise ValueError("negative headroom")
+        self.policy = CapacityPolicy(
+            self.headroom_bytes,
+            settings.storage_min_free_percent
+            if headroom_percent is None
+            else headroom_percent,
+        )
 
     @staticmethod
     def serialize_admission(session: Session) -> None:
@@ -204,9 +227,14 @@ class CapacityManager:
         resources: Sequence[CapacityResource],
         *,
         ttl_seconds: int = 900,
+        durable: bool = False,
     ) -> CapacityReservationHandle:
         return self._reserve(
-            operation_id, resources, ttl_seconds=ttl_seconds, renew=False
+            operation_id,
+            resources,
+            ttl_seconds=ttl_seconds,
+            renew=False,
+            durable=durable,
         )
 
     def _reserve(
@@ -216,6 +244,7 @@ class CapacityManager:
         *,
         ttl_seconds: int,
         renew: bool,
+        durable: bool = False,
     ) -> CapacityReservationHandle:
         if (
             not operation_id
@@ -236,7 +265,11 @@ class CapacityManager:
             if (
                 existing is not None
                 and not renew
-                and existing.resources_json != payload
+                and json.dumps(
+                    [asdict(item) for item in _decode(existing.resources_json)],
+                    sort_keys=True,
+                )
+                != payload
             ):
                 raise OperationError(
                     "capacity_operation_conflict", kind=ErrorKind.CONFLICT
@@ -252,11 +285,20 @@ class CapacityManager:
                         totals.get(item.domain_id, 0) + item.required_bytes
                     )
             free: dict[str, int | None] = {}
+            volume_totals: dict[str, int | None] = {}
+            requested: dict[str, int] = {}
             for item in resources:
                 totals[item.domain_id] = (
                     totals.get(item.domain_id, 0) + item.required_bytes
                 )
-                measured = item.probe()
+                requested[item.domain_id] = (
+                    requested.get(item.domain_id, 0) + item.required_bytes
+                )
+                measured, total = item.measure()
+                previous_total = volume_totals.get(item.domain_id)
+                volume_totals[item.domain_id] = (
+                    total if previous_total is None else max(previous_total, total or 0)
+                )
                 previous = free.get(item.domain_id)
                 free[item.domain_id] = (
                     measured
@@ -267,18 +309,41 @@ class CapacityManager:
                 )
             warnings = []
             for domain, available in free.items():
-                if available is None:
-                    warnings.append(f"capacity_unknown:{domain}")
-                elif totals[domain] + self.headroom_bytes > available:
+                decision = self.policy.evaluate(
+                    requested[domain],
+                    available_bytes=available,
+                    reserved_bytes=totals[domain] - requested[domain],
+                    total_bytes=volume_totals[domain],
+                )
+                if decision.outcome == "warn":
+                    warnings.append(f"{decision.reason}:{domain}")
+                elif decision.outcome == "deny":
                     raise OperationError(
-                        "storage_capacity_exceeded", kind=ErrorKind.CAPACITY
+                        "storage_capacity_exceeded",
+                        kind=ErrorKind.CAPACITY,
+                        retry_after_seconds=decision.refresh_after_seconds,
+                        capacity={
+                            "required_bytes": decision.required_bytes,
+                            "available_bytes": decision.available_bytes,
+                            "reserved_bytes": decision.reserved_bytes,
+                            "headroom_bytes": decision.headroom_bytes,
+                        },
                     )
             row = existing or CapacityReservation(
                 operation_id=operation_id,
                 resources_json=payload,
                 expires_at=utcnow(),
-                owner_identity_json=json.dumps(_process_identity()),
+                owner_identity_json=json.dumps(
+                    {
+                        **_process_identity(),
+                        "lifetime": "workflow" if durable else "process",
+                    }
+                ),
             )
+            if durable:
+                identity = json.loads(row.owner_identity_json)
+                identity["lifetime"] = "workflow"
+                row.owner_identity_json = json.dumps(identity)
             row.resources_json = payload
             row.expires_at = utcnow() + timedelta(seconds=ttl_seconds)
             session.add(row)
@@ -323,6 +388,12 @@ class CapacityManager:
     def _reconcile_stopped(session: Session) -> int:
         released = 0
         for row in session.exec(select(CapacityReservation)):
+            # Older persisted workflow claims predate the explicit lifetime flag.
+            # Their surviving staging/shadow/candidate objects still spend space.
+            if row.operation_id.startswith(
+                ("artifact-upload:", "vault-migration:", "postgres-restore:")
+            ):
+                continue
             if ensure_utc(row.expires_at) <= utcnow() and _owner_stopped(
                 row.owner_identity_json
             ):

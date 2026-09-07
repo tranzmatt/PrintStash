@@ -29,6 +29,7 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.modules.library.model_views.access import accessible_live_model_ids_stmt
+from app.modules.storage.capacity_policy import CapacityPolicy
 from app.modules.storage.storage_backend.contracts import StorageCollisionError
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_ownership import provider_ref_for_backend
@@ -95,6 +96,9 @@ def _volumes(reserved: dict[str, int]) -> list[VolumeEvidence]:
                 groups[domain].roles.append(role)
                 continue
             remaining = stats.f_bavail * stats.f_frsize
+            headroom = CapacityPolicy(
+                settings.storage_min_free_bytes, settings.storage_min_free_percent
+            ).headroom(stats.f_blocks * stats.f_frsize)
             claimed = reserved.get(domain, 0)
             groups[domain] = VolumeEvidence(
                 domain_id=domain,
@@ -102,10 +106,8 @@ def _volumes(reserved: dict[str, int]) -> list[VolumeEvidence]:
                 total_bytes=stats.f_blocks * stats.f_frsize,
                 free_bytes=remaining,
                 reserved_bytes=claimed,
-                headroom_bytes=settings.storage_min_free_bytes,
-                status="blocked"
-                if remaining - claimed < settings.storage_min_free_bytes
-                else "available",
+                headroom_bytes=headroom,
+                status="blocked" if remaining - claimed < headroom else "available",
             )
         except OSError:
             groups[role] = VolumeEvidence(

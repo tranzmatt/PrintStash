@@ -30,5 +30,10 @@ async def operation_error_response(
         else None
     )
     return JSONResponse(
-        status_code=_STATUS[exc.kind], content={"detail": exc.detail}, headers=headers
+        status_code=_STATUS[exc.kind],
+        content={
+            "detail": exc.detail,
+            **({"capacity": exc.capacity} if exc.capacity is not None else {}),
+        },
+        headers=headers,
     )

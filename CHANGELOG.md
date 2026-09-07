@@ -14,6 +14,7 @@
   listing. Its connection settings and extension identity are unchanged.
 
 ### Added
+- Capacity admission supports percentage headroom and retains durable upload, migration and restore budgets across process failure.
 
 - Storage insights with logical and unique-object inventory, shared-volume capacity reservations, dated growth evidence, and explicit audited expired-staging cleanup. Heavy operations now preserve configurable disk headroom before allocation.
 

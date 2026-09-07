@@ -71,3 +71,24 @@ The focused owner run covers these behaviors. Aggregate backend/frontend coverag
 | 61 | requires confirmation for staging cleanup | Edge | Cleanup button then cancel | Confirmation shown; cancellation closes it | UI unit | ✅ `frontend/src/components/__tests__/storage-inventory-panel.test.tsx::requires confirmation for staging cleanup` |
 | 62 | storage insights require explicit cleanup | Happy | Real backend Settings Storage tab | Refresh, confirmation and cleanup success visible | Browser E2E | ✅ `frontend/tests/e2e-real/settings.spec.ts::storage insights explain headroom and require explicit cleanup` |
 | 63 | reserves remote backup source volume | Edge | Remote Vault; separate backup directory | Materialization peak charged to actual process temporary filesystem | Integration | ✅ `backend/tests/integration/modules/storage/test_capacity_operations.py::TestOperationAdmission::test_reserves_remote_backup_source_volume` |
+
+## Attached-plan admission additions
+
+61 focused policy/inventory tests passed, including the additions below. Remaining
+attached-plan inventory/UI/observability work is tracked separately; this checkpoint
+does not claim completion of the entire issue.
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| 64 | reserves the larger headroom | Edge | Absolute/percentage thresholds and rounded fraction | Maximum threshold rounded up | Unit | ✅ `backend/tests/unit/modules/storage/test_capacity_policy.py::test_reserves_the_larger_headroom` |
+| 65 | allows exact remaining capacity | Edge | Request plus existing reservations meets threshold | Admission allowed | Unit | ✅ `backend/tests/unit/modules/storage/test_capacity_policy.py::test_allows_exact_remaining_capacity` |
+| 66 | denies one byte above admissible capacity | Error | Request exceeds remaining budget by one byte | Structured denial records all numeric estimates | Unit | ✅ `backend/tests/unit/modules/storage/test_capacity_policy.py::test_denies_one_byte_above_admissible_capacity` |
+| 67 | distinguishes unknown capacity from zero | Edge | Unknown and zero quota | Warning versus denial | Unit | ✅ `backend/tests/unit/modules/storage/test_capacity_policy.py::test_distinguishes_unknown_capacity_from_zero` |
+| 68 | warns when percentage headroom cannot be measured | Edge | Known free but unknown total quota | Unknown-total warning | Unit | ✅ `backend/tests/unit/modules/storage/test_capacity_policy.py::test_warns_when_percentage_headroom_cannot_be_measured` |
+| 69 | rejects invalid percentage | Error | Negative/over100/NaN/infinite percentage | Invalid policy rejected | Unit | ✅ `backend/tests/unit/modules/storage/test_capacity_policy.py::test_rejects_invalid_percentage` |
+| 70 | rejects negative evidence | Error | Negative required/reserved/free/total bytes | Invalid evidence rejected | Unit | ✅ `backend/tests/unit/modules/storage/test_capacity_policy.py::test_rejects_negative_evidence` |
+| 71 | prevents allocating reserved percentage | Error | 91byte request with10% of100byte quota reserved | Denial persists no claim | Integration | ✅ `backend/tests/integration/modules/storage/test_capacity.py::TestPercentageHeadroom::test_prevents_allocating_reserved_percentage` |
+| 72 | deduplicates percentage for shared domain | Edge | Two45byte allocations share100byte quota | One10byte headroom admits90bytes | Integration | ✅ `backend/tests/integration/modules/storage/test_capacity.py::TestPercentageHeadroom::test_deduplicates_percentage_for_shared_domain` |
+| 73 | preserves legacy workflow budget after process death | Error | Expired upload/migration/restore claim and dead process | Surviving workflow budget retained | Integration | ✅ `backend/tests/integration/modules/storage/test_capacity.py::TestDurableCapacityLifetime::test_preserves_legacy_workflow_budget_after_process_death` |
+| 74 | preserves explicit durable budget after process death | Error | Expired workflow claim and dead process | Only owner proof releases budget | Integration | ✅ `backend/tests/integration/modules/storage/test_capacity.py::TestDurableCapacityLifetime::test_preserves_explicit_durable_budget_after_process_death` |
+| 75 | records durable lifetime on reservation | Happy | Durable claim then renewal | Persisted workflow lifetime preserved | Integration | ✅ `backend/tests/integration/modules/storage/test_capacity.py::TestDurableCapacityLifetime::test_records_durable_lifetime_on_reservation` |

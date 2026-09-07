@@ -75,6 +75,9 @@ class TestStorageInventory:
         )
         assert response.status_code == 507
         assert response.json()["detail"] == "storage_capacity_exceeded"
+        assert response.json()["capacity"]["headroom_bytes"] == 10**18
+        assert response.json()["capacity"]["required_bytes"] > 0
+        assert response.headers["retry-after"] == "60"
 
     def test_resets_headroom_to_environment_default(self, client, auth_headers):
         original = client.get("/api/v1/config", headers=auth_headers).json()[
