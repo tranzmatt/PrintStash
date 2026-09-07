@@ -158,6 +158,9 @@ class TestMountedArtifactContent:
 
 class TestManagedArtifactContent:
     class _Backend:
+        def direct_path(self, key):
+            return self.path
+
         def __init__(self, path: Path, *, exists: bool = True) -> None:
             self.path = path
             self.present = exists

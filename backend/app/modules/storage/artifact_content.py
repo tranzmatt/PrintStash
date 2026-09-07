@@ -16,8 +16,9 @@ import tempfile
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import BinaryIO, Callable, Iterator
 
+from app.core.errors import OperationError
 from app.db.models import File
 from app.db.session import get_session_factory
 from app.modules.sources.library_source import (
@@ -166,10 +167,16 @@ class ArtifactHandle:
 
     def cache_representation(self) -> Representation | None:
         """Only original immutable managed remote Artifact bytes are eligible."""
-        if self.file.is_external or self.backend is None or self.backend.direct_path(self.file.path) is not None:
+        if (
+            self.file.is_external
+            or self.backend is None
+            or self.backend.direct_path(self.file.path) is not None
+        ):
             return None
         try:
-            return Representation("artifact", 1, self.file.sha256.lower(), self.file.size_bytes)
+            return Representation(
+                "artifact", 1, self.file.sha256.lower(), self.file.size_bytes
+            )
         except ValueError:
             return None
 
@@ -184,7 +191,9 @@ class ArtifactHandle:
         except (CacheUnavailable, OSError, sqlite3.Error):
             return None
 
-    def stream(self, chunk_size: int = _CHUNK_SIZE, *, authoritative: bool = False) -> Iterator[bytes]:
+    def stream(
+        self, chunk_size: int = _CHUNK_SIZE, *, authoritative: bool = False
+    ) -> Iterator[bytes]:
         """Return a streaming iterator over immutable content.
 
         External bytes are copied and verified before the iterator is returned,
@@ -209,6 +218,10 @@ class ArtifactHandle:
 
             return external_chunks()
 
+        lease = None if authoritative else self.cached_path()
+        if lease:
+            return _PathChunks(lease.path, chunk_size, lease.close)
+
         if self.backend is None or not self.backend.exists(self.file.path):
             raise ArtifactContentMissingError(self.file.path)
         chunks = iter(self.backend.stream_chunks(self.file.path, chunk_size))
@@ -227,13 +240,18 @@ class ArtifactHandle:
                 if cache is not None and representation is not None:
                     try:
                         fill = cache.begin_fill(representation)
-                    except (CacheUnavailable, OSError, sqlite3.Error):
+                    except (CacheUnavailable, OSError, sqlite3.Error, OperationError):
                         pass
                 for chunk in _prepend(first, chunks):
                     if fill is not None:
                         try:
                             fill.write(chunk)
-                        except (CacheUnavailable, RepresentationChanged, OSError, sqlite3.Error):
+                        except (
+                            CacheUnavailable,
+                            RepresentationChanged,
+                            OSError,
+                            sqlite3.Error,
+                        ):
                             fill.close()
                             fill = None
                     yield chunk
@@ -242,7 +260,12 @@ class ArtifactHandle:
                         lease = fill.complete()
                         if lease:
                             lease.close()
-                    except (CacheUnavailable, RepresentationChanged, OSError, sqlite3.Error):
+                    except (
+                        CacheUnavailable,
+                        RepresentationChanged,
+                        OSError,
+                        sqlite3.Error,
+                    ):
                         pass
             finally:
                 if fill is not None:
@@ -330,6 +353,7 @@ def _prepend(first: bytes, chunks: Iterator[bytes]) -> Iterator[bytes]:
 
 class _ClosingIterator:
     """Always close the primed source, including before the first consumer read."""
+
     def __init__(self, chunks: Iterator[bytes], source: Iterator[bytes]):
         self.chunks = chunks
         self.source = source
@@ -349,3 +373,39 @@ class _ClosingIterator:
             close = getattr(self.source, "close", None)
             if close:
                 close()
+
+
+class _PathChunks:
+    def __init__(self, path: Path, chunk_size: int, cleanup: Callable[[], None]):
+        self.path = path
+        self.chunk_size = chunk_size
+        self.cleanup = cleanup
+        self.source: BinaryIO | None = None
+        self.closed = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self
+
+    def __next__(self) -> bytes:
+        if self.closed:
+            raise StopIteration
+        try:
+            if self.source is None:
+                self.source = self.path.open("rb")
+            chunk = self.source.read(self.chunk_size)
+            if not chunk:
+                self.close()
+                raise StopIteration
+            return chunk
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        if not self.closed:
+            self.closed = True
+            try:
+                if self.source:
+                    self.source.close()
+            finally:
+                self.cleanup()

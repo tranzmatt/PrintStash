@@ -1,3 +1,4 @@
+import type { ArtifactCacheRead } from "@/lib/api/artifact-cache";
 /**
  * Builders for API-shaped objects — the frontend's arrange step.
  *
@@ -459,5 +460,27 @@ export function anIngestJob(override?: Partial<IngestJobStatus>): IngestJobStatu
     started_at: FROZEN_NOW,
     finished_at: FROZEN_NOW,
     ...override,
+  };
+}
+
+export function anArtifactCache(
+  overrides: Partial<ArtifactCacheRead> = {},
+): ArtifactCacheRead {
+  return {
+    policy: {
+      enabled: false,
+      root: "/cache",
+      max_bytes: 1000,
+      max_entries: 100,
+      max_fills: 2,
+      headroom_bytes: 100,
+      verify_every_hits: 100,
+    },
+    effective_root: "/cache",
+    restart_required: false,
+    source: "environment",
+    available: true,
+    usage: { bytes: 100, entries: 1, leases: 0 },
+    ...overrides,
   };
 }

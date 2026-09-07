@@ -1,4 +1,5 @@
 """Administrator controls for disposable verified Artifact materializations."""
+
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
@@ -10,7 +11,11 @@ from app.modules.administration.artifact_cache_config import (
     CacheSettingsRead,
 )
 
-router = APIRouter(prefix="/config/artifact-cache", tags=["config"], dependencies=[Depends(require_superuser)])
+router = APIRouter(
+    prefix="/config/artifact-cache",
+    tags=["config"],
+    dependencies=[Depends(require_superuser)],
+)
 
 
 @router.get("", response_model=CacheSettingsRead)

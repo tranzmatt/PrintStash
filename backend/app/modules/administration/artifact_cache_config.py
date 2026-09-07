@@ -1,4 +1,5 @@
 """Administrative cache policy and usage without exposing cached object paths."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -36,7 +37,12 @@ class CacheSettingsRead(BaseModel):
 
 
 def live_policy() -> CachePolicy:
-    return CachePolicy(**{name: getattr(settings, f"artifact_cache_{name}") for name in asdict(CachePolicy())})
+    return CachePolicy(
+        **{
+            name: getattr(settings, f"artifact_cache_{name}")
+            for name in asdict(CachePolicy())
+        }
+    )
 
 
 def apply_cache_overlay(config: SystemConfig) -> None:
@@ -48,7 +54,9 @@ def apply_cache_overlay(config: SystemConfig) -> None:
 
 def read_settings(session: Session) -> CacheSettingsRead:
     config = session.get(SystemConfig, 1)
-    policy = CacheSettings(**asdict(live_policy()), root=str(settings.artifact_cache_root))
+    policy = CacheSettings(
+        **asdict(live_policy()), root=str(settings.artifact_cache_root)
+    )
     cache = get_materializer()
     available = cache is not None
     usage: dict[str, int] = {}
@@ -58,10 +66,22 @@ def read_settings(session: Session) -> CacheSettingsRead:
         except (OSError, sqlite3.Error):
             available = False
     effective_root = str(cache.root) if cache else str(settings.artifact_cache_root)
-    return CacheSettingsRead(policy=policy, effective_root=effective_root, restart_required=Path(policy.root).absolute() != Path(effective_root).absolute(), source="database" if config and config.artifact_cache_policy_json else "environment", available=available, usage=usage)
+    return CacheSettingsRead(
+        policy=policy,
+        effective_root=effective_root,
+        restart_required=Path(policy.root).absolute()
+        != Path(effective_root).absolute(),
+        source="database"
+        if config and config.artifact_cache_policy_json
+        else "environment",
+        available=available,
+        usage=usage,
+    )
 
 
-def update_settings(session: Session, policy: CacheSettings | None) -> CacheSettingsRead:
+def update_settings(
+    session: Session, policy: CacheSettings | None
+) -> CacheSettingsRead:
     config = get_or_create(session)
     config.artifact_cache_policy_json = policy.model_dump_json() if policy else None
     session.add(config)

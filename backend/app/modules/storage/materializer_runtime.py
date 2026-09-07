@@ -1,4 +1,5 @@
 """Bound cache adapter; construction belongs to application startup."""
+
 from __future__ import annotations
 
 from app.modules.storage.artifact_materializer import ArtifactMaterializer

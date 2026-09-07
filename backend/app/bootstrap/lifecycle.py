@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
@@ -257,11 +258,22 @@ async def lifespan(app: FastAPI):
     )
     from app.modules.administration.artifact_cache_config import live_policy
     from app.modules.storage.artifact_materializer import ArtifactMaterializer
+    from app.modules.storage.capacity import CapacityManager, CapacityResource
     from app.modules.storage.materializer_runtime import bind_materializer
 
     try:
-        bind_materializer(ArtifactMaterializer(Path(settings.artifact_cache_root), live_policy))
-    except (OSError, RuntimeError):
+        capacity = CapacityManager(get_session_factory())
+        bind_materializer(
+            ArtifactMaterializer(
+                Path(settings.artifact_cache_root),
+                live_policy,
+                reserve=lambda token, root, size: capacity.hold(
+                    f"cache:{token}",
+                    [CapacityResource.for_path(root, size, role="cache")],
+                ),
+            )
+        )
+    except (OSError, RuntimeError, sqlite3.Error):
         logger.exception("artifact cache unavailable; source reads remain enabled")
         bind_materializer(None)
     from app.runtime.jobs import reconcile_interrupted_jobs

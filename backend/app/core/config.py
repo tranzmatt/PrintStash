@@ -90,7 +90,6 @@ class Settings(BaseSettings):
     artifact_cache_headroom_bytes: int = Field(default=1024**3, ge=0)
     artifact_cache_verify_every_hits: int = Field(default=100, ge=0)
 
-
     s3_bucket: str = ""
     s3_endpoint_url: str = ""
     s3_region: str = "auto"
