@@ -20,6 +20,25 @@ PrintStash probes the configured storage at startup. Support maturity and storag
 | [WebDAV](#webdav) | Nextcloud and WebDAV | Beta | Guarded | `root`, `endpoint_url`, `username`, `password` (secret) |
 | [SFTP](#sftp) | NAS over SFTP | Beta | Guarded | `root`, `host`, `port`, `username`, `host_key`, `password` (secret), `private_key_path`, `passphrase` (secret) |
 | [Google Drive](#gdrive) | Consumer cloud storage | Beta | Unguarded | `root`, `client_id`, `client_secret` (secret), `refresh_token` (secret) |
+| [Synology — mounted folder](#synology) | This machine | Beta | Guarded | `root`, `data_dir`, `thumb_dir` |
+| [TrueNAS — mounted folder](#truenas) | This machine | Beta | Guarded | `root`, `data_dir`, `thumb_dir` |
+| [QNAP — mounted folder](#qnap) | This machine | Beta | Guarded | `root`, `data_dir`, `thumb_dir` |
+| [Unraid — mounted folder](#unraid) | This machine | Beta | Guarded | `root`, `data_dir`, `thumb_dir` |
+| [Synology — WebDAV](#synology_webdav) | Nextcloud and WebDAV | Beta | Guarded | `root`, `endpoint_url`, `username`, `password` (secret) |
+| [QNAP — WebDAV](#qnap_webdav) | Nextcloud and WebDAV | Beta | Guarded | `root`, `endpoint_url`, `username`, `password` (secret) |
+| [MinIO](#minio) | S3-compatible object storage | Beta | Guarded | `root`, `bucket`, `region`, `addressing_style`, `endpoint_url`, `access_key` (secret), `secret_key` (secret) |
+| [Garage](#garage) | S3-compatible object storage | Beta | Guarded | `root`, `bucket`, `region`, `addressing_style`, `endpoint_url`, `access_key` (secret), `secret_key` (secret) |
+| [SeaweedFS](#seaweedfs) | S3-compatible object storage | Beta | Guarded | `root`, `bucket`, `region`, `addressing_style`, `endpoint_url`, `access_key` (secret), `secret_key` (secret) |
+| [Hetzner Object Storage](#hetzner_object_storage) | S3-compatible object storage | Beta | Guarded | `root`, `bucket`, `region`, `addressing_style`, `endpoint_url`, `access_key` (secret), `secret_key` (secret) |
+| [Hetzner Storage Box — SFTP](#hetzner_storage_box) | NAS over SFTP | Beta | Guarded | `root`, `host`, `port`, `username`, `host_key`, `password` (secret), `private_key_path`, `passphrase` (secret) |
+| [Hetzner Storage Box — WebDAV](#hetzner_storage_box_webdav) | Nextcloud and WebDAV | Beta | Guarded | `root`, `endpoint_url`, `username`, `password` (secret) |
+| [Koofr — WebDAV](#koofr) | Nextcloud and WebDAV | Beta | Guarded | `root`, `endpoint_url`, `username`, `password` (secret) |
+
+## Delivery and role setup
+
+S3 transports can offer signed browser GETs only when the configured endpoint proves safe URLs and CORS for the requesting origin. Every transport retains a same-origin fallback. Delivery capability is independent from deletion safety; a Guarded provider can support signed GET without permitting automatic deletion.
+
+Mounted NAS presets configure Vault directories. For existing NAS files choose a mounted Library source; for backup folders choose a mounted destination. Mount SMB/NFS outside PrintStash and pass the mount into the container. No direct SMB adapter is included. WebDAV and SFTP are explicit alternative entries, not automatic protocol detection.
 
 ## Safety tiers
 
@@ -99,6 +118,162 @@ Expected tier: **Guarded**. Publish uses SSH exclusive create (`x` mode); `host_
 Consumer cloud storage through Apache OpenDAL.
 
 Expected tier: **Unguarded**. Available for read-only Library sources and off-site backup replicas; not selectable as managed Vault storage.
+
+## synology
+
+NAS folder mounted on this host.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Mount an SMB/NFS share on the PrintStash host, then bind it into the container. Enter container paths, not a NAS URL. Existing models belong in a mounted Library source; backup folders use the mounted backup destination.
+
+[Provider instructions](https://kb.synology.com/en-global/DSM/tutorial/How_to_access_files_on_Synology_NAS_within_the_local_network_NFS)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## truenas
+
+NAS folder mounted on this host.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Create an SMB or NFS share, mount it on the PrintStash host, and bind it into the container. Enter container paths. Existing models use a mounted Library source; backup folders use the mounted backup destination.
+
+[Provider instructions](https://www.truenas.com/docs/scale/shares/nfs/addingnfsshares/)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## qnap
+
+NAS folder mounted on this host.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Mount the NAS share on the PrintStash host and bind it into the container. Enter container paths. Existing models use a mounted Library source; backup folders use the mounted backup destination. WebDAV is a separate connection choice.
+
+[Provider instructions](https://www.qnap.com/en-us/how-to/tutorial/article/accessing-your-qnap-nas-remotely-with-webdav)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## unraid
+
+NAS folder mounted on this host.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Enable the share's SMB or NFS export and mount it on the PrintStash host, or bind a host share directory into the container. Existing models use a mounted Library source; backup folders use the mounted backup destination.
+
+[Provider instructions](https://docs.unraid.net/unraid-os/using-unraid-to/manage-storage/shares/)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## synology_webdav
+
+Remote storage over WebDAV.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Install and enable WebDAV Server. Enter your HTTPS WebDAV endpoint (default HTTPS port 5006), including the shared folder. Use a NAS account granted access to that folder; reverse proxy ports can differ.
+
+[Provider instructions](https://kb.synology.com/en-sg/DSM/tutorial/How_to_fix_WebDAV_connection_issues)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## qnap_webdav
+
+Remote storage over WebDAV.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Enable WebDAV and the shared folder's WebDAV permissions. Copy the HTTPS endpoint and configured port from QTS, including the shared folder. Use an account with access to that folder; no universal NAS endpoint is assumed.
+
+[Provider instructions](https://www.qnap.com/en-us/how-to/tutorial/article/accessing-your-qnap-nas-remotely-with-webdav)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## minio
+
+S3-compatible object storage.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Enter the S3 API endpoint, usually port 9000, not the console. Use a bucket-scoped access key and secret key. Region must match the server configuration; path-style addressing is the preset default.
+
+[Provider instructions](https://github.com/minio/minio)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## garage
+
+S3-compatible object storage.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Enter the S3 API endpoint, usually port 3900, and the configured s3_region (commonly garage). Grant the access key access to the existing bucket. Path-style addressing is the preset default.
+
+[Provider instructions](https://garagehq.deuxfleurs.fr/documentation/connect/cli/)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## seaweedfs
+
+S3-compatible object storage.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Enter the S3 gateway endpoint, usually port 8333, with access and secret keys configured on the gateway. Configure authentication before exposing the service. Path-style addressing is the preset default.
+
+[Provider instructions](https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## hetzner_object_storage
+
+S3-compatible object storage.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Choose the bucket location as the signing region (for example fsn1, nbg1 or hel1). The endpoint is https://REGION.your-objectstorage.com unless explicitly overridden. Use Object Storage access and secret keys, not Storage Box credentials.
+
+[Provider instructions](https://docs.hetzner.com/storage/object-storage/getting-started/using-libraries/)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## hetzner_storage_box
+
+Remote storage over SFTP.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Enable SSH support for port 23, then enter the exact hostname and username from the Storage Box account or sub-account. Verify and pin its SSH host key out of band. Use the account password or a mounted private key. SFTP on port 22 can be selected explicitly.
+
+[Provider instructions](https://docs.hetzner.com/storage/storage-box/access/access-overview/)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## hetzner_storage_box_webdav
+
+Remote storage over WebDAV.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Enable WebDAV, then enter https://HOSTNAME using the hostname and username assigned to the account or sub-account. HTTPS uses port 443. Use the Storage Box password and a dedicated folder.
+
+[Provider instructions](https://docs.hetzner.com/storage/storage-box/access/access-overview/)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
+
+## koofr
+
+Remote storage over WebDAV.
+
+Expected tier: **Guarded**. The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.
+
+Use your Koofr account email as username and generate an application-specific password for WebDAV. The endpoint is case-sensitive. The base folder is relative to the Koofr endpoint; do not repeat dav/Koofr in it.
+
+[Provider instructions](https://koofr.eu/help/koofr_with_webdav/how-do-i-connect-a-service-to-koofr-through-webdav/)
+
+Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.
 
 ## Credentials and upgrades
 

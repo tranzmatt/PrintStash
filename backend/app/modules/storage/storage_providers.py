@@ -28,6 +28,105 @@ class TransportKind(str, Enum):
     GDRIVE = "gdrive"
 
 
+# Presets describe existing transports, never appliance certification. Defaults
+# are shared by typed parsing and the generated role-specific forms.
+PRESETS: dict[str, dict[str, Any]] = {
+    "synology": {
+        "label": "Synology — mounted folder",
+        "transport": "local",
+        "guide": "Mount an SMB/NFS share on the PrintStash host, then bind it into the container. Enter container paths, not a NAS URL. Existing models belong in a mounted Library source; backup folders use the mounted backup destination.",
+        "url": "https://kb.synology.com/en-global/DSM/tutorial/How_to_access_files_on_Synology_NAS_within_the_local_network_NFS",
+    },
+    "truenas": {
+        "label": "TrueNAS — mounted folder",
+        "transport": "local",
+        "guide": "Create an SMB or NFS share, mount it on the PrintStash host, and bind it into the container. Enter container paths. Existing models use a mounted Library source; backup folders use the mounted backup destination.",
+        "url": "https://www.truenas.com/docs/scale/shares/nfs/addingnfsshares/",
+    },
+    "qnap": {
+        "label": "QNAP — mounted folder",
+        "transport": "local",
+        "guide": "Mount the NAS share on the PrintStash host and bind it into the container. Enter container paths. Existing models use a mounted Library source; backup folders use the mounted backup destination. WebDAV is a separate connection choice.",
+        "url": "https://www.qnap.com/en-us/how-to/tutorial/article/accessing-your-qnap-nas-remotely-with-webdav",
+    },
+    "unraid": {
+        "label": "Unraid — mounted folder",
+        "transport": "local",
+        "guide": "Enable the share's SMB or NFS export and mount it on the PrintStash host, or bind a host share directory into the container. Existing models use a mounted Library source; backup folders use the mounted backup destination.",
+        "url": "https://docs.unraid.net/unraid-os/using-unraid-to/manage-storage/shares/",
+    },
+    "synology_webdav": {
+        "label": "Synology — WebDAV",
+        "transport": "webdav",
+        "guide": "Install and enable WebDAV Server. Enter your HTTPS WebDAV endpoint (default HTTPS port 5006), including the shared folder. Use a NAS account granted access to that folder; reverse proxy ports can differ.",
+        "url": "https://kb.synology.com/en-sg/DSM/tutorial/How_to_fix_WebDAV_connection_issues",
+    },
+    "qnap_webdav": {
+        "label": "QNAP — WebDAV",
+        "transport": "webdav",
+        "guide": "Enable WebDAV and the shared folder's WebDAV permissions. Copy the HTTPS endpoint and configured port from QTS, including the shared folder. Use an account with access to that folder; no universal NAS endpoint is assumed.",
+        "url": "https://www.qnap.com/en-us/how-to/tutorial/article/accessing-your-qnap-nas-remotely-with-webdav",
+    },
+    "minio": {
+        "label": "MinIO",
+        "transport": "s3",
+        "defaults": {"region": "us-east-1"},
+        "guide": "Enter the S3 API endpoint, usually port 9000, not the console. Use a bucket-scoped access key and secret key. Region must match the server configuration; path-style addressing is the preset default.",
+        "url": "https://github.com/minio/minio",
+    },
+    "garage": {
+        "label": "Garage",
+        "transport": "s3",
+        "defaults": {"region": "garage"},
+        "guide": "Enter the S3 API endpoint, usually port 3900, and the configured s3_region (commonly garage). Grant the access key access to the existing bucket. Path-style addressing is the preset default.",
+        "url": "https://garagehq.deuxfleurs.fr/documentation/connect/cli/",
+    },
+    "seaweedfs": {
+        "label": "SeaweedFS",
+        "transport": "s3",
+        "defaults": {"region": "us-east-1"},
+        "guide": "Enter the S3 gateway endpoint, usually port 8333, with access and secret keys configured on the gateway. Configure authentication before exposing the service. Path-style addressing is the preset default.",
+        "url": "https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API",
+    },
+    "hetzner_object_storage": {
+        "label": "Hetzner Object Storage",
+        "transport": "s3",
+        "defaults": {"region": "fsn1"},
+        "guide": "Choose the bucket location as the signing region (for example fsn1, nbg1 or hel1). The endpoint is https://REGION.your-objectstorage.com unless explicitly overridden. Use Object Storage access and secret keys, not Storage Box credentials.",
+        "url": "https://docs.hetzner.com/storage/object-storage/getting-started/using-libraries/",
+    },
+    "hetzner_storage_box": {
+        "label": "Hetzner Storage Box — SFTP",
+        "transport": "sftp",
+        "defaults": {"port": 23},
+        "guide": "Enable SSH support for port 23, then enter the exact hostname and username from the Storage Box account or sub-account. Verify and pin its SSH host key out of band. Use the account password or a mounted private key. SFTP on port 22 can be selected explicitly.",
+        "url": "https://docs.hetzner.com/storage/storage-box/access/access-overview/",
+    },
+    "hetzner_storage_box_webdav": {
+        "label": "Hetzner Storage Box — WebDAV",
+        "transport": "webdav",
+        "guide": "Enable WebDAV, then enter https://HOSTNAME using the hostname and username assigned to the account or sub-account. HTTPS uses port 443. Use the Storage Box password and a dedicated folder.",
+        "url": "https://docs.hetzner.com/storage/storage-box/access/access-overview/",
+    },
+    "koofr": {
+        "label": "Koofr — WebDAV",
+        "transport": "webdav",
+        "defaults": {"endpoint_url": "https://app.koofr.net/dav/Koofr"},
+        "guide": "Use your Koofr account email as username and generate an application-specific password for WebDAV. The endpoint is case-sensitive. The base folder is relative to the Koofr endpoint; do not repeat dav/Koofr in it.",
+        "url": "https://koofr.eu/help/koofr_with_webdav/how-do-i-connect-a-service-to-koofr-through-webdav/",
+    },
+}
+
+
+class ProviderDelivery(BaseModel):
+    # Potential adapter features. Actual requests must obtain the #101
+    # BrowserDownload contract; this metadata never authorizes a redirect.
+    signed_get: bool = False
+    requires_endpoint_proof: bool = True
+    requires_cors_proof: bool = True
+    same_origin_fallback: bool = True
+
+
 class _FieldMetadata(BaseModel):
     secret: bool = False
     input_type: Literal["text", "password", "url", "number", "path"] = "text"
@@ -67,6 +166,10 @@ class StorageProvider(BaseModel):
     requirements: list[dict[str, object]] = Field(default_factory=list)
     transport: str = ""
     uses: dict[str, UseAvailability] = Field(default_factory=dict)
+    setup_guidance: str = ""
+    provider_documentation_url: str = ""
+    evidence: Literal["transport_tested", "endpoint_required"] = "endpoint_required"
+    delivery: ProviderDelivery = Field(default_factory=ProviderDelivery)
 
 
 def _config_field(
@@ -101,6 +204,14 @@ class _ProviderConfig(BaseModel):
         "Root", "Dedicated folder or prefix", default="vault-data", input_type="path"
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def preset_defaults(cls, value):
+        if isinstance(value, dict):
+            preset = PRESETS.get(value.get("provider", ""), {})
+            return {**preset.get("defaults", {}), **value}
+        return value
+
     @model_validator(mode="after")
     def validate_root(self):
         self.root = normalize_root(self.root)
@@ -108,7 +219,7 @@ class _ProviderConfig(BaseModel):
 
 
 class LocalProviderConfig(_ProviderConfig):
-    provider: Literal["local"]
+    provider: Literal["local", "synology", "truenas", "qnap", "unraid"]
     data_dir: str = _config_field(
         "Models directory", "Directory for model files", input_type="path"
     )
@@ -118,7 +229,17 @@ class LocalProviderConfig(_ProviderConfig):
 
 
 class S3ProviderConfig(_ProviderConfig):
-    provider: Literal["s3", "cloudflare_r2", "backblaze_b2", "wasabi", "s3_self_hosted"]
+    provider: Literal[
+        "s3",
+        "cloudflare_r2",
+        "backblaze_b2",
+        "wasabi",
+        "s3_self_hosted",
+        "minio",
+        "garage",
+        "seaweedfs",
+        "hetzner_object_storage",
+    ]
     bucket: str = _config_field("Bucket", "Existing bucket name", min_length=1)
     region: str = _config_field(
         "Region",
@@ -133,8 +254,15 @@ class S3ProviderConfig(_ProviderConfig):
         "S3-compatible server URL",
         default="",
         input_type="url",
-        visible_for=("s3", "s3_self_hosted"),
-        required_for=("s3_self_hosted",),
+        visible_for=(
+            "s3",
+            "s3_self_hosted",
+            "minio",
+            "garage",
+            "seaweedfs",
+            "hetzner_object_storage",
+        ),
+        required_for=("s3_self_hosted", "minio", "garage", "seaweedfs"),
     )
     account_id: str = _config_field(
         "Account ID",
@@ -152,7 +280,14 @@ class S3ProviderConfig(_ProviderConfig):
 
 
 class WebDAVProviderConfig(_ProviderConfig):
-    provider: Literal["nextcloud", "webdav"]
+    provider: Literal[
+        "nextcloud",
+        "webdav",
+        "synology_webdav",
+        "qnap_webdav",
+        "hetzner_storage_box_webdav",
+        "koofr",
+    ]
     endpoint_url: str = _config_field(
         "Server URL",
         "Nextcloud base URL or full WebDAV endpoint",
@@ -166,7 +301,7 @@ class WebDAVProviderConfig(_ProviderConfig):
 
 
 class SFTPProviderConfig(_ProviderConfig):
-    provider: Literal["sftp"]
+    provider: Literal["sftp", "hetzner_storage_box"]
     host: str = _config_field("Host", "SFTP hostname", min_length=1)
     port: int = _config_field(
         "Port", "SFTP port", default=22, input_type="number", ge=1, le=65535
@@ -181,7 +316,7 @@ class SFTPProviderConfig(_ProviderConfig):
         "OpenSSH known-hosts path or entry",
         default="",
         input_type="path",
-        required_for=("sftp",),
+        required_for=("sftp", "hetzner_storage_box"),
     )
     password: str = _config_field(
         "Password",
@@ -340,10 +475,22 @@ def sanitized_provider_config(
     }
 
 
-def _endpoint_with_path(endpoint: str, path: str) -> str:
+def _validate_endpoint(endpoint: str) -> None:
     parts = urlsplit(endpoint.strip())
-    if parts.scheme not in {"http", "https"} or not parts.netloc:
+    if (
+        parts.scheme not in {"http", "https"}
+        or not parts.hostname
+        or parts.username is not None
+        or parts.password is not None
+        or parts.query
+        or parts.fragment
+    ):
         raise ValueError("provider_endpoint_invalid")
+
+
+def _endpoint_with_path(endpoint: str, path: str) -> str:
+    _validate_endpoint(endpoint)
+    parts = urlsplit(endpoint.strip())
     base = urlunsplit(
         (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/", "", "")
     )
@@ -367,9 +514,18 @@ def resolve_transport(config: StorageProviderConfig) -> TransportSpec:
         endpoint = config.endpoint_url.strip()
         region = config.region.strip() or "auto"
         addressing_style = config.addressing_style
-        if config.provider == "s3_self_hosted" and not endpoint:
+        if (
+            config.provider in {"s3_self_hosted", "minio", "garage", "seaweedfs"}
+            and not endpoint
+        ):
             raise ValueError("s3_endpoint_required")
-        if addressing_style == "auto" and config.provider == "s3_self_hosted":
+        if addressing_style == "auto" and config.provider in {
+            "s3_self_hosted",
+            "minio",
+            "garage",
+            "seaweedfs",
+            "hetzner_object_storage",
+        }:
             addressing_style = "path"
         path_style = addressing_style == "path"
         if config.provider == "cloudflare_r2":
@@ -385,6 +541,12 @@ def resolve_transport(config: StorageProviderConfig) -> TransportSpec:
             if region == "auto":
                 raise ValueError("wasabi_region_required")
             endpoint = f"https://s3.{region}.wasabisys.com"
+        elif config.provider == "hetzner_object_storage":
+            if region == "auto" or not region.replace("-", "").isalnum():
+                raise ValueError("s3_region_required")
+            endpoint = endpoint or f"https://{region}.your-objectstorage.com"
+        if endpoint:
+            _validate_endpoint(endpoint)
         return TransportSpec(
             kind=TransportKind.S3,
             provider=config.provider,
@@ -591,6 +753,50 @@ _PROVIDER_PRESENTATION = [
 ]
 
 
+for _id, _preset in PRESETS.items():
+    _transport = _preset["transport"]
+    _PROVIDER_PRESENTATION.append(
+        {
+            "id": _id,
+            "label": _preset["label"],
+            "category": {
+                "local": "this_machine",
+                "s3": "s3_compatible",
+                "webdav": "nextcloud_webdav",
+                "sftp": "nas_sftp",
+            }[_transport],
+            "description": {
+                "local": "NAS folder mounted on this host.",
+                "s3": "S3-compatible object storage.",
+                "webdav": "Remote storage over WebDAV.",
+                "sftp": "Remote storage over SFTP.",
+            }[_transport],
+            "expected_tier": "guarded",
+            "expected_tier_note": "The endpoint probe determines safety. A preset does not certify hardware or authorize deletion.",
+            "consequences": ["Automatic physical deletion requires a Verified probe."],
+            "documentation_url": f"/docs/storage-providers.md#{_id}",
+            "support_level": "beta",
+            "setup_guidance": _preset["guide"],
+            "provider_documentation_url": _preset["url"],
+            "evidence": "transport_tested",
+        }
+    )
+
+
+def provider_transport(provider: str) -> str:
+    model = _provider_model(provider)
+    transports = {
+        LocalProviderConfig: "local",
+        S3ProviderConfig: "s3",
+        WebDAVProviderConfig: "webdav",
+        SFTPProviderConfig: "sftp",
+        GoogleDriveProviderConfig: "gdrive",
+    }
+    if model not in transports:
+        raise ValueError("storage_provider_unknown")
+    return transports[model]
+
+
 def provider_fields(
     provider: str, *, use: str = "vault"
 ) -> list[StorageFieldDescriptor]:
@@ -605,7 +811,11 @@ def provider_fields(
         visible = extra.visible_for
         if visible and provider not in visible:
             continue
-        default = None if field.is_required() else field.default
+        default = (
+            PRESETS.get(provider, {})
+            .get("defaults", {})
+            .get(name, None if field.is_required() else field.default)
+        )
         required = field.is_required() or provider in extra.required_for
         label = field.title or name
         if name == "region" and provider == "s3":
@@ -640,13 +850,7 @@ def provider_catalogue() -> list[StorageProvider]:
     for presentation in _PROVIDER_PRESENTATION:
         provider_id = presentation["id"]
         model = _provider_model(provider_id)
-        transport = (
-            "s3"
-            if model is S3ProviderConfig
-            else "webdav"
-            if model is WebDAVProviderConfig
-            else provider_id
-        )
+        transport = provider_transport(provider_id)
         uses = {
             use: use_availability(transport, use)
             for use in ("vault", "library", "backup")
@@ -679,6 +883,7 @@ def provider_catalogue() -> list[StorageProvider]:
             StorageProvider(
                 **presentation,
                 transport=transport,
+                delivery=ProviderDelivery(signed_get=transport == "s3"),
                 available=vault.dependency_installed and vault.service_compiled,
                 selectable=vault.available,
                 disabled_reason=None if vault.available else vault.reason,
@@ -723,6 +928,12 @@ def render_storage_provider_docs() -> str:
     lines.extend(
         [
             "",
+            "## Delivery and role setup",
+            "",
+            "S3 transports can offer signed browser GETs only when the configured endpoint proves safe URLs and CORS for the requesting origin. Every transport retains a same-origin fallback. Delivery capability is independent from deletion safety; a Guarded provider can support signed GET without permitting automatic deletion.",
+            "",
+            "Mounted NAS presets configure Vault directories. For existing NAS files choose a mounted Library source; for backup folders choose a mounted destination. Mount SMB/NFS outside PrintStash and pass the mount into the container. No direct SMB adapter is included. WebDAV and SFTP are explicit alternative entries, not automatic protocol detection.",
+            "",
             "## Safety tiers",
             "",
             "- **Verified** storage proves conditional creation, replacement identity, and deletion identity. Automated storage-backed purge is allowed.",
@@ -744,6 +955,17 @@ def render_storage_provider_docs() -> str:
                 "",
             ]
         )
+        if provider.setup_guidance:
+            lines.extend(
+                [
+                    provider.setup_guidance,
+                    "",
+                    f"[Provider instructions]({provider.provider_documentation_url})",
+                    "",
+                    "Evidence: transport contracts only; this is not hardware or hosted-account certification. Validate the endpoint and each intended role before use.",
+                    "",
+                ]
+            )
         if provider.id == "s3":
             lines.extend(
                 [

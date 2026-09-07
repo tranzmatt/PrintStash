@@ -10915,6 +10915,32 @@
         "title": "ProviderConnectionRead",
         "type": "object"
       },
+      "ProviderDelivery": {
+        "properties": {
+          "requires_cors_proof": {
+            "default": true,
+            "title": "Requires Cors Proof",
+            "type": "boolean"
+          },
+          "requires_endpoint_proof": {
+            "default": true,
+            "title": "Requires Endpoint Proof",
+            "type": "boolean"
+          },
+          "same_origin_fallback": {
+            "default": true,
+            "title": "Same Origin Fallback",
+            "type": "boolean"
+          },
+          "signed_get": {
+            "default": false,
+            "title": "Signed Get",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderDelivery",
+        "type": "object"
+      },
       "QueueJobCreate": {
         "additionalProperties": false,
         "properties": {
@@ -13035,6 +13061,9 @@
             "title": "Consequences",
             "type": "array"
           },
+          "delivery": {
+            "$ref": "#/components/schemas/ProviderDelivery"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -13052,6 +13081,15 @@
           },
           "documentation_url": {
             "title": "Documentation Url",
+            "type": "string"
+          },
+          "evidence": {
+            "default": "endpoint_required",
+            "enum": [
+              "transport_tested",
+              "endpoint_required"
+            ],
+            "title": "Evidence",
             "type": "string"
           },
           "expected_tier": {
@@ -13092,6 +13130,11 @@
             "title": "Label",
             "type": "string"
           },
+          "provider_documentation_url": {
+            "default": "",
+            "title": "Provider Documentation Url",
+            "type": "string"
+          },
           "requirements": {
             "items": {
               "additionalProperties": true,
@@ -13103,6 +13146,11 @@
           "selectable": {
             "title": "Selectable",
             "type": "boolean"
+          },
+          "setup_guidance": {
+            "default": "",
+            "title": "Setup Guidance",
+            "type": "string"
           },
           "support_level": {
             "default": "stable",

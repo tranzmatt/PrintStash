@@ -15,6 +15,7 @@ from sqlmodel import Session
 from app.db.models import SystemConfig
 from app.modules.administration import runtime_config
 from app.modules.storage.storage_providers import (
+    PRESETS,
     ProviderCategory,
     S3ProviderConfig,
     SFTPProviderConfig,
@@ -38,6 +39,7 @@ class TestStorageProviders:
             "webdav",
             "sftp",
             "gdrive",
+            *PRESETS,
         }
         assert {provider.category for provider in providers} == set(ProviderCategory)
         assert all(provider.fields for provider in providers)
@@ -318,15 +320,17 @@ class TestStorageProviders:
         )
         assert sanitized["secret_fields_set"] == []
 
+    @pytest.mark.parametrize("provider", ["sftp", "hetzner_storage_box"])
     def test_sftp_authentication_mode_change_clears_old_secrets(
         self,
         db_session: Session,
+        provider: str,
     ) -> None:
         row = runtime_config.update_storage_provider(
             db_session,
-            provider="sftp",
+            provider=provider,
             raw_config={
-                "provider": "sftp",
+                "provider": provider,
                 "host": "nas.example.test",
                 "username": "printstash",
                 "host_key": "ssh-ed25519 AAAA",
@@ -337,9 +341,9 @@ class TestStorageProviders:
 
         changed = runtime_config.resolve_requested_storage_provider(
             row,
-            provider="sftp",
+            provider=provider,
             raw_config={
-                "provider": "sftp",
+                "provider": provider,
                 "host": "nas.example.test",
                 "username": "printstash",
                 "host_key": "ssh-ed25519 AAAA",
@@ -438,3 +442,216 @@ class TestProviderRegionDefaults:
         for use in ("vault", "library", "backup"):
             fields = {field.name: field for field in provider_fields("s3", use=use)}
             assert fields["region"].default == "us-east-1"
+
+
+class TestPresetConfiguration:
+    @pytest.mark.parametrize("provider", list(PRESETS))
+    def test_resolves_each_preset_to_its_declared_transport(self, provider):
+        from app.modules.storage.storage_providers import PRESETS, parse_provider_config
+        from tests.fixtures.storage_presets import preset_configuration
+
+        spec = resolve_transport(parse_provider_config(preset_configuration(provider)))
+
+        assert spec.kind.value == PRESETS[provider]["transport"]
+        assert spec.provider == provider
+
+    @pytest.mark.parametrize(
+        ("provider", "field", "expected"),
+        [
+            ("minio", "region", "us-east-1"),
+            ("garage", "region", "garage"),
+            ("seaweedfs", "region", "us-east-1"),
+            ("hetzner_object_storage", "region", "fsn1"),
+            ("hetzner_storage_box", "port", 23),
+            ("koofr", "endpoint_url", "https://app.koofr.net/dav/Koofr"),
+        ],
+    )
+    def test_applies_researched_defaults_to_api_forms(self, provider, field, expected):
+        from app.modules.storage.storage_providers import (
+            parse_provider_config,
+            provider_fields,
+        )
+        from tests.fixtures.storage_presets import preset_configuration
+
+        raw = preset_configuration(provider)
+        raw.pop(field, None)
+
+        config = parse_provider_config(raw)
+
+        assert getattr(config, field) == expected
+        assert (
+            next(
+                entry.default
+                for entry in provider_fields(provider)
+                if entry.name == field
+            )
+            == expected
+        )
+
+    @pytest.mark.parametrize(
+        ("provider", "field", "override"),
+        [
+            ("garage", "region", "custom-region"),
+            ("hetzner_storage_box", "port", 22),
+            ("koofr", "endpoint_url", "https://dav.example.test/custom"),
+        ],
+    )
+    def test_preserves_explicit_preset_overrides(self, provider, field, override):
+        from app.modules.storage.storage_providers import parse_provider_config
+        from tests.fixtures.storage_presets import preset_configuration
+
+        spec = resolve_transport(
+            parse_provider_config({**preset_configuration(provider), field: override})
+        )
+
+        assert spec.options[field] == override
+
+    def test_derives_hetzner_object_storage_endpoint_from_location(self):
+        from app.modules.storage.storage_providers import parse_provider_config
+        from tests.fixtures.storage_presets import preset_configuration
+
+        raw = preset_configuration("hetzner_object_storage")
+        raw.pop("endpoint_url")
+
+        spec = resolve_transport(parse_provider_config({**raw, "region": "hel1"}))
+
+        assert spec.options["endpoint_url"] == "https://hel1.your-objectstorage.com"
+        assert spec.options["path_style"] is True
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "https://user:secret@dav.example.test",
+            "https://dav.example.test?token=secret",
+            "ftp://dav.example.test",
+            "https://dav.example.test/#secret",
+        ],
+    )
+    @pytest.mark.parametrize("provider", ["minio", "koofr"])
+    def test_rejects_unsafe_preset_endpoints(self, provider, endpoint):
+        from app.modules.storage.storage_providers import parse_provider_config
+        from tests.fixtures.storage_presets import preset_configuration
+
+        config = parse_provider_config(
+            {**preset_configuration(provider), "endpoint_url": endpoint}
+        )
+
+        with pytest.raises(ValueError, match="provider_endpoint_invalid"):
+            resolve_transport(config)
+
+    def test_requires_the_storage_box_host_key(self):
+        from app.modules.storage.storage_providers import parse_provider_config
+        from tests.fixtures.storage_presets import preset_configuration
+
+        config = parse_provider_config(
+            {**preset_configuration("hetzner_storage_box"), "host_key": ""}
+        )
+
+        with pytest.raises(ValueError, match="sftp_host_key_required"):
+            resolve_transport(config)
+
+    def test_delivery_is_independent_of_deletion_safety(self):
+        provider = next(entry for entry in provider_catalogue() if entry.id == "garage")
+
+        assert provider.expected_tier == "guarded"
+        assert provider.delivery.model_dump() == {
+            "signed_get": True,
+            "requires_endpoint_proof": True,
+            "requires_cors_proof": True,
+            "same_origin_fallback": True,
+        }
+        assert provider.uses["vault"].endpoint_proven is False
+
+    def test_preserves_google_drive_roles(self):
+        provider = next(entry for entry in provider_catalogue() if entry.id == "gdrive")
+
+        assert provider.uses["library"].supported is True
+        assert provider.uses["backup"].supported is True
+        assert provider.uses["vault"].supported is False
+        assert provider.delivery.signed_get is False
+
+    def test_missing_sftp_dependency_disables_storage_box(self, monkeypatch):
+        from app.modules.storage import storage_operations
+
+        monkeypatch.setattr(storage_operations, "find_spec", lambda name: None)
+
+        provider = next(
+            entry for entry in provider_catalogue() if entry.id == "hetzner_storage_box"
+        )
+
+        assert provider.selectable is False
+        assert provider.uses["backup"].reason == "storage_dependency_missing"
+
+    @pytest.mark.parametrize("provider", ["minio", "garage", "seaweedfs"])
+    def test_requires_self_hosted_preset_endpoints(self, provider):
+        from app.modules.storage.storage_providers import parse_provider_config
+        from tests.fixtures.storage_presets import preset_configuration
+
+        raw = preset_configuration(provider)
+        raw.pop("endpoint_url")
+
+        with pytest.raises(ValueError, match="s3_endpoint_required"):
+            resolve_transport(parse_provider_config(raw))
+
+    @pytest.mark.parametrize(
+        ("provider", "transport", "field", "value"),
+        [
+            ("truenas", "local", "data_dir", "/tmp/models"),
+            ("garage", "s3", "s3_bucket", "models"),
+            ("koofr", "webdav", "webdav_username", "owner"),
+            ("hetzner_storage_box", "sftp", "sftp_host", "box.example.test"),
+        ],
+    )
+    def test_loads_scalar_environment_presets(
+        self, monkeypatch, provider, transport, field, value
+    ):
+        from types import SimpleNamespace
+
+        values = dict(
+            storage_provider=provider,
+            storage_root="root",
+            data_dir="",
+            thumb_dir="",
+            s3_bucket="",
+            s3_region="",
+            s3_endpoint_url="",
+            s3_addressing_style="",
+            s3_access_key="",
+            s3_secret_key="",
+            webdav_endpoint_url="",
+            webdav_username="",
+            webdav_password="",
+            sftp_host="",
+            sftp_port="",
+            sftp_username="",
+            sftp_host_key="",
+            sftp_password="",
+            sftp_private_key_path="",
+            sftp_passphrase="",
+        )
+        values[field] = value
+        monkeypatch.setattr(runtime_config, "settings", SimpleNamespace(**values))
+
+        result = runtime_config._typed_environment_provider_config()
+
+        assert result["provider"] == provider
+        assert result[field.removeprefix(transport + "_")] == value
+
+    @pytest.mark.parametrize("region", ["auto", "../escape", "https://region"])
+    def test_rejects_invalid_hetzner_locations(self, region):
+        from app.modules.storage.storage_providers import parse_provider_config
+        from tests.fixtures.storage_presets import preset_configuration
+
+        config = parse_provider_config(
+            {**preset_configuration("hetzner_object_storage"), "region": region}
+        )
+
+        with pytest.raises(ValueError, match="s3_region_required"):
+            resolve_transport(config)
+
+    @pytest.mark.parametrize("provider", ["smb", "azure", "gcs", "dropbox"])
+    def test_keeps_deferred_transports_unavailable(self, provider):
+        from app.modules.storage.storage_providers import provider_transport
+
+        with pytest.raises(ValueError, match="storage_provider_unknown"):
+            provider_transport(provider)

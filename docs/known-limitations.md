@@ -289,3 +289,14 @@ manufacturing platform.
   material, or account for consumption across multiple spools in one print.
 - Multi-material G-code without a complete tool-to-feed mapping remains
   `unknown` rather than being declared compatible or mismatched.
+
+## Storage preset evidence
+
+Named [storage presets](./storage-providers.md) configure existing transports;
+they do not imply appliance certification. Mount SMB/NFS on the host before
+using NAS folder presets. A real transport test against Nextcloud, OpenSSH or
+SeaweedFS is not a hosted-account or hardware validation. Check the configured
+endpoint and permissions for every intended role. Google Drive remains beta for
+read-only Library sources and backup replicas; managed Vault use is unavailable.
+Signed browser downloads depend on endpoint and CORS proof independently of the
+active deletion safety tier.

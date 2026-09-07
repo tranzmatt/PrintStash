@@ -3,6 +3,31 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const messages = {
   en: {
+    "storage.preset.mounted":
+      "Mount the NAS SMB/NFS share on the PrintStash host and bind it into the container. Enter container paths. Existing files use a mounted Library source; backup folders use a mounted destination.",
+    "storage.preset.synology":
+      "Enable Synology WebDAV Server. Enter the HTTPS endpoint (default port 5006), including the shared folder, and an account with folder access. Reverse proxy ports can differ.",
+    "storage.preset.qnap":
+      "Enable WebDAV and folder permissions in QTS. Copy the configured HTTPS endpoint and port, including the shared folder. There is no universal NAS endpoint.",
+    "storage.preset.minio":
+      "Use the S3 API endpoint, usually port 9000, not the console. Enter bucket-scoped access and secret keys. Match the server region; path-style addressing is the default.",
+    "storage.preset.garage":
+      "Use the S3 API endpoint, usually port 3900, and the configured s3_region (commonly garage). Grant the access key access to the bucket. Path-style addressing is the default.",
+    "storage.preset.seaweedfs":
+      "Use the S3 gateway endpoint, usually port 8333. Configure access and secret keys on the gateway before exposing it. Path-style addressing is the default.",
+    "storage.preset.hetznerObject":
+      "Use the bucket location as region, for example fsn1, nbg1 or hel1. The endpoint defaults to https://REGION.your-objectstorage.com. Use Object Storage keys, not Storage Box credentials.",
+    "storage.preset.hetznerSftp":
+      "Enable SSH support for port 23. Copy the account or sub-account hostname and username. Verify and pin the SSH host key independently. Use a password or mounted private key; port 22 can be selected explicitly.",
+    "storage.preset.hetznerWebdav":
+      "Enable WebDAV and use https://HOSTNAME with the hostname, username and password assigned to the account or sub-account. HTTPS uses port 443. Choose a dedicated folder.",
+    "storage.preset.koofr":
+      "Use your Koofr email and an application-specific WebDAV password. The endpoint https://app.koofr.net/dav/Koofr is case-sensitive. The base folder is relative to this endpoint.",
+    "storage.preset.evidence":
+      "Transport tested. Validate your endpoint; appliance hardware and hosted accounts are not certified.",
+    "storage.preset.delivery":
+      "Direct downloads require endpoint and browser CORS checks. Same-origin downloads remain available. Download support does not grant deletion permission.",
+    "storage.preset.instructions": "Provider setup instructions",
     "setup.providerUnavailable": "Choose an available storage provider.",
     "setup.modelsReady": "Models in your library: {count}",
     "setup.previews": "Previews",
@@ -720,6 +745,31 @@ const messages = {
     "multipart.notFoundError": "This multipart model or collection no longer exists.",
   },
   es: {
+    "storage.preset.mounted":
+      "Monta el recurso SMB/NFS del NAS en el servidor de PrintStash y enlázalo al contenedor. Introduce rutas del contenedor. Los archivos existentes usan una biblioteca montada; las copias usan un destino montado.",
+    "storage.preset.synology":
+      "Activa WebDAV Server en Synology. Introduce el destino HTTPS (puerto predeterminado 5006), incluida la carpeta compartida, y una cuenta con acceso. El proxy inverso puede usar otro puerto.",
+    "storage.preset.qnap":
+      "Activa WebDAV y los permisos de carpeta en QTS. Copia el destino HTTPS y el puerto configurados, incluida la carpeta compartida. No existe un destino universal para NAS.",
+    "storage.preset.minio":
+      "Usa el destino de la API S3, normalmente el puerto 9000, no la consola. Introduce claves de acceso restringidas al bucket. La región debe coincidir con el servidor; el direccionamiento por ruta es el predeterminado.",
+    "storage.preset.garage":
+      "Usa el destino de la API S3, normalmente el puerto 3900, y el valor s3_region configurado (habitualmente garage). Autoriza la clave de acceso al bucket. Se usa direccionamiento por ruta.",
+    "storage.preset.seaweedfs":
+      "Usa el destino de la pasarela S3, normalmente el puerto 8333. Configura las claves de acceso en la pasarela antes de exponerla. Se usa direccionamiento por ruta.",
+    "storage.preset.hetznerObject":
+      "Usa la ubicación del bucket como región, por ejemplo fsn1, nbg1 o hel1. El destino predeterminado es https://REGION.your-objectstorage.com. Usa claves de Object Storage, no credenciales de Storage Box.",
+    "storage.preset.hetznerSftp":
+      "Activa SSH para el puerto 23. Copia el servidor y el usuario de la cuenta o subcuenta. Verifica y fija la clave SSH del servidor por separado. Usa una contraseña o clave privada montada; puedes elegir el puerto 22 explícitamente.",
+    "storage.preset.hetznerWebdav":
+      "Activa WebDAV y usa https://SERVIDOR con el servidor, usuario y contraseña de la cuenta o subcuenta. HTTPS usa el puerto 443. Elige una carpeta dedicada.",
+    "storage.preset.koofr":
+      "Usa tu correo de Koofr y una contraseña específica de aplicación para WebDAV. El destino https://app.koofr.net/dav/Koofr distingue mayúsculas. La carpeta base es relativa a este destino.",
+    "storage.preset.evidence":
+      "Transporte probado. Valida tu destino; no se certifican dispositivos NAS ni cuentas alojadas.",
+    "storage.preset.delivery":
+      "Las descargas directas requieren comprobar el destino y CORS del navegador. Las descargas del mismo origen siguen disponibles. Poder descargar no otorga permiso para eliminar.",
+    "storage.preset.instructions": "Instrucciones del proveedor",
     "setup.providerUnavailable": "Elige un proveedor de almacenamiento disponible.",
     "setup.modelsReady": "Modelos en tu biblioteca: {count}",
     "setup.previews": "Vistas previas",

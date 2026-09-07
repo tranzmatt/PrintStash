@@ -15,6 +15,8 @@
 
 ### Added
 
+- **Storage presets:** Synology, TrueNAS, QNAP and Unraid mounted-folder guidance; explicit Synology/QNAP WebDAV, MinIO, Garage, SeaweedFS, Hetzner Object Storage, Storage Box SFTP/WebDAV, and Koofr connections. Presets reuse existing transports and encrypted credentials, with endpoint validation and separate delivery/safety facts.
+
 - Successful browser-extension CI jobs provide the validated Chrome Web Store
   ZIP as a direct download, retained for 30 days.
 

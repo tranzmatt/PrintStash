@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { StorageProviderGuidance } from "@/components/storage-provider-guidance";
 import { Input, inputClasses } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { providerFields } from "@/lib/storage-provider-form";
@@ -26,6 +27,7 @@ export function StorageProviderFields({
   const prefix = useId();
   return (
     <div className="grid gap-4 sm:grid-cols-2">
+      <StorageProviderGuidance provider={provider} />
       {providerFields(provider, use).map((field) => {
         const stored = field.secret && storedSecrets.includes(field.name);
         const id = `${prefix}-${field.name}`;
