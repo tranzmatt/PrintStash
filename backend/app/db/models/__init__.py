@@ -32,6 +32,9 @@ from .backups import (
 from .base import (
     SQLModel as SQLModel,
 )
+from .capacity import CapacityLock as CapacityLock
+from .capacity import CapacityReservation as CapacityReservation
+from .capacity import StorageInventorySample as StorageInventorySample
 from .identity import (
     ApiKey as ApiKey,
 )

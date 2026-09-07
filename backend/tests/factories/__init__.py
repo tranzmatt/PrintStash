@@ -231,3 +231,10 @@ __all__ = [
     "tag_file",
     "unique_hash",
 ]
+from tests.factories.capacity import (
+    build_capacity_lock,
+    build_capacity_reservation,
+    build_storage_inventory_sample,
+)
+
+__all__ += ["build_capacity_lock", "build_capacity_reservation", "build_storage_inventory_sample"]

@@ -9,6 +9,7 @@ class ErrorKind(Enum):
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"
     GONE = "gone"
+    CAPACITY = "capacity"
     TOO_LARGE = "too_large"
     UNPROCESSABLE = "unprocessable"
     BUSY = "busy"

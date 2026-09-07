@@ -484,3 +484,14 @@ def make_audit_policy(db_session: Session) -> Any:
 @pytest.fixture
 def make_audit_event(db_session: Session) -> Any:
     return _bound(factories.build_audit_event, db_session)
+@pytest.fixture
+def make_capacity_reservation(db_session):
+    return _bound(factories.build_capacity_reservation, db_session)
+
+@pytest.fixture
+def make_storage_inventory_sample(db_session):
+    return _bound(factories.build_storage_inventory_sample, db_session)
+
+@pytest.fixture
+def make_capacity_lock(db_session):
+    return _bound(factories.build_capacity_lock, db_session)

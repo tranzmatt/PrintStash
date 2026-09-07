@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     storage_allow_unverified: bool = False
     data_dir: Path = Path("/data/files")
     thumb_dir: Path = Path("/data/thumbs")
+    storage_min_free_bytes: int = Field(default=1024**3, ge=0)
     staging_dir: Path = Path("/data/staging")
 
     s3_bucket: str = ""
