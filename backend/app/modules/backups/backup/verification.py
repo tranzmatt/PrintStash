@@ -52,6 +52,7 @@ def verify_backup(
     archive_path: Path | None = None,
     record_audit: bool = True,
     progress: Callable[[int], None] | None = None,
+    allocate: Callable[[int], None] | None = None,
 ) -> _contracts_module.BackupVerification:
     """Validate archive structure, manifest membership, sizes, and safe paths."""
     explicit_archive = archive_path is not None
@@ -115,6 +116,8 @@ def verify_backup(
                         {"code": "backup_manifest_invalid", "member": "db.sqlite3"}
                     )
                 else:
+                    if allocate is not None:
+                        allocate(db_member.size)
                     fd, raw_db = tempfile.mkstemp(prefix=".printstash-verify-db-")
                     os.close(fd)
                     db_path = Path(raw_db)
@@ -304,6 +307,7 @@ def verify_backup_ownership(
     ownership_id: int,
     *,
     progress: Callable[[int], None] | None = None,
+    allocate: Callable[[int], None] | None = None,
     fresh_remote: bool = False,
 ) -> _contracts_module.BackupOwnershipVerification:
     """Verify one exact committed backup receipt without discovery/listing.
@@ -389,6 +393,7 @@ def verify_backup_ownership(
             archive_path=archive,
             record_audit=False,
             progress=progress,
+            allocate=allocate,
         )
     except FileNotFoundError as exc:
         return _contracts_module.BackupOwnershipVerification(

@@ -50,6 +50,8 @@ export function listAuditPolicies(): Promise<AuditPolicy[]> {
 export function saveAuditPolicy(policy: AuditPolicy): Promise<AuditPolicy> {
   const {
     mode,
+    estimated_remote_bytes: _estimated,
+    overdue: _overdue,
     revision: _revision,
     next_due_at: _next,
     last_attempt_at: _attempt,

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.time import ensure_utc, utcnow
 from app.db.models import VaultAuditPolicy
 
 
@@ -52,6 +53,8 @@ class AuditPolicyUpdate(BaseModel):
 
 
 class AuditPolicyRead(AuditPolicyUpdate):
+    estimated_remote_bytes: int = 0
+    overdue: bool = False
     mode: str
     revision: int
     next_due_at: datetime | None
@@ -60,8 +63,21 @@ class AuditPolicyRead(AuditPolicyUpdate):
     deferred_reason: str | None
 
 
-def policy_read(row: VaultAuditPolicy) -> AuditPolicyRead:
+def policy_read(
+    row: VaultAuditPolicy, *, estimated_remote_bytes: int = 0
+) -> AuditPolicyRead:
     values = row.model_dump(
         exclude={"repair_actions_json", "requested_by", "updated_at"}
     )
-    return AuditPolicyRead(**values, repair_actions=json.loads(row.repair_actions_json))
+    return AuditPolicyRead(
+        **values,
+        repair_actions=json.loads(row.repair_actions_json),
+        estimated_remote_bytes=estimated_remote_bytes,
+        overdue=bool(
+            row.enabled
+            and not row.paused
+            and row.next_due_at is not None
+            and utcnow()
+            > ensure_utc(row.next_due_at) + timedelta(minutes=row.window_minutes)
+        ),
+    )

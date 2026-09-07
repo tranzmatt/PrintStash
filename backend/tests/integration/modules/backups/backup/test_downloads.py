@@ -180,3 +180,32 @@ class TestVerifiedDownload:
         proof.meta.path = str(proof.env.backup_dir / "missing.tar.gz")
         with pytest.raises(FileNotFoundError):
             downloads._download_backup_to_local(proof.meta)
+
+
+class TestAuthoritativeAuditDownload:
+    def test_detects_corruption_despite_a_valid_cache(self, remote_archive):
+        proof = remote_archive()
+        proof.head()
+        proof.get()
+        proof.head()
+        cached = downloads._download_backup_to_local(proof.meta)
+        assert cached.read_bytes() == proof.payload
+        proof.head()
+        corrupted_body = proof.get(payload=b"x" * len(proof.payload))
+        with pytest.raises(RuntimeError, match="backup_download_digest_mismatch"):
+            downloads._download_backup_to_local(proof.meta, fresh_remote=True)
+        assert corrupted_body.closed
+        assert not cached.exists()
+
+    def test_stops_download_on_window_expiry(self, remote_archive):
+        proof = remote_archive()
+        proof.head()
+        body = proof.get()
+
+        def cancel(_size):
+            raise RuntimeError("audit_window_expired")
+
+        with pytest.raises(RuntimeError, match="audit_window_expired"):
+            downloads._download_backup_to_local(proof.meta, progress=cancel)
+        assert body.closed
+        assert list(proof.env.backup_dir.glob(".printstash-backup-download-*")) == []

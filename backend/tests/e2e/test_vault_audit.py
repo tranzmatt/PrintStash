@@ -113,3 +113,118 @@ class TestVaultAudit:
         assert "thumbnail_missing" not in {
             item["code"] for item in healthy.json()["findings"]
         }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "repair_action, code",
+    [
+        ("reparse_metadata", "metadata_missing"),
+        ("regenerate_thumbnail", "thumbnail_missing"),
+    ],
+)
+async def test_scheduled_audit_records_verified_recovery(
+    api, tmp_path, e2e_db, repair_action, code
+):
+    from app.core.time import utcnow
+    from app.db.models import Metadata, VaultAuditEvent, VaultAuditPolicy
+    from app.runtime.audit_scheduler import run_due_audit
+
+    headers = await _setup_and_login(api, tmp_path)
+    upload = await api.post(
+        "/api/v1/ingest/model",
+        files={"file": ("scheduled.stl", _STL, "model/stl")},
+        data={"model_name": "Scheduled fixture"},
+        headers=headers,
+    )
+    assert (await _await_job(api, headers, upload.json()["job_id"]))[
+        "state"
+    ] == "completed"
+    if repair_action == "reparse_metadata":
+        for metadata in e2e_db.exec(select(Metadata)).all():
+            e2e_db.delete(metadata)
+        e2e_db.commit()
+    else:
+        model = e2e_db.exec(select(Model)).one()
+        Path(model.thumbnail_path).unlink()
+    now = utcnow()
+    response = await api.put(
+        "/api/v1/maintenance/audit-policies/quick",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_time": now.strftime("%H:%M"),
+            "auto_repair": True,
+            "repair_actions": [repair_action],
+        },
+    )
+    assert response.status_code == 200, response.text
+    policy = e2e_db.get(VaultAuditPolicy, "quick")
+    policy.next_due_at = now
+    e2e_db.add(policy)
+    e2e_db.commit()
+    run_id = await asyncio.to_thread(run_due_audit, now=now)
+    assert run_id is not None
+    audited = await api.get(f"/api/v1/maintenance/audits/{run_id}", headers=headers)
+    assert audited.json()["state"] == "completed", audited.text
+    finding = next(row for row in audited.json()["findings"] if row["code"] == code)
+    assert finding["state"] == "resolved"
+    events = e2e_db.exec(
+        select(VaultAuditEvent).where(VaultAuditEvent.run_id == run_id)
+    ).all()
+    assert {row.event_type for row in events} == {
+        "storage_regression",
+        "storage_recovery",
+    }
+    assert e2e_db.exec(select(Metadata)).first() is not None
+
+
+@pytest.mark.asyncio
+async def test_scheduled_full_audit_finds_authoritative_corruption(
+    api, tmp_path, e2e_db
+):
+    from app.core.time import utcnow
+    from app.db.models import File, VaultAuditEvent, VaultAuditPolicy
+    from app.runtime.audit_scheduler import run_due_audit
+
+    headers = await _setup_and_login(api, tmp_path)
+    upload = await api.post(
+        "/api/v1/ingest/model",
+        files={"file": ("corrupt.stl", _STL, "model/stl")},
+        data={"model_name": "Corrupt fixture"},
+        headers=headers,
+    )
+    assert (await _await_job(api, headers, upload.json()["job_id"]))[
+        "state"
+    ] == "completed"
+    artifact = e2e_db.exec(select(File)).one()
+    original = Path(artifact.path).read_bytes()
+    Path(artifact.path).write_bytes(b"X" + original[1:])
+    now = utcnow()
+    response = await api.put(
+        "/api/v1/maintenance/audit-policies/full",
+        headers=headers,
+        json={
+            "enabled": True,
+            "cadence": "monthly",
+            "full_cost_acknowledged": True,
+            "start_time": now.strftime("%H:%M"),
+        },
+    )
+    assert response.status_code == 200, response.text
+    policy = e2e_db.get(VaultAuditPolicy, "full")
+    policy.next_due_at = now
+    e2e_db.add(policy)
+    e2e_db.commit()
+    run_id = await asyncio.to_thread(run_due_audit, now=now)
+    audited = await api.get(f"/api/v1/maintenance/audits/{run_id}", headers=headers)
+    assert "owned_blob_hash_mismatch" in {
+        row["code"] for row in audited.json()["findings"]
+    }
+    assert any(
+        row.event_type == "storage_regression"
+        for row in e2e_db.exec(
+            select(VaultAuditEvent).where(VaultAuditEvent.run_id == run_id)
+        ).all()
+    )
+    assert Path(artifact.path).read_bytes() == b"X" + original[1:]

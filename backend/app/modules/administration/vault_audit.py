@@ -5,8 +5,9 @@ import json
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 import app.modules.backups.backup.targets as backup_targets
 import app.modules.backups.backup.verification as backup_verification
@@ -41,6 +42,9 @@ from app.modules.storage.artifact_content import ArtifactContentError, resolve
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_utils import OwnedBlob, ownership_snapshot
 from app.schemas.maintenance import VaultAuditFindingRead, VaultAuditRunRead
+
+if TYPE_CHECKING:
+    from app.modules.storage.capacity import CapacityReservationHandle
 
 _ACTIVE_STATES = (VaultAuditRunState.PENDING, VaultAuditRunState.RUNNING)
 logger = get_logger(__name__)
@@ -203,18 +207,31 @@ def request_cancel(session: Session, run_id: int) -> VaultAuditRun | None:
 
 
 def reconcile_interrupted_runs() -> int:
-    with get_session_factory().scoped_session() as session:
+    from app.modules.storage.capacity import CapacityManager
+
+    factory = get_session_factory()
+    with factory.scoped_session() as session:
         rows = session.exec(
             select(VaultAuditRun).where(VaultAuditRun.state.in_(_ACTIVE_STATES))
-        ).all()
+        ).all()  # type: ignore[attr-defined]
+        interrupted = len(rows)
         for row in rows:
-            row.active_slot = None
             row.state = VaultAuditRunState.FAILED
             row.error_code = "audit_interrupted"
             row.finished_at = utcnow()
             session.add(row)
+        claims = session.exec(
+            select(VaultAuditRun).where(col(VaultAuditRun.active_slot).is_not(None))
+        ).all()  # noqa: E711
+        run_ids = [row.id for row in claims]
+        for row in claims:
+            row.active_slot = None
+            session.add(row)
         session.commit()
-        return len(rows)
+    manager = CapacityManager(factory)
+    for run_id in run_ids:
+        manager.release(f"audit:{run_id}")
+    return interrupted
 
 
 def _add(
@@ -249,12 +266,17 @@ def _add(
 
 def _cancelled(session: Session, run: VaultAuditRun) -> bool:
     session.refresh(run)
+    from app.runtime.maintenance import restore_in_progress
+
+    maintenance = restore_in_progress()
     expired = run.deadline_at is not None and utcnow() >= ensure_utc(run.deadline_at)
-    if not run.cancel_requested and not expired:
+    if not run.cancel_requested and not expired and not maintenance:
         return False
     run.active_slot = None
     if expired:
         run.error_code = "audit_window_expired"
+    elif maintenance:
+        run.error_code = "audit_maintenance"
     run.state = VaultAuditRunState.CANCELLED
     run.finished_at = utcnow()
     run.current_phase = "cancelled"
@@ -601,7 +623,12 @@ def _check_background_jobs(session: Session, run: VaultAuditRun) -> None:
         )
 
 
-def _check_backups(session: Session, run: VaultAuditRun) -> None:
+def _check_backups(
+    session: Session,
+    run: VaultAuditRun,
+    *,
+    capacity: CapacityReservationHandle | None = None,
+) -> None:
 
     run.current_phase = "backups"
     # Audit the ownership ledger directly. Discovery/listing is a presentation
@@ -624,6 +651,22 @@ def _check_backups(session: Session, run: VaultAuditRun) -> None:
         return
     started = time.monotonic()
     consumed = 0
+    base_resources = list(capacity.resources) if capacity is not None else []
+
+    def allocate(size: int) -> None:
+        import tempfile
+
+        from app.modules.storage.capacity import CapacityResource
+
+        if capacity is not None:
+            capacity.renew(
+                [
+                    *base_resources,
+                    CapacityResource.for_path(
+                        Path(tempfile.gettempdir()), size, role="audit-database"
+                    ),
+                ]
+            )
 
     def progress(size: int) -> None:
         nonlocal consumed
@@ -654,7 +697,7 @@ def _check_backups(session: Session, run: VaultAuditRun) -> None:
         try:
             result = (
                 backup_verification.verify_backup_ownership(
-                    int(row.id), progress=progress, fresh_remote=True
+                    int(row.id), progress=progress, fresh_remote=True, allocate=allocate
                 )
                 if run.trigger == "scheduled"
                 else backup_verification.verify_backup_ownership(int(row.id))
@@ -727,6 +770,42 @@ def _check_backups(session: Session, run: VaultAuditRun) -> None:
 
 
 def execute_run(run_id: int) -> None:
+    from app.core.errors import OperationError
+    from app.modules.administration.vault_audit_capacity import estimate_resources
+    from app.modules.storage.capacity import CapacityManager
+    from app.runtime.maintenance import begin_mutating_operation, end_mutating_operation
+
+    if not begin_mutating_operation():
+        return
+    try:
+        factory = get_session_factory()
+        try:
+            with factory.scoped_session() as session:
+                run = session.get(VaultAuditRun, run_id)
+                if run is None or run.state != VaultAuditRunState.PENDING:
+                    return
+                resources = estimate_resources(session, run)
+            with CapacityManager(factory).hold(
+                f"audit:{run_id}", resources
+            ) as capacity:
+                _execute_run(run_id, capacity=capacity)
+        except OperationError as exc:
+            with factory.scoped_session() as session:
+                run = session.get(VaultAuditRun, run_id)
+                if run is not None:
+                    run.state = VaultAuditRunState.FAILED
+                    run.error_code = exc.code
+                    run.active_slot = None
+                    run.finished_at = utcnow()
+                    session.add(run)
+                    session.commit()
+    finally:
+        end_mutating_operation()
+
+
+def _execute_run(
+    run_id: int, *, capacity: CapacityReservationHandle | None = None
+) -> None:
     with get_session_factory().scoped_session() as session:
         run = session.get(VaultAuditRun, run_id)
         if run is None or run.state != VaultAuditRunState.PENDING:
@@ -737,6 +816,8 @@ def execute_run(run_id: int) -> None:
         session.add(run)
         session.commit()
         try:
+            if _cancelled(session, run):
+                return
             snapshot = ownership_snapshot(session)
             if not _check_primary(session, run, snapshot.primary):
                 return
@@ -790,7 +871,7 @@ def execute_run(run_id: int) -> None:
                 )
             _check_background_jobs(session, run)
             if run.mode == VaultAuditMode.FULL:
-                _check_backups(session, run)
+                _check_backups(session, run, capacity=capacity)
                 if run.state == VaultAuditRunState.CANCELLED:
                     return
             if _cancelled(session, run):
@@ -880,7 +961,7 @@ def _reparse_metadata(session: Session, file_id: int) -> bool:
     try:
         with resolve(row).materialize() as path:
             strategy = strategy_for_artifact(row.file_type)
-            values, _thumbnail = strategy.process(path)
+            values, _thumbnail = strategy.process(path, lambda _label: None)
     except ArtifactContentError:
         return False
     fields = {

@@ -94,8 +94,13 @@ def summary_lines(context: NotificationContext) -> list[str]:
     lines: list[str] = []
     if context.get("event") in {"storage_regression", "storage_recovery"}:
         summary = context.get("summary", {})
-        return [f"Audit: {context.get('audit_mode', 'vault')} #{context.get('audit_run_id', '')}",
-                *[f"{key.title()}: {summary.get(key, 0)}" for key in ("new", "worsened", "resolved", "improved")]]
+        return [
+            f"Audit: {context.get('audit_mode', 'vault')} #{context.get('audit_run_id', '')}",
+            *[
+                f"{key.title()}: {summary.get(key, 0)}"
+                for key in ("new", "worsened", "resolved", "improved")
+            ],
+        ]
     printer = context.get("printer_name") or context.get("printer_id")
     if printer:
         lines.append(f"Printer: {printer}")

@@ -270,8 +270,11 @@ def _spoolman_probe() -> dict:
 def health_details() -> dict:
     from app.modules.administration.vault_audit_policy import health as audit_health
 
-    with get_session_factory().scoped_session() as session:
-        audits = audit_health(session)
+    try:
+        with get_session_factory().scoped_session() as session:
+            audits = audit_health(session)
+    except Exception:
+        audits = {"ok": False, "error": "audit_health_unavailable"}
     out = {
         "status": "ok",
         "name": settings.app_name,

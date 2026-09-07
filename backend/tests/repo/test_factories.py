@@ -599,3 +599,20 @@ class TestManufacturingFactories:
             db_session, build, model, quantity=4
         )
         assert part.required_units == 12
+
+
+class TestAuditFactories:
+    def test_disabled_policy_is_not_due(self, db_session):
+        from app.modules.administration.vault_audit_policy import claim_due
+
+        user = factories.build_user(db_session)
+        factories.build_audit_policy(db_session, user, next_due_at=utcnow())
+        assert claim_due(db_session) is None
+
+    def test_events_have_independent_dedup_identities(self, db_session):
+        from app.db.models import VaultAuditEvent
+
+        run = factories.build_audit_run(db_session, factories.build_user(db_session))
+        factories.build_audit_event(db_session, run)
+        factories.build_audit_event(db_session, run)
+        assert len(db_session.exec(select(VaultAuditEvent)).all()) == 2

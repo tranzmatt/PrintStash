@@ -163,11 +163,6 @@ def _make_file(session: Session, model: Model, **overrides) -> File:
 # --------------------------------------------------------------------------- #
 
 
-class _StubStrategy:
-    def process(self, _path):
-        return {"material_type": "PLA", "not_a_real_field": "ignored"}, b""
-
-
 # --------------------------------------------------------------------------- #
 # ownership_snapshot — id-less rows and id-mismatched embedded image refs
 # --------------------------------------------------------------------------- #
@@ -1391,11 +1386,8 @@ class TestReparseMetadata:
         file_row = _make_file(
             db_session, model, path="reparse-ok.gcode", file_type=FileType.GCODE
         )
-        get_backend().write_bytes(b"G28\n", file_row.path)
+        get_backend().write_bytes(b"; filament_type = PLA\nG28\n", file_row.path)
 
-        monkeypatch.setattr(
-            "app.modules.ingestion.ingestion._gcode_strategy", lambda: _StubStrategy()
-        )
 
         result = vault_audit._reparse_metadata(db_session, file_row.id)
 
@@ -1428,9 +1420,6 @@ class TestReparseMetadata:
             is_external=True,
             size_bytes=len(payload),
             sha256=hashlib.sha256(payload).hexdigest(),
-        )
-        monkeypatch.setattr(
-            "app.modules.ingestion.ingestion._gcode_strategy", lambda: _StubStrategy()
         )
         monkeypatch.setattr(
             vault_audit,

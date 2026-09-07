@@ -390,3 +390,32 @@ export function aMultipartModel(
     ...override,
   };
 }
+
+export function anAuditPolicy(
+  overrides: Partial<import("@/types/maintenance").AuditPolicy> = {},
+): import("@/types/maintenance").AuditPolicy {
+  return {
+    estimated_remote_bytes: 0,
+    overdue: false,
+    mode: "quick",
+    enabled: false,
+    paused: false,
+    cadence: "weekly",
+    timezone: "UTC",
+    weekday: 6,
+    month_day: 1,
+    start_time: "02:00",
+    window_minutes: 120,
+    bytes_per_second: 10485760,
+    read_concurrency: 1,
+    auto_repair: false,
+    repair_actions: [],
+    full_cost_acknowledged: false,
+    revision: 1,
+    next_due_at: null,
+    last_attempt_at: null,
+    last_success_at: null,
+    deferred_reason: null,
+    ...overrides,
+  };
+}

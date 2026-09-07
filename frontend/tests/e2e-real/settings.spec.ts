@@ -477,3 +477,43 @@ test.describe("settings", () => {
     await page.getByRole("button", { name: "Save retention" }).click();
   });
 });
+
+test("audit schedule persists after reload", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "Maintenance", exact: true }).click();
+  const form = page.getByRole("form", { name: "Quick audit schedule" });
+  const enabled = form.getByRole("checkbox", { name: "Enabled" });
+  if ((await enabled.getAttribute("aria-checked")) !== "true") await enabled.click();
+  const paused = form.getByRole("checkbox", { name: "Paused" });
+  if ((await paused.getAttribute("aria-checked")) !== "true") await paused.click();
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("/maintenance/audit-policies/quick") &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    ),
+    form.getByRole("button", { name: "Save schedule" }).click(),
+  ]);
+  await page.reload();
+  await page.getByRole("button", { name: "Maintenance", exact: true }).click();
+  await expect(form.getByRole("checkbox", { name: "Enabled" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(form.getByRole("checkbox", { name: "Paused" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  // Restore the safe default in the shared backend after proving persistence.
+  await enabled.click();
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("/maintenance/audit-policies/quick") &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    ),
+    form.getByRole("button", { name: "Save schedule" }).click(),
+  ]);
+});

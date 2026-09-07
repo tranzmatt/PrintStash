@@ -15,6 +15,8 @@
 
 ### Added
 
+- Optional scheduled Quick and Full Vault audits with maintenance windows, safe regression and recovery alerts, history, and verified opt-in derived-data repair.
+
 - Successful browser-extension CI jobs provide the validated Chrome Web Store
   ZIP as a direct download, retained for 30 days.
 

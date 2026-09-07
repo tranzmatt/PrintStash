@@ -28,3 +28,9 @@ def test_classifies_regressions():
         {"worse": 1, "same": 2, "better": 3, "gone": 2},
         {"worse": 2, "same": 2, "better": 1, "new": 3},
     ) == {"new": 1, "worsened": 1, "unchanged": 1, "improved": 1, "resolved": 1}
+
+
+def test_skipped_calendar_date_advances_to_valid_instant():
+    assert window_start(date(2011, 12, 30), "02:30", "Pacific/Apia") == datetime(
+        2011, 12, 30, 10, tzinfo=UTC
+    )

@@ -529,3 +529,24 @@ class TestRender:
     def test_treats_a_blank_setting_as_missing(self, value: str) -> None:
         with pytest.raises(RenderError):
             render(NotificationTarget.NTFY, _context(), {"topic": value})
+
+
+@pytest.mark.parametrize(
+    "event",
+    [NotificationEventType.STORAGE_REGRESSION, NotificationEventType.STORAGE_RECOVERY],
+)
+def test_renders_storage_summary_without_a_print_job(event):
+    context = {
+        "event": event.value,
+        "audit_mode": "full",
+        "audit_run_id": 42,
+        "summary": {"new": 2, "worsened": 1, "resolved": 3, "improved": 0},
+    }
+    assert event_label(context).startswith("Vault audit")
+    assert summary_lines(context) == [
+        "Audit: full #42",
+        "New: 2",
+        "Worsened: 1",
+        "Resolved: 3",
+        "Improved: 0",
+    ]

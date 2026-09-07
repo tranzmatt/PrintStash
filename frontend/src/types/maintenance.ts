@@ -80,6 +80,8 @@ export interface BackupVerification {
 }
 
 export interface AuditPolicy {
+  estimated_remote_bytes?: number;
+  overdue?: boolean;
   mode: VaultAuditMode;
   enabled: boolean;
   paused: boolean;

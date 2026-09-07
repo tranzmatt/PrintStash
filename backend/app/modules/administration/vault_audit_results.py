@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.core.time import ensure_utc, utcnow
 from app.db.models import (
     File,
     Metadata,
+    Model,
     NotificationEventType,
     VaultAuditEvent,
     VaultAuditFinding,
@@ -81,6 +83,7 @@ def record_event(
     *,
     phase: str = "result",
 ) -> None:
+    assert run.id is not None
     key = f"audit:{run.id}:{phase}:{event_type.value}"
     if (
         session.exec(
@@ -106,6 +109,8 @@ def record_success(session: Session, run: VaultAuditRun) -> None:
     """Caller commits run completion, baseline and outbox as one transaction."""
     if run.state != VaultAuditRunState.COMPLETED or run.result_recorded:
         return
+    assert run.id is not None
+    assert run.finished_at is not None
     baseline = session.exec(
         select(VaultAuditRun)
         .where(
@@ -114,9 +119,9 @@ def record_success(session: Session, run: VaultAuditRun) -> None:
             VaultAuditRun.scope == run.scope,
             VaultAuditRun.storage_generation == run.storage_generation,
             VaultAuditRun.state == VaultAuditRunState.COMPLETED,
-            VaultAuditRun.result_recorded.is_(True),
+            col(VaultAuditRun.result_recorded).is_(True),
         )
-        .order_by(VaultAuditRun.finished_at.desc(), VaultAuditRun.id.desc())
+        .order_by(col(VaultAuditRun.finished_at).desc(), col(VaultAuditRun.id).desc())
     ).first()  # noqa: E712
     run.baseline_run_id = baseline.id if baseline else None
     # Save the immutable observation, so later manual repairs cannot rewrite history.
@@ -126,7 +131,8 @@ def record_success(session: Session, run: VaultAuditRun) -> None:
     snapshot = finding_snapshot(session, run.id)
     summary = compare(previous, snapshot)
     run.regression_json = json.dumps(
-        {"snapshot": snapshot, "summary": summary}, sort_keys=True
+        {"snapshot": snapshot, "observed_snapshot": snapshot, "summary": summary},
+        sort_keys=True,
     )
     run.result_recorded = True
     if summary["new"] or summary["worsened"]:
@@ -139,16 +145,33 @@ def record_success(session: Session, run: VaultAuditRun) -> None:
         if (
             policy.next_due_at is not None
             and run.started_at is not None
-            and ensure_utc(run.started_at) >= ensure_utc(policy.next_due_at)
+            and ensure_utc(policy.next_due_at)
+            <= ensure_utc(run.started_at)
+            < next_slot(policy, policy.next_due_at)
         ):
             policy.next_due_at = next_slot(policy, ensure_utc(run.finished_at))
         session.add(policy)
     session.add(run)
 
 
-def _authoritative_hash(file: File) -> str:
+def _authoritative_hash(file: File, run: VaultAuditRun, session: Session) -> str:
     digest = hashlib.sha256()
+    started = time.monotonic()
+    consumed = 0
     for chunk in get_backend().stream_chunks(file.path):
+        session.refresh(run)
+        if run.cancel_requested:
+            raise ValueError("audit_cancelled")
+        consumed += len(chunk)
+        if run.bytes_per_second:
+            delay = consumed / run.bytes_per_second - (time.monotonic() - started)
+            while delay > 0:
+                if run.deadline_at is not None and utcnow() >= ensure_utc(
+                    run.deadline_at
+                ):
+                    raise ValueError("audit_window_expired")
+                time.sleep(min(delay, 0.2))
+                delay = consumed / run.bytes_per_second - (time.monotonic() - started)
         digest.update(chunk)
     return digest.hexdigest()
 
@@ -162,6 +185,7 @@ def repair_safe_findings(session: Session, run: VaultAuditRun) -> None:
     from app.modules.media.thumbnail_engine import ThumbnailEngine
     from app.modules.media.thumbnail_generations import ensure_thumbnail
 
+    assert run.id is not None
     allowed = set(json.loads(run.repair_actions_json)) & SAFE_REPAIR_ACTIONS
     if not allowed:
         return
@@ -172,6 +196,9 @@ def repair_safe_findings(session: Session, run: VaultAuditRun) -> None:
             VaultAuditFinding.state == VaultAuditFindingState.OPEN,
         )
     ).all():
+        session.refresh(run)
+        if run.cancel_requested:
+            break
         if finding.repair_action not in allowed:
             continue
         if run.deadline_at is not None and utcnow() >= ensure_utc(run.deadline_at):
@@ -187,11 +214,16 @@ def repair_safe_findings(session: Session, run: VaultAuditRun) -> None:
             or file.is_external
             or file.deleted_at is not None
             or not file.sha256
+            or get_backend().direct_path(file.path) is None
         ):
             continue
+        model = session.get(Model, file.model_id)
+        if model is None or model.deleted_at is not None:
+            continue
+        assert file.id is not None
         ok = False
         try:
-            if _authoritative_hash(file) != file.sha256.lower():
+            if _authoritative_hash(file, run, session) != file.sha256.lower():
                 continue
             if (
                 finding.repair_action == "reparse_metadata"
@@ -204,7 +236,9 @@ def repair_safe_findings(session: Session, run: VaultAuditRun) -> None:
                     is None
                 ):
                     with get_backend().local_path(file.path) as path:
-                        values, _ = strategy_for_artifact(file.file_type).process(path)
+                        values, _ = strategy_for_artifact(file.file_type).process(
+                            path, lambda _label: None
+                        )
                     session.add(
                         Metadata(
                             file_id=file.id,
@@ -242,7 +276,7 @@ def repair_safe_findings(session: Session, run: VaultAuditRun) -> None:
                     ):
                         image.verify()
                     ok = True
-            ok = ok and _authoritative_hash(file) == file.sha256.lower()
+            ok = ok and _authoritative_hash(file, run, session) == file.sha256.lower()
         except Exception:
             session.rollback()
             ok = False

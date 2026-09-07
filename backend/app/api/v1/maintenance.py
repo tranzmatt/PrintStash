@@ -106,7 +106,15 @@ def ignore_finding(
 def audit_policies(
     _user: User = Depends(require_superuser), session: Session = Depends(get_session)
 ) -> list[AuditPolicyRead]:
-    return [policy_read(row) for row in vault_audit_policy.list_policies(session)]
+    return [
+        policy_read(
+            row,
+            estimated_remote_bytes=vault_audit_policy.estimated_remote_bytes(
+                session, VaultAuditMode(row.mode)
+            ),
+        )
+        for row in vault_audit_policy.list_policies(session)
+    ]
 
 
 @router.put("/audit-policies/{mode}", response_model=AuditPolicyRead)
@@ -117,7 +125,9 @@ def save_audit_policy(
     session: Session = Depends(get_session),
 ) -> AuditPolicyRead:
     return policy_read(
-        vault_audit_policy.update_policy(session, mode, payload.model_dump(), user.id)
+        vault_audit_policy.update_policy(
+            session, mode, payload.model_dump(exclude_unset=True), user.id
+        )
     )
 
 

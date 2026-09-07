@@ -232,6 +232,10 @@ def _download_backup_to_local(
         local_path = cache_dir / f"{cache_identity}-{archive_name}"
         if fresh_remote and local_path.exists():
             _caches_module.cleanup_backup_cache(local_path)
+            if local_path.exists():
+                raise _contracts_module.BackupOwnershipError(
+                    "backup_cache_ownership_unverified"
+                )
         if local_path.exists():
             if (
                 not owned.sha256
@@ -309,6 +313,10 @@ def _download_backup_to_local(
         settings.backup_dir.mkdir(parents=True, exist_ok=True)
         if fresh_remote and local_path.exists():
             _caches_module.cleanup_backup_cache(local_path)
+            if local_path.exists():
+                raise _contracts_module.BackupOwnershipError(
+                    "backup_cache_ownership_unverified"
+                )
         if local_path.exists():
             try:
                 existing_hash = _archive_format_module._sha256_path(local_path)

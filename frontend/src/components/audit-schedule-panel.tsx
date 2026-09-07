@@ -9,6 +9,7 @@ import {
   saveAuditPolicy,
   skipAuditSlot,
 } from "@/lib/api/maintenance";
+import { formatBytes } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import type { AuditPolicy, VaultAuditRun } from "@/types/maintenance";
 
@@ -21,7 +22,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
   const [policy, setPolicy] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const title = policy.mode === "quick" ? t("auditSchedule.1") : t("auditSchedule.2");
+  const title = policy.mode === "quick" ? t("auditSchedule.quick") : t("auditSchedule.full");
   async function save() {
     setBusy(true);
     setError(null);
@@ -29,7 +30,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
       setPolicy(await saveAuditPolicy(policy));
       onSaved();
     } catch {
-      setError(t("auditSchedule.3"));
+      setError(t("auditSchedule.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -40,14 +41,14 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
       setPolicy(await skipAuditSlot(policy.mode));
       onSaved();
     } catch {
-      setError(t("auditSchedule.4"));
+      setError(t("auditSchedule.skipFailed"));
     } finally {
       setBusy(false);
     }
   }
   return (
     <form
-      aria-label={`${title} ${t("auditSchedule.5")}`}
+      aria-label={`${title} ${t("auditSchedule.schedule")}`}
       className="space-y-3 border-t border-border py-4"
       onSubmit={(event) => {
         event.preventDefault();
@@ -61,19 +62,19 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
             checked={policy.enabled}
             onChange={(enabled) => setPolicy({ ...policy, enabled })}
           />
-          {t("auditSchedule.6")}
+          {t("auditSchedule.enabled")}
         </label>
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
             checked={policy.paused}
             onChange={(paused) => setPolicy({ ...policy, paused })}
           />
-          {t("auditSchedule.7")}
+          {t("auditSchedule.paused")}
         </label>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label className="space-y-1 text-sm">
-          {t("auditSchedule.8")}
+          {t("auditSchedule.timezone")}
           <Input
             value={policy.timezone}
             onChange={(event) => setPolicy({ ...policy, timezone: event.target.value })}
@@ -81,7 +82,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
           />
         </label>
         <label className="space-y-1 text-sm">
-          {t("auditSchedule.9")}
+          {t("auditSchedule.windowStart")}
           <Input
             type="time"
             value={policy.start_time}
@@ -90,7 +91,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
           />
         </label>
         <label className="space-y-1 text-sm">
-          {t("auditSchedule.10")}
+          {t("auditSchedule.windowLength")}
           <Input
             type="number"
             min={1}
@@ -104,7 +105,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
         </label>
         {policy.cadence === "weekly" ? (
           <label className="space-y-1 text-sm">
-            {t("auditSchedule.11")}
+            {t("auditSchedule.weekday")}
             <Input
               type="number"
               min={0}
@@ -115,7 +116,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
           </label>
         ) : (
           <label className="space-y-1 text-sm">
-            {t("auditSchedule.12")}
+            {t("auditSchedule.monthDay")}
             <Input
               type="number"
               min={1}
@@ -126,7 +127,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
           </label>
         )}
         <label className="space-y-1 text-sm">
-          {t("auditSchedule.13")}
+          {t("auditSchedule.bandwidth")}
           <Input
             type="number"
             min={1024}
@@ -145,9 +146,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
             checked={policy.full_cost_acknowledged}
             onChange={(full_cost_acknowledged) => setPolicy({ ...policy, full_cost_acknowledged })}
           />
-          {t(
-            "I understand Full audits read all managed Artifact bytes and may incur remote transfer costs.",
-          )}
+          {t("auditSchedule.fullCost")}
         </label>
       )}
       <label className="flex items-center gap-2 text-sm">
@@ -155,7 +154,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
           checked={policy.auto_repair}
           onChange={(auto_repair) => setPolicy({ ...policy, auto_repair })}
         />
-        {t("auditSchedule.14")}
+        {t("auditSchedule.autoRepair")}
       </label>
       {policy.auto_repair && (
         <div className="flex flex-wrap gap-4 text-sm">
@@ -172,18 +171,28 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
                   })
                 }
               />
-              {action === "reparse_metadata" ? t("auditSchedule.15") : t("auditSchedule.16")}
+              {action === "reparse_metadata"
+                ? t("auditSchedule.metadata")
+                : t("auditSchedule.thumbnails")}
             </label>
           ))}
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        {t("auditSchedule.17")}: {shownDate(policy.next_due_at)} · {t("auditSchedule.18")}:{" "}
-        {shownDate(policy.last_success_at)}
+        {t("auditSchedule.nextDue")}: {shownDate(policy.next_due_at)} ·{" "}
+        {t("auditSchedule.lastSuccess")}: {shownDate(policy.last_success_at)}
       </p>
+      <p className="text-xs text-muted-foreground">
+        {t("auditSchedule.estimatedReads")}: {formatBytes(policy.estimated_remote_bytes ?? 0)}
+      </p>
+      {policy.overdue && (
+        <p role="status" className="text-sm text-warning">
+          {t("auditSchedule.overdue")}
+        </p>
+      )}
       {policy.deferred_reason && (
         <p role="status" className="text-sm text-warning">
-          {t("auditSchedule.19")}: {policy.deferred_reason.replaceAll("_", " ")}
+          {t("auditSchedule.deferred")}: {policy.deferred_reason.replaceAll("_", " ")}
         </p>
       )}
       {error && (
@@ -193,7 +202,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
       )}
       <div className="flex gap-2">
         <Button type="submit" disabled={busy}>
-          {t("auditSchedule.20")}
+          {t("auditSchedule.save")}
         </Button>
         <Button
           type="button"
@@ -201,7 +210,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
           disabled={busy || !policy.next_due_at}
           onClick={() => void skip()}
         >
-          {t("auditSchedule.21")}
+          {t("auditSchedule.skip")}
         </Button>
       </div>
     </form>
@@ -234,23 +243,19 @@ export function AuditSchedulePanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("auditSchedule.22")}</CardTitle>
-        <CardDescription>
-          {t(
-            "Opt in to weekly Quick or monthly Full checks. Missed schedules catch up once inside the next daily window. One read runs at a time.",
-          )}
-        </CardDescription>
+        <CardTitle>{t("auditSchedule.title")}</CardTitle>
+        <CardDescription>{t("auditSchedule.description")}</CardDescription>
       </CardHeader>
       <CardContent>
         {error ? (
           <div role="alert">
-            <p>{t("auditSchedule.23")}</p>
+            <p>{t("auditSchedule.loadFailed")}</p>
             <Button variant="outline" onClick={() => setRevision(revision + 1)}>
-              {t("auditSchedule.24")}
+              {t("auditSchedule.retry")}
             </Button>
           </div>
         ) : !policies ? (
-          <p role="status">{t("auditSchedule.25")}</p>
+          <p role="status">{t("auditSchedule.loading")}</p>
         ) : (
           policies.map((policy) => (
             <PolicyForm
@@ -261,10 +266,10 @@ export function AuditSchedulePanel() {
           ))
         )}
         <h4 className="border-t border-border pt-4 text-sm font-semibold">
-          {t("auditSchedule.26")}
+          {t("auditSchedule.history")}
         </h4>
         {!history.length ? (
-          <p className="mt-2 text-sm text-muted-foreground">{t("auditSchedule.27")}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{t("auditSchedule.empty")}</p>
         ) : (
           <ul className="divide-y divide-border">
             {history.map((run) => (
@@ -274,7 +279,7 @@ export function AuditSchedulePanel() {
                 </span>
                 <span className="text-muted-foreground">
                   {shownDate(run.finished_at ?? run.created_at)} · {run.critical_count}{" "}
-                  {t("auditSchedule.28")} · {run.warning_count} {t("auditSchedule.29")}
+                  {t("auditSchedule.critical")} · {run.warning_count} {t("auditSchedule.warnings")}
                 </span>
               </li>
             ))}
