@@ -8,8 +8,10 @@ def claim_installation(url, directory, username, barrier, outcomes):
     from fastapi.testclient import TestClient
     from sqlmodel import Session, create_engine
 
+    from app.api.errors import operation_error_response
     from app.api.v1.setup import router
     from app.core.config import _overlay
+    from app.core.errors import OperationError
     from app.db.session import get_session
 
     _overlay.update(
@@ -27,6 +29,7 @@ def claim_installation(url, directory, username, barrier, outcomes):
             yield session
 
     app = FastAPI()
+    app.add_exception_handler(OperationError, operation_error_response)
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_session] = sessions
     try:

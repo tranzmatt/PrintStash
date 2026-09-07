@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from app.services.thumbnail_engine import ThumbnailResult, ThumbnailStrategy
+from app.modules.media.thumbnail_engine import ThumbnailResult, ThumbnailStrategy
 
 
 def _benchmark_module():

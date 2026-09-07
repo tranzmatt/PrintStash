@@ -17,8 +17,8 @@ def spoolman_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     returns re-patches these in its own body, which wins over this fixture.
     """
     import app.api.v1.spoolman as router_mod
-    import app.services.spoolman as spoolman_mod
-    from app.services.filament_sync import SyncResult
+    import app.modules.printing.spoolman as spoolman_mod
+    from app.modules.printing.filament_sync import SyncResult
 
     async def offline(self, *args: object, **kwargs: object) -> None:
         raise spoolman_mod.SpoolmanError("spoolman is offline in this test")
@@ -46,7 +46,7 @@ class TestGetStatus:
     def test_reports_the_version_a_reachable_spoolman_answers_with(
         self, client: TestClient, auth_headers, monkeypatch
     ):
-        import app.services.spoolman as spoolman_mod
+        import app.modules.printing.spoolman as spoolman_mod
 
         async def fake_health_check(self):
             return {"version": "1.9.0"}
@@ -70,7 +70,7 @@ class TestGetStatus:
     def test_reports_the_native_hook_when_spoolman_has_an_active_spool(
         self, client: TestClient, auth_headers, monkeypatch
     ):
-        import app.services.spoolman as spoolman_mod
+        import app.modules.printing.spoolman as spoolman_mod
 
         async def fake_health_check(self):
             return {"version": "1.9.0"}
@@ -99,8 +99,8 @@ class TestGetStatus:
     def test_probe_reports_error_on_spoolman_error(
         self, client: TestClient, auth_headers, monkeypatch
     ):
-        import app.services.spoolman as spoolman_mod
-        from app.services.spoolman import SpoolmanError
+        import app.modules.printing.spoolman as spoolman_mod
+        from app.modules.printing.spoolman import SpoolmanError
 
         async def fake_health_check(self):
             raise SpoolmanError("connection refused")
@@ -184,7 +184,7 @@ class TestUpdateStatus:
         self, client: TestClient, auth_headers, monkeypatch
     ):
         import app.api.v1.spoolman as mod
-        from app.services.filament_sync import SyncResult
+        from app.modules.printing.filament_sync import SyncResult
 
         called = {"n": 0}
 
@@ -215,7 +215,7 @@ class TestUpdateStatus:
         self, client: TestClient, auth_headers, monkeypatch
     ):
         import app.api.v1.spoolman as mod
-        from app.services.spoolman import SpoolmanError
+        from app.modules.printing.spoolman import SpoolmanError
 
         async def fake_sync(session):
             raise SpoolmanError("unreachable")
@@ -235,7 +235,7 @@ class TestSyncFilaments:
         self, client: TestClient, auth_headers, monkeypatch
     ):
         import app.api.v1.spoolman as mod
-        from app.services.filament_sync import SyncResult
+        from app.modules.printing.filament_sync import SyncResult
 
         async def fake_sync(session):
             return SyncResult(created=1, updated=2, adopted=3, unlinked=4)
@@ -250,7 +250,7 @@ class TestSyncFilaments:
         self, client: TestClient, auth_headers, monkeypatch
     ):
         import app.api.v1.spoolman as mod
-        from app.services.spoolman import SpoolmanError
+        from app.modules.printing.spoolman import SpoolmanError
 
         async def fake_sync(session):
             raise SpoolmanError("spoolman disabled")
@@ -409,7 +409,7 @@ class TestListSpools:
         self, client: TestClient, auth_headers, monkeypatch
     ):
         import app.api.v1.spoolman as mod
-        from app.services.spoolman import SpoolmanError
+        from app.modules.printing.spoolman import SpoolmanError
 
         client.put(
             "/api/v1/spoolman",

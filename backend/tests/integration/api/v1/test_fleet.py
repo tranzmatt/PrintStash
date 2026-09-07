@@ -53,9 +53,9 @@ from app.db.models import (
     RoutingStrategy,
     User,
 )
-from app.services import fleet
-from app.services.auth import create_access_token
-from app.services.printer_provider import PrinterProviderClient
+from app.modules.identity.auth import create_access_token
+from app.modules.printing import fleet
+from app.modules.printing.printer_provider import PrinterProviderClient
 from tests.factories import (
     a_gcode_artifact,
     build_collection,
@@ -279,7 +279,7 @@ class TestCreateQueueJobRouting:
             dedupe_survivor_id=1,
         )
 
-        from app.services.fleet import _active_counts, build_routing_snapshot
+        from app.modules.printing.fleet import _active_counts, build_routing_snapshot
 
         assert build_routing_snapshot(db_session).active_counts == {}
         assert _active_counts(db_session) == {}
@@ -541,13 +541,13 @@ class TestQueueScheduler:
                 yield target
 
         provider = AsyncMock()
-        from app.services.printer_provider import capabilities_for_provider
+        from app.modules.printing.printer_provider import capabilities_for_provider
 
         provider.capabilities = capabilities_for_provider(printer.provider)
         with (
-            patch("app.services.printer_jobs.get_backend", return_value=Backend()),
+            patch("app.modules.printing.printer_jobs.get_backend", return_value=Backend()),
         ):
-            from app.services.printer_jobs import dispatch_next
+            from app.modules.printing.printer_jobs import dispatch_next
 
             assert (
                 asyncio.run(dispatch_next(_provider_builder(provider))) == queued["id"]
@@ -588,7 +588,7 @@ class TestQueueScheduler:
             json={"drain_mode": True, "drain_reason": "Cooling down"},
         )
 
-        from app.services.printer_jobs import dispatch_next
+        from app.modules.printing.printer_jobs import dispatch_next
 
         assert asyncio.run(dispatch_next(_unused_provider_builder)) is None
         job = next(
@@ -630,13 +630,13 @@ class TestQueueScheduler:
                 yield target
 
         provider = AsyncMock()
-        from app.services.printer_hub import PrinterHub
-        from app.services.printer_jobs import dispatch_next
-        from app.services.printer_provider import capabilities_for_provider
+        from app.modules.printing.printer_hub import PrinterHub
+        from app.modules.printing.printer_jobs import dispatch_next
+        from app.modules.printing.printer_provider import capabilities_for_provider
 
         provider.capabilities = capabilities_for_provider(printer.provider)
         with (
-            patch("app.services.printer_jobs.get_backend", return_value=Backend()),
+            patch("app.modules.printing.printer_jobs.get_backend", return_value=Backend()),
         ):
             assert (
                 asyncio.run(dispatch_next(_provider_builder(provider))) == queued["id"]
@@ -690,7 +690,7 @@ class TestQueueScheduler:
                 routing_strategy=RoutingStrategy.MANUAL,
                 queue_position=index + 1,
             )
-        from app.services.printer_jobs import _claim_next_sync
+        from app.modules.printing.printer_jobs import _claim_next_sync
 
         statements: list[str] = []
         measured_thread = threading.get_ident()
@@ -733,7 +733,7 @@ class TestQueueScheduler:
         )
 
     def test_dispatch_sql_does_not_block_the_event_loop(self, monkeypatch) -> None:
-        from app.services import printer_jobs
+        from app.modules.printing import printer_jobs
 
         def _slow_claim() -> None:
             time.sleep(0.2)
@@ -770,7 +770,7 @@ class TestQueueScheduler:
             headers=auth_headers,
             json={"file_id": artifact.id, "strategy": "least_busy"},
         ).json()
-        from app.services.printer_jobs import dispatch_next
+        from app.modules.printing.printer_jobs import dispatch_next
 
         assert asyncio.run(dispatch_next(_unused_provider_builder)) == queued["id"]
         retried = client.post(
@@ -800,10 +800,13 @@ class TestQueueScheduler:
             headers=auth_headers,
             json={"file_id": artifact.id, "strategy": "least_busy"},
         ).json()
-        from app.services.printer_jobs import DispatchOutcomeUnknownError, dispatch_next
+        from app.modules.printing.printer_jobs import (
+            DispatchOutcomeUnknownError,
+            dispatch_next,
+        )
 
         with patch(
-            "app.services.printer_jobs._dispatch_claimed",
+            "app.modules.printing.printer_jobs._dispatch_claimed",
             AsyncMock(side_effect=DispatchOutcomeUnknownError()),
         ):
             assert asyncio.run(dispatch_next(_unused_provider_builder)) == queued["id"]
@@ -836,7 +839,7 @@ class TestQueueScheduler:
             dispatch_claimed_at=utcnow(),
         )
 
-        from app.services.printer_jobs import reconcile_stranded_dispatches
+        from app.modules.printing.printer_jobs import reconcile_stranded_dispatches
 
         assert reconcile_stranded_dispatches() == 1
         db_session.expire_all()
@@ -868,7 +871,7 @@ class TestQueueScheduler:
             dispatch_claimed_at=utcnow(),
         )
 
-        from app.services.printer_jobs import reconcile_stranded_dispatches
+        from app.modules.printing.printer_jobs import reconcile_stranded_dispatches
 
         reconcile_stranded_dispatches()
         response = client.post(
@@ -1818,7 +1821,7 @@ class TestFleet:
             dedupe_absorbed_at=utcnow(),
             dedupe_survivor_id=1,
         )
-        from app.services.fleet import _active_counts, build_routing_snapshot
+        from app.modules.printing.fleet import _active_counts, build_routing_snapshot
 
         assert build_routing_snapshot(db_session).active_counts == {printer.id: 1}
         assert _active_counts(db_session) == {printer.id: 1}
@@ -1866,7 +1869,7 @@ class TestFleet:
             }
         ]
 
-    def test_fleet_enqueue_notifies_task_queue(
+    def test_fleet_enqueue_notifies_work_wakeup(
         self,
         app: FastAPI,
         client: TestClient,
@@ -1881,7 +1884,7 @@ class TestFleet:
         )
         artifact = a_gcode_artifact(db_session, "Queue cube")
         enqueue = AsyncMock()
-        app.state.task_queue.enqueue = enqueue
+        app.state.work_wakeup.notify = enqueue
 
         response = client.post(
             "/api/v1/fleet/queue",

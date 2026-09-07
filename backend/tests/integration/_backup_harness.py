@@ -21,8 +21,11 @@ import pytest
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine, select
 
-import app.services.backup as backup
-import app.services.storage_backend as storage_backend
+import app.modules.backups.backup.restore as backup_restore
+import app.modules.backups.backup.targets as backup_targets
+import app.modules.storage.storage_backend.local as storage_local
+import app.modules.storage.storage_backend.runtime as storage_runtime
+import app.runtime.maintenance as backup_maintenance
 from app.core.config import _overlay
 from app.db.models import Document, DocumentKind, File, FileType, Model, User
 from app.db.session import (
@@ -30,8 +33,8 @@ from app.db.session import (
     _set_sqlite_pragmas,
     override_session_factory,
 )
-from app.services.auth import create_access_token, hash_password
-from app.services.storage_backend import get_backend
+from app.modules.identity.auth import create_access_token, hash_password
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import store_owned_bytes as _store_owned_bytes
 
 # Kept here as part of the file-based backup harness API used by router tests.
@@ -89,14 +92,14 @@ def build_backup_env(
 
     # The composition root binds storage after applying the overlay; this is the
     # equivalent isolated composition.
-    storage_backend.bind_backend(storage_backend.LocalStorageBackend())
-    monkeypatch.setattr(backup, "_backup_s3", None, raising=False)
+    storage_runtime.bind_backend(storage_local.LocalStorageBackend())
+    monkeypatch.setattr(backup_targets, "_backup_s3", None, raising=False)
     # A real restore waits a grace period for in-flight jobs; tests need not pay it.
-    monkeypatch.setattr(backup, "_RESTORE_GRACE_PERIOD_S", 0)
+    monkeypatch.setattr(backup_restore, "_RESTORE_GRACE_PERIOD_S", 0)
     # A test may intentionally leave a durable journal behind to model a
     # crash.  Each isolated file-based vault must start with a fresh process
     # gate; the journal itself remains the authority within that vault.
-    backup._restore_gate.clear()
+    backup_maintenance._restore_gate.clear()
 
     try:
         yield BackupEnv(
@@ -107,7 +110,7 @@ def build_backup_env(
             engine=engine,
         )
     finally:
-        backup._restore_gate.clear()
+        backup_maintenance._restore_gate.clear()
         engine.dispose()
 
 

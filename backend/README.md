@@ -84,13 +84,18 @@ backend/
 ├── pyproject.toml
 ├── Dockerfile
 └── app/
-    ├── main.py            ← FastAPI app, lifespan, Starlette
+    ├── main.py            ← FastAPI app and HTTP middleware
+    ├── bootstrap/         ← dependency construction and lifespan
     ├── core/              ← config, security, logging, time, http helpers
     ├── db/                ← SQLModel tables, session, DB bootstrap
     ├── schemas/           ← Pydantic DTOs
-    ├── services/          ← business logic
+    ├── modules/           ← capability-owned commands, queries and adapters
+    ├── runtime/           ← local scheduling hints, maintenance and events
     └── api/v1/            ← routers (files, ingest, models, printers, taxonomy, auth, backups, config)
 ```
+
+See [backend architecture](../docs/architecture/backend.md) for module ownership,
+shared business contracts and dependency rules.
 
 ## Environment variables
 

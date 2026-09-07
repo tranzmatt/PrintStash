@@ -101,7 +101,7 @@ prove the exhaustive bar is met instead of asserting it.
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|----------------------|----------|----------------------|-----------------------------|------|--------|
-| 1 | persists the file row with its metadata in one commit | Happy | staged STL, well-formed meta | `File` + `Metadata` rows exist; returned row has id | Integration | ✅ `integration/services/ingestion/test_ingestion_atomicity.py::TestPersistArtifact::test_persists_a_file_row_with_its_metadata_in_one_commit` |
+| 1 | persists the file row with its metadata in one commit | Happy | staged STL, well-formed meta | `File` + `Metadata` rows exist; returned row has id | Integration | ✅ `integration/modules/ingestion/ingestion/test_ingestion_atomicity.py::TestPersistArtifact::test_persists_a_file_row_with_its_metadata_in_one_commit` |
 | 2 | dedupes a re-upload by content hash | Edge | same bytes uploaded twice | job state `duplicate`; one `Model` row | E2E | ✅ `e2e/test_ingest.py::test_gcode_upload_dedups_by_content_hash` |
 | 3 | accepts a model name at the length limit | Edge | name = MAX chars | 201; row persisted untruncated | Integration | ❌ missing |
 | 4 | hides a trashed model from the list | Edge | model with `deleted_at` set | `GET /models` omits it | Integration | ❌ missing |
@@ -203,7 +203,7 @@ Commands (each writes term-missing, an HTML report, and the JSON the gate reads)
 | Suite | Command | Report |
 | --- | --- | --- |
 | Backend | `cd backend && ./scripts/test.sh coverage` | `backend/.coverage-html/index.html` |
-| One backend module's own contribution | `./scripts/test.sh coverage tests/integration/services/test_trash.py` | same |
+| One backend module's own contribution | `./scripts/test.sh coverage tests/integration/modules/library/test_trash.py` | same |
 | `printstash-core` | `cd backend/packages/printstash-core && ./scripts/test.sh coverage` | `.coverage-html/index.html` |
 | Frontend (app + both workspace packages) | `cd frontend && pnpm coverage` | `frontend/coverage/index.html` |
 
@@ -327,7 +327,7 @@ The reason this is a hard requirement rather than a preference: a mocked integra
 tests your belief about the provider, and the interesting failures are precisely
 where that belief is wrong. SeaweedFS is in this suite because its S3 gateway
 changed its conditional-write and version-id behaviour between releases, and
-`contract/services/test_storage_backend.py` is what would notice. A mock would have
+`contract/modules/storage/test_storage_backend.py` is what would notice. A mock would have
 kept passing.
 
 A seam that must stay swappable (`StorageBackend`, `SessionFactory`, `RealtimeBus`,
@@ -507,9 +507,9 @@ tier directory:
 
 | Production | Test |
 | --- | --- |
-| `backend/app/services/ingestion.py` | `backend/tests/integration/services/test_ingestion.py` (and `unit/services/test_ingestion.py` only if it has pure helpers worth isolating) |
+| `backend/app/modules/ingestion/ingestion.py` | `backend/tests/integration/modules/ingestion/test_ingestion.py` (and `unit/modules/ingestion/test_ingestion.py` only if it has pure helpers worth isolating) |
 | `backend/app/api/v1/printers.py` | `backend/tests/integration/api/v1/test_printers.py` — or, when one file would exceed ~600 lines, the folder `integration/api/v1/printers/` with `test_create.py`, `test_rbac.py`, … split by endpoint/method group |
-| `backend/app/services/moonraker.py` (wire level, emulator) | `backend/tests/contract/services/test_moonraker.py` |
+| `backend/app/modules/printing/moonraker.py` (wire level, emulator) | `backend/tests/contract/modules/printing/test_moonraker.py` |
 | `backend/app/db/migrate.py` + `alembic/` | `backend/tests/integration/db/test_migrations.py` |
 | `backend/packages/printstash-core/src/printstash_core/gcode/parser.py` | `backend/packages/printstash-core/tests/gcode/test_parser.py` |
 | `frontend/src/lib/auth-store.ts` | `frontend/src/lib/__tests__/auth-store.test.ts` |
@@ -524,9 +524,9 @@ files), `backend/tests/fakes/` (emulators and contract fakes, shared by
 (repo-level invariants: OpenAPI snapshot, CI config, import boundaries, the
 suite's own shape, translation coverage), `backend/tests/e2e/` (flows,
 `test_<flow>.py`). Every backend test directory is a package (`__init__.py`) so
-`integration/services/test_auth.py` and `e2e/test_auth.py` coexist.
+`integration/modules/identity/test_auth.py` and `e2e/test_auth.py` coexist.
 
-The mirror is load-bearing for the matrix: "does `app/services/trash.py` have
+The mirror is load-bearing for the matrix: "does `app/modules/library/trash.py` have
 tests?" is answered by one `ls`, and an audit of a module is an audit of one
 file. A test that can't be placed by this rule is testing something that
 isn't a unit — find the unit first.

@@ -17,9 +17,9 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.api.v1 import admin as admin_api
 from app.core.time import utcnow
 from app.db.models import AuditLog, Collection, File, FileType, Model, Tag, User
+from app.modules.administration.audit import install_audit_listeners
+from app.modules.identity.auth import create_access_token
 from app.schemas.auth import UserUpdate
-from app.services.audit import install_audit_listeners
-from app.services.auth import create_access_token
 from tests.factories import (
     build_collection,
     build_file,
@@ -483,7 +483,7 @@ class TestAdminDeleteResource:
     def test_hard_delete_file_also_removes_blob(
         self, client: TestClient, db_session: Session, tmp_path
     ) -> None:
-        from app.services.storage_backend import get_backend
+        from app.modules.storage.storage_backend.runtime import get_backend
 
         admin = build_user(db_session, "admin-n", superuser=True)
         backend = get_backend()
@@ -610,7 +610,7 @@ class TestAdminDeleteResource:
     def test_refuses_a_hard_delete_when_storage_ownership_is_unproven(
         self, client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from app.services.storage_ownership import UnsafeStorageDeleteError
+        from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
 
         admin = build_user(db_session, "admin-unproven", superuser=True)
         model = build_model(
@@ -634,7 +634,7 @@ class TestAdminDeleteResource:
     def test_keeps_the_row_when_a_hard_delete_is_refused(
         self, client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from app.services.storage_ownership import UnsafeStorageDeleteError
+        from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
 
         admin = build_user(db_session, "admin-unproven-kept", superuser=True)
         model = build_model(

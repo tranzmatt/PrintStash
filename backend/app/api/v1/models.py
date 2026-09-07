@@ -1,7 +1,7 @@
 """Model browse + detail + edit + soft-delete endpoints.
 
-Read-model assembly lives in ``services/model_views``; trash lifecycle in
-``services/trash``. This router keeps HTTP concerns only.
+Read-model assembly lives in ``modules/library/model_views``; trash lifecycle in
+``modules/library/trash``. This router keeps HTTP concerns only.
 """
 
 from __future__ import annotations
@@ -30,37 +30,72 @@ from fastapi import (
     File as UploadFileParam,
 )
 from fastapi.responses import FileResponse, Response
+from printstash_core.library import RevisionError
 from sqlalchemy import func
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, select
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
+import app.modules.library.model_views.detail as models_detail
+import app.modules.library.model_views.exports as models_exports
+import app.modules.library.model_views.facets as models_facets
+import app.modules.library.model_views.listing as models_listing
+import app.modules.library.model_views.pagination as models_pagination
+import app.modules.library.model_views.statistics as models_statistics
+import app.modules.library.model_views.trash as models_trash
+import app.modules.printing.costing as models_costing
 from app.core.config import settings
 from app.core.security import require_auth, require_superuser, require_user
 from app.core.time import utcnow
 from app.db.models import (
-    Collection,
     CollectionRole,
     FilamentProfile,
     File,
     FileRevisionStatus,
-    FileTagLink,
     FileType,
     Metadata,
     Model,
     ModelProvenanceSource,
-    ModelStar,
-    ModelTagLink,
     Printer,
     PrinterFile,
     PrintJob,
     PrintJobState,
     StagingLease,
-    Tag,
     User,
 )
 from app.db.scopes import live
 from app.db.session import get_session, get_session_factory
+from app.modules.identity import rbac
+from app.modules.ingestion import library_transfer
+from app.modules.ingestion.ingestion import add_gcode_revision_to_model
+from app.modules.library import commands as model_commands
+from app.modules.library import (
+    provenance,
+    revisions,
+    source_covers,
+    taxonomy,
+)
+from app.modules.library.trash import (
+    StorageRiskConfirmationRequired,
+    hard_delete_expired_models,
+    hard_delete_model,
+    soft_delete_model,
+)
+from app.modules.library.trash import (
+    restore_model as trash_restore_model,
+)
+from app.modules.printing import job_import, print_results
+from app.modules.printing.moonraker import MoonrakerError
+from app.modules.printing.printer_jobs import reproducibility_payload
+from app.modules.storage import storage
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_deletion import (
+    cleanup_status,
+    enqueue_owned_key,
+    process_storage_delete_intents,
+)
+from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
+from app.runtime.jobs import registry
 from app.schemas.ingest import IngestResponse
 from app.schemas.models import (
     ArtifactOutcomeRead,
@@ -68,7 +103,6 @@ from app.schemas.models import (
     ImportedPrintJobRead,
     ManualPrintJobCreate,
     ModelBatchDelete,
-    ModelBatchFailure,
     ModelBatchMove,
     ModelBatchResult,
     ModelBatchTags,
@@ -96,39 +130,6 @@ from app.schemas.provenance import (
     ModelSourceCoverRead,
 )
 from app.schemas.saved_views import ModelStarRead
-from app.services import (
-    job_import,
-    library_transfer,
-    model_views,
-    print_results,
-    provenance,
-    rbac,
-    source_covers,
-    storage,
-    taxonomy,
-)
-from app.services.ingestion import add_gcode_revision_to_model
-from app.services.jobs import registry
-from app.services.moonraker import MoonrakerError
-from app.services.printer_jobs import reproducibility_payload
-from app.services.storage_backend import get_backend
-from app.services.storage_deletion import (
-    cleanup_status,
-    enqueue_owned_key,
-    process_storage_delete_intents,
-)
-from app.services.storage_ownership import UnsafeStorageDeleteError
-from app.services.trash import (
-    StorageRiskConfirmationRequired,
-    hard_delete_expired_models,
-    hard_delete_model,
-    record_source_tombstone,
-    soft_delete_model,
-    soft_delete_models,
-)
-from app.services.trash import (
-    restore_model as trash_restore_model,
-)
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -167,7 +168,7 @@ def _require_model_role(
 
 
 def _detail_or_404(session: Session, model_id: int, user: User) -> ModelRead:
-    view = model_views.detail(session, model_id, user)
+    view = models_detail.detail(session, model_id, user)
     if view is None:
         raise HTTPException(status_code=404, detail="model_not_found")
     return view
@@ -247,7 +248,7 @@ def list_models(
         uploaded_after=uploaded_after,
         uploaded_before=uploaded_before,
     )
-    return model_views.list_items(
+    return models_listing.list_items(
         session,
         current_user,
         filters=filters,
@@ -311,7 +312,7 @@ def page_models(
         uploaded_before=uploaded_before,
     )
     try:
-        return model_views.page_items(
+        return models_pagination.page_items(
             session,
             current_user,
             filters=filters,
@@ -355,7 +356,7 @@ def outliner_models(
         printer_id is not None or printer_presence is not None
     ) and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="admin_required")
-    return model_views.outliner_items(
+    return models_listing.outliner_items(
         session,
         current_user,
         filters=ModelFilters(
@@ -406,7 +407,7 @@ def model_facets(
         printer_id is not None or printer_presence is not None
     ) and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="admin_required")
-    return model_views.facets(
+    return models_facets.facets(
         session,
         current_user,
         ModelFilters(
@@ -441,16 +442,7 @@ def star_model(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelStarRead:
-    _require_model_role(session, current_user, model_id, CollectionRole.VIEW)
-    existing = session.exec(
-        select(ModelStar).where(
-            ModelStar.user_id == current_user.id, ModelStar.model_id == model_id
-        )
-    ).first()
-    if existing is None:
-        session.add(ModelStar(user_id=current_user.id, model_id=model_id))
-        session.commit()
-    return ModelStarRead(model_id=model_id, starred=True)
+    return model_commands.star_model(model_id=model_id, current_user=current_user, session=session)
 
 
 @router.delete(
@@ -463,14 +455,7 @@ def unstar_model(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelStarRead:
-    _require_model_role(session, current_user, model_id, CollectionRole.VIEW)
-    session.exec(
-        delete(ModelStar).where(
-            ModelStar.user_id == current_user.id, ModelStar.model_id == model_id
-        )
-    )
-    session.commit()
-    return ModelStarRead(model_id=model_id, starred=False)
+    return model_commands.unstar_model(model_id=model_id, current_user=current_user, session=session)
 
 
 @router.get(
@@ -488,10 +473,10 @@ def export_models(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> Response:
-    payload = model_views.export_payload(session, current_user)
+    payload = models_exports.export_payload(session, current_user)
     if format == "csv":
         return Response(
-            content=model_views.export_csv(payload),
+            content=models_exports.export_csv(payload),
             media_type="text/csv; charset=utf-8",
             headers={
                 "Content-Disposition": 'attachment; filename="printstash-model-export.csv"'
@@ -659,7 +644,7 @@ def vault_stats(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> VaultStatsRead:
-    return model_views.vault_stats(session, current_user)
+    return models_statistics.vault_stats(session, current_user)
 
 
 @router.get(
@@ -677,7 +662,7 @@ def print_stats(
     period: str = Query("30d", description="Preset window: 7d, 30d, 90d, 1y, or all"),
     session: Session = Depends(get_session),
 ) -> PrintStatisticsRead:
-    return model_views.print_statistics(session, period)
+    return models_statistics.print_statistics(session, period)
 
 
 @router.get(
@@ -696,7 +681,7 @@ def list_trash(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> List[TrashedModelRead]:
-    return model_views.list_trashed(
+    return models_trash.list_trashed(
         session,
         current_user,
         limit=limit,
@@ -768,7 +753,7 @@ def get_model_provenance(
     session: Session = Depends(get_session),
 ) -> ModelProvenanceRead:
     _require_model_role(session, current_user, model_id, CollectionRole.VIEW)
-    return model_views.provenance_detail(session, model_id)
+    return models_detail.provenance_detail(session, model_id)
 
 
 @router.patch(
@@ -811,7 +796,7 @@ def patch_model_provenance(
             actor_id=current_user.id,
         )
     session.commit()
-    return model_views.provenance_detail(session, model_id)
+    return models_detail.provenance_detail(session, model_id)
 
 
 def _provenance_source_or_404(
@@ -1077,7 +1062,7 @@ def get_model_print_jobs(
             error=job.error,
             filament_used_g=job.filament_used_g,
             actual_duration_s=job.actual_duration_s,
-            filament_cost=model_views.filament_cost_for_job(
+            filament_cost=models_costing.filament_cost_for_job(
                 profiles, md, job.filament_used_g, job.spool_filament_id
             ),
             spool_id=job.spool_id,
@@ -1112,7 +1097,7 @@ def get_artifact_outcomes(
     session: Session = Depends(get_session),
 ) -> List[ArtifactOutcomeRead]:
     _require_model_role(session, current_user, model_id, CollectionRole.VIEW)
-    rows = model_views.artifact_outcomes(session, model_id, file_id)
+    rows = models_detail.artifact_outcomes(session, model_id, file_id)
     if len(rows) != len(set(file_id)):
         raise HTTPException(status_code=404, detail="file_not_found")
     return [ArtifactOutcomeRead.model_validate(row) for row in rows]
@@ -1247,67 +1232,10 @@ async def import_print_jobs_from_printer(
         ) from exc
 
 
-def _dedupe_ids(ids: List[int]) -> List[int]:
-    seen: set[int] = set()
-    out: List[int] = []
-    for i in ids:
-        if i not in seen:
-            seen.add(i)
-            out.append(i)
-    return out
 
 
-def _partition_editable_models(
-    session: Session, user: User, ids: List[int]
-) -> tuple[List[Model], List[ModelBatchFailure]]:
-    """Single-pass RBAC for batch ops: split ``ids`` into editable models and
-    per-id failures, preserving input order.
-
-    Replaces a per-model ``_require_model_role`` loop, which re-ran the same
-    "all of this user's grants" query once per model (an N+1 that scaled with
-    the selection). Here the models are fetched in one query and the editable
-    collection set is computed once. Failure reasons match the single-model
-    endpoint so the client sees the same ``reason`` strings.
-    """
-    rows = session.exec(
-        select(Model).where(Model.id.in_(ids), live(Model))  # type: ignore[union-attr]
-    ).all()
-    by_id = {m.id: m for m in rows}
-    # Superuser short-circuits inside accessible_collection_ids (returns every
-    # collection), so a single call covers both roles.
-    editable_ids = rbac.accessible_collection_ids(session, user, CollectionRole.EDIT)
-    editable: List[Model] = []
-    failed: List[ModelBatchFailure] = []
-    for mid in ids:
-        m = by_id.get(mid)
-        if m is None:
-            failed.append(ModelBatchFailure(model_id=mid, reason="model_not_found"))
-        elif m.collection_id is None:
-            if user.is_superuser:
-                editable.append(m)
-            else:
-                failed.append(
-                    ModelBatchFailure(
-                        model_id=mid, reason="root_collection_admin_required"
-                    )
-                )
-        elif m.collection_id in editable_ids:
-            editable.append(m)
-        else:
-            failed.append(
-                ModelBatchFailure(model_id=mid, reason="collection_permission_denied")
-            )
-    return editable, failed
 
 
-def _require_all_editable_models(
-    session: Session, user: User, ids: List[int]
-) -> List[Model]:
-    editable, failed = _partition_editable_models(session, user, _dedupe_ids(ids))
-    if failed:
-        status_code = 404 if failed[0].reason == "model_not_found" else 403
-        raise HTTPException(status_code=status_code, detail=failed[0].reason)
-    return editable
 
 
 @router.post(
@@ -1331,52 +1259,7 @@ def batch_move_models(
     # not per-item, because the destination is the same for everyone. Creating a
     # *missing* collection is deferred until we know at least one model will move
     # (below), so a fully-failed batch never leaves an orphan empty collection.
-    dest_is_root = payload.collection.strip() == ""
-    if dest_is_root and not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="root_collection_admin_required")
-
-    existing_dest: Optional[Collection] = None
-    if not dest_is_root:
-        collection_path = _collection_path_for(payload.collection)
-        existing_dest = session.exec(
-            select(Collection).where(
-                Collection.path == collection_path, live(Collection)
-            )
-        ).first()
-        if existing_dest is None and not current_user.is_superuser:
-            raise HTTPException(status_code=403, detail="collection_permission_denied")
-        if existing_dest is not None:
-            rbac.require_collection_role(
-                session, current_user, existing_dest.id, CollectionRole.EDIT
-            )
-
-    editable = _require_all_editable_models(session, current_user, payload.model_ids)
-
-    if dest_is_root:
-        dest_id: Optional[int] = None
-    elif existing_dest is not None:
-        dest_id = existing_dest.id
-    else:
-        cat = taxonomy.resolve_or_create_collection_in_transaction(
-            session, payload.collection
-        )
-        rbac.require_collection_role(session, current_user, cat.id, CollectionRole.EDIT)
-        dest_id = cat.id
-
-    succeeded: List[int] = []
-    for m in editable:
-        m.collection_id = dest_id
-        m.updated_at = utcnow()
-        session.add(m)
-        succeeded.append(m.id)  # type: ignore[arg-type]
-
-    session.commit()
-    return ModelBatchResult(
-        succeeded_ids=succeeded,
-        failed=[],
-        succeeded_count=len(succeeded),
-        failed_count=0,
-    )
+    return model_commands.batch_move_models(payload=payload, current_user=current_user, session=session)
 
 
 @router.post(
@@ -1396,58 +1279,7 @@ def batch_tag_models(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelBatchResult:
-    editable = _require_all_editable_models(session, current_user, payload.model_ids)
-
-    add_tags = (
-        taxonomy.resolve_or_create_tags_in_transaction(session, payload.add)
-        if payload.add
-        else []
-    )
-    # Removal only targets tags that already exist; never create on remove.
-    remove_tag_ids: List[int] = []
-    for raw in payload.remove:
-        # Guard the *input*, not the slug. `slugify` falls back to "model" for
-        # anything it cannot make a slug out of, so slugging first turned
-        # `remove: ["   "]` into "remove the tag named model" — and the guard
-        # underneath it could never fire.
-        name = raw.strip()
-        if not name:
-            continue
-        slug = taxonomy.slugify(name)
-        tag = session.exec(select(Tag).where(Tag.slug == slug, live(Tag))).first()
-        if tag is not None and tag.id is not None:
-            remove_tag_ids.append(tag.id)
-
-    succeeded: List[int] = []
-    for m in editable:
-        model_id = m.id
-        if add_tags:
-            existing = set(
-                session.exec(
-                    select(ModelTagLink.tag_id).where(ModelTagLink.model_id == model_id)
-                ).all()
-            )
-            for t in add_tags:
-                if t.id not in existing:
-                    session.add(ModelTagLink(model_id=model_id, tag_id=t.id))
-        if remove_tag_ids:
-            session.exec(
-                delete(ModelTagLink).where(  # type: ignore[call-overload]
-                    ModelTagLink.model_id == model_id,
-                    ModelTagLink.tag_id.in_(remove_tag_ids),  # type: ignore[attr-defined]
-                )
-            )
-        m.updated_at = utcnow()
-        session.add(m)
-        succeeded.append(model_id)
-
-    session.commit()
-    return ModelBatchResult(
-        succeeded_ids=succeeded,
-        failed=[],
-        succeeded_count=len(succeeded),
-        failed_count=0,
-    )
+    return model_commands.batch_tag_models(payload=payload, current_user=current_user, session=session)
 
 
 @router.patch(
@@ -1461,35 +1293,7 @@ def batch_set_revision_labels(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> RevisionBatchResult:
-    file_ids = _dedupe_ids(payload.file_ids)
-    rows = session.exec(
-        select(File).where(File.id.in_(file_ids), live(File))  # type: ignore[union-attr]
-    ).all()
-    by_id = {row.id: row for row in rows}
-    ordered: List[File] = []
-    for file_id in file_ids:
-        row = by_id.get(file_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="file_not_found")
-        if row.file_type != FileType.GCODE:
-            raise HTTPException(status_code=400, detail="revision_not_supported")
-        ordered.append(row)
-
-    # Called for the authorization it enforces: it raises 404 for a model that is
-    # not there and 403 for one this user may not edit, on the first failure. The
-    # returned rows are not needed here, and a second "did every id come back?"
-    # check after it could never fire.
-    _require_all_editable_models(
-        session, current_user, [row.model_id for row in ordered]
-    )
-
-    try:
-        model_views.set_revision_labels(session, ordered, payload.revision_label)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    return RevisionBatchResult(succeeded_ids=file_ids, succeeded_count=len(file_ids))
+    return model_commands.batch_set_revision_labels(payload=payload, current_user=current_user, session=session)
 
 
 @router.post(
@@ -1507,15 +1311,7 @@ def batch_delete_models(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelBatchResult:
-    editable = _require_all_editable_models(session, current_user, payload.model_ids)
-    soft_delete_models(session, editable)
-    session.commit()
-    return ModelBatchResult(
-        succeeded_ids=[m.id for m in editable],  # type: ignore[misc]
-        failed=[],
-        succeeded_count=len(editable),
-        failed_count=0,
-    )
+    return model_commands.batch_delete_models(payload=payload, current_user=current_user, session=session)
 
 
 @router.patch(
@@ -1530,54 +1326,7 @@ def update_model(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelRead:
-    m = _require_model_role(session, current_user, model_id, CollectionRole.EDIT)
-
-    if payload.name is not None:
-        m.name = payload.name.strip() or m.name
-    if payload.description is not None:
-        m.description = payload.description
-    if "source_url" in payload.model_fields_set:
-        m.source_url = payload.source_url
-
-    if payload.collection is not None:
-        if payload.collection.strip() == "":
-            if not current_user.is_superuser:
-                raise HTTPException(
-                    status_code=403, detail="root_collection_admin_required"
-                )
-            m.collection_id = None
-        else:
-            collection_path = _collection_path_for(payload.collection)
-            cat = session.exec(
-                select(Collection).where(
-                    Collection.path == collection_path, live(Collection)
-                )
-            ).first()
-            if cat is None:
-                if not current_user.is_superuser:
-                    raise HTTPException(
-                        status_code=403, detail="collection_permission_denied"
-                    )
-                cat = taxonomy.resolve_or_create_collection(session, payload.collection)
-            if cat is not None:
-                rbac.require_collection_role(
-                    session,
-                    current_user,
-                    cat.id,
-                    CollectionRole.EDIT,
-                )
-                m.collection_id = cat.id
-
-    if payload.tags is not None:
-        session.exec(delete(ModelTagLink).where(ModelTagLink.model_id == model_id))  # type: ignore[call-overload]
-        if payload.tags:
-            new_tags = taxonomy.resolve_or_create_tags(session, payload.tags)
-            for t in new_tags:
-                session.add(ModelTagLink(model_id=model_id, tag_id=t.id))
-
-    m.updated_at = utcnow()
-    session.add(m)
-    session.commit()
+    model_commands.update_model(model_id=model_id, payload=payload, current_user=current_user, session=session)
     return _detail_or_404(session, model_id, current_user)
 
 
@@ -1599,48 +1348,7 @@ def update_file_revision(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelRead:
-    m = _require_model_role(session, current_user, model_id, CollectionRole.EDIT)
-    file_row = session.get(File, file_id)
-    if (
-        file_row is None
-        or file_row.model_id != model_id
-        or file_row.deleted_at is not None
-    ):
-        raise HTTPException(status_code=404, detail="file_not_found")
-    if file_row.file_type != FileType.GCODE:
-        raise HTTPException(status_code=400, detail="revision_not_supported")
-
-    fields = payload.model_fields_set
-    if "revision_label" in fields:
-        label = payload.revision_label
-        file_row.revision_label = label.strip() if label and label.strip() else None
-    if "revision_status" in fields:
-        file_row.revision_status = payload.revision_status
-    if "revision_notes" in fields:
-        notes = payload.revision_notes
-        file_row.revision_notes = notes.strip() if notes and notes.strip() else None
-    if "is_recommended" in fields:
-        make_recommended = bool(payload.is_recommended)
-        if make_recommended:
-            other_gcode = session.exec(
-                select(File).where(
-                    File.model_id == model_id,
-                    File.id != file_id,
-                    File.file_type == FileType.GCODE,
-                    live(File),
-                )
-            ).all()
-            for other in other_gcode:
-                other.is_recommended = False
-                session.add(other)
-            if other_gcode:
-                session.flush()
-        file_row.is_recommended = make_recommended
-
-    m.updated_at = utcnow()
-    session.add(file_row)
-    session.add(m)
-    session.commit()
+    model_commands.update_file_revision(model_id=model_id, file_id=file_id, payload=payload, current_user=current_user, session=session)
     return _detail_or_404(session, model_id, current_user)
 
 
@@ -1657,22 +1365,7 @@ def replace_file_tags(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelRead:
-    model = _require_model_role(session, current_user, model_id, CollectionRole.EDIT)
-    file_row = session.get(File, file_id)
-    if (
-        file_row is None
-        or file_row.model_id != model_id
-        or file_row.deleted_at is not None
-    ):
-        raise HTTPException(status_code=404, detail="file_not_found")
-
-    session.exec(delete(FileTagLink).where(FileTagLink.file_id == file_id))
-    tags = taxonomy.resolve_or_create_tags_in_transaction(session, payload.tags)
-    for tag in tags:
-        session.add(FileTagLink(file_id=file_id, tag_id=tag.id))
-    model.updated_at = utcnow()
-    session.add(model)
-    session.commit()
+    model_commands.replace_file_tags(model_id=model_id, file_id=file_id, payload=payload, current_user=current_user, session=session)
     return _detail_or_404(session, model_id, current_user)
 
 
@@ -1692,53 +1385,17 @@ def delete_file_revision(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelRead:
-    m = _require_model_role(session, current_user, model_id, CollectionRole.EDIT)
-    file_row = session.get(File, file_id)
-    if (
-        file_row is None
-        or file_row.model_id != model_id
-        or file_row.deleted_at is not None
-    ):
-        raise HTTPException(status_code=404, detail="file_not_found")
-    if file_row.file_type != FileType.GCODE:
-        raise HTTPException(status_code=400, detail="revision_not_supported")
-
-    was_recommended = file_row.is_recommended
-    file_row.deleted_at = utcnow()
-    file_row.deleted_by = current_user.id
-    file_row.is_recommended = False
-    record_source_tombstone(session, file_row, "revision_trashed")
-    session.add(file_row)
-    # Clear the old partial-index entry before promoting its replacement.
-    session.flush()
-
-    # Invariant: a model with G-code always keeps exactly one recommended
-    # revision (CONTEXT.md). If we just removed the recommended one, promote the
-    # newest remaining live G-code revision so the model never ends up holding
-    # G-code with nothing recommended.
-    if was_recommended:
-        replacement = session.exec(
-            select(File)
-            .where(
-                File.model_id == model_id,
-                File.id != file_id,
-                File.file_type == FileType.GCODE,
-                live(File),
-            )
-            .order_by(File.version.desc())  # type: ignore[attr-defined]
-        ).first()
-        if replacement is not None:
-            replacement.is_recommended = True
-            session.add(replacement)
-
-    # Drop a stale thumbnail pointer if it referenced this revision.
-    if m.thumbnail_file_id == file_id:
-        m.thumbnail_file_id = None
-        m.thumbnail_path = None
-
-    m.updated_at = utcnow()
-    session.add(m)
-    session.commit()
+    try:
+        revisions.remove_revision(session, current_user, model_id, file_id)
+    except RevisionError as exc:
+        code = (
+            403
+            if exc.code == "collection_permission_denied"
+            else 400
+            if exc.code == "revision_not_supported"
+            else 404
+        )
+        raise HTTPException(status_code=code, detail=exc.code) from exc
     return _detail_or_404(session, model_id, current_user)
 
 

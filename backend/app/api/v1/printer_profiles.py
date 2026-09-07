@@ -7,6 +7,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlmodel import Session, select
 
+import app.modules.printing.costing as models_costing
 from app.core.http import get_or_404
 from app.core.security import require_superuser, require_user
 from app.core.time import utcnow
@@ -17,7 +18,6 @@ from app.schemas.models import (
     PrinterProfileRead,
     PrinterProfileUpdate,
 )
-from app.services import model_views
 
 router = APIRouter(prefix="/printer-profiles", tags=["printer-profiles"])
 
@@ -45,7 +45,7 @@ def list_printer_profiles(
     profiles = session.exec(
         select(PrinterProfile).order_by(PrinterProfile.name.asc())  # type: ignore[attr-defined]
     ).all()
-    usage = model_views.printer_profile_usage(session)
+    usage = models_costing.printer_profile_usage(session)
     return [_read(profile, usage.get(profile.id or 0, 0)) for profile in profiles]
 
 

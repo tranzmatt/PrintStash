@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, select
 
+import app.modules.sources.root_binding as source_root_binding
 from app.core.config import settings
 from app.core.http import get_or_404
 from app.core.security import require_superuser
@@ -33,15 +34,16 @@ from app.db.models import (
     User,
 )
 from app.db.session import SessionFactory, get_session, get_session_factory
-from app.schemas.ingest import IngestResponse
-from app.services import external_library, runtime_config
-from app.services.jobs import registry
-from app.services.storage_paths import (
+from app.modules.administration import runtime_config
+from app.modules.sources import external_library
+from app.modules.storage.storage_paths import (
     StoragePathOverlapError,
     sqlite_database_path,
     validate_file_outside_roots,
     validate_path_outside_roots,
 )
+from app.runtime.jobs import registry
+from app.schemas.ingest import IngestResponse
 
 router = APIRouter(prefix="/libraries", tags=["external-libraries"])
 
@@ -180,7 +182,7 @@ def _to_read(lib: ExternalLibrary) -> LibraryRead:
         except (ValueError, TypeError):
             summary = None
     if lib.source_kind == LibrarySourceKind.MOUNTED:
-        binding_state, binding_reason = external_library.root_binding_state(lib)
+        binding_state, binding_reason = source_root_binding.root_binding_state(lib)
     else:
         binding_state = "bound" if lib.connection_id is not None else "missing"
         binding_reason = None if lib.connection_id is not None else "connection_missing"
@@ -226,7 +228,7 @@ def _to_read(lib: ExternalLibrary) -> LibraryRead:
 )
 def discover_locations(session: Session = Depends(get_session)) -> list[str]:
     """Show usable mounted folders before the explicit Library sources opt-in."""
-    from app.services.library_locations import mounted_directories
+    from app.modules.sources.library_locations import mounted_directories
 
     locations = []
     for path in mounted_directories():
@@ -330,8 +332,8 @@ def create_library(
         try:
             # Creation is itself an explicit enrollment: the authenticated caller
             # supplied the exact existing directory, so bind it before returning.
-            external_library.enroll_external_root(session, lib)
-        except external_library.ExternalRootBindingError as exc:
+            source_root_binding.enroll_external_root(session, lib)
+        except source_root_binding.ExternalRootBindingError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     else:
         session.add(lib)
@@ -405,8 +407,8 @@ def enroll_root(
     if canonical != lib.root_path:
         raise HTTPException(status_code=400, detail="root_path_confirmation_mismatch")
     try:
-        external_library.enroll_external_root(session, lib)
-    except external_library.ExternalRootBindingError as exc:
+        source_root_binding.enroll_external_root(session, lib)
+    except source_root_binding.ExternalRootBindingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     _schedule_watcher_refresh(request, background_tasks)
     return _to_read(lib)
@@ -453,8 +455,8 @@ def scan_now(
     library = get_or_404(session, ExternalLibrary, library_id, "library_not_found")
     if library.source_kind == LibrarySourceKind.MOUNTED:
         try:
-            external_library.assert_root_binding(library)
-        except external_library.ExternalRootBindingError as exc:
+            source_root_binding.assert_root_binding(library)
+        except source_root_binding.ExternalRootBindingError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     if (
         library.scan_claim_token
@@ -500,8 +502,8 @@ def scan_path(
     if lib.source_kind != LibrarySourceKind.MOUNTED:
         raise HTTPException(status_code=400, detail="remote_path_scan_unsupported")
     try:
-        external_library.assert_root_binding(lib)
-    except external_library.ExternalRootBindingError as exc:
+        source_root_binding.assert_root_binding(lib)
+    except source_root_binding.ExternalRootBindingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     root = Path(lib.root_path).resolve()
     candidate = (root / body.path).resolve()

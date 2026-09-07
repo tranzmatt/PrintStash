@@ -41,7 +41,7 @@ import app.core.http_client as http_client
 from app.core import url_safety
 from app.core.config import _overlay, settings
 from app.db.models import Collection, File, FileType, Model
-from app.services import import_resolvers, importer
+from app.modules.ingestion import import_resolvers, importer
 from tests._env import use_local_storage
 from tests.paths import TESTDATA_DIR, require_fixtures
 
@@ -112,13 +112,13 @@ def _patch_resolver(resolved_url: str | None):
     with ExitStack() as stack:
         stack.enter_context(
             patch(
-                "app.api.v1.ingest.import_resolvers.resolve_page_url",
+                "app.modules.ingestion.import_resolvers.resolve_page_url",
                 new=AsyncMock(return_value=resolved_url),
             )
         )
         stack.enter_context(
             patch(
-                "app.api.v1.ingest.import_resolvers.list_model_files",
+                "app.modules.ingestion.import_resolvers.list_model_files",
                 new=AsyncMock(return_value=None),
             )
         )
@@ -224,11 +224,13 @@ class TestImportFromUrl:
         staged = _stage_bytes(BENCHY_STL.read_bytes(), ".stl")
 
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
+            patch(
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
             # The Printables page resolves to a direct STL link server-side.
             _patch_resolver("https://files.printables.test/3dbenchy.stl"),
             patch(
-                "app.api.v1.ingest.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging",
                 new=_fake_download(staged, "3dbenchy.stl"),
             ),
         ):
@@ -270,11 +272,13 @@ class TestImportFromUrl:
         staged = _stage_bytes(zip_bytes, ".zip")
 
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
+            patch(
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
             # The MakerWorld page resolves to a direct .zip bundle link server-side.
             _patch_resolver("https://makerworld.test/instance/123/f3mf.zip"),
             patch(
-                "app.api.v1.ingest.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging",
                 new=_fake_download(staged, "3d-benchy.zip"),
             ),
         ):
@@ -451,10 +455,12 @@ class TestImportFromUrl:
         staged = _stage_bytes(b"<!doctype html><title>3DBenchy</title>", ".bin")
 
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
+            patch(
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
             _patch_resolver(None),  # unrecognised host -> treated as a direct URL
             patch(
-                "app.api.v1.ingest.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging",
                 new=_fake_download(staged, "some-page"),
             ),
         ):
@@ -486,18 +492,20 @@ class TestImportFromUrl:
 
         download = _fake_download(_stage_bytes(b"x", ".bin"), "unused")
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
             patch(
-                "app.api.v1.ingest.import_resolvers.resolve_page_url",
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
+            patch(
+                "app.modules.ingestion.import_resolvers.resolve_page_url",
                 new=AsyncMock(
                     side_effect=importer.ImportError_("printables_resolve_failed")
                 ),
             ),
             patch(
-                "app.api.v1.ingest.import_resolvers.list_model_files",
+                "app.modules.ingestion.import_resolvers.list_model_files",
                 new=AsyncMock(return_value=None),
             ),
-            patch("app.api.v1.ingest.importer.download_to_staging", new=download),
+            patch("app.modules.ingestion.importer.download_to_staging", new=download),
         ):
             payload = _job(
                 client,
@@ -544,16 +552,18 @@ class TestImportFromUrl:
             ]
         )
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
             patch(
-                "app.api.v1.ingest.import_resolvers.resolve_collection_url",
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
+            patch(
+                "app.modules.ingestion.import_resolvers.resolve_collection_url",
                 new=AsyncMock(return_value=("Cool Stuff", members)),
             ),
             patch(
-                "app.api.v1.ingest.import_resolvers.resolve_page_url",
+                "app.modules.ingestion.import_resolvers.resolve_page_url",
                 new=AsyncMock(return_value="https://files.printables.test/x"),
             ),
-            patch("app.api.v1.ingest.importer.download_to_staging", new=download),
+            patch("app.modules.ingestion.importer.download_to_staging", new=download),
         ):
             payload = _job(
                 client,
@@ -606,10 +616,12 @@ class TestImportFromUrl:
         ]
         with (
             patch(
-                "app.api.v1.ingest.import_resolvers.resolve_collection_url",
+                "app.modules.ingestion.import_resolvers.resolve_collection_url",
                 new=AsyncMock(return_value=("Cool Stuff", members)),
             ),
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
+            patch(
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
         ):
             manifest = _job(
                 client,
@@ -628,12 +640,14 @@ class TestImportFromUrl:
 
         download = _fake_download_seq([(BENCHY_STL.read_bytes(), "a.stl")])
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
             patch(
-                "app.api.v1.ingest.import_resolvers.resolve_page_url",
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
+            patch(
+                "app.modules.ingestion.import_resolvers.resolve_page_url",
                 new=AsyncMock(return_value="https://files.printables.test/x"),
             ),
-            patch("app.api.v1.ingest.importer.download_to_staging", new=download),
+            patch("app.modules.ingestion.importer.download_to_staging", new=download),
         ):
             payload = _job(
                 client,
@@ -672,10 +686,12 @@ class TestImportFromUrl:
         ]
         with (
             patch(
-                "app.api.v1.ingest.import_resolvers.list_model_files",
+                "app.modules.ingestion.import_resolvers.list_model_files",
                 new=AsyncMock(return_value=("Springy Cat", files)),
             ),
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
+            patch(
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
         ):
             manifest = _job(
                 client,
@@ -702,9 +718,11 @@ class TestImportFromUrl:
             ]
         )
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
             patch(
-                "app.api.v1.ingest.import_resolvers.resolve_selected_download",
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
+            patch(
+                "app.modules.ingestion.import_resolvers.resolve_selected_download",
                 new=AsyncMock(
                     return_value=[
                         "https://files.printables.test/a.stl",
@@ -712,7 +730,7 @@ class TestImportFromUrl:
                     ]
                 ),
             ),
-            patch("app.api.v1.ingest.importer.download_to_staging", new=download),
+            patch("app.modules.ingestion.importer.download_to_staging", new=download),
         ):
             payload = _job(
                 client,
@@ -752,10 +770,12 @@ class TestImportFromUrl:
         staged = _stage_bytes(BENCHY_STL.read_bytes(), ".stl")
 
         with (
-            patch("app.api.v1.ingest.importer.validate_public_url", return_value=None),
+            patch(
+                "app.modules.ingestion.importer.validate_public_url", return_value=None
+            ),
             _patch_resolver("https://files.printables.test/3dbenchy.stl"),
             patch(
-                "app.api.v1.ingest.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging",
                 new=_fake_download(staged, "3dbenchy.stl"),
             ),
         ):

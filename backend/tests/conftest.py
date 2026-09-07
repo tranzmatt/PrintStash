@@ -62,7 +62,7 @@ from app.db.session import (  # noqa: E402
     get_session_factory,
     override_session_factory,
 )
-from app.services.printer_hub import PrinterHub  # noqa: E402
+from app.modules.printing.printer_hub import PrinterHub  # noqa: E402
 from tests import containers  # noqa: E402
 
 _TIER_MARKERS = {"contract": "contract", "e2e": "e2e"}
@@ -163,7 +163,7 @@ event.listen(_test_engine, "connect", _set_sqlite_pragmas)
 
 _test_factory = SQLiteSessionFactory(_test_engine)
 
-# A handful of contract tests (contract/services/test_prusalink.py,
+# A handful of contract tests (contract/modules/printing/test_prusalink.py,
 # test_octoprint.py, test_printer_hub.py) run the *real*
 # PrinterHub polling loop against a real mock HTTP server: it does its DB
 # writes via asyncio.to_thread worker threads, genuinely concurrently with
@@ -348,7 +348,7 @@ def _patch_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     """Override the session factory ContextVar to use the in-memory test engine.
 
     Single override point — replaces the previous double-monkeypatch of
-    ``app.db.session.engine`` and ``app.services.printer_hub.engine``.
+    ``app.db.session.engine`` and ``app.modules.printing.printer_hub.engine``.
     See ADR-0001.
     """
     override_session_factory(_test_factory)
@@ -361,7 +361,8 @@ def _patch_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     # Production binds storage during lifespan. Unit tests exercise services
     # directly, so bind the local adapter explicitly after every reset instead
     # of letting get_backend() construct infrastructure on first access.
-    from app.services.storage_backend import LocalStorageBackend, bind_backend
+    from app.modules.storage.storage_backend.local import LocalStorageBackend
+    from app.modules.storage.storage_backend.runtime import bind_backend
 
     for role, root in (("data", settings.data_dir), ("thumb", settings.thumb_dir)):
         (Path(root) / ".printstash-storage-root.json").write_text(
@@ -411,8 +412,8 @@ def backup_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A file-based vault the backup service can read and rewrite as real files.
 
     In the root conftest rather than `integration/` because the unit backup tests
-    need it too — that is why `unit/services/test_backup.py` was importing the
-    fixture out of `integration/services/backup/test_core.py`, a coupling that made a
+    need it too — that is why `unit/modules/backups/test_backup.py` was importing the
+    fixture out of `integration/modules/backups/backup/test_core.py`, a coupling that made a
     unit test fail to collect whenever the integration file was edited.
     """
     from tests.integration._backup_harness import build_backup_env
@@ -478,13 +479,13 @@ def threaded_hub_db() -> Iterator[None]:
 def app() -> FastAPI:
     """Return the FastAPI app with in-memory DB, printer hub attached."""
     from app.main import app as _app
-    from app.services.printer_hub import PrinterHub
-    from app.services.printer_provider import (
+    from app.modules.printing.printer_hub import PrinterHub
+    from app.modules.printing.printer_provider import (
         build_provider_registry,
         get_provider_client,
     )
-    from app.services.realtime import InProcessBus
-    from app.services.task_queue import LocalTaskQueue
+    from app.runtime.realtime import InProcessBus
+    from app.runtime.work_wakeup import LocalWorkWakeup
 
     registry = build_provider_registry()
     _app.state.printer_provider_registry = registry
@@ -496,7 +497,7 @@ def app() -> FastAPI:
         ),
     )
     _app.state.printer_hub = hub
-    _app.state.task_queue = LocalTaskQueue()
+    _app.state.work_wakeup = LocalWorkWakeup()
     return _app
 
 
@@ -507,7 +508,7 @@ def client(app: FastAPI) -> TestClient:
 
 @pytest.fixture
 def hub() -> PrinterHub:
-    from app.services.realtime import InProcessBus
+    from app.runtime.realtime import InProcessBus
 
     return PrinterHub(InProcessBus(), session_factory=get_session_factory())
 
@@ -515,7 +516,7 @@ def hub() -> PrinterHub:
 @pytest.fixture
 def auth_headers(db_session: Session) -> dict[str, str]:
     from app.db.models import User
-    from app.services.auth import create_access_token, hash_password
+    from app.modules.identity.auth import create_access_token, hash_password
 
     user = User(
         username="test-writer",

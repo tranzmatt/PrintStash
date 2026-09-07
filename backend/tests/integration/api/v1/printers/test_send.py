@@ -25,8 +25,8 @@ from app.db.models import (
     PrintJob,
     PrintJobState,
 )
-from app.services.printer_jobs import PrinterJobError
-from app.services.printer_provider import ProviderError
+from app.modules.printing.printer_jobs import PrinterJobError
+from app.modules.printing.printer_provider import ProviderError
 from tests.factories import build_file, build_model, build_printer
 
 
@@ -102,7 +102,7 @@ class TestSendToPrinter:
         )
 
         with patch(
-            "app.services.printer_provider.BambuLanProvider.query_status",
+            "app.modules.printing.printer_provider.BambuLanProvider.query_status",
             new_callable=AsyncMock,
             return_value={"result": {"status": {"print_stats": {"state": "printing"}}}},
         ):
@@ -186,7 +186,7 @@ class TestSendToPrinter:
         with (
             patch("app.api.v1.printers.get_backend", return_value=FakeBackend()),
             patch(
-                "app.services.moonraker.MoonrakerClient.upload_gcode",
+                "app.modules.printing.moonraker.MoonrakerClient.upload_gcode",
                 new_callable=AsyncMock,
             ) as mock_upload,
         ):
@@ -238,7 +238,7 @@ class TestSendToPrinter:
         with (
             patch("app.api.v1.printers.get_backend", return_value=FakeBackend()),
             patch(
-                "app.services.moonraker.MoonrakerClient.upload_gcode",
+                "app.modules.printing.moonraker.MoonrakerClient.upload_gcode",
                 new_callable=AsyncMock,
             ) as mock_upload,
         ):
@@ -286,7 +286,7 @@ class TestSendToPrinter:
         # Every registered provider currently supports upload, so there's no
         # real fixture for "provider without upload" — force the gate the
         # /send route actually checks (capabilities.can_upload) instead.
-        from app.services.printer_provider import ElegooCentauriProvider
+        from app.modules.printing.printer_provider import ElegooCentauriProvider
 
         _, f = self._gcode_file(db_session, "eleg")
         p = build_printer(
@@ -323,7 +323,7 @@ class TestSendToPrinter:
         )
 
         with patch(
-            "app.services.printer_provider.BambuLanProvider.query_status",
+            "app.modules.printing.printer_provider.BambuLanProvider.query_status",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):
@@ -357,7 +357,7 @@ class TestSendToPrinter:
         with (
             patch("app.api.v1.printers.get_backend", return_value=FakeBackend()),
             patch(
-                "app.services.moonraker.MoonrakerClient.upload_gcode",
+                "app.modules.printing.moonraker.MoonrakerClient.upload_gcode",
                 new_callable=AsyncMock,
                 return_value={"result": "ok"},
             ),
@@ -432,7 +432,7 @@ class TestSendToPrinter:
                 )(),
             ),
             patch(
-                "app.api.v1.printers.transfer_artifact",
+                "app.modules.printing.dispatch.transfer_artifact",
                 new_callable=AsyncMock,
                 side_effect=ProviderError("boom", code="printer_offline"),
             ),
@@ -464,7 +464,7 @@ class TestSendToPrinter:
                 )(),
             ),
             patch(
-                "app.api.v1.printers.transfer_artifact",
+                "app.modules.printing.dispatch.transfer_artifact",
                 new_callable=AsyncMock,
                 side_effect=PrinterJobError("dispatch_failed"),
             ),
@@ -480,10 +480,10 @@ class TestSendToPrinter:
         assert job.state == PrintJobState.FAILED
         assert job.error == "dispatch_failed"
 
-    def test_send_http_exception_from_transfer_passes_through(
+    def test_send_preserves_a_business_failure_from_transfer(
         self, client: TestClient, auth_headers, db_session: Session
     ):
-        from fastapi import HTTPException
+        from app.core.errors import ErrorKind, OperationError
 
         _, f = self._gcode_file(db_session, "http")
         p = build_printer(
@@ -498,9 +498,9 @@ class TestSendToPrinter:
                 )(),
             ),
             patch(
-                "app.api.v1.printers.transfer_artifact",
+                "app.modules.printing.dispatch.transfer_artifact",
                 new_callable=AsyncMock,
-                side_effect=HTTPException(status_code=418, detail="teapot"),
+                side_effect=OperationError("dispatch_refused", kind=ErrorKind.CONFLICT),
             ),
         ):
             resp = client.post(
@@ -508,8 +508,8 @@ class TestSendToPrinter:
                 json={"file_id": f.id, "start_print": False},
                 headers=auth_headers,
             )
-        assert resp.status_code == 418
-        assert resp.json()["detail"] == "teapot"
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == "dispatch_refused"
 
     def test_refuses_to_start_a_print_the_loaded_material_cannot_do(
         self, client: TestClient, auth_headers, db_session: Session, monkeypatch

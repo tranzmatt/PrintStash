@@ -23,6 +23,15 @@ from app.db.models import (
 from tests.factories import build_printer
 
 
+@pytest.fixture(autouse=True)
+def _use_threaded_db(threaded_hub_db: None) -> None:
+    """Create/update restarts the real hub while HTTP still owns a session.
+
+    Give polling threads independent SQLite connections; sharing StaticPool's
+    single DBAPI connection lets one session roll back another's transaction.
+    """
+
+
 class TestListPrinters:
     def test_list_empty(self, client: TestClient, auth_headers):
         resp = client.get("/api/v1/printers", headers=auth_headers)

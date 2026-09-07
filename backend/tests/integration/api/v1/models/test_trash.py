@@ -22,12 +22,12 @@ from sqlmodel import Session
 
 from app.core.time import utcnow
 from app.db.models import Model
-from app.services.storage_backend import (
+from app.modules.storage.storage_backend.contracts import (
     ObjectIdentity,
     StorageCapabilities,
-    get_backend,
 )
-from app.services.storage_ownership import UnsafeStorageDeleteError
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
 from tests.factories import build_model, build_stored_file, store_owned_bytes
 
 
@@ -351,7 +351,7 @@ class TestPurgeExpiredTrash:
 
         from app.core.config import _overlay
         from app.db.models import FileType
-        from app.services.storage_backend import get_backend
+        from app.modules.storage.storage_backend.runtime import get_backend
         from tests._env import use_local_storage
         from tests.factories import build_file
 

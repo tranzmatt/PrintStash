@@ -21,13 +21,13 @@ throwaway storage root, `paths.py` for the anchors that replace `Path(__file__).
 Translate the production path. One production module ↔ one test module, same basename:
 
 ```
-app/services/ingestion.py            → integration/services/test_ingestion.py
+app/modules/ingestion/ingestion.py            → integration/modules/ingestion/test_ingestion.py
 app/api/v1/printers.py               → integration/api/v1/printers/          (folder: >600 lines)
-app/services/moonraker.py            → contract/services/test_moonraker.py   (wire level)
+app/modules/printing/moonraker.py            → contract/modules/printing/test_moonraker.py   (wire level)
 packages/printstash-core/.../parser.py → packages/printstash-core/tests/gcode/test_parser.py
 ```
 
-"Does `app/services/trash.py` have tests?" is answered by one `ls`, and auditing a module
+"Does `app/modules/library/trash.py` have tests?" is answered by one `ls`, and auditing a module
 is auditing one file. A test that cannot be placed by this rule is testing something that
 is not a unit — find the unit first.
 

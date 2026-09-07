@@ -3,7 +3,7 @@
 Instance A is the ``e2e_db`` fixture's on-disk SQLite DB (seeded via the real
 ingest pipeline, exactly like ``test_e2e_ingest.py``). Instance B is a second,
 independently created file-based SQLite engine + tmp data dir in the same
-process -- ``app/services/library_transfer.py``'s ``create_archive``/
+process -- ``app/modules/ingestion/library_transfer.py``'s ``create_archive``/
 ``import_archive`` are the real functions, but this drives them through the
 real ``/api/v1/models/library-archive`` (export) and ``/library-import``
 (import) HTTP endpoints, switching the app's session factory + storage
@@ -20,12 +20,13 @@ from pathlib import Path
 import pytest
 from sqlmodel import SQLModel, create_engine
 
+import app.modules.storage.storage_backend.runtime as storage_runtime
 from app.core.config import _overlay
 from app.core.time import utcnow
 from app.db.models import File, PrintJobState
 from app.db.session import SQLiteSessionFactory, override_session_factory
+from app.modules.library import provenance
 from app.schemas.provenance import CaptureManifestV2
-from app.services import provenance, storage_backend
 from tests.factories import print_job_config
 from tests.paths import FIXTURES_DIR
 
@@ -49,7 +50,7 @@ async def _setup_instance(
         },
     )
     assert r.status_code == 201, r.text
-    from app.services.storage_backend import init_backend
+    from app.modules.storage.storage_backend.runtime import init_backend
 
     init_backend()
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
@@ -72,7 +73,7 @@ def _switch_to_fresh_instance(tmp_path: Path, name: str) -> None:
         _overlay[key] = d
     # get_backend() caches a singleton keyed to whatever data_dir was active
     # when it was first built; force it to rebuild against the new instance.
-    storage_backend._backend = None
+    storage_runtime._backend = None
 
 
 class TestLibraryTransfer:

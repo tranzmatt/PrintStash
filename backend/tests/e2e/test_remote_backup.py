@@ -16,9 +16,9 @@ import pytest
 from botocore.config import Config as BotoConfig
 
 from app.core.config import settings
-from app.services.storage_backend import init_backend
-from app.services.storage_opendal import OpenDALStorageBackend
-from app.services.storage_providers import SFTPProviderConfig, resolve_transport
+from app.modules.storage.storage_backend.runtime import init_backend
+from app.modules.storage.storage_opendal import OpenDALStorageBackend
+from app.modules.storage.storage_providers import SFTPProviderConfig, resolve_transport
 from tests.containers import S3_ACCESS_KEY, S3_SECRET_KEY, openssh_endpoint, s3_endpoint
 from tests.paths import FIXTURES_DIR
 

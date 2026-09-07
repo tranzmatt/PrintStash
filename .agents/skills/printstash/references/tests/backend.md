@@ -14,17 +14,17 @@ backend/tests/
   unit/                  pure logic · no db_session/client · mirrors app/
     conftest.py          guard: taking db_session/client or opening a socket fails
     core/test_<module>.py          ↔ app/core/<module>.py
-    services/test_<module>.py      ↔ pure helpers of app/services/<module>.py
+    modules/<owner>/test_<module>.py ↔ pure helpers of app/modules/<owner>/<module>.py
   integration/           real in-process app + DB + storage, egress stubbed · DEFAULT · mirrors app/
     conftest.py          guard: any real network connection fails
     api/v1/test_<router>.py        ↔ app/api/v1/<router>.py
-    services/test_<service>.py     ↔ app/services/<service>.py
+    modules/<owner>/test_<module>.py ↔ app/modules/<owner>/<module>.py
     db/test_<module>.py            ↔ app/db/<module>.py (incl. test_migrations.py)
     schemas/test_<module>.py       ↔ app/schemas/<module>.py
     postgres/test_<contract>.py    @pytest.mark.postgres — dialect + concurrency gate
   contract/              our clients vs contract-enforcing fakes over a real loopback socket · mirrors app/
-    services/test_<provider>.py    emulator / MQTT-FTPS / OIDC fakes
-    services/test_storage_backend.py   @pytest.mark.s3 — a real SeaweedFS container
+    modules/printing/test_<provider>.py    emulator / MQTT-FTPS / OIDC fakes
+    modules/storage/test_storage_backend.py   @pytest.mark.s3 — a real SeaweedFS container
   e2e/                   whole app via ASGITransport + fakes
     conftest.py
     test_<flow>.py                 one headline flow per file
@@ -88,7 +88,7 @@ def model(db_session: Session) -> Model: ...        # shared by ≥2 tests
 def _persist(db_session: Session, model: Model, **overrides): ...  # builder
 
 
-class TestPersistArtifact:                          # ↔ ingestion.persist_artifact (integration/services/test_ingestion.py)
+class TestPersistArtifact:                          # ↔ ingestion.persist_artifact (integration/modules/ingestion/test_ingestion.py)
     def test_persists_a_file_row_with_its_metadata_in_one_commit(self, db_session, model, staged):
         file_row = ingestion.persist_artifact(db_session, model=model, staged_path=staged, ...)
 
@@ -213,7 +213,7 @@ overlay before the next test. Storage dirs: `_overlay["data_dir"] = tmp_path /
 Only outbound boundaries are ever faked, and only under `unit/` and `integration/`:
 
 - **Outbound HTTP** — patch `get_http_client` **where it is used**, not where
-  it is defined: `patch("app.services.moonraker.get_http_client")`, then
+  it is defined: `patch("app.modules.printing.moonraker.get_http_client")`, then
   `.return_value.request = AsyncMock(return_value=resp)` /
   `side_effect=[...]`. Build responses as real `httpx.Response` (preferred) or
   `MagicMock(status_code=..., json=..., text=...)`. Assert the *reaction*
@@ -252,9 +252,9 @@ to `ERROR`). When the fault you need has no flag, add one to the fake — that's
 a contract-fake improvement, not a test hack.
 
 A new provider: add its credentials row to `FULL_CREDENTIALS` in the
-conformance pack (`integration/services/printer_provider/test_conformance.py`;
-it fails until you do), write `integration/services/test_<provider>.py` for
-normalisation, `contract/services/test_<provider>.py` against its emulator,
+conformance pack (`integration/modules/printing/printer_provider/test_conformance.py`;
+it fails until you do), write `integration/modules/printing/test_<provider>.py` for
+normalisation, `contract/modules/printing/test_<provider>.py` against its emulator,
 and one `e2e/` flow. Update `docs/provider-support.md` for the
 support level you actually proved.
 
@@ -398,7 +398,7 @@ docstring explains.
 
 ## One trap worth knowing: `SQLModel.metadata` is shared, mutable state
 
-Not a rule, a scar. `app/db/models.py` has a foreign-key cycle (`files.model_id ->
+Not a rule, a scar. `app/db/models/library.py` has a foreign-key cycle (`files.model_id ->
 models.id`, `models.thumbnail_file_id -> files.id`). SQLAlchemy breaks it per
 dialect, and on one that supports `ALTER TABLE ... ADD CONSTRAINT` it lifts those
 constraints out of `CREATE TABLE` and sets `ForeignKeyConstraint._create_rule` to

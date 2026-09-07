@@ -16,8 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.services.jobs import registry
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.runtime.jobs import registry
 
 
 class TestFileThumbnail:
@@ -83,7 +83,7 @@ class TestFileThumbnail:
         make_file,
     ) -> None:
         from app.api.v1 import files as files_api
-        from app.services.storage_backend import StorageObjectInfo
+        from app.modules.storage.storage_backend.contracts import StorageObjectInfo
 
         row = make_file(make_model("remote-thumb"))
 
@@ -173,10 +173,10 @@ class TestThumbnailRebuildJob:
         make_model,
         make_file,
     ) -> None:
-        import app.services.thumbnail_repair as repair
+        import app.modules.media.thumbnail_repair as repair
         from app.api.v1.files import _run_thumbnail_rebuild
         from app.db.session import get_session_factory
-        from app.services.thumbnail_generations import (
+        from app.modules.media.thumbnail_generations import (
             ThumbnailEnsureOutcome,
             ThumbnailEnsureResult,
         )
@@ -209,10 +209,10 @@ class TestThumbnailRebuildJob:
         make_model,
         make_file,
     ) -> None:
-        import app.services.thumbnail_repair as repair
+        import app.modules.media.thumbnail_repair as repair
         from app.api.v1.files import _run_thumbnail_rebuild
         from app.db.session import get_session_factory
-        from app.services.thumbnail_generations import (
+        from app.modules.media.thumbnail_generations import (
             ThumbnailEnsureOutcome,
             ThumbnailEnsureResult,
         )
@@ -259,7 +259,7 @@ class TestThumbnailRebuildJob:
         db_session.add(model)
         db_session.commit()
         monkeypatch.setattr(
-            "app.services.mesh_processing.render_thumbnail", lambda _path: b"webp"
+            'app.modules.media.mesh_operations.render_thumbnail', lambda _path: b"webp"
         )
         job_id = registry.create(owner_user_id=None)
 
@@ -316,7 +316,7 @@ class TestThumbnailRebuildJob:
         get_backend().write_bytes(b"solid x endsolid", key)
         make_file(model, filename="render-fails.stl", path=key)
         monkeypatch.setattr(
-            "app.services.mesh_processing.render_thumbnail", lambda _path: None
+            'app.modules.media.mesh_operations.render_thumbnail', lambda _path: None
         )
         job_id = registry.create(owner_user_id=None)
 
@@ -344,7 +344,7 @@ class TestThumbnailRebuildJob:
         def exploding(_path):
             raise RuntimeError("renderer exploded")
 
-        monkeypatch.setattr("app.services.mesh_processing.render_thumbnail", exploding)
+        monkeypatch.setattr('app.modules.media.mesh_operations.render_thumbnail', exploding)
         job_id = registry.create(owner_user_id=None)
 
         _run_thumbnail_rebuild(job_id, True, get_session_factory())

@@ -42,10 +42,10 @@ from app.db.models import (
 )
 from app.db.session import create_async_engine_for_db
 from app.db.url import normalize_database_url
-from app.services import provenance
-from app.services.auth import create_refresh_token, rotate_refresh_token
-from app.services.printer_rbac import effective_printer_role
-from app.services.rbac import effective_collection_role
+from app.modules.identity.auth import create_refresh_token, rotate_refresh_token
+from app.modules.identity.printer_rbac import effective_printer_role
+from app.modules.identity.rbac import effective_collection_role
+from app.modules.library import provenance
 from tests.containers import postgres_url
 from tests.factories import (
     build_collection,
@@ -457,14 +457,17 @@ class TestManufacturingPostgres:
 
         ids = seed_confirmation_race(postgres_engine)
         outcomes = race_confirmations(postgres_engine, *ids, False)
-        assert sorted(code for code, _ in outcomes) == [200, 409]
-        assert (200, 1) in outcomes
+        assert sorted(code for code, _ in outcomes) == ["conflict", "success"]
+        assert ("success", 1) in outcomes
 
     def test_duplicate_results_count_once(self, postgres_engine):
         from tests.fakes.manufacturing import race_confirmations, seed_confirmation_race
 
         ids = seed_confirmation_race(postgres_engine)
-        assert race_confirmations(postgres_engine, *ids, True) == [(200, 1), (200, 1)]
+        assert race_confirmations(postgres_engine, *ids, True) == [
+            ("success", 1),
+            ("success", 1),
+        ]
 
 
 class TestManufacturingQueuePostgres:
@@ -472,5 +475,5 @@ class TestManufacturingQueuePostgres:
         from tests.fakes.manufacturing import race_queues
 
         outcomes, reserved = race_queues(postgres_engine)
-        assert outcomes == [(201, 1), (409, 0)]
+        assert outcomes == [("conflict", 0), ("success", 1)]
         assert reserved == 4

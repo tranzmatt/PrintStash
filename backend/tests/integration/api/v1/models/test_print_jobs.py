@@ -376,7 +376,7 @@ class TestImportPrintJobsFromPrinter:
         printer: Printer,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from app.services.moonraker import MoonrakerError
+        from app.modules.printing.moonraker import MoonrakerError
 
         async def unreachable(*_args: object, **_kwargs: object):
             raise MoonrakerError("unreachable")

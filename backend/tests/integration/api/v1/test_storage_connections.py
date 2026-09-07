@@ -12,10 +12,10 @@ from sqlmodel import Session
 
 from app.api.v1 import storage_connections as storage_connections_api
 from app.db.models import StorageConnection
-from app.services.auth import create_access_token
-from app.services.library_source import LibrarySourceError
+from app.modules.identity.auth import create_access_token
+from app.modules.sources.library_source import LibrarySourceError
 from tests.factories import build_user
-from tests.integration.services.external_library._helpers import enable_feature
+from tests.integration.modules.sources.external_library._helpers import enable_feature
 
 
 def _headers(user) -> dict[str, str]:
@@ -774,7 +774,7 @@ class TestConnectionEditing:
     def test_historical_owned_receipt_blocks_target_edits(
         self, client, db_session, editable
     ):
-        from app.services.backup_destination import destination_from_connection
+        from app.modules.backups.backup_destination import destination_from_connection
         from tests.factories import build_owned_storage_object
 
         identifier, headers = editable

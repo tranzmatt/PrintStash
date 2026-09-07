@@ -33,9 +33,15 @@ from app.db.models import (
     PrintJob,
     PrintJobState,
 )
-from app.services.printer_hub import PrinterHub
-from app.services.printer_jobs import dispatch_next, reconcile_stranded_dispatches
-from app.services.printer_provider import build_provider_registry, get_provider_client
+from app.modules.printing.printer_hub import PrinterHub
+from app.modules.printing.printer_jobs import (
+    dispatch_next,
+    reconcile_stranded_dispatches,
+)
+from app.modules.printing.printer_provider import (
+    build_provider_registry,
+    get_provider_client,
+)
 from tests.factories import (
     a_gcode_artifact,
     build_print_job,
@@ -203,7 +209,7 @@ class TestFleetOverRealApi:
             ).json()
 
             with patch(
-                "app.services.printer_jobs.get_backend", return_value=_Backend()
+                "app.modules.printing.printer_jobs.get_backend", return_value=_Backend()
             ):
                 dispatched_1 = await dispatch_next(_provider_builder)
                 dispatched_2 = await dispatch_next(_provider_builder)
@@ -291,7 +297,7 @@ class TestFleetOverRealApi:
             ).json()
 
             with patch(
-                "app.services.printer_jobs.get_backend", return_value=_Backend()
+                "app.modules.printing.printer_jobs.get_backend", return_value=_Backend()
             ):
                 dispatched = await dispatch_next(_provider_builder)
                 assert dispatched == queued["id"]

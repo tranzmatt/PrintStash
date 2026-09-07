@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 import app.api.v1.health as health_mod
+import app.modules.backups.backup.creation as backup_creation
 from app.core.config import get_config
 from app.core.time import utcnow
 from app.db.models import (
@@ -79,7 +80,7 @@ def _model_with_file(db_session: Session, name: str) -> Model:
 @pytest.fixture
 def spoolman_enabled(db_session: Session):
     """Turn the optional Spoolman integration on, with an optional API key."""
-    from app.services import runtime_config
+    from app.modules.administration import runtime_config
 
     def enable(*, base_url: str | None = SPOOLMAN_URL, api_key: str | None = None):
         runtime_config.set_spoolman_enabled(db_session, True)
@@ -457,7 +458,6 @@ class TestSpoolmanProbe:
 class TestBackupExecutionHealth:
     def test_partial_backup_reports_its_durable_execution_failure(self, backup_env):
         from app.db.models import StorageConnectionPurpose
-        from app.services import backup
         from tests.factories import build_storage_connection
 
         with backup_env.new_session() as session:
@@ -467,7 +467,7 @@ class TestBackupExecutionHealth:
             profile.config_json = "{}"
             session.add(profile)
             session.commit()
-        meta = backup.create_backup()
+        meta = backup_creation.create_backup()
         probe = health_mod._backup_probe()
         assert probe["ok"] is False
         assert probe["execution"]["latest_run_id"] == meta.run_id

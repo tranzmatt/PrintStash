@@ -27,8 +27,8 @@ from app.db.models import (
     StorageDeleteIntent,
     User,
 )
+from app.modules.ingestion import inbox
 from app.schemas.inbox import CaptureUploadSlotsCreate
-from app.services import inbox
 
 CANONICAL_URL = "https://makerworld.com/en/models/1234-widget"
 

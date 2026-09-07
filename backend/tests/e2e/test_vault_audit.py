@@ -14,7 +14,7 @@ import pytest
 from sqlmodel import select
 
 from app.db.models import Model
-from app.services.storage_backend import get_backend, init_backend
+from app.modules.storage.storage_backend.runtime import get_backend, init_backend
 
 _STL = b"""solid audit_fixture
 facet normal 0 0 1

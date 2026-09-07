@@ -16,7 +16,7 @@ import pytest
 from sqlmodel import Session
 
 from app.db.models import File, Model
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
 
 
 @pytest.fixture

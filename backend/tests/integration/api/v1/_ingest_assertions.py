@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.db.models import File, FileType, Metadata, Model
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
 
 
 def completed_job(client: TestClient, response) -> dict:

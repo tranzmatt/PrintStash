@@ -7,6 +7,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlmodel import Session, select
 
+import app.modules.printing.costing as models_costing
 from app.core.http import get_or_404
 from app.core.security import require_superuser, require_user
 from app.core.time import utcnow
@@ -17,7 +18,6 @@ from app.schemas.models import (
     FilamentProfileRead,
     FilamentProfileUpdate,
 )
-from app.services import model_views
 
 router = APIRouter(prefix="/filament-profiles", tags=["filament-profiles"])
 
@@ -45,7 +45,7 @@ def list_filament_profiles(
     profiles = session.exec(
         select(FilamentProfile).order_by(FilamentProfile.name.asc())  # type: ignore[attr-defined]
     ).all()
-    usage = model_views.filament_profile_usage(session)
+    usage = models_costing.filament_profile_usage(session)
     return [_read(profile, usage.get(profile.id or 0, 0)) for profile in profiles]
 
 

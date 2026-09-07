@@ -18,9 +18,9 @@ from botocore.config import Config as BotoConfig
 from sqlmodel import select
 
 from app.db.models import File, LibrarySourceKind
-from app.services.storage_connections import parse_connection_config
-from app.services.storage_opendal import OpenDALStorageBackend
-from app.services.storage_providers import resolve_transport
+from app.modules.storage.storage_connections import parse_connection_config
+from app.modules.storage.storage_opendal import OpenDALStorageBackend
+from app.modules.storage.storage_providers import resolve_transport
 from tests.containers import (
     S3_ACCESS_KEY,
     S3_SECRET_KEY,
@@ -258,7 +258,7 @@ class TestDurableScanPages:
         self, api, superuser_headers, e2e_db, monkeypatch
     ):
         from app.db.models import ExternalLibraryCheckpoint, RemoteDiscoveryInventory
-        from app.services import external_library
+        from app.modules.sources import external_library
 
         monkeypatch.setattr(external_library, "_REMOTE_PAGE_LIMIT", 2)
         provider = await asyncio.to_thread(_s3_provider)

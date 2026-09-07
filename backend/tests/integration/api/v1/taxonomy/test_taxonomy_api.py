@@ -17,8 +17,8 @@ from sqlmodel import Session, select
 from app.api.v1 import taxonomy as taxonomy_router
 from app.core.config import _overlay
 from app.db.models import CollectionRole, ExternalLibraryTombstone, MultipartModel
-from app.services import taxonomy
-from app.services.storage_backend import get_backend
+from app.modules.library import taxonomy
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import (
     bearer,
     build_external_library,

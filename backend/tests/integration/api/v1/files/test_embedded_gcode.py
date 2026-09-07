@@ -23,7 +23,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.db.models import File, FileType
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import build_file, build_model
 
 pytestmark = pytest.mark.asyncio

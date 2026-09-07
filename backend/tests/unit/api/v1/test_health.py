@@ -122,7 +122,7 @@ class TestDatabaseProbe:
 class TestBackupProbe:
     @pytest.fixture(autouse=True)
     def healthy_execution_catalogue(self, monkeypatch):
-        from app.services import backup_runs
+        from app.modules.backups import backup_runs
 
         monkeypatch.setattr(backup_runs, "execution_health", lambda: {"ok": True})
 
@@ -217,7 +217,7 @@ class TestBackupProbe:
 
 class TestStorageProbe:
     def test_delegates_to_the_storage_backends_probe(self) -> None:
-        from app.services.storage_backend import get_backend
+        from app.modules.storage.storage_backend.runtime import get_backend
 
         out = health_mod._storage_probe()
 
@@ -264,7 +264,7 @@ class TestJobsProbe:
     def test_reports_the_registrys_job_counts(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import app.services.jobs as jobs_mod
+        import app.runtime.jobs as jobs_mod
 
         counts = {"pending": 1, "running": 2, "total": 3}
         monkeypatch.setattr(jobs_mod.registry, "snapshot_counts", lambda: counts)
@@ -274,7 +274,7 @@ class TestJobsProbe:
     def test_reports_the_exception_class_when_the_registry_fails(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import app.services.jobs as jobs_mod
+        import app.runtime.jobs as jobs_mod
 
         def broken():
             raise RuntimeError("registry broken")

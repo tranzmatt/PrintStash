@@ -19,6 +19,8 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+import app.modules.library.model_views.statistics as models_statistics
+import app.modules.printing.costing as models_costing
 from app.core.time import utcnow
 from app.db.models import (
     FilamentProfile,
@@ -29,7 +31,7 @@ from app.db.models import (
     PrintJob,
     PrintJobState,
 )
-from app.services import print_results
+from app.modules.printing import print_results
 from tests.factories import (
     build_collection,
     build_file,
@@ -115,9 +117,8 @@ def _oracle_totals(db_session: Session, period: str) -> dict:
     from sqlmodel import func, select
 
     from app.db.scopes import live
-    from app.services import model_views as mv
 
-    lookback_days = mv._STATS_PERIODS.get(period, mv._STATS_PERIODS["30d"])
+    lookback_days = models_statistics._STATS_PERIODS.get(period, models_statistics._STATS_PERIODS["30d"])
     end_at = utcnow()
     start_at = (
         end_at - timedelta(days=lookback_days) if lookback_days is not None else None
@@ -134,7 +135,7 @@ def _oracle_totals(db_session: Session, period: str) -> dict:
         query = query.where(anchor >= start_at)
 
     rows = db_session.exec(query).all()
-    profiles = mv._load_filament_profiles(db_session)
+    profiles = models_costing.cost_profiles(db_session)
 
     total_cost, has_cost = 0.0, False
     total_filament_g, has_filament = 0.0, False
@@ -142,10 +143,10 @@ def _oracle_totals(db_session: Session, period: str) -> dict:
     for job, md in rows:
         if job.filament_used_g is not None:
             grams = job.filament_used_g
-            cost = mv.filament_cost_for_grams(profiles, md, grams)
+            cost = models_costing.filament_cost_for_grams(profiles, md, grams)
         elif md is not None:
             grams = md.filament_weight_g
-            cost = mv.filament_cost_for_grams(profiles, md, grams)
+            cost = models_costing.filament_cost_for_grams(profiles, md, grams)
             if cost is None:
                 cost = md.filament_cost
         else:

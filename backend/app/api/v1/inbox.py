@@ -22,6 +22,7 @@ from app.core.browser_device_auth import require_user_or_browser_import_user
 from app.core.security import require_auth, require_user
 from app.db.models import InboxItemState, User
 from app.db.session import SessionFactory, get_session, get_session_factory
+from app.modules.ingestion import inbox
 from app.schemas.inbox import (
     CaptureUploadSlotRead,
     CaptureUploadSlotsCreate,
@@ -32,7 +33,6 @@ from app.schemas.inbox import (
     InboxItemRead,
     InboxItemUpdate,
 )
-from app.services import inbox
 
 router = APIRouter(prefix="/inbox", tags=["pending imports"])
 

@@ -10,7 +10,7 @@ from sqlmodel import Session
 
 from app.core.config import _overlay
 from app.db.models import CollectionRole, User
-from app.services import taxonomy
+from app.modules.library import taxonomy
 from tests.factories import bearer, build_user, grant_collection_role
 
 # 1x1 transparent PNG.

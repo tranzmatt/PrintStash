@@ -18,24 +18,27 @@ from app.db.models import (
     StorageConnectionPurpose,
 )
 from app.db.session import get_session
-from app.services.backup_destination import (
+from app.modules.backups.backup_destination import (
     BackupDestinationError,
     destination_from_connection,
 )
-from app.services.library_source import LibrarySourceError, source_from_connection
-from app.services.storage_backend import StorageConfigurationError
-from app.services.storage_connections import (
+from app.modules.sources.library_source import (
+    LibrarySourceError,
+    source_from_connection,
+)
+from app.modules.storage.storage_backend.contracts import StorageConfigurationError
+from app.modules.storage.storage_connections import (
     StorageConnectionConfigError,
     connection_target_signature,
     serialize_connection_config,
 )
-from app.services.storage_operations import (
+from app.modules.storage.storage_operations import (
     OperationResult,
     UseAvailability,
     source_operations,
     use_availability,
 )
-from app.services.storage_providers import provider_secret_fields
+from app.modules.storage.storage_providers import provider_secret_fields
 
 router = APIRouter(
     prefix="/storage-connections",

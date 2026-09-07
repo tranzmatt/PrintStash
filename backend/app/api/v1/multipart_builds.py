@@ -3,9 +3,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+from app.bootstrap.dependencies import get_work_wakeup
 from app.core.security import require_auth, require_user
 from app.db.models import CollectionRole, MultipartBuild, User
 from app.db.session import get_session
+from app.modules.identity import rbac
+from app.modules.printing import fleet
+from app.modules.printing import multipart_builds as builds
+from app.runtime.work_wakeup import WorkNotice, WorkWakeup
 from app.schemas.multipart_builds import (
     BuildArchive,
     BuildConfirm,
@@ -15,9 +20,6 @@ from app.schemas.multipart_builds import (
     BuildRead,
     BuildSelection,
 )
-from app.services import fleet, rbac
-from app.services import multipart_builds as builds
-from app.services.task_queue import TaskEnvelope, TaskQueue, get_task_queue
 
 router = APIRouter(prefix="/multipart-builds", tags=["multipart-builds"])
 
@@ -102,7 +104,7 @@ async def enqueue_part(
     payload: BuildQueue,
     user: User = Depends(require_user),
     session: Session = Depends(get_session),
-    task_queue: TaskQueue = Depends(get_task_queue),
+    work_wakeup: WorkWakeup = Depends(get_work_wakeup),
 ):
     build = builds.require(session, user, build_id, CollectionRole.EDIT)
     try:
@@ -113,8 +115,8 @@ async def enqueue_part(
             exc.code,
         ) from exc
     for job in jobs:
-        await task_queue.enqueue(
-            TaskEnvelope(job_id=str(job.id), kind="fleet_dispatch", payload={})
+        await work_wakeup.notify(
+            WorkNotice(job_id=str(job.id), kind="fleet_dispatch", payload={})
         )
     return builds.read(session, user, build)
 

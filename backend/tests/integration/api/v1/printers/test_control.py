@@ -20,7 +20,7 @@ from app.db.models import (
     PrinterProvider,
     PrintJobState,
 )
-from app.services.printer_provider import ProviderError
+from app.modules.printing.printer_provider import ProviderError
 from tests.factories import build_file, build_model, build_print_job, build_printer
 
 
@@ -40,7 +40,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.pause",
+            "app.modules.printing.printer_provider.MoonrakerProvider.pause",
             new_callable=AsyncMock,
         ) as mock_pause:
             mock_pause.return_value = {"result": "ok"}
@@ -57,7 +57,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.resume",
+            "app.modules.printing.printer_provider.MoonrakerProvider.resume",
             new_callable=AsyncMock,
         ) as mock_resume:
             mock_resume.return_value = {"result": "ok"}
@@ -73,7 +73,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.cancel",
+            "app.modules.printing.printer_provider.MoonrakerProvider.cancel",
             new_callable=AsyncMock,
         ) as mock_cancel:
             mock_cancel.return_value = {"result": "ok"}
@@ -111,7 +111,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.OctoPrintProvider.cancel",
+            "app.modules.printing.printer_provider.OctoPrintProvider.cancel",
             new_callable=AsyncMock,
             return_value={"ok": True},
         ):
@@ -130,7 +130,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.run_gcode",
+            "app.modules.printing.printer_provider.MoonrakerProvider.run_gcode",
             new_callable=AsyncMock,
         ) as mock_gcode:
             mock_gcode.return_value = {"result": "ok"}
@@ -150,7 +150,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.run_gcode",
+            "app.modules.printing.printer_provider.MoonrakerProvider.run_gcode",
             new_callable=AsyncMock,
         ) as mock_gcode:
             mock_gcode.return_value = {"result": "ok"}
@@ -170,7 +170,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.emergency_stop",
+            "app.modules.printing.printer_provider.MoonrakerProvider.emergency_stop",
             new_callable=AsyncMock,
         ) as mock_estop:
             mock_estop.return_value = {"result": "ok"}
@@ -208,7 +208,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.pause",
+            "app.modules.printing.printer_provider.MoonrakerProvider.pause",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):
@@ -224,7 +224,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.resume",
+            "app.modules.printing.printer_provider.MoonrakerProvider.resume",
             new_callable=AsyncMock,
             side_effect=RuntimeError("secret stack"),
         ):
@@ -254,7 +254,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.run_gcode",
+            "app.modules.printing.printer_provider.MoonrakerProvider.run_gcode",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):
@@ -272,7 +272,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.run_gcode",
+            "app.modules.printing.printer_provider.MoonrakerProvider.run_gcode",
             new_callable=AsyncMock,
             side_effect=RuntimeError("secret stack"),
         ):
@@ -292,7 +292,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.emergency_stop",
+            "app.modules.printing.printer_provider.MoonrakerProvider.emergency_stop",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):
@@ -310,7 +310,7 @@ class TestPrinterControl:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.emergency_stop",
+            "app.modules.printing.printer_provider.MoonrakerProvider.emergency_stop",
             new_callable=AsyncMock,
             side_effect=RuntimeError("secret stack"),
         ):
@@ -325,7 +325,7 @@ class TestPrinterControl:
     ):
         from dataclasses import replace
 
-        from app.services.printer_provider import MoonrakerProvider
+        from app.modules.printing.printer_provider import MoonrakerProvider
 
         p = build_printer(
             db_session, name="No pause", moonraker_url="http://10.0.0.9:7125"

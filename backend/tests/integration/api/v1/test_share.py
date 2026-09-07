@@ -35,7 +35,7 @@ from app.db.models import (
     ShareLink,
     User,
 )
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import (
     build_collection,
     build_file,
@@ -356,7 +356,7 @@ class TestSharedDownload:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        from app.services import artifact_content
+        from app.modules.storage import artifact_content
 
         payload = b"shared NAS bytes"
         source = tmp_path / "nas" / "shared.stl"

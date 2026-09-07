@@ -17,7 +17,7 @@ random disposable prefix; cleanup never targets an existing user directory.
 Run from `backend/` with Docker available:
 
 ```sh
-./scripts/test.sh full -n 0 -q tests/contract/services/storage_opendal/test_webdav_cleanup.py
+./scripts/test.sh full -n 0 -q tests/contract/modules/storage/storage_opendal/test_webdav_cleanup.py
 ```
 
 ## Observed results

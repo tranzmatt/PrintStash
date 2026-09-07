@@ -6,12 +6,12 @@ from sqlmodel import Session
 from app.core.security import require_superuser
 from app.db.models import User, VaultAuditRun
 from app.db.session import get_session
+from app.modules.administration import vault_audit
 from app.schemas.maintenance import (
     VaultAuditCreate,
     VaultAuditFindingRead,
     VaultAuditRunRead,
 )
-from app.services import vault_audit
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 

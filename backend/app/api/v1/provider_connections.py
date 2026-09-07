@@ -8,6 +8,7 @@ from app.core.security import require_auth, require_user
 from app.core.time import utcnow
 from app.db.models import BrowserDevice, CaptureProvider, ProviderConnection, User
 from app.db.session import get_session
+from app.modules.ingestion import provider_connections as service
 from app.schemas.provider_connections import (
     BrowserDevicePatch,
     BrowserDeviceRead,
@@ -18,7 +19,6 @@ from app.schemas.provider_connections import (
     OAuthAuthorizeRead,
     ProviderConnectionRead,
 )
-from app.services import provider_connections as service
 
 router = APIRouter(prefix="/provider-connections", tags=["provider-connections"])
 pairing_router = APIRouter(prefix="/browser-pairings", tags=["browser-pairings"])

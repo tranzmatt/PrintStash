@@ -4,8 +4,8 @@ from sqlmodel import Session
 from app.core.security import require_auth, require_user
 from app.db.models import User
 from app.db.session import get_session
+from app.modules.library import saved_views
 from app.schemas.saved_views import SavedViewCreate, SavedViewRead, SavedViewUpdate
-from app.services import saved_views
 
 router = APIRouter(prefix="/saved-views", tags=["saved views"])
 

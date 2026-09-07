@@ -259,7 +259,7 @@ class TestImportLibraryArchive:
         local_storage,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from app.services import inbox
+        from app.modules.ingestion import inbox
 
         _leave_free_bytes(monkeypatch, 4096)
 
@@ -281,7 +281,7 @@ class TestImportLibraryArchive:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from app.api.v1 import models as models_api
-        from app.services.jobs import registry
+        from app.runtime.jobs import registry
 
         created = _record_created_jobs(monkeypatch)
 
@@ -310,7 +310,7 @@ class TestImportLibraryArchive:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from app.api.v1 import models as models_api
-        from app.services.jobs import registry
+        from app.runtime.jobs import registry
 
         created = _record_created_jobs(monkeypatch)
 

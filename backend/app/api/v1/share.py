@@ -20,9 +20,9 @@ from app.core.ratelimit import rate_limit
 from app.core.security import require_user
 from app.db.models import CollectionRole, FileType, Model, ShareLink, User
 from app.db.session import get_session
+from app.modules.identity import rbac, share
+from app.modules.storage.artifact_content import ArtifactContentMissingError, resolve
 from app.schemas.share import ShareLinkCreate, ShareLinkCreated, ShareLinkRead
-from app.services import rbac, share
-from app.services.artifact_content import ArtifactContentMissingError, resolve
 
 _MESH_TYPES = {FileType.STL, FileType.THREE_MF, FileType.OBJ, FileType.STEP}
 
@@ -211,7 +211,7 @@ async def get_shared_toolpath(
 ):
     from fastapi.responses import Response
 
-    from app.services import toolpath
+    from app.modules.media import toolpath
 
     link = share.resolve_share(session, token)
     if not link.allow_download:

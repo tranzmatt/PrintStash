@@ -28,7 +28,7 @@ from app.db.models import (
     PrintJob,
     PrintJobState,
 )
-from app.services import notifications
+from app.modules.notifications import notifications
 from tests.factories import build_file, build_model, build_print_job, build_printer
 
 NOTIF_BASE = "/api/v1/notifications"

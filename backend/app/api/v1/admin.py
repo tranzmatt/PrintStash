@@ -24,16 +24,13 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.db.session import get_session
-from app.schemas.auth import UserCreate, UserPasswordUpdate, UserRead, UserUpdate
-from app.services import gc_planner
-from app.services.auth import (
+from app.modules.backups import gc_planner
+from app.modules.identity.auth import (
     get_user_by_username,
     hash_password,
     invalidate_user_sessions,
 )
-from app.services.storage_deletion import process_storage_delete_intents
-from app.services.storage_ownership import UnsafeStorageDeleteError
-from app.services.trash import (
+from app.modules.library.trash import (
     PurgeConflictError,
     StorageRiskConfirmationRequired,
     hard_delete_collection,
@@ -41,7 +38,10 @@ from app.services.trash import (
     hard_delete_file,
     hard_delete_model,
 )
-from app.services.trash import restore_resource as trash_restore_resource
+from app.modules.library.trash import restore_resource as trash_restore_resource
+from app.modules.storage.storage_deletion import process_storage_delete_intents
+from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
+from app.schemas.auth import UserCreate, UserPasswordUpdate, UserRead, UserUpdate
 
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_superuser)]

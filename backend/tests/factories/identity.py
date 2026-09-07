@@ -29,7 +29,7 @@ from app.db.models import (
     PrinterRole,
     User,
 )
-from app.services.auth import create_access_token, hash_password
+from app.modules.identity.auth import create_access_token, hash_password
 from tests.factories._support import nth, reject_aliases, save
 
 PASSWORD = "Password123"

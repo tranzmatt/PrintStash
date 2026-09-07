@@ -6,7 +6,7 @@ explicit. Support levels and per-provider behavior/safety rules:
 
 ## Architecture
 
-All in `backend/app/services/`:
+All in `backend/app/modules/printing/`:
 
 - `printer_provider.py` — the seam: `Capability` enum,
   `ProviderCapabilities`, `PrinterProviderClient` protocol, `BaseProvider`
@@ -32,13 +32,13 @@ Adding a provider means writing one class (module docstring in
       advertise a capability firmware can't safely honor (Centauri file-list
       probes crash the printer daemon — that's why upload/list stay off).
 - [ ] Conformance: add a `FULL_CREDENTIALS` row in
-      `tests/unit/services/printer_provider/test_provider_conformance.py` — the
+      `tests/unit/modules/printing/printer_provider/test_provider_conformance.py` — the
       suite then auto-tests the contract (`test_every_provider_is_covered` fails
       until you do).
 - [ ] Protocol-specific tests in a per-provider module against stood-in
-      transports (`tests/unit/services/test_prusalink.py` style), plus the
+      transports (`tests/unit/modules/printing/test_prusalink.py` style), plus the
       wire-level pack against its emulator
-      (`tests/contract/services/test_prusalink.py`).
+      (`tests/contract/modules/printing/test_prusalink.py`).
 - [ ] Diagnostics work without leaking secrets:
       `GET /api/v1/printers/{id}/diagnostics`.
 - [ ] Frontend: add-printer flow preset asking only the credentials this

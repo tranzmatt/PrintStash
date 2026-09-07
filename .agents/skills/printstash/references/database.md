@@ -17,7 +17,7 @@ Adding a nullable column, start to finish:
 ```bash
 # 1. Change the model. This is the source of truth — `create_all` builds new
 #    installations straight from it.
-$EDITOR app/db/models.py
+$EDITOR app/db/models/library.py
 
 # 2. Generate. Emits `with op.batch_alter_table(...)` for SQLite, and renders
 #    sqlmodel's types as plain SQLAlchemy ones.
@@ -390,7 +390,7 @@ Two details that bite:
 
 ### Constraint names: the naming convention is load-bearing
 
-`SQLModel.metadata` carries a `naming_convention` (declared in `app/db/models.py`),
+`SQLModel.metadata` carries a `naming_convention` (declared in `app/db/models/base.py`),
 and it is not cosmetic. Batch mode alters a constraint by dropping it **by name** and
 recreating it, so an anonymous constraint cannot be altered on SQLite at all —
 `batch_alter_table` fails with `ValueError: Constraint must have a name`. The
@@ -400,7 +400,7 @@ It also makes the two schemas comparable: without it, `create_all` and the chain
 generate different names for the same constraint, and the parity test cannot tell
 that apart from real divergence.
 
-Declared constraints may still name themselves, and most in `app/db/models.py` do:
+Declared constraints may still name themselves, and most in `app/db/models/` do:
 17 unique constraints, 4 check constraints, 4 indexes. The convention fills in the
 rest — every foreign key, every primary key, and every index that comes from a
 `Field(index=True)`.
@@ -495,7 +495,7 @@ So a constraint migration has three parts, in this order:
 What actually happens when you add a foreign key, from writing it to a self-hoster
 upgrading:
 
-1. You declare it in `app/db/models.py`. `create_all` will now emit it, so **new
+1. You declare it in `app/db/models/`. `create_all` will now emit it, so **new
    installations get it immediately** — that path builds from the models and stamps
    head, and never replays the chain.
 2. You autogenerate a migration. Alembic compares the models against a database and

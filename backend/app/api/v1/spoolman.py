@@ -18,9 +18,13 @@ from sqlmodel import Session
 from app.core.logging import get_logger
 from app.core.security import require_superuser
 from app.db.session import get_session
-from app.services import filament_sync, runtime_config
-from app.services.runtime_config import _UNSET
-from app.services.spoolman import SpoolmanClient, SpoolmanError, get_spoolman_client
+from app.modules.administration import runtime_config
+from app.modules.printing import filament_sync
+from app.modules.printing.spoolman import (
+    SpoolmanClient,
+    SpoolmanError,
+    get_spoolman_client,
+)
 
 logger = get_logger(__name__)
 
@@ -167,14 +171,13 @@ async def update_status(
     body: SpoolmanUpdate, session: Session = Depends(get_session)
 ) -> SpoolmanStatus:
     if body.base_url is not None or body.api_key is not None:
-        # Preserve the stored key when the UI re-sends the mask or a blank;
-        # `_UNSET` leaves a field untouched, an explicit value (incl. "") sets it.
-        api_key = _UNSET if body.api_key in (None, _SECRET_MASK) else body.api_key
-        runtime_config.set_spoolman_config(
-            session,
-            base_url=body.base_url if body.base_url is not None else _UNSET,
-            api_key=api_key,
-        )
+        # Omitted and masked fields keep their stored value; an empty string clears it.
+        changes = {}
+        if body.base_url is not None:
+            changes["base_url"] = body.base_url
+        if body.api_key not in (None, _SECRET_MASK):
+            changes["api_key"] = body.api_key
+        runtime_config.set_spoolman_config(session, **changes)
     if body.write_enabled is not None:
         runtime_config.set_spoolman_write_enabled(session, body.write_enabled)
     if body.write_force is not None:

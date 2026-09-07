@@ -14,7 +14,7 @@ async def setup_and_login(api, tmp_path) -> dict[str, str]:
         },
     )
     assert r.status_code == 201, r.text
-    from app.services.storage_backend import init_backend
+    from app.modules.storage.storage_backend.runtime import init_backend
 
     init_backend()
     return {"Authorization": f"Bearer {r.json()['access_token']}"}

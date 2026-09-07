@@ -30,6 +30,7 @@ from typing import cast
 import pytest
 from prometheus_client import generate_latest
 
+import app.modules.ingestion.provider_metadata_cache as provider_metadata_cache
 from app.core import metrics
 from app.core.metrics import (
     record_capture_operation,
@@ -39,8 +40,8 @@ from app.core.metrics import (
     set_ingestion_stuck_jobs,
 )
 from app.db.session import SessionFactory
-from app.services import import_resolvers
-from app.services.capture_provider_connections import (
+from app.modules.ingestion import import_resolvers
+from app.modules.ingestion.capture_provider_connections import (
     ProviderIdentity,
     ProviderModelMetadata,
 )
@@ -282,7 +283,7 @@ class TestResolverInstrumentation:
     def test_emits_one_bounded_success_observation(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import_resolvers._provider_metadata_cache.clear()
+        provider_metadata_cache._provider_metadata_cache.clear()
 
         async def metadata(*_args: object) -> ProviderModelMetadata:
             # The identity must bind to the submitted page: the resolver proves

@@ -24,7 +24,7 @@ from sqlmodel import Session, select
 
 from app.core.config import _overlay
 from app.db.models import SystemConfig, User
-from app.services import runtime_config
+from app.modules.administration import runtime_config
 from tests.factories import build_user
 
 USERNAME = "admin"
@@ -216,7 +216,7 @@ class TestCompleteSetup:
         self, client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "app.services.storage_backend.enroll_legacy_local_root",
+            'app.modules.storage.storage_backend.local.enroll_legacy_local_root',
             lambda *args, **kwargs: False,
         )
 
@@ -230,7 +230,7 @@ class TestCompleteSetup:
     ) -> None:
         with monkeypatch.context() as patch:
             patch.setattr(
-                "app.services.storage_backend.enroll_legacy_local_root",
+                'app.modules.storage.storage_backend.local.enroll_legacy_local_root',
                 lambda *args, **kwargs: False,
             )
             _complete(client)
@@ -340,8 +340,8 @@ class TestCompleteSetup:
     def test_local_setup_rebinds_a_writable_backend(
         self, client: TestClient, runtime_dirs: Path
     ) -> None:
-        from app.services.storage_backend import (
-            LocalStorageBackend,
+        from app.modules.storage.storage_backend.local import LocalStorageBackend
+        from app.modules.storage.storage_backend.runtime import (
             bind_backend,
             get_backend,
         )
@@ -374,7 +374,7 @@ class TestCompleteSetup:
                 calls.append("provision")
 
         monkeypatch.setattr(
-            "app.services.storage_opendal.OpenDALStorageBackend", _Backend
+            "app.modules.storage.storage_opendal.OpenDALStorageBackend", _Backend
         )
 
         response = client.post("/api/v1/setup", json=_sftp_payload())
@@ -399,7 +399,7 @@ class TestCompleteSetup:
                 raise OSError("remote root is not writable")
 
         monkeypatch.setattr(
-            "app.services.storage_opendal.OpenDALStorageBackend", _Backend
+            "app.modules.storage.storage_opendal.OpenDALStorageBackend", _Backend
         )
 
         response = client.post("/api/v1/setup", json=_sftp_payload())
@@ -428,7 +428,7 @@ class TestCompleteSetup:
                 calls.append("provision")
 
         monkeypatch.setattr(
-            "app.services.storage_opendal.OpenDALStorageBackend", _Backend
+            "app.modules.storage.storage_opendal.OpenDALStorageBackend", _Backend
         )
 
         response = client.post(
@@ -862,8 +862,8 @@ class TestBrowserPreparation:
 
         import jwt
 
+        from app.api import setup_session as setup_bootstrap
         from app.core.time import utcnow
-        from app.services import setup_bootstrap
 
         client.cookies.clear()
         ticket = jwt.encode(
@@ -903,7 +903,7 @@ class TestLibraryLocationDiscovery:
         directory = runtime_dirs / "files"
         directory.mkdir()
         monkeypatch.setattr(
-            "app.services.library_locations.mounted_directories", lambda: [directory]
+            "app.modules.sources.library_locations.mounted_directories", lambda: [directory]
         )
         assert (
             client.get("/api/v1/libraries/locations", headers=auth_headers).json() == []
@@ -915,7 +915,7 @@ class TestLibraryLocationDiscovery:
         directory = tmp_path / "models-to-connect"
         directory.mkdir()
         monkeypatch.setattr(
-            "app.services.library_locations.mounted_directories", lambda: [directory]
+            "app.modules.sources.library_locations.mounted_directories", lambda: [directory]
         )
         response = client.get("/api/v1/libraries/locations", headers=auth_headers)
         assert response.json() == [str(directory)]
@@ -959,7 +959,7 @@ class TestPreparationFailures:
     def test_preparation_cookie_does_not_appear_in_application_logs(
         self, client, caplog
     ):
-        from app.services.setup_bootstrap import COOKIE
+        from app.api.setup_session import COOKIE
 
         client.post("/api/v1/setup/session")
         assert client.cookies.get(COOKIE) not in caplog.text
@@ -975,7 +975,7 @@ class TestRemoteStorageProbe:
         import boto3
         from botocore.config import Config
 
-        from app.services.storage_backend import get_backend
+        from app.modules.storage.storage_backend.runtime import get_backend
         from tests.containers import S3_ACCESS_KEY, S3_SECRET_KEY, s3_endpoint
 
         endpoint = s3_endpoint()

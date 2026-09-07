@@ -18,7 +18,7 @@ import pytest
 import trimesh
 from fastapi.testclient import TestClient
 
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests.fixtures.three_mf_projects import build_3d_builder_component_project
 
 CONVERTED = b"converted-stl-bytes"
@@ -73,7 +73,7 @@ class TestFileAsStl:
         tmp_path: Path,
     ) -> None:
         from app.api.v1 import files as files_api
-        from app.services import artifact_content
+        from app.modules.storage import artifact_content
 
         payload = b"solid nas endsolid"
         source = tmp_path / "nas" / "external.stl"
@@ -117,7 +117,7 @@ class TestFileAsStl:
         row = make_file(model, filename="model.3mf", ftype="3mf", path=key, sha256=sha)
         remove_blob(get_backend().stl_cache_key(sha))
         monkeypatch.setattr(
-            "app.services.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
         )
 
         response = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)
@@ -148,7 +148,7 @@ class TestFileAsStl:
             conversions["n"] += 1
             return CONVERTED
 
-        monkeypatch.setattr("app.services.mesh_processing.to_stl_bytes", counted)
+        monkeypatch.setattr("app.modules.media.mesh_processing.to_stl_bytes", counted)
 
         client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)
         second = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)
@@ -166,7 +166,7 @@ class TestFileAsStl:
         remove_blob,
     ) -> None:
         from app.api.v1 import files as files_api
-        from app.services.storage_backend import StorageCollisionError
+        from app.modules.storage.storage_backend.contracts import StorageCollisionError
 
         model = make_model("stl-race")
         key = "race.3mf"
@@ -175,7 +175,7 @@ class TestFileAsStl:
         row = make_file(model, filename="race.3mf", ftype="3mf", path=key, sha256=sha)
         remove_blob(get_backend().stl_cache_key(sha))
         monkeypatch.setattr(
-            "app.services.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
         )
 
         def already_published(*_args: object, **_kwargs: object):
@@ -209,7 +209,7 @@ class TestFileAsStl:
         )
         remove_blob(get_backend().stl_cache_key(sha))
         monkeypatch.setattr(
-            "app.services.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
         )
 
         def failing_receipt(*_args: object, **_kwargs: object):
@@ -238,7 +238,7 @@ class TestFileAsStl:
             model, filename="broken.obj", ftype="obj", path=key, sha256="c2" * 32
         )
         monkeypatch.setattr(
-            "app.services.mesh_processing.to_stl_bytes", lambda _path: None
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: None
         )
 
         response = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)

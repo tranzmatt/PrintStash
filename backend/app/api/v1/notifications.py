@@ -16,7 +16,8 @@ from sqlmodel import Session
 from app.core.security import require_superuser
 from app.db.models import NotificationTarget
 from app.db.session import get_session
-from app.services import notifications, runtime_config
+from app.modules.administration import runtime_config
+from app.modules.notifications import notifications
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 

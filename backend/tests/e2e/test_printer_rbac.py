@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.auth import create_access_token
+from app.modules.identity.auth import create_access_token
 from tests.factories import (
     build_user,
     printer_config,

@@ -283,7 +283,7 @@ class TestBuildPrinter:
     def test_every_provider_builds_a_usable_client(
         self, db_session: Session, provider: PrinterProvider
     ) -> None:
-        from app.services.printer_provider import (
+        from app.modules.printing.printer_provider import (
             build_provider_registry,
             get_provider_client,
         )
@@ -300,7 +300,7 @@ class TestBuildPrinter:
     def test_a_deliberately_omitted_credential_is_refused(
         self, db_session: Session
     ) -> None:
-        from app.services.printer_provider import (
+        from app.modules.printing.printer_provider import (
             ProviderError,
             build_provider_registry,
             get_provider_client,
@@ -357,7 +357,7 @@ class TestBuildExternalLibrary:
 
 class TestBuildShareLink:
     def test_a_fresh_link_is_valid(self, db_session: Session) -> None:
-        from app.services import share
+        from app.modules.identity import share
 
         model = factories.build_model(db_session)
         link = factories.build_share_link(db_session, model)
@@ -365,7 +365,7 @@ class TestBuildShareLink:
         assert share.is_active(link) is True
 
     def test_expired_is_rejected_by_the_validator(self, db_session: Session) -> None:
-        from app.services import share
+        from app.modules.identity import share
 
         model = factories.build_model(db_session)
         link = factories.build_share_link(db_session, model, expired=True)
@@ -373,7 +373,7 @@ class TestBuildShareLink:
         assert share.is_active(link) is False
 
     def test_revoked_is_rejected_by_the_validator(self, db_session: Session) -> None:
-        from app.services import share
+        from app.modules.identity import share
 
         model = factories.build_model(db_session)
         link = factories.build_share_link(db_session, model, revoked=True)
@@ -433,8 +433,8 @@ class TestBuildAuditFinding:
     def test_an_open_namespace_escape_blocks_every_purge(
         self, db_session: Session
     ) -> None:
-        from app.services import trash
-        from app.services.storage_ownership import UnsafeStorageDeleteError
+        from app.modules.library import trash
+        from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
 
         admin = factories.build_user(db_session, superuser=True)
         run = factories.build_audit_run(db_session, admin)
@@ -449,7 +449,7 @@ class TestBuildAuditFinding:
             trash._require_destructive_maintenance_safe(db_session)
 
     def test_another_open_finding_does_not(self, db_session: Session) -> None:
-        from app.services import trash
+        from app.modules.library import trash
 
         admin = factories.build_user(db_session, superuser=True)
         run = factories.build_audit_run(db_session, admin)
@@ -532,8 +532,8 @@ class TestStorageOwnership:
     def test_a_stored_file_is_purged_with_its_bytes(
         self, db_session: Session, local_storage
     ) -> None:
-        from app.services.storage_backend import get_backend
-        from app.services.trash import gc_soft_deleted
+        from app.modules.library.trash import gc_soft_deleted
+        from app.modules.storage.storage_backend.runtime import get_backend
 
         backend = get_backend()
         model = factories.build_model(db_session)
@@ -554,8 +554,8 @@ class TestStorageOwnership:
     def test_an_unowned_file_is_refused_with_its_bytes_intact(
         self, db_session: Session, local_storage
     ) -> None:
-        from app.services.storage_backend import get_backend
-        from app.services.trash import gc_soft_deleted
+        from app.modules.library.trash import gc_soft_deleted
+        from app.modules.storage.storage_backend.runtime import get_backend
 
         backend = get_backend()
         model = factories.build_model(db_session)

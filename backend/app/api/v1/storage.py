@@ -7,12 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
+import app.modules.backups.backup.targets as backup_targets
 from app.core.security import require_superuser
 from app.core.time import utcnow
 from app.db.models import StorageFailureDomainDeclaration, User
 from app.db.session import get_session
-from app.services.storage_identity import identity_evidence
-from app.services.storage_providers import StorageProvider, provider_catalogue
+from app.modules.storage.storage_identity import identity_evidence
+from app.modules.storage.storage_providers import StorageProvider, provider_catalogue
 
 router = APIRouter(prefix="/storage", tags=["storage"])
 
@@ -28,16 +29,10 @@ def list_storage_providers() -> list[StorageProvider]:
 
 
 def _configured_targets():
-    from app.services import backup
-    from app.services.backup_destination import configured_destinations
-    from app.services.storage_backend import get_backend
+    from app.modules.storage.storage_backend.runtime import get_backend
 
     result = [("vault", "Vault", get_backend().storage_target)]
-    legacy = backup._get_backup_s3_target()
-    if legacy is not None:
-        result.append(("backup", "S3 backup", legacy.storage_target))
-    for destination in configured_destinations():
-        result.append(("backup", destination.name, destination.backend.storage_target))
+    result.extend(backup_targets.configured_backup_storage_targets())
     return [(role, name, target) for role, name, target in result if target is not None]
 
 

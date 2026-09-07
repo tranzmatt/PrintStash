@@ -23,12 +23,30 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlmodel import Session, select
 
+from app.api import setup_session
+from app.api.session_cookie import set_session_cookie
 from app.core.config import FrozenSettings, ensure_dirs, settings
 from app.core.logging import get_logger
 from app.core.ratelimit import rate_limit
 from app.core.security import require_auth, require_superuser
 from app.db.models import SystemConfig, User
 from app.db.session import get_session
+from app.modules.administration import runtime_config, setup_bootstrap
+from app.modules.identity.auth import (
+    create_access_token,
+    hash_password,
+)
+from app.modules.storage.storage_paths import (
+    StoragePathOverlapError,
+    sqlite_database_path,
+    validate_disjoint_directories,
+    validate_file_outside_roots,
+)
+from app.modules.storage.storage_providers import (
+    StorageProviderConfig,
+    TransportKind,
+    resolve_transport,
+)
 from app.schemas.setup import (
     SetupCheckResponse,
     SetupRequest,
@@ -37,19 +55,6 @@ from app.schemas.setup import (
     SetupStatus,
     SetupStorageCheck,
     SetupStorageRequest,
-)
-from app.services import runtime_config, setup_bootstrap
-from app.services.auth import create_access_token, hash_password, set_session_cookie
-from app.services.storage_paths import (
-    StoragePathOverlapError,
-    sqlite_database_path,
-    validate_disjoint_directories,
-    validate_file_outside_roots,
-)
-from app.services.storage_providers import (
-    StorageProviderConfig,
-    TransportKind,
-    resolve_transport,
 )
 
 logger = get_logger(__name__)
@@ -146,9 +151,8 @@ def get_status(
             or config.configured_at is None
             or config.setup_storage_pending,
         )
-    available = (
-        settings.setup_mode == "trusted_network"
-        and setup_bootstrap.host_allowed(request.url.hostname or "")
+    available = settings.setup_mode == "trusted_network" and setup_session.host_allowed(
+        request.url.hostname or ""
     )
     if not available:
         return SetupStatus(configured=False)
@@ -185,7 +189,7 @@ def get_status(
 def begin_setup(
     request: Request, response: Response, session: Session = Depends(get_session)
 ) -> SetupSessionResponse:
-    return SetupSessionResponse(csrf=setup_bootstrap.begin(request, response, session))
+    return SetupSessionResponse(csrf=setup_session.begin(request, response, session))
 
 
 @router.post(
@@ -196,7 +200,7 @@ def begin_setup(
 def check_storage(
     body: SetupStorageRequest, request: Request, session: Session = Depends(get_session)
 ) -> SetupCheckResponse:
-    setup_bootstrap.verify(request)
+    setup_session.verify(request)
     setup_bootstrap.require_open(session)
     prepared = _prepare_storage(body, session, provision=True)
     checks = [SetupStorageCheck(code="configuration_valid")]
@@ -259,16 +263,16 @@ def complete_setup(
     response: Response,
     session: Session = Depends(get_session),
 ) -> SetupResponse:
-    setup_bootstrap.require_origin(request)
+    setup_session.require_origin(request)
     setup_bootstrap.require_open(session)
-    setup_bootstrap.verify(request)
+    setup_session.verify(request)
     try:
         setup_bootstrap.lock_installation(session)
         result = _complete_setup(body, session)
     except Exception:
         session.rollback()
         raise
-    setup_bootstrap.clear(response, request)
+    setup_session.clear(response, request)
     set_session_cookie(response, result.access_token)
     response.headers["Cache-Control"] = "no-store"
     return result
@@ -336,7 +340,7 @@ def _prepare_storage(
         # enrolled root disappears.
         if provision and transport is not None and transport.kind is TransportKind.SFTP:
             try:
-                from app.services.storage_opendal import OpenDALStorageBackend
+                from app.modules.storage.storage_opendal import OpenDALStorageBackend
 
                 OpenDALStorageBackend(transport).provision_root()
             except Exception as exc:
@@ -548,11 +552,11 @@ def _complete_setup(body: SetupRequest, session: Session) -> SetupResponse:
 def _remote_backend(
     provider: StorageProviderConfig | None, legacy: SetupStorageRequest | None = None
 ):
-    from app.services.storage_backend import S3StorageBackend
-    from app.services.storage_opendal import OpenDALStorageBackend
+    from app.modules.storage.storage_backend.s3 import S3StorageBackend
+    from app.modules.storage.storage_opendal import OpenDALStorageBackend
 
     if provider is None and legacy is not None:
-        from app.services.storage_providers import S3ProviderConfig
+        from app.modules.storage.storage_providers import S3ProviderConfig
 
         provider = S3ProviderConfig(
             provider="s3",
@@ -578,11 +582,11 @@ def _finish_storage_setup(session: Session, config: SystemConfig) -> None:
     if settings.storage_backend == "local":
         # First-run setup is the sole flow allowed to provision managed roots.
         ensure_dirs(create_managed_roots=True)
-        from app.services.storage_backend import (
+        from app.modules.storage.storage_backend.local import (
             LocalStorageBackend,
-            bind_backend,
             enroll_legacy_local_root,
         )
+        from app.modules.storage.storage_backend.runtime import bind_backend
 
         identity = runtime_config.ensure_storage_identity(session)
         for role, root in (
@@ -613,8 +617,8 @@ def _finish_storage_setup(session: Session, config: SystemConfig) -> None:
             )
         bind_backend(active_backend)
     else:
-        from app.services.storage_backend import bind_backend
-        from app.services.storage_providers import parse_provider_config
+        from app.modules.storage.storage_backend.runtime import bind_backend
+        from app.modules.storage.storage_providers import parse_provider_config
 
         provider = (
             parse_provider_config(json.loads(str(settings.storage_provider_config)))

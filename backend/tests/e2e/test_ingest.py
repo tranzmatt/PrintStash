@@ -24,7 +24,7 @@ from sqlmodel import select
 from app.core.config import _overlay, settings
 from app.core.time import utcnow
 from app.db.models import BackgroundJob, InboxItem, InboxItemState, User
-from app.services.jobs import registry
+from app.runtime.jobs import registry
 from tests.fixtures.three_mf_projects import build_3d_builder_component_project
 from tests.paths import FIXTURES_DIR
 
@@ -44,7 +44,7 @@ async def _setup_and_login(api, tmp_path) -> dict[str, str]:
     )
     assert r.status_code == 201, r.text
     # Storage backend is normally initialised in the app lifespan (not run here).
-    from app.services.storage_backend import init_backend
+    from app.modules.storage.storage_backend.runtime import init_backend
 
     init_backend()
     return {"Authorization": f"Bearer {r.json()['access_token']}"}

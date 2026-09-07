@@ -54,8 +54,8 @@ class TestArtifactUpload:
 
         # Use the production composition root to activate the persisted
         # provider; the E2E must not bypass configuration with bind_backend.
-        from app.main import _compose_storage_backend
-        from app.services import runtime_config
+        from app.bootstrap.lifecycle import _compose_storage_backend
+        from app.modules.administration import runtime_config
 
         runtime_config.apply_overlay(e2e_db)
         backend = _compose_storage_backend(recover_publications=False)

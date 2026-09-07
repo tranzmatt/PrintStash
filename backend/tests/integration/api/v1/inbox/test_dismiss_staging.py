@@ -44,8 +44,8 @@ from app.db.models import (
     StagingLease,
     User,
 )
-from app.services import inbox
-from app.services.storage_deletion import process_storage_delete_intents
+from app.modules.ingestion import inbox
+from app.modules.storage.storage_deletion import process_storage_delete_intents
 from tests.factories import build_file, build_model
 from tests.integration.api.v1.inbox.conftest import CANONICAL_URL, slot_payload
 

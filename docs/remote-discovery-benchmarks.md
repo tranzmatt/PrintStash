@@ -36,7 +36,7 @@ Connection pooling remains deferred.
 Reproduce from `backend/` with:
 
 ```sh
-./scripts/test.sh contract -q tests/contract/services/test_remote_discovery.py --junitxml=/tmp/discovery.xml
+./scripts/test.sh contract -q tests/contract/modules/sources/test_remote_discovery.py --junitxml=/tmp/discovery.xml
 ```
 
 The suite also exercises stalled S3, WebDAV and SFTP requests under short scan

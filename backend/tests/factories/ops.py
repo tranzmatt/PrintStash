@@ -51,7 +51,7 @@ from app.db.models import (
     VaultAuditRunState,
     VaultAuditSeverity,
 )
-from app.services.storage_identity import StorageTargetIdentity
+from app.modules.storage.storage_identity import StorageTargetIdentity
 from tests.factories._support import nth, reject_aliases, save, unique_hash
 
 
@@ -189,7 +189,7 @@ def build_external_library(
     # here prevents every existing scan test from accidentally exercising the
     # legacy-unbound state.
     if "root_identity" not in overrides and Path(root).is_dir():
-        from app.services.external_library import enroll_external_root
+        from app.modules.sources.root_binding import enroll_external_root
 
         enroll_external_root(session, library)
     return library

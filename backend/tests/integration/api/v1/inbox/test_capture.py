@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.db.models import CaptureUploadSlot, InboxItem
-from app.services import inbox
+from app.modules.ingestion import inbox
 from tests.integration.api.v1.inbox.conftest import CANONICAL_URL, capture_source
 
 

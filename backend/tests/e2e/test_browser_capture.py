@@ -18,9 +18,9 @@ from app.db.models import (
     Model,
     User,
 )
-from app.services import import_resolvers, inbox
-from app.services.auth import create_api_key
-from app.services.hashing import sha256_file
+from app.modules.identity.auth import create_api_key
+from app.modules.ingestion import import_resolvers, inbox
+from app.modules.storage.hashing import sha256_file
 from tests.paths import FIXTURES_DIR
 
 

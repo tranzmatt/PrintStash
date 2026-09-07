@@ -11,7 +11,7 @@ from __future__ import annotations
 from sqlmodel import Session, select
 
 from app.db.models import Printer, PrinterPermission, PrinterRole, User
-from app.services.auth import create_access_token
+from app.modules.identity.auth import create_access_token
 from tests.factories import build_user
 
 

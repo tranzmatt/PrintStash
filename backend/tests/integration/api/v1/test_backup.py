@@ -9,7 +9,7 @@ product, so it refuses while ingestion work is in flight rather than replacing t
 database underneath it.
 
 Everything here is superuser-only. The archive format, the round-trip, and what a
-restore actually recovers live in `integration/services/backup/test_core.py`.
+restore actually recovers live in `integration/modules/backups/backup/test_core.py`.
 """
 
 from __future__ import annotations
@@ -25,12 +25,21 @@ import pytest
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
 
-import app.services.backup as backup
-import app.services.storage_backend as storage_backend
+import app.modules.backups.backup.adoption as backup_adoption
+import app.modules.backups.backup.caches as backup_caches
+import app.modules.backups.backup.catalogue as backup_catalogue
+import app.modules.backups.backup.contracts as backup_contracts
+import app.modules.backups.backup.creation as backup_creation
+import app.modules.backups.backup.deletion as backup_deletion
+import app.modules.backups.backup.restore as backup_restore
+import app.modules.backups.backup.verification as backup_verification
+import app.modules.storage.storage_backend.local as storage_local
 from app.api.v1 import backup as backup_api
 from app.db.models import OwnedStorageObject
-from app.services.backup_destination import RemoteBackupDestination
-from app.services.storage_backend import StorageObjectInfo
+from app.modules.backups import backup_destination
+from app.modules.backups.backup_catalogue import BackupIdentityConflictError
+from app.modules.backups.backup_destination import RemoteBackupDestination
+from app.modules.storage.storage_backend.contracts import StorageObjectInfo
 from tests.factories import build_owned_storage_object
 from tests.integration._backup_harness import (
     BackupEnv,
@@ -54,9 +63,16 @@ def _assert_source_identity_conflict(
     service_name: str,
 ) -> None:
     def conflict(*_args: object, **_kwargs: object) -> None:
-        raise backup.BackupIdentityConflictError("backup_identity_conflict")
+        raise BackupIdentityConflictError("backup_identity_conflict")
 
-    monkeypatch.setattr(backup, service_name, conflict)
+    owner = {
+        "get_backup": backup_catalogue,
+        "get_backup_archive_path": backup_catalogue,
+        "verify_backup": backup_verification,
+        "delete_backup": backup_deletion,
+        "restore_backup": backup_restore,
+    }[service_name]
+    monkeypatch.setattr(owner, service_name, conflict)
     response = client.request(
         method,
         f"/api/v1/backups/{backup_id}{path_suffix}",
@@ -77,7 +93,7 @@ def admin_headers(backup_env: BackupEnv) -> dict[str, str]:
 def a_backup(backup_env: BackupEnv):
     """One real archive of a vault holding one model."""
     seed_model_with_blob(backup_env, name="Widget", content=b"solid widget\n")
-    return backup.create_backup()
+    return backup_creation.create_backup()
 
 
 class TestCreateBackup:
@@ -143,7 +159,7 @@ class TestCreateBackup:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            backup,
+            backup_creation,
             "create_backup",
             lambda: (_ for _ in ()).throw(RuntimeError("backup_destination_required")),
         )
@@ -161,7 +177,7 @@ class TestCreateBackup:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            backup,
+            backup_creation,
             "create_backup",
             lambda: (_ for _ in ()).throw(
                 RuntimeError("backup_all_destinations_failed")
@@ -193,11 +209,13 @@ class TestUploadBackup:
         backup_env: BackupEnv,
         admin_headers: dict[str, str],
     ) -> None:
-        original = backup.create_backup()
+        original = backup_creation.create_backup()
         archive = Path(original.path)
         payload = archive.read_bytes()
         filename = archive.name
-        assert backup.delete_backup(original.id, source_ref=original.source_ref)
+        assert backup_deletion.delete_backup(
+            original.id, source_ref=original.source_ref
+        )
 
         response = client.post(
             "/api/v1/backups/upload",
@@ -305,7 +323,7 @@ class TestListBackupSources:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         sources = [
-            backup.BackupMeta(
+            backup_contracts.BackupMeta(
                 id="same-id",
                 created_at="2020-01-01T00:00:00+00:00",
                 size_bytes=10,
@@ -320,7 +338,7 @@ class TestListBackupSources:
                 canonical=True,
                 precedence=0,
             ),
-            backup.BackupMeta(
+            backup_contracts.BackupMeta(
                 id="same-id",
                 created_at="2020-01-01T00:00:00+00:00",
                 size_bytes=10,
@@ -337,7 +355,7 @@ class TestListBackupSources:
                 precedence=1,
             ),
         ]
-        monkeypatch.setattr(backup, "list_backup_sources", lambda: sources)
+        monkeypatch.setattr(backup_catalogue, "list_backup_sources", lambda: sources)
 
         response = client.get("/api/v1/backups/sources", headers=admin_headers)
 
@@ -433,7 +451,7 @@ class TestGetBackup:
 
         assert response.status_code == 403, response.text
 
-    def test_forwards_exact_source_ref(
+    def test_forwards_exact_source_reference(
         self, client: TestClient, admin_headers, a_backup, monkeypatch
     ):
         observed: dict[str, str | None] = {}
@@ -442,7 +460,7 @@ class TestGetBackup:
             observed["source_ref"] = source_ref
             return a_backup
 
-        monkeypatch.setattr(backup, "get_backup", get)
+        monkeypatch.setattr(backup_catalogue, "get_backup", get)
         response = client.get(
             f"/api/v1/backups/{a_backup.id}",
             params={"source_ref": "exact-source"},
@@ -493,15 +511,15 @@ class TestDownloadBackup:
         with backup_env.new_session() as session:
             store_owned_bytes(
                 session,
-                storage_backend.LocalStorageBackend(),
+                storage_local.LocalStorageBackend(),
                 str(cache),
                 b"cache response",
                 object_kind="backup-cloud-cache",
             )
         monkeypatch.setattr(
-            backup,
+            backup_catalogue,
             "get_backup",
-            lambda _backup_id, **_kwargs: backup.BackupMeta(
+            lambda _backup_id, **_kwargs: backup_contracts.BackupMeta(
                 id="cache",
                 created_at="2026-01-01T00:00:00+00:00",
                 size_bytes=len(b"cache response"),
@@ -514,7 +532,7 @@ class TestDownloadBackup:
             ),
         )
         monkeypatch.setattr(
-            backup,
+            backup_catalogue,
             "get_backup_archive_path",
             lambda _backup_id, **_kwargs: cache,
         )
@@ -539,12 +557,12 @@ class TestDownloadBackup:
         with backup_env.new_session() as session:
             store_owned_bytes(
                 session,
-                storage_backend.LocalStorageBackend(),
+                storage_local.LocalStorageBackend(),
                 str(cache),
                 b"cache response",
                 object_kind="backup-cloud-cache",
             )
-        meta = backup.BackupMeta(
+        meta = backup_contracts.BackupMeta(
             id="idempotent",
             created_at="2026-01-01T00:00:00+00:00",
             size_bytes=len(b"cache response"),
@@ -555,9 +573,11 @@ class TestDownloadBackup:
             location="s3",
             source_ref="idempotent-source",
         )
-        monkeypatch.setattr(backup, "get_backup", lambda *_args, **_kwargs: meta)
         monkeypatch.setattr(
-            backup, "get_backup_archive_path", lambda *_args, **_kwargs: cache
+            backup_catalogue, "get_backup", lambda *_args, **_kwargs: meta
+        )
+        monkeypatch.setattr(
+            backup_catalogue, "get_backup_archive_path", lambda *_args, **_kwargs: cache
         )
 
         tasks = BackgroundTasks()
@@ -570,7 +590,7 @@ class TestDownloadBackup:
         )
 
         asyncio.run(tasks())
-        backup.cleanup_backup_cache(cache)
+        backup_caches.cleanup_backup_cache(cache)
 
         assert not cache.exists()
 
@@ -578,7 +598,7 @@ class TestDownloadBackup:
         self, backup_env: BackupEnv, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         payloads = {name: f"payload-{name}".encode() for name in ("one", "two")}
-        metas: dict[str, backup.BackupMeta] = {}
+        metas: dict[str, backup_contracts.BackupMeta] = {}
         paths: dict[str, Path] = {}
         for name, payload in payloads.items():
             cache = backup_env.backup_dir / ".cloud-cache" / f"{name}.tar.gz"
@@ -586,13 +606,13 @@ class TestDownloadBackup:
             with backup_env.new_session() as session:
                 store_owned_bytes(
                     session,
-                    storage_backend.LocalStorageBackend(),
+                    storage_local.LocalStorageBackend(),
                     str(cache),
                     payload,
                     object_kind="backup-cloud-cache",
                 )
             paths[name] = cache
-            metas[name] = backup.BackupMeta(
+            metas[name] = backup_contracts.BackupMeta(
                 id=name,
                 created_at="2026-01-01T00:00:00+00:00",
                 size_bytes=len(payload),
@@ -605,10 +625,12 @@ class TestDownloadBackup:
             )
 
         monkeypatch.setattr(
-            backup, "get_backup", lambda backup_id, **_kwargs: metas[backup_id]
+            backup_catalogue,
+            "get_backup",
+            lambda backup_id, **_kwargs: metas[backup_id],
         )
         monkeypatch.setattr(
-            backup,
+            backup_catalogue,
             "get_backup_archive_path",
             lambda backup_id, **_kwargs: paths[backup_id],
         )
@@ -646,14 +668,14 @@ class TestDownloadBackup:
     def test_surfaces_an_unexpected_failure(
         self,
         client: TestClient,
-        a_backup: backup.BackupMeta,
+        a_backup: backup_contracts.BackupMeta,
         admin_headers: dict[str, str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         def unreadable(_backup_id: str):
             raise RuntimeError("disk on fire")
 
-        monkeypatch.setattr(backup, "get_backup_archive_path", unreadable)
+        monkeypatch.setattr(backup_catalogue, "get_backup_archive_path", unreadable)
 
         response = client.get(
             f"/api/v1/backups/{a_backup.id}/download", headers=admin_headers
@@ -672,7 +694,7 @@ class TestDownloadBackup:
 
         assert response.status_code == 403, response.text
 
-    def test_forwards_exact_source_ref(
+    def test_forwards_exact_source_reference(
         self, client: TestClient, admin_headers, a_backup, monkeypatch
     ):
         observed: dict[str, str | None] = {}
@@ -681,8 +703,10 @@ class TestDownloadBackup:
             observed["source_ref"] = source_ref
             return Path(a_backup.path)
 
-        monkeypatch.setattr(backup, "get_backup", lambda *_args, **_kwargs: a_backup)
-        monkeypatch.setattr(backup, "get_backup_archive_path", path)
+        monkeypatch.setattr(
+            backup_catalogue, "get_backup", lambda *_args, **_kwargs: a_backup
+        )
+        monkeypatch.setattr(backup_catalogue, "get_backup_archive_path", path)
         response = client.get(
             f"/api/v1/backups/{a_backup.id}/download",
             params={"source_ref": "exact-source"},
@@ -695,7 +719,9 @@ class TestDownloadBackup:
     def test_maps_source_identity_conflict_to_http_conflict(
         self, client: TestClient, admin_headers, a_backup, monkeypatch
     ) -> None:
-        monkeypatch.setattr(backup, "get_backup", lambda *_args, **_kwargs: a_backup)
+        monkeypatch.setattr(
+            backup_catalogue, "get_backup", lambda *_args, **_kwargs: a_backup
+        )
         _assert_source_identity_conflict(
             client,
             admin_headers,
@@ -710,9 +736,9 @@ class TestDownloadBackup:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         def conflict(*_args: object, **_kwargs: object) -> None:
-            raise backup.BackupIdentityConflictError("backup_identity_conflict")
+            raise BackupIdentityConflictError("backup_identity_conflict")
 
-        monkeypatch.setattr(backup, "get_backup", conflict)
+        monkeypatch.setattr(backup_catalogue, "get_backup", conflict)
 
         with pytest.raises(HTTPException) as raised:
             backup_api.download_backup(BackgroundTasks(), "ambiguous")
@@ -754,14 +780,14 @@ class TestVerifyBackup:
 
         assert response.status_code == 403, response.text
 
-    def test_forwards_exact_source_ref(
+    def test_forwards_exact_source_reference(
         self, client: TestClient, admin_headers, a_backup, monkeypatch
     ):
         observed: dict[str, str | None] = {}
 
         def verify(_backup_id: str, *, source_ref: str | None = None):
             observed["source_ref"] = source_ref
-            return backup.BackupVerification(
+            return backup_contracts.BackupVerification(
                 backup_id=a_backup.id,
                 valid=True,
                 app_compatible=True,
@@ -770,7 +796,7 @@ class TestVerifyBackup:
                 findings=[],
             )
 
-        monkeypatch.setattr(backup, "verify_backup", verify)
+        monkeypatch.setattr(backup_verification, "verify_backup", verify)
         response = client.post(
             f"/api/v1/backups/{a_backup.id}/verify",
             params={"source_ref": "exact-source"},
@@ -838,7 +864,7 @@ class TestDeleteBackup:
                 size_bytes=len(original),
             )
             row_id, token = row.id, row.token
-        meta = backup.BackupMeta(
+        meta = backup_contracts.BackupMeta(
             id="archive",
             created_at="2026-01-01T00:00:00+00:00",
             size_bytes=len(original),
@@ -851,8 +877,10 @@ class TestDeleteBackup:
             namespace="sftp/root",
             source_ref="exact-source",
         )
-        monkeypatch.setattr(backup, "get_backup", lambda *_a, **_k: meta)
-        monkeypatch.setattr(backup, "destination_for_ownership", lambda _: destination)
+        monkeypatch.setattr(backup_catalogue, "get_backup", lambda *_a, **_k: meta)
+        monkeypatch.setattr(
+            backup_destination, "destination_for_ownership", lambda _: destination
+        )
 
         response = client.delete(
             "/api/v1/backups/archive",
@@ -911,9 +939,9 @@ class TestDeleteBackup:
         # application's data gets destroyed; the service refuses and the router
         # must surface that rather than reporting success.
         def unverified(_backup_id: str, **_kwargs: object):
-            raise backup.BackupOwnershipError("cannot verify ownership")
+            raise backup_contracts.BackupOwnershipError("cannot verify ownership")
 
-        monkeypatch.setattr(backup, "delete_backup", unverified)
+        monkeypatch.setattr(backup_deletion, "delete_backup", unverified)
 
         response = client.delete(
             f"/api/v1/backups/{a_backup.id}", headers=admin_headers
@@ -931,7 +959,7 @@ class TestDeleteBackup:
 
         assert response.status_code == 403, response.text
 
-    def test_forwards_exact_source_ref(
+    def test_forwards_exact_source_reference(
         self, client: TestClient, admin_headers, a_backup, monkeypatch
     ):
         observed: dict[str, str | bool | None] = {}
@@ -946,7 +974,7 @@ class TestDeleteBackup:
             observed["allow_unversioned"] = allow_unversioned
             return True
 
-        monkeypatch.setattr(backup, "delete_backup", delete)
+        monkeypatch.setattr(backup_deletion, "delete_backup", delete)
         response = client.delete(
             f"/api/v1/backups/{a_backup.id}",
             params={"source_ref": "exact-source"},
@@ -984,7 +1012,7 @@ class TestRestoreBackup:
         # The restore itself is covered end to end in the service tests; here the
         # router's job is only to hand back what it was given.
         monkeypatch.setattr(
-            backup, "restore_backup", lambda _id: {"restored": True, "files": 1}
+            backup_restore, "restore_backup", lambda _id: {"restored": True, "files": 1}
         )
 
         response = client.post(
@@ -1002,9 +1030,9 @@ class TestRestoreBackup:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         def unverified(_backup_id: str):
-            raise backup.BackupOwnershipError("cannot verify ownership")
+            raise backup_contracts.BackupOwnershipError("cannot verify ownership")
 
-        monkeypatch.setattr(backup, "restore_backup", unverified)
+        monkeypatch.setattr(backup_restore, "restore_backup", unverified)
 
         response = client.post(
             f"/api/v1/backups/{a_backup.id}/restore", headers=admin_headers
@@ -1026,7 +1054,7 @@ class TestRestoreBackup:
     def test_refuses_while_ingestion_work_is_in_flight(
         self, client: TestClient, admin_headers: dict[str, str], a_backup
     ) -> None:
-        from app.services.jobs import registry
+        from app.runtime.jobs import registry
 
         job_id = registry.create()
         registry.update(job_id, state="running")
@@ -1068,7 +1096,7 @@ class TestRestoreBackup:
         def failing(_backup_id: str):
             raise RuntimeError("kaboom")
 
-        monkeypatch.setattr(backup, "restore_backup", failing)
+        monkeypatch.setattr(backup_restore, "restore_backup", failing)
 
         response = client.post(
             f"/api/v1/backups/{a_backup.id}/restore", headers=admin_headers
@@ -1087,7 +1115,7 @@ class TestRestoreBackup:
 
         assert response.status_code == 403, response.text
 
-    def test_forwards_exact_source_ref(
+    def test_forwards_exact_source_reference(
         self, client: TestClient, admin_headers, a_backup, monkeypatch
     ):
         observed: dict[str, str | None] = {}
@@ -1096,7 +1124,7 @@ class TestRestoreBackup:
             observed["source_ref"] = source_ref
             return {"restored": True, "files": 1}
 
-        monkeypatch.setattr(backup, "restore_backup", restore)
+        monkeypatch.setattr(backup_restore, "restore_backup", restore)
         response = client.post(
             f"/api/v1/backups/{a_backup.id}/restore",
             params={"source_ref": "exact-source"},
@@ -1138,7 +1166,9 @@ class TestDiscoverUnownedS3Backups:
             "archive_sha256": "a" * 64,
             "source_ref": "source-ref",
         }
-        monkeypatch.setattr(backup, "discover_unowned_s3_backups", lambda: [candidate])
+        monkeypatch.setattr(
+            backup_adoption, "discover_unowned_s3_backups", lambda: [candidate]
+        )
 
         response = client.get("/api/v1/backups/unowned-s3", headers=admin_headers)
 
@@ -1150,7 +1180,7 @@ class TestAdoptS3Backup:
     def test_adopts_an_s3_source_with_exact_query_identity(
         self, client: TestClient, admin_headers, monkeypatch
     ):
-        meta = backup.BackupMeta(
+        meta = backup_contracts.BackupMeta(
             id="legacy",
             created_at="2020-01-01T00:00:00+00:00",
             size_bytes=12,
@@ -1166,7 +1196,7 @@ class TestAdoptS3Backup:
 
         def adopt(
             key: str, *, source_ref: str, expected_archive_sha256: str
-        ) -> backup.BackupMeta:
+        ) -> backup_contracts.BackupMeta:
             observed.update(
                 key=key,
                 source_ref=source_ref,
@@ -1174,7 +1204,7 @@ class TestAdoptS3Backup:
             )
             return meta
 
-        monkeypatch.setattr(backup, "adopt_s3_backup", adopt)
+        monkeypatch.setattr(backup_adoption, "adopt_s3_backup", adopt)
         params = {
             "key": meta.path,
             "source_ref": "source-ref",
@@ -1198,7 +1228,7 @@ class TestAdoptS3Backup:
         self, client: TestClient, admin_headers, monkeypatch
     ):
         monkeypatch.setattr(
-            backup,
+            backup_adoption,
             "adopt_s3_backup",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 ValueError("backup_source_ref_mismatch")
@@ -1244,7 +1274,7 @@ class TestDiscoverUnownedRemoteBackups:
             "source_ref": "source-ref",
         }
         monkeypatch.setattr(
-            backup, "discover_unowned_opendal_backups", lambda: [candidate]
+            backup_adoption, "discover_unowned_opendal_backups", lambda: [candidate]
         )
 
         response = client.get("/api/v1/backups/unowned-remote", headers=admin_headers)
@@ -1279,14 +1309,14 @@ class TestAdoptRemoteBackup:
             *,
             source_ref: str,
             expected_archive_sha256: str,
-        ) -> backup.BackupMeta:
+        ) -> backup_contracts.BackupMeta:
             observed.update(
                 connection_id=connection_id,
                 key=candidate_key,
                 source_ref=source_ref,
                 expected_archive_sha256=expected_archive_sha256,
             )
-            return backup.BackupMeta(
+            return backup_contracts.BackupMeta(
                 id="old",
                 created_at="2026-01-01T00:00:00+00:00",
                 size_bytes=12,
@@ -1301,7 +1331,7 @@ class TestAdoptRemoteBackup:
                 namespace="gdrive/PrintStash",
             )
 
-        monkeypatch.setattr(backup, "adopt_opendal_backup", adopt)
+        monkeypatch.setattr(backup_adoption, "adopt_opendal_backup", adopt)
 
         response = client.post(
             "/api/v1/backups/adopt-remote",

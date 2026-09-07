@@ -117,7 +117,7 @@ class TestWsTicket:
     def test_refuses_a_bearer_token_whose_subject_is_not_an_account_id(
         self, client: TestClient, db_session: Session
     ) -> None:
-        from app.services.auth import create_access_token
+        from app.modules.identity.auth import create_access_token
 
         printer = build_printer(
             db_session, name="Socket", moonraker_url="http://socket.local:7125"

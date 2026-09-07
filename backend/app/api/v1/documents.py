@@ -44,25 +44,27 @@ from app.db.models import (
 )
 from app.db.scopes import live, trashed
 from app.db.session import get_session
+from app.modules.identity import rbac
+from app.modules.library import multipart_models
+from app.modules.library.trash import (
+    StorageRiskConfirmationRequired,
+    hard_delete_document,
+    restore_document,
+)
+from app.modules.storage.storage_backend.contracts import StorageCollisionError
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_deletion import process_storage_delete_intents
+from app.modules.storage.storage_ownership import (
+    UnsafeStorageDeleteError,
+    publish_bytes,
+    publish_stream,
+)
 from app.schemas.documents import (
     DocumentCreate,
     DocumentImageUpload,
     DocumentListItem,
     DocumentRead,
     DocumentUpdate,
-)
-from app.services import multipart_models, rbac
-from app.services.storage_backend import StorageCollisionError, get_backend
-from app.services.storage_deletion import process_storage_delete_intents
-from app.services.storage_ownership import (
-    UnsafeStorageDeleteError,
-    publish_bytes,
-    publish_stream,
-)
-from app.services.trash import (
-    StorageRiskConfirmationRequired,
-    hard_delete_document,
-    restore_document,
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])

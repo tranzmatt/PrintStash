@@ -41,8 +41,8 @@ from app.db.models import (
     Tag,
 )
 from app.db.session import _engine
-from app.services.storage_backend import get_backend
-from app.services.storage_ownership import delete_owned_key, record_creation
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_ownership import delete_owned_key, record_creation
 
 # Marker written into every seeded row's notes/description so --wipe is exact.
 _DEMO_MARKER = "seeded-demo-data"

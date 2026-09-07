@@ -30,18 +30,22 @@ from app.core.security import get_current_user, require_superuser, require_user
 from app.db.models import CollectionRole, File, FileType, Model, User
 from app.db.scopes import live
 from app.db.session import SessionFactory, get_session, get_session_factory
-from app.schemas.ingest import IngestResponse
-from app.services import auth, rbac
-from app.services.artifact_content import (
+from app.modules.identity import auth, rbac
+from app.modules.media.three_mf_preview import (
+    EmbeddedGcodeError,
+    read_embedded_gcode_path,
+)
+from app.modules.storage.artifact_content import (
     ArtifactContentError,
     ArtifactContentMissingError,
     presigned_download_url,
     resolve,
 )
-from app.services.jobs import registry
-from app.services.storage_backend import StorageCollisionError, get_backend
-from app.services.storage_ownership import publish_bytes
-from app.services.three_mf_preview import EmbeddedGcodeError, read_embedded_gcode_path
+from app.modules.storage.storage_backend.contracts import StorageCollisionError
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_ownership import publish_bytes
+from app.runtime.jobs import registry
+from app.schemas.ingest import IngestResponse
 
 logger = get_logger(__name__)
 
@@ -432,7 +436,7 @@ def stl_response(f: File, request: Request):
         )
 
     # Lazy import: trimesh is heavy; pull it in only when we must convert.
-    from app.services import mesh_processing
+    from app.modules.media import mesh_processing
 
     try:
         with resolve(f).materialize() as path:
@@ -475,8 +479,8 @@ def _run_thumbnail_rebuild(
     job_id: str, force: bool, session_factory: SessionFactory
 ) -> None:
     """Walk models and re-render thumbnails. Runs as a background task."""
-    from app.services.thumbnail_generations import ThumbnailEnsureOutcome
-    from app.services.thumbnail_repair import regenerate_model_thumbnail_result
+    from app.modules.media.thumbnail_generations import ThumbnailEnsureOutcome
+    from app.modules.media.thumbnail_repair import regenerate_model_thumbnail_result
 
     registry.update(job_id, state="running", label="scanning_models")
     try:
@@ -635,7 +639,7 @@ async def get_toolpath(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ):
-    from app.services import toolpath
+    from app.modules.media import toolpath
 
     file = _accessible_file(session, file_id, current_user)
     content = await toolpath.render(file)

@@ -8,7 +8,7 @@ runs, while the version people do run is exercised by nothing.
 
 The S3 pin is the one that matters most. SeaweedFS's S3 gateway has changed its
 conditional-write and version-id behaviour between releases, and those are exactly
-what `contract/services/test_storage_backend.py` asserts. A test suite pinned to a
+what `contract/modules/storage/test_storage_backend.py` asserts. A test suite pinned to a
 different digest than the shipped image is a suite that proves the wrong thing.
 
 So both pins live in one place each and are compared here. When you bump the image
