@@ -13,7 +13,10 @@ from app.core.config import _overlay, settings
 from app.db.models import SystemConfig
 from app.modules.administration.config_repository import get_or_create
 from app.modules.storage.artifact_materializer import CachePolicy
-from app.modules.storage.materializer_runtime import get_materializer
+from app.modules.storage.materializer_runtime import (
+    get_materializer,
+    get_materializer_root,
+)
 
 
 class CacheSettings(BaseModel):
@@ -65,12 +68,14 @@ def read_settings(session: Session) -> CacheSettingsRead:
             usage = cache.status()
         except (OSError, sqlite3.Error):
             available = False
-    effective_root = str(cache.root) if cache else str(settings.artifact_cache_root)
+    effective_root = str(get_materializer_root() or settings.artifact_cache_root)
     return CacheSettingsRead(
         policy=policy,
         effective_root=effective_root,
-        restart_required=Path(policy.root).absolute()
-        != Path(effective_root).absolute(),
+        restart_required=(
+            Path(policy.root).absolute() != Path(effective_root).absolute()
+            or (policy.enabled and cache is None)
+        ),
         source="database"
         if config and config.artifact_cache_policy_json
         else "environment",

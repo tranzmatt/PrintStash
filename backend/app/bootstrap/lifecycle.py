@@ -271,11 +271,12 @@ async def lifespan(app: FastAPI):
                     f"cache:{token}",
                     [CapacityResource.for_path(root, size, role="cache")],
                 ),
+                recover_reservation=lambda token: capacity.release(f"cache:{token}"),
             )
         )
     except (OSError, RuntimeError, sqlite3.Error):
         logger.exception("artifact cache unavailable; source reads remain enabled")
-        bind_materializer(None)
+        bind_materializer(None, configured_root=Path(settings.artifact_cache_root))
     from app.runtime.jobs import reconcile_interrupted_jobs
 
     interrupted_jobs = reconcile_interrupted_jobs() if not restore_maintenance else 0

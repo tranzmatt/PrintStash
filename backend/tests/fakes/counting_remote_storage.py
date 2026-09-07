@@ -38,3 +38,19 @@ class CountingRemoteStorage(LocalStorageBackend):
             for chunk in self.stream_chunks(key):
                 output.write(chunk)
         return dest
+
+    @property
+    def supports_ranges(self) -> bool:
+        return True
+
+    def stream_range(self, key: str, start: int, end: int):
+        with Path(key).open("rb") as source:
+            source.seek(start)
+            remaining = end - start + 1
+            while remaining:
+                chunk = source.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise IOError("range truncated")
+                self.bytes_read += len(chunk)
+                remaining -= len(chunk)
+                yield chunk

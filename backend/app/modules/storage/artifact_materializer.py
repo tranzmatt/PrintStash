@@ -82,7 +82,12 @@ class CacheLease:
     def close(self) -> None:
         if self._token:
             token, self._token = self._token, ""
-            self._cache.release(token)
+            try:
+                self._cache.release(token)
+            except (OSError, sqlite3.Error):
+                # Preserve the durable claim if the disposable index is broken;
+                # response completion must not fail because cache cleanup did.
+                pass
 
     def __enter__(self) -> Path:
         return self.path
@@ -97,15 +102,19 @@ class ArtifactMaterializer:
         root: Path,
         policy: Callable[[], CachePolicy],
         reserve: Callable[[str, Path, int], ContextManager[object]] | None = None,
+        recover_reservation: Callable[[str], None] | None = None,
     ):
         self.root = root.absolute()
         self.policy = policy
         self.reserve = reserve
+        self.recover_reservation = recover_reservation
         self.pid = os.getpid()
         self.incarnation = _process_identity(self.pid)
         if self.incarnation is None:
             raise CacheUnavailable("process identity unavailable")
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.root.is_symlink() or self.root.stat().st_uid != os.getuid():
+            raise CacheUnavailable("cache root must be private")
         marker = self.root / ".printstash-artifact-cache"
         if not marker.exists():
             if any(self.root.iterdir()):
@@ -116,8 +125,6 @@ class ArtifactMaterializer:
             or marker.read_text() != "printstash-artifact-cache-v1\n"
         ):
             raise CacheUnavailable("cache root marker invalid")
-        if self.root.is_symlink() or self.root.stat().st_uid != os.getuid():
-            raise CacheUnavailable("cache root must be private")
         self.root.chmod(0o700)
         with self._transaction() as db:
             db.executescript("""
@@ -162,7 +169,8 @@ class ArtifactMaterializer:
         if db.execute("SELECT 1 FROM leases WHERE key=?", (key,)).fetchone():
             db.execute("UPDATE entries SET discarded=1 WHERE key=?", (key,))
             return False
-        (self.root / f"{key}.blob").unlink(missing_ok=True)
+        if re.fullmatch(r"[0-9a-f]{64}", key):
+            (self.root / f"{key}.blob").unlink(missing_ok=True)
         db.execute("DELETE FROM entries WHERE key=?", (key,))
         self._metric(db, "evictions")
         return True
@@ -172,6 +180,10 @@ class ArtifactMaterializer:
             for table in ("leases", "claims"):
                 for row in db.execute(f"SELECT * FROM {table}").fetchall():
                     if _process_identity(row["pid"]) != row["incarnation"]:
+                        if table == "claims" and self.recover_reservation:
+                            self.recover_reservation(
+                                str(row["token"]).removeprefix("revoked:")
+                            )
                         db.execute(
                             f"DELETE FROM {table} WHERE token=?", (row["token"],)
                         )
@@ -189,6 +201,40 @@ class ArtifactMaterializer:
                     and path.name not in known
                 ):
                     path.unlink(missing_ok=True)
+
+    def inspect_entries(self, *, full: bool, limit: int = 100) -> dict[str, int]:
+        """Bounded disposable-cache observations, never authoritative evidence."""
+        checked = corrupt = 0
+        with self._transaction() as db:
+            for row in db.execute(
+                "SELECT * FROM entries WHERE discarded=0 ORDER BY used LIMIT ?",
+                (max(0, min(limit, 100)),),
+            ).fetchall():
+                checked += 1
+                valid = bool(re.fullmatch(r"[0-9a-f]{64}", row["key"]))
+                try:
+                    if valid:
+                        path = self.root / f"{row['key']}.blob"
+                        info = path.stat(follow_symlinks=False)
+                        valid = (
+                            not path.is_symlink()
+                            and info.st_size == row["size"]
+                            and info.st_ino == row["inode"]
+                            and info.st_mtime_ns == row["mtime"]
+                        )
+                        if valid and full:
+                            with path.open("rb") as source:
+                                valid = (
+                                    hashlib.file_digest(source, "sha256").hexdigest()
+                                    == row["digest"]
+                                )
+                except OSError:
+                    valid = False
+                if not valid:
+                    corrupt += 1
+                    self._remove(db, row["key"])
+                    self._metric(db, "errors")
+        return {"checked": checked, "corrupt": corrupt}
 
     def acquire(self, representation: Representation) -> CacheLease | None:
         if not self.policy().enabled:
@@ -470,15 +516,21 @@ class CacheFill:
             return CacheLease(self.cache, lease_token, destination)
 
     def close(self) -> None:
-        if self.output:
-            self.output.close()
-            self.output = None
-        self.path.unlink(missing_ok=True)
-        with self.cache._transaction() as db:
-            db.execute(
-                "DELETE FROM claims WHERE token IN (?,?)",
-                (self.token, f"revoked:{self.token}"),
-            )
-        if self.reservation:
-            self.reservation.__exit__(None, None, None)
-            self.reservation = None
+        try:
+            if self.output:
+                self.output.close()
+                self.output = None
+            self.path.unlink(missing_ok=True)
+            with self.cache._transaction() as db:
+                db.execute(
+                    "DELETE FROM claims WHERE token IN (?,?)",
+                    (self.token, f"revoked:{self.token}"),
+                )
+        except (OSError, sqlite3.Error):
+            # Reconciliation owns exact leftover files/claims. A broken cache
+            # index must not break otherwise safe source streaming.
+            pass
+        finally:
+            if self.reservation:
+                self.reservation.__exit__(None, None, None)
+                self.reservation = None

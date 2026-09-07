@@ -82,7 +82,9 @@ async def test_materialization_reuses_http_verified_content(
 
 
 @pytest.mark.asyncio
-async def test_full_audit_detects_authoritative_corruption_behind_cache(api, e2e_db, superuser_headers, remote_cache, tmp_path):
+async def test_full_audit_detects_authoritative_corruption_behind_cache(
+    api, e2e_db, superuser_headers, remote_cache, tmp_path
+):
     from sqlmodel import select
 
     from app.db.models import User, VaultAuditFinding, VaultAuditMode
@@ -91,14 +93,25 @@ async def test_full_audit_detects_authoritative_corruption_behind_cache(api, e2e
     source = tmp_path / "source.gcode"
     source.write_bytes(b"G28\nG1 X3\n")
     model = build_model(e2e_db, "Audited model")
-    artifact = build_file(e2e_db, model, filename="source.gcode", path=str(source), size_bytes=source.stat().st_size, sha256=hashlib.sha256(source.read_bytes()).hexdigest())
-    response = await api.get(f"/api/v1/files/{artifact.id}/download", headers=superuser_headers)
+    artifact = build_file(
+        e2e_db,
+        model,
+        filename="source.gcode",
+        path=str(source),
+        size_bytes=source.stat().st_size,
+        sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+    )
+    response = await api.get(
+        f"/api/v1/files/{artifact.id}/download", headers=superuser_headers
+    )
     assert response.status_code == 200
     source.write_bytes(b"G28\nG1 X4\n")
     user = e2e_db.exec(select(User)).first()
     run, created = vault_audit.create_run(e2e_db, user.id, VaultAuditMode.FULL)
     assert created
     vault_audit.execute_run(run.id)
-    findings = e2e_db.exec(select(VaultAuditFinding).where(VaultAuditFinding.run_id == run.id)).all()
+    findings = e2e_db.exec(
+        select(VaultAuditFinding).where(VaultAuditFinding.run_id == run.id)
+    ).all()
     assert "owned_blob_hash_mismatch" in {finding.code for finding in findings}
     assert remote_cache[0].bytes_read >= source.stat().st_size * 2

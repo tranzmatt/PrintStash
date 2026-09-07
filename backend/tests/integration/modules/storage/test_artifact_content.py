@@ -291,3 +291,103 @@ class TestManagedStreamCleanup:
         assert next(reader) == b"first"
         reader.close()
         assert closed == [True]
+
+
+@pytest.fixture
+def managed_cache_content(make_model, make_file, tmp_path):
+    from app.modules.storage.artifact_materializer import (
+        ArtifactMaterializer,
+        CachePolicy,
+    )
+    from app.modules.storage.materializer_runtime import (
+        bind_materializer,
+        get_materializer,
+    )
+    from tests.fakes.counting_remote_storage import CountingRemoteStorage
+
+    original = get_materializer()
+    source = tmp_path / "source.gcode"
+    source.write_bytes(b"G28\nG1 X1\n")
+    model = make_model("Remote cache model")
+    row = make_file(
+        model,
+        path=str(source),
+        filename="source.gcode",
+        size_bytes=source.stat().st_size,
+        sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+    )
+    backend = CountingRemoteStorage()
+    cache = ArtifactMaterializer(
+        tmp_path / "cache", lambda: CachePolicy(enabled=True, headroom_bytes=0)
+    )
+    bind_materializer(cache)
+    yield artifact_content.resolve(row, backend=backend), cache, source, backend
+    bind_materializer(original)
+
+
+class TestManagedCacheContent:
+    def test_unavailable_index_falls_back_to_source(self, managed_cache_content):
+        handle, cache, source, backend = managed_cache_content
+        (cache.root / "index.sqlite3").write_bytes(b"broken index")
+        with handle.materialize() as path:
+            assert path.read_bytes() == source.read_bytes()
+        assert backend.bytes_read == source.stat().st_size
+
+    def test_fallback_does_not_bypass_capacity(
+        self, managed_cache_content, monkeypatch
+    ):
+        from app.core.config import _overlay
+        from app.core.errors import OperationError
+        from app.modules.storage.artifact_materializer import CachePolicy
+
+        handle, cache, _, backend = managed_cache_content
+        cache.policy = lambda: CachePolicy(enabled=False)
+        monkeypatch.setitem(_overlay, "storage_min_free_bytes", 2**62)
+        with pytest.raises(OperationError, match="storage_capacity_exceeded"):
+            with handle.materialize():
+                pytest.fail("disk admission bypassed")
+        assert backend.bytes_read == 0
+
+    def test_authoritative_read_observes_source_replacement(
+        self, managed_cache_content
+    ):
+        handle, _, source, backend = managed_cache_content
+        with handle.materialize() as path:
+            assert path.read_bytes() == b"G28\nG1 X1\n"
+        source.write_bytes(b"G28\nG1 X2\n")
+        assert b"".join(handle.stream(authoritative=True)) == b"G28\nG1 X2\n"
+        assert backend.bytes_read == source.stat().st_size * 2
+
+    def test_closes_primed_source_without_consuming_response(
+        self, managed_cache_content
+    ):
+        handle, _, _, backend = managed_cache_content
+        response = handle.stream()
+        assert backend.open_readers == 1
+        response.close()
+        assert backend.open_readers == 0
+
+    def test_closes_selected_cache_lease_before_first_read(self, managed_cache_content):
+        handle, cache, _, _ = managed_cache_content
+        with handle.materialize():
+            pass
+        response = handle.stream()
+        assert cache.status()["leases"] == 1
+        response.close()
+        assert cache.status()["leases"] == 0
+
+    def test_rejects_incorrect_remote_materialization(self, managed_cache_content):
+        handle, cache, source, _ = managed_cache_content
+        source.write_bytes(b"G28\nG1 X2\n")
+        with pytest.raises(artifact_content.ArtifactContentChangedError):
+            with handle.materialize():
+                pytest.fail("incorrect Artifact exposed")
+        assert cache.status()["entries"] == 0
+
+    def test_external_sources_remain_outside_managed_cache(self, managed_cache_content):
+        handle, cache, source, backend = managed_cache_content
+        handle.file.is_external = True
+        with artifact_content.resolve(handle.file).materialize() as path:
+            assert path.read_bytes() == source.read_bytes()
+        assert cache.status()["entries"] == 0
+        assert backend.bytes_read == 0
