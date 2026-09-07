@@ -30,6 +30,12 @@ an import check pass. A module may keep several files when they describe one
 cohesive operation. Do not create empty repository/service/manager classes to
 fill a template.
 
+A module's imports are implementation details, not automatic public exports.
+Routes import configuration, filesystem utilities and provider contracts from
+their actual owners; they must not reach them through an operation such as
+`inbox.settings` or `inbox.staging_leases`. A deliberate public re-export must
+be named in `__all__`. The architecture check enforces this boundary for HTTP.
+
 ## Dependency rules
 
 - HTTP validates transport input, obtains a trusted actor/context, calls an

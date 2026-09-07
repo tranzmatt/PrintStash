@@ -9,6 +9,7 @@ import pytest
 from scripts.architecture import (
     cyclic_edges,
     graph_for,
+    implicit_api_exports,
     imports,
     inspect,
     violations,
@@ -17,6 +18,55 @@ from tests.paths import BACKEND_DIR
 
 
 class TestImports:
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "from app.modules.library import operations\noperations.settings.enabled",
+            "import app.modules.library.operations as ops\nops.settings.enabled",
+            "def run():\n    from app.modules.library import operations\n    return operations.settings.enabled",
+            "from app.modules.library.operations import settings",
+        ],
+        ids=["module", "alias", "deferred", "direct"],
+    )
+    def test_rejects_an_operations_unexported_dependency(self, source):
+        dependencies = imports(source, "app.api.v1.library")
+        sources = {
+            "app.modules.library.operations": "from app.core.config import settings"
+        }
+
+        result = implicit_api_exports(dependencies, sources)
+
+        assert result == {
+            "app.api.v1.library -> app.modules.library.operations.settings"
+        }
+
+    def test_allows_an_explicit_public_error_contract(self):
+        dependencies = imports(
+            "from app.modules.library.operations import OperationError",
+            "app.api.v1.library",
+        )
+        sources = {
+            "app.modules.library.operations": (
+                "from app.core.errors import OperationError\n"
+                "__all__ = ['OperationError']"
+            )
+        }
+
+        result = implicit_api_exports(dependencies, sources)
+
+        assert result == set()
+
+    def test_allows_an_operation_defined_by_its_owner(self):
+        dependencies = imports(
+            "from app.modules.library import operations\noperations.update()",
+            "app.api.v1.library",
+        )
+        sources = {"app.modules.library.operations": "def update():\n    pass"}
+
+        result = implicit_api_exports(dependencies, sources)
+
+        assert result == set()
+
     def test_detects_a_deferred_cycle(self):
         dependencies = imports(
             "def run():\n    from app.modules.b import command", "app.modules.a"

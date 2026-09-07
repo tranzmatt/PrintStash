@@ -88,8 +88,13 @@ def imports(source: str, name: str, *, package: bool = False) -> set[Dependency]
             if (
                 isinstance(value, ast.Name)
                 and value.id in self.aliases
-                and node.attr.startswith("_")
-                and not node.attr.startswith("__")
+                and (
+                    (node.attr.startswith("_") and not node.attr.startswith("__"))
+                    or (
+                        name.startswith("app.api.")
+                        and self.aliases[value.id].startswith("app.")
+                    )
+                )
             ):
                 target = ".".join([self.aliases[value.id], *reversed(parts[1:])])
                 result.add(Dependency(name, target, node.attr, self.runtime))
@@ -176,8 +181,47 @@ def violations(dependencies: set[Dependency]) -> set[str]:
     }
 
 
+def implicit_api_exports(
+    dependencies: set[Dependency], sources: dict[str, str]
+) -> set[str]:
+    """Imported dependencies are not operation APIs unless explicitly exported."""
+    hidden: dict[str, set[str]] = {}
+    for name, source in sources.items():
+        if not name.startswith("app.modules."):
+            continue
+        imported: set[str] = set()
+        exported: set[str] = set()
+        for node in ast.parse(source).body:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                imported.update(
+                    alias.asname or alias.name.split(".")[0] for alias in node.names
+                )
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            ):
+                exported.update(ast.literal_eval(node.value))
+        hidden[name] = imported - exported
+
+    result: set[str] = set()
+    for dependency in dependencies:
+        if not dependency.source.startswith("app.api."):
+            continue
+        reference = f"{dependency.target}.{dependency.symbol}".rstrip(".")
+        parts = reference.split(".")
+        for boundary in range(len(parts) - 1, 2, -1):
+            module = ".".join(parts[:boundary])
+            if module in hidden:
+                member = parts[boundary]
+                if member in hidden[module]:
+                    result.add(f"{dependency.source} -> {module}.{member}")
+                break
+    return result
+
+
 def inspect(root: Path) -> dict[str, list[str]]:
     paths = list((root / "app").rglob("*.py"))
+    sources = {module_name(path, root): path.read_text() for path in paths}
     modules = {module_name(path, root) for path in paths}
     dependencies = set().union(
         *(
@@ -191,7 +235,9 @@ def inspect(root: Path) -> dict[str, list[str]]:
     )
     return {
         "cyclic_dependencies": sorted(cyclic_edges(graph_for(dependencies, modules))),
-        "private_dependencies": sorted(violations(dependencies)),
+        "private_dependencies": sorted(
+            violations(dependencies) | implicit_api_exports(dependencies, sources)
+        ),
         "legacy_imports": sorted(
             {
                 dependency.key
@@ -209,7 +255,8 @@ def inspect(root: Path) -> dict[str, list[str]]:
                     dependency.target.startswith(("app.api", "app.bootstrap"))
                     or dependency.target == "fastapi"
                     or dependency.target.startswith("fastapi.")
-                    or dependency.target in {
+                    or dependency.target
+                    in {
                         "starlette.requests",
                         "starlette.responses",
                         "starlette.exceptions",

@@ -30,6 +30,7 @@ from fastapi import (
     File as UploadFileParam,
 )
 from fastapi.responses import FileResponse, Response
+from printstash_core.files import slugify
 from printstash_core.library import RevisionError
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -73,7 +74,6 @@ from app.modules.library import (
     provenance,
     revisions,
     source_covers,
-    taxonomy,
 )
 from app.modules.library.trash import (
     StorageRiskConfirmationRequired,
@@ -175,7 +175,7 @@ def _detail_or_404(session: Session, model_id: int, user: User) -> ModelRead:
 
 
 def _collection_path_for(raw_path: str) -> str:
-    segments = [taxonomy.slugify(s.strip()) for s in raw_path.split("/") if s.strip()]
+    segments = [slugify(s.strip()) for s in raw_path.split("/") if s.strip()]
     return "/".join(segments)
 
 

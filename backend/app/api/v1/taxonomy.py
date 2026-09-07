@@ -23,6 +23,7 @@ from fastapi import (
 from fastapi import (
     File as FileParam,
 )
+from printstash_core.files import slugify
 from sqlalchemy import func
 from sqlmodel import Session, delete, select
 
@@ -48,7 +49,6 @@ from app.db.scopes import live
 from app.db.session import get_session
 from app.modules.identity import rbac
 from app.modules.library import library_search, taxonomy, trash
-from app.modules.library.taxonomy import slugify
 from app.modules.storage.storage_backend.contracts import StorageCollisionError
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_ownership import publish_bytes

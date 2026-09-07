@@ -36,6 +36,7 @@ from app.db.models import (
 from app.db.session import SessionFactory, get_session, get_session_factory
 from app.modules.administration import runtime_config
 from app.modules.sources import external_library
+from app.modules.storage.filesystem import detect_fs_kind
 from app.modules.storage.storage_paths import (
     StoragePathOverlapError,
     sqlite_database_path,
@@ -321,7 +322,7 @@ def create_library(
         watch_mode=watch_mode,
         # Detect up front so watch_active is meaningful before the first scan.
         fs_kind=(
-            external_library.detect_fs_kind(canonical_root)
+            detect_fs_kind(canonical_root)
             if body.source_kind == LibrarySourceKind.MOUNTED
             else "network"
         ),
@@ -363,7 +364,7 @@ def update_library(
             lib.root_path = canonical_root
             # A root-path change must require a fresh, explicit enrollment.
             lib.root_identity = None
-            lib.fs_kind = external_library.detect_fs_kind(canonical_root)
+            lib.fs_kind = detect_fs_kind(canonical_root)
     if body.name is not None:
         lib.name = body.name.strip()
     if body.enabled is not None:

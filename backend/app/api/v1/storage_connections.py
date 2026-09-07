@@ -22,8 +22,8 @@ from app.modules.backups.backup_destination import (
     BackupDestinationError,
     destination_from_connection,
 )
+from app.modules.sources.contracts import LibrarySourceError
 from app.modules.sources.library_source import (
-    LibrarySourceError,
     source_from_connection,
 )
 from app.modules.storage.storage_backend.contracts import StorageConfigurationError

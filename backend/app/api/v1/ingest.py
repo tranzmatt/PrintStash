@@ -24,6 +24,7 @@ from fastapi import (
 from fastapi import (
     File as UploadFileParam,
 )
+from printstash_core.files import slugify
 from sqlalchemy import func
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -45,7 +46,6 @@ from app.modules.identity import rbac
 from app.modules.ingestion import background as ingest_background
 from app.modules.ingestion import importer
 from app.modules.ingestion.ingestion import ingest_mesh, ingest_orca_gcode
-from app.modules.library import taxonomy
 from app.modules.storage import storage
 from app.runtime.jobs import registry
 from app.schemas.ingest import (
@@ -64,7 +64,7 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
 def _collection_path_for(raw_path: str) -> str:
-    segments = [taxonomy.slugify(s.strip()) for s in raw_path.split("/") if s.strip()]
+    segments = [slugify(s.strip()) for s in raw_path.split("/") if s.strip()]
     return "/".join(segments)
 
 

@@ -80,6 +80,9 @@ HTTP boundary completion retains these additional contracts:
 | 62 | `TestFirstOwnerConcurrency.test_two_sqlite_api_processes_create_exactly_one_owner` | Edge | Two prepared browser sessions claim an empty installation simultaneously | One 201, one 409, exactly one superuser | Integration / two processes | ✅ five concurrency tests pass after registering the production HTTP handler |
 | 63 | `TestManufacturingConcurrency.test_concurrent_conflicting_confirmations_have_one_winner` | Edge | Concurrent output confirmations | One operation wins; conflicting result is rejected | Integration / SQLite and PostgreSQL | ✅ SQLite concurrency tests pass; PostgreSQL included in the infrastructure lane |
 | 64 | `TestConcurrentReservations.test_parallel_queue_requests_reserve_each_unit_once` | Edge | Two concurrent queue commands | One reservation succeeds; planned units are counted once | Integration / SQLite and PostgreSQL | ✅ SQLite concurrency tests pass; PostgreSQL included in the infrastructure lane |
+| 65 | `repo/test_architecture.py::TestImports.test_rejects_an_operations_unexported_dependency` | Error | HTTP reaches an operation's imported dependency directly, through an alias or through a deferred import | Architectural violation identifies the dependency and its consumer | Repo | ✅ four variants in the 23-test architecture/OpenAPI run |
+| 66 | `repo/test_architecture.py::TestImports.test_allows_an_explicit_public_error_contract` | Happy | Operation explicitly exports its error contract in `__all__` | Public error contract remains accessible to HTTP | Repo | ✅ |
+| 67 | `repo/test_architecture.py::TestImports.test_allows_an_operation_defined_by_its_owner` | Happy | HTTP calls the owner's own operation | Operation is accepted as public | Repo | ✅ |
 
 ## Gate evidence
 

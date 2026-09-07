@@ -19,10 +19,12 @@ from fastapi.concurrency import run_in_threadpool
 from sqlmodel import Session
 
 from app.core.browser_device_auth import require_user_or_browser_import_user
+from app.core.config import settings
 from app.core.security import require_auth, require_user
 from app.db.models import InboxItemState, User
 from app.db.session import SessionFactory, get_session, get_session_factory
-from app.modules.ingestion import inbox
+from app.modules.ingestion import importer, inbox, staging_leases
+from app.modules.storage import storage
 from app.schemas.inbox import (
     CaptureUploadSlotRead,
     CaptureUploadSlotsCreate,
@@ -52,7 +54,7 @@ async def capture(
         row = inbox.create(session, current_user, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except inbox.importer.ImportError_ as exc:
+    except importer.ImportError_ as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     assert row.id is not None
     if payload.capture_source is None:
@@ -72,9 +74,9 @@ def create_capture_upload_slots(
 ) -> CaptureUploadSlotsRead:
     try:
         row, slots = inbox.create_capture_upload_slots(session, current_user, payload)
-    except inbox.staging_leases.StagingCapacityExceeded as exc:
+    except staging_leases.StagingCapacityExceeded as exc:
         raise HTTPException(status_code=507, detail=str(exc)) from exc
-    except (ValueError, inbox.importer.ImportError_) as exc:
+    except (ValueError, importer.ImportError_) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return CaptureUploadSlotsRead(
         item=inbox.read(row, session), slots=[inbox.slot_read(slot) for slot in slots]
@@ -97,7 +99,7 @@ async def put_capture_upload_slot(
             raise HTTPException(
                 status_code=400, detail="invalid_content_length"
             ) from exc
-        if declared_length > inbox.settings.max_upload_bytes:
+        if declared_length > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="upload_too_large")
     staged_path: Path | None = None
     try:
@@ -105,17 +107,17 @@ async def put_capture_upload_slot(
         # bytes. A process kill now leaves a deterministic, identity-bound
         # partial for startup reconciliation rather than an anonymous temp.
         staged_path = await run_in_threadpool(
-            inbox.staging_leases.prepare_capture_slot_staging,
+            staging_leases.prepare_capture_slot_staging,
             session,
             slot_id=slot.id,
         )
         received = 0
-        with inbox.staging_leases.open_capture_slot_staging(
+        with staging_leases.open_capture_slot_staging(
             session, slot_id=slot.id
         ) as target:
             async for chunk in request.stream():
                 received += len(chunk)
-                if received > inbox.settings.max_upload_bytes:
+                if received > settings.max_upload_bytes:
                     raise HTTPException(status_code=413, detail="upload_too_large")
                 target.write(chunk)
         uploaded = await run_in_threadpool(
@@ -126,7 +128,7 @@ async def put_capture_upload_slot(
             media_type=request.headers.get("content-type"),
             staged_path=staged_path,
         )
-    except inbox.storage.UploadTooLarge as exc:
+    except storage.UploadTooLarge as exc:
         raise HTTPException(status_code=413, detail="upload_too_large") from exc
     except ValueError as exc:
         raise HTTPException(
@@ -135,12 +137,12 @@ async def put_capture_upload_slot(
             else 400,
             detail=str(exc),
         ) from exc
-    except inbox.staging_leases.StagingLeaseError as exc:
+    except staging_leases.StagingLeaseError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     finally:
         if staged_path is not None:
             try:
-                if inbox.staging_leases.remove_capture_slot_staging(
+                if staging_leases.remove_capture_slot_staging(
                     session, slot_id=slot.id
                 ):
                     session.commit()
@@ -187,11 +189,11 @@ async def capture_browser_upload(
             filename=file.filename,
             stream=file.file,
         )
-    except inbox.storage.UploadTooLarge as exc:
+    except storage.UploadTooLarge as exc:
         raise HTTPException(status_code=413, detail="upload_too_large") from exc
-    except inbox.staging_leases.StagingCapacityExceeded as exc:
+    except staging_leases.StagingCapacityExceeded as exc:
         raise HTTPException(status_code=507, detail=str(exc)) from exc
-    except (ValueError, inbox.importer.ImportError_) as exc:
+    except (ValueError, importer.ImportError_) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return inbox.read(row, session)
 

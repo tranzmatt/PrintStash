@@ -15,7 +15,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from printstash_core.printers import ProviderRegistry
+from printstash_core.printers import ProviderError, ProviderRegistry
 from sqlmodel import Session, select
 
 from app.bootstrap.dependencies import get_hub, get_hub_from_ws
@@ -51,7 +51,6 @@ from app.modules.printing.printer_jobs import (
     reproducibility_payload,
 )
 from app.modules.printing.printer_provider import (
-    ProviderError,
     capabilities_for_provider,
     detect_printer_model,
     get_provider_client,

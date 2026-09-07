@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from app.core.config import settings
 from app.core.security import require_superuser
 from app.core.time import utcnow
 from app.db.models import (
@@ -333,7 +334,7 @@ def run_gc(
     try:
         run = gc_planner.create_plan(
             session,
-            retention_days=int(gc_planner.settings.trash_retention_days),
+            retention_days=int(settings.trash_retention_days),
             requested_by=admin.id,
         )
     except gc_planner.GcSafetyError as exc:

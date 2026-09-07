@@ -20,6 +20,7 @@ from fastapi import (
     status,
 )
 from fastapi import File as UploadFileParam
+from printstash_core.files import slugify
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, delete, select
 
@@ -108,7 +109,7 @@ def _collection_for_write(
 
 
 def _unique_slug(session: Session, name: str, *, exclude_id: int | None = None) -> str:
-    slug = taxonomy.slugify(name)
+    slug = slugify(name)
     existing = session.exec(
         select(MultipartModel).where(MultipartModel.slug == slug)
     ).first()

@@ -9,6 +9,7 @@ from app.core.time import utcnow
 from app.db.models import BrowserDevice, CaptureProvider, ProviderConnection, User
 from app.db.session import get_session
 from app.modules.ingestion import provider_connections as service
+from app.modules.ingestion.capture_provider_connections import ProviderConnectionError
 from app.schemas.provider_connections import (
     BrowserDevicePatch,
     BrowserDeviceRead,
@@ -73,7 +74,7 @@ async def connect_cults(
         row = await service.validate_and_connect_cults(
             session, current_user.id, body.username, body.password
         )
-    except service.ProviderConnectionError as exc:
+    except ProviderConnectionError as exc:
         raise HTTPException(
             status_code=400, detail="provider_connection_validation_failed"
         ) from exc
@@ -96,7 +97,7 @@ def authorize_myminifactory(
     assert current_user.id is not None
     try:
         service.get_mmf_credentials()
-    except service.ProviderConnectionError as exc:
+    except ProviderConnectionError as exc:
         raise HTTPException(status_code=503, detail=exc.code) from None
     redirect_uri = str(request.url_for("myminifactory_callback"))
     state = service.begin_oauth(session, current_user.id, redirect_uri)
