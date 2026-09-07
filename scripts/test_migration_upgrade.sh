@@ -32,7 +32,7 @@ from sqlmodel import Session, create_engine
 
 from app.core.config import settings
 from app.db.models import User
-from app.services.auth import hash_password
+from app.modules.identity.auth import hash_password
 
 engine = create_engine(settings.db_url)
 with Session(engine) as session:

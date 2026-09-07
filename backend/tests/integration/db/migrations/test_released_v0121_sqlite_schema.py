@@ -20,8 +20,8 @@ from alembic import command
 from app.core.config import _overlay, settings
 from app.db import migrate as migrate_mod
 from app.db.models import File
-from app.services import runtime_config
-from app.services.storage_backend import S3StorageBackend
+from app.modules.administration import runtime_config
+from app.modules.storage.storage_backend.s3 import S3StorageBackend
 from tests.containers import S3_ACCESS_KEY, S3_SECRET_KEY, s3_endpoint
 from tests.factories.migration_rows import (
     RELEASED_V0121_REVISION,

@@ -9,7 +9,7 @@ import pytest
 from sqlmodel import select
 
 from app.db.models import File, FileType, PrinterProvider, PrintJob
-from app.services.printer_hub import PrinterHub
+from app.modules.printing.printer_hub import PrinterHub
 from tests.factories import build_printer
 
 
@@ -71,7 +71,7 @@ class TestExternalCapture:
 
         # The API read contract distinguishes exact artifact evidence from the
         # printer-reported identity/metadata that cannot reconstruct slicer input.
-        from app.services.printer_jobs import reproducibility_payload
+        from app.modules.printing.printer_jobs import reproducibility_payload
 
         contract = reproducibility_payload(
             job,

@@ -40,8 +40,14 @@ from app.db.models import (
     StorageDeleteIntent,
     StorageObjectState,
 )
-from app.services.storage_backend import CreationReceipt, StorageBackend
-from app.services.storage_ownership import provider_ref_for_backend, record_creation
+from app.modules.storage.storage_backend.contracts import (
+    CreationReceipt,
+    StorageBackend,
+)
+from app.modules.storage.storage_ownership import (
+    provider_ref_for_backend,
+    record_creation,
+)
 from tests.factories._support import nth, reject_aliases, save, unique_hash
 from tests.factories.library import _demote_current_recommendation
 

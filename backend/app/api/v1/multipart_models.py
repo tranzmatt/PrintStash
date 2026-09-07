@@ -20,6 +20,7 @@ from fastapi import (
     status,
 )
 from fastapi import File as UploadFileParam
+from printstash_core.files import slugify
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, delete, select
 
@@ -35,6 +36,20 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.db.session import get_session
+from app.modules.identity import rbac
+from app.modules.library import multipart_models, taxonomy
+from app.modules.media.source_cover_processing import (
+    MAX_SOURCE_COVER_BYTES,
+    SourceCoverProcessingError,
+    process_source_cover_upload,
+)
+from app.modules.storage.storage_backend.contracts import CreationReceipt
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_deletion import (
+    enqueue_owned_key,
+    process_storage_delete_intents,
+)
+from app.modules.storage.storage_ownership import publish_bytes
 from app.schemas.models import TagSetUpdate
 from app.schemas.multipart_models import (
     MultipartMemberRead,
@@ -46,18 +61,6 @@ from app.schemas.multipart_models import (
     MultipartModelUpdate,
     MultipartPartsReplace,
 )
-from app.services import multipart_models, rbac, taxonomy
-from app.services.source_cover_processing import (
-    MAX_SOURCE_COVER_BYTES,
-    SourceCoverProcessingError,
-    process_source_cover_upload,
-)
-from app.services.storage_backend import CreationReceipt, get_backend
-from app.services.storage_deletion import (
-    enqueue_owned_key,
-    process_storage_delete_intents,
-)
-from app.services.storage_ownership import publish_bytes
 
 router = APIRouter(prefix="/multipart-models", tags=["multipart-models"])
 
@@ -106,7 +109,7 @@ def _collection_for_write(
 
 
 def _unique_slug(session: Session, name: str, *, exclude_id: int | None = None) -> str:
-    slug = taxonomy.slugify(name)
+    slug = slugify(name)
     existing = session.exec(
         select(MultipartModel).where(MultipartModel.slug == slug)
     ).first()

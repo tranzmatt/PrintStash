@@ -1,0 +1,652 @@
+"""OpenDAL backups remain recoverable across a lost or replaced catalog.
+
+Replication records ownership in the current database, while disaster recovery must
+also find and explicitly adopt an archive that predates that database. These tests
+pin both sides to the same configured connection and exact remote object identity.
+"""
+
+import hashlib
+import io
+from contextlib import contextmanager
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+import app.modules.backups.backup.adoption as backup_adoption
+import app.modules.backups.backup.catalogue as backup_catalogue
+import app.modules.backups.backup.creation as backup_creation
+import app.modules.backups.backup.targets as backup_targets
+from app.modules.backups import backup_destination
+from app.modules.backups.backup_destination import RemoteBackupDestination
+from app.modules.storage.remote_io import RemoteEntry
+from app.modules.storage.storage_backend.contracts import (
+    CreationReceipt,
+    StorageObjectInfo,
+)
+from tests.integration._backup_harness import BackupEnv
+
+
+class _RemoteBackend:
+    backend_name = "backup-opendal-gdrive"
+    provider_id = "gdrive"
+    transport = "gdrive"
+    source_namespace = "gdrive/PrintStash"
+
+    @property
+    def storage_target(self):
+        from app.modules.storage.storage_identity import StorageTargetIdentity
+
+        return StorageTargetIdentity(
+            transport="gdrive", endpoint="https://www.googleapis.com"
+        )
+
+    def __init__(self, key: str, payload: bytes) -> None:
+        self.key = key
+        self.payload = payload
+
+    @contextmanager
+    def iter_directory(self, relative: str):
+        yield iter(
+            [RemoteEntry(self.source_relative_key(self.key), len(self.payload), False)]
+        )
+
+    def source_relative_key(self, key: str) -> str:
+        return key.removeprefix(self.source_namespace + "/")
+
+    def source_key(self, relative: str) -> str:
+        return f"{self.source_namespace}/{relative.strip('/')}"
+
+    def object_info(self, key: str) -> StorageObjectInfo | None:
+        if key != self.key:
+            return None
+        return StorageObjectInfo(size=len(self.payload), etag="remote-etag")
+
+    def stream_chunks(self, key: str):
+        assert key == self.key
+        yield self.payload[:100]
+        yield self.payload[100:]
+
+    @contextmanager
+    def open_reader(self, key: str, *, expected=None):
+        assert key == self.key
+        with io.BytesIO(self.payload) as reader:
+            yield reader
+
+
+class _PublishingBackend(_RemoteBackend):
+    def __init__(self, writes):
+        super().__init__("", b"")
+        self.writes = writes
+
+    def namespace_for(self, key):
+        assert key.startswith(self.source_namespace + "/")
+        return self.source_namespace
+
+    def exists(self, key):
+        return key == self.key
+
+    def publish_replica(self, source, key):
+        self.key, self.payload = key, source.read()
+        self.writes.append((key, self.payload))
+        return CreationReceipt(
+            key=key,
+            size=len(self.payload),
+            token="created",
+            backend=self.backend_name,
+            namespace=self.source_namespace,
+            etag="remote-etag",
+        )
+
+
+def _remote_destination(key: str, payload: bytes) -> RemoteBackupDestination:
+    return RemoteBackupDestination(
+        connection_id=7,
+        name="Recovery Drive",
+        provider="gdrive",
+        backend=_RemoteBackend(key, payload),  # type: ignore[arg-type]
+        provider_ref="remote-provider-ref",
+    )
+
+
+def _select_replica(backup_env, monkeypatch, destination=None, *, keep_local=True):
+    from app.db.models import StorageConnectionPurpose, SystemConfig
+    from app.modules.backups import backup_replication
+    from tests.factories import build_storage_connection
+
+    with backup_env.new_session() as session:
+        config = session.get(SystemConfig, 1) or SystemConfig(id=1)
+        config.manual_local_backup_enabled = keep_local
+        session.add(config)
+        if destination is not None:
+            build_storage_connection(
+                session, id=7, purpose=StorageConnectionPurpose.BACKUP
+            )
+        session.commit()
+    if destination is not None:
+        monkeypatch.setattr(
+            backup_replication,
+            "destination_from_connection",
+            lambda _profile: destination,
+        )
+
+
+class TestOpenDalBackupReplication:
+    def test_failed_replica_publication_keeps_its_durable_reservation(
+        self, backup_env, db_session, tmp_path
+    ):
+        from sqlmodel import select
+
+        from app.db.models import OwnedStorageObject, StorageObjectState
+
+        class Offline(_PublishingBackend):
+            def publish_replica(self, source, key):
+                raise OSError("offline example-secret")
+
+        destination = RemoteBackupDestination(
+            connection_id=7,
+            name="Offline",
+            provider="gdrive",
+            provider_ref="offline-ref",
+            backend=Offline([]),
+        )
+        path = tmp_path / "archive.tar.gz"
+        path.write_bytes(b"archive")
+        digest = hashlib.sha256(b"archive").hexdigest()
+        key = destination.key("archive.tar.gz")
+        with pytest.raises(OSError):
+            destination.publish_file(db_session, key, path, sha256=digest)
+        db_session.rollback()
+        row = db_session.exec(
+            select(OwnedStorageObject).where(OwnedStorageObject.key == key)
+        ).one()
+        assert row.state == StorageObjectState.PENDING
+        assert row.sha256 == digest
+        assert row.size_bytes == 7
+        assert row.provider_ref == "offline-ref"
+        assert row.last_error == "OSError"
+        assert path.read_bytes() == b"archive"
+
+    def test_create_replicates_the_local_backup_to_each_destination(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        writes: list[tuple[str, bytes]] = []
+
+        destination = RemoteBackupDestination(
+            connection_id=7,
+            name="Drive copies",
+            provider="gdrive",
+            provider_ref="drive-profile-ref",
+            backend=_PublishingBackend(writes),
+        )
+        _select_replica(backup_env, monkeypatch, destination)
+        meta = backup_creation.create_backup()
+        from app.modules.backups.backup_runs import run_detail
+
+        assert run_detail(meta.run_id)["trigger"] == "manual"
+        assert Path(meta.path).is_file()
+        assert len(writes) == 1
+        assert writes[0][0].endswith(f"-{meta.id}.tar.gz")
+        assert writes[0][1] == Path(meta.path).read_bytes()
+
+    def test_remote_failure_does_not_discard_the_local_backup(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        failing = SimpleNamespace(
+            name="Offline Drive",
+            provider="gdrive",
+            provider_ref="offline-profile-ref",
+            backend=SimpleNamespace(),
+            key=lambda archive_name: archive_name,
+            publish_file=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                OSError("endpoint unavailable")
+            ),
+        )
+        _select_replica(backup_env, monkeypatch, failing)
+
+        meta = backup_creation.create_backup()
+
+        assert Path(meta.path).is_file()
+
+    def test_remote_only_backup_leaves_no_local_archive(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        writes: list[tuple[str, bytes]] = []
+
+        destination = RemoteBackupDestination(
+            connection_id=7,
+            name="Drive copies",
+            provider="gdrive",
+            provider_ref="drive-profile-ref",
+            backend=_PublishingBackend(writes),
+        )
+        _select_replica(backup_env, monkeypatch, destination, keep_local=False)
+
+        meta = backup_creation.create_backup()
+
+        assert meta.location == "opendal:gdrive"
+        assert writes[0][0] == meta.path
+        assert not list(backup_env.backup_dir.glob("*.tar.gz"))
+
+    def test_rejects_a_backup_without_any_destination(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _select_replica(backup_env, monkeypatch, keep_local=False)
+
+        with pytest.raises(RuntimeError, match="backup_destination_required"):
+            backup_creation.create_backup()
+
+        assert not list(backup_env.backup_dir.glob("*.tar.gz"))
+
+    def test_remote_only_failure_leaves_no_local_archive(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        failing = SimpleNamespace(
+            name="Offline Drive",
+            provider="gdrive",
+            provider_ref="offline-profile-ref",
+            backend=SimpleNamespace(),
+            key=lambda archive_name: archive_name,
+            publish_file=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                OSError("endpoint unavailable")
+            ),
+        )
+        _select_replica(backup_env, monkeypatch, failing, keep_local=False)
+
+        with pytest.raises(RuntimeError, match="backup_all_destinations_failed"):
+            backup_creation.create_backup()
+
+        assert not list(backup_env.backup_dir.glob("*.tar.gz"))
+
+
+class TestDiscoverUnownedOpenDalBackups:
+    def test_discovers_a_valid_archive_with_its_exact_connection_identity(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        meta = backup_creation.create_backup()
+        payload = Path(meta.path).read_bytes()
+        key = f"gdrive/PrintStash/printstash-backups/{Path(meta.path).name}"
+        destination = _remote_destination(key, payload)
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+
+        candidates = backup_adoption.discover_unowned_opendal_backups()
+
+        assert len(candidates) == 1
+        assert candidates[0]["connection_id"] == 7
+        assert candidates[0]["key"] == key
+        assert candidates[0]["archive_sha256"] == hashlib.sha256(payload).hexdigest()
+        assert candidates[0]["source_ref"]
+
+    def test_omits_a_malformed_remote_archive(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        key = "gdrive/PrintStash/printstash-backups/printstash-backup-bad.tar.gz"
+        destination = _remote_destination(key, b"not a backup")
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+
+        candidates = backup_adoption.discover_unowned_opendal_backups()
+
+        assert candidates == []
+
+    def test_omits_an_archive_outside_the_direct_reserved_root(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        key = "gdrive/PrintStash/printstash-backups/nested/printstash-backup-old.tar.gz"
+        destination = _remote_destination(key, b"unused")
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+
+        assert backup_adoption.discover_unowned_opendal_backups() == []
+
+
+class TestAdoptOpenDalBackup:
+    def test_rejects_an_unavailable_connection(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(backup_destination, "configured_destinations", lambda: [])
+
+        with pytest.raises(RuntimeError, match="backup_remote_connection_unavailable"):
+            backup_adoption.adopt_opendal_backup(
+                7,
+                "gdrive/PrintStash/printstash-backups/printstash-backup-old.tar.gz",
+                source_ref="unused",
+                expected_archive_sha256="a" * 64,
+            )
+
+    def test_rejects_a_key_outside_the_reserved_backup_root(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        key = "gdrive/PrintStash/printstash-backups/../printstash-backup-escaped.tar.gz"
+        destination = _remote_destination(key, b"unused")
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+
+        with pytest.raises(ValueError, match="backup_key_invalid"):
+            backup_adoption.adopt_opendal_backup(
+                7,
+                key,
+                source_ref="unused",
+                expected_archive_sha256="a" * 64,
+            )
+
+    def test_adopts_the_selected_archive_as_a_restorable_source(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        meta = backup_creation.create_backup()
+        payload = Path(meta.path).read_bytes()
+        key = f"gdrive/PrintStash/printstash-backups/{Path(meta.path).name}"
+        destination = _remote_destination(key, payload)
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+        candidate = backup_adoption.discover_unowned_opendal_backups()[0]
+
+        adopted = backup_adoption.adopt_opendal_backup(
+            7,
+            key,
+            source_ref=str(candidate["source_ref"]),
+            expected_archive_sha256=str(candidate["archive_sha256"]),
+        )
+
+        sources = backup_catalogue.list_backup_sources()
+        assert adopted.source_ref in {source.source_ref for source in sources}
+
+    def test_omits_an_archive_after_it_is_adopted(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        meta = backup_creation.create_backup()
+        payload = Path(meta.path).read_bytes()
+        key = f"gdrive/PrintStash/printstash-backups/{Path(meta.path).name}"
+        destination = _remote_destination(key, payload)
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+        candidate = backup_adoption.discover_unowned_opendal_backups()[0]
+        backup_adoption.adopt_opendal_backup(
+            7,
+            key,
+            source_ref=str(candidate["source_ref"]),
+            expected_archive_sha256=str(candidate["archive_sha256"]),
+        )
+
+        candidates = backup_adoption.discover_unowned_opendal_backups()
+
+        assert candidates == []
+
+    def test_refuses_to_adopt_the_same_archive_twice(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        meta = backup_creation.create_backup()
+        payload = Path(meta.path).read_bytes()
+        key = f"gdrive/PrintStash/printstash-backups/{Path(meta.path).name}"
+        destination = _remote_destination(key, payload)
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+        candidate = backup_adoption.discover_unowned_opendal_backups()[0]
+        arguments = {
+            "source_ref": str(candidate["source_ref"]),
+            "expected_archive_sha256": str(candidate["archive_sha256"]),
+        }
+        backup_adoption.adopt_opendal_backup(7, key, **arguments)
+
+        with pytest.raises(ValueError, match="backup_already_adopted"):
+            backup_adoption.adopt_opendal_backup(7, key, **arguments)
+
+    def test_rejects_a_remote_object_that_changes_during_download(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        meta = backup_creation.create_backup()
+        payload = Path(meta.path).read_bytes()
+        key = f"gdrive/PrintStash/printstash-backups/{Path(meta.path).name}"
+        destination = _remote_destination(key, payload)
+        calls = 0
+
+        def changing_info(candidate_key: str) -> StorageObjectInfo:
+            nonlocal calls
+            assert candidate_key == key
+            calls += 1
+            return StorageObjectInfo(size=len(payload), etag=f"etag-{calls}")
+
+        monkeypatch.setattr(destination.backend, "object_info", changing_info)
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+        source_ref = backup_targets.source_reference(
+            location=destination.location,
+            namespace=destination.namespace,
+            path=key,
+            provider_ref=destination.provider_ref,
+        )
+
+        with pytest.raises(RuntimeError, match="backup_remote_changed"):
+            backup_adoption.adopt_opendal_backup(
+                7,
+                key,
+                source_ref=source_ref,
+                expected_archive_sha256=hashlib.sha256(payload).hexdigest(),
+            )
+
+        assert not list(backup_env.backup_dir.glob(".printstash-opendal-adopt-*"))
+
+    def test_rejects_a_changed_source_reference(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        meta = backup_creation.create_backup()
+        payload = Path(meta.path).read_bytes()
+        key = f"gdrive/PrintStash/printstash-backups/{Path(meta.path).name}"
+        destination = _remote_destination(key, payload)
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+
+        with pytest.raises(ValueError, match="backup_source_ref_mismatch"):
+            backup_adoption.adopt_opendal_backup(
+                7,
+                key,
+                source_ref="wrong-source",
+                expected_archive_sha256=hashlib.sha256(payload).hexdigest(),
+            )
+
+    def test_rejects_a_changed_archive_digest(
+        self,
+        backup_env: BackupEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        meta = backup_creation.create_backup()
+        payload = Path(meta.path).read_bytes()
+        key = f"gdrive/PrintStash/printstash-backups/{Path(meta.path).name}"
+        destination = _remote_destination(key, payload)
+        monkeypatch.setattr(
+            backup_destination, "configured_destinations", lambda: [destination]
+        )
+        candidate = backup_adoption.discover_unowned_opendal_backups()[0]
+
+        with pytest.raises(RuntimeError, match="backup_archive_digest_mismatch"):
+            backup_adoption.adopt_opendal_backup(
+                7,
+                key,
+                source_ref=str(candidate["source_ref"]),
+                expected_archive_sha256="f" * 64,
+            )
+
+
+@pytest.fixture
+def owned_opendal_archive(backup_env, monkeypatch):
+    from app.modules.backups.backup.contracts import BackupMeta
+    from tests.factories import build_owned_storage_object
+
+    payload = b"remote archive bytes"
+    key = "gdrive/PrintStash/printstash-backups/printstash-backup-abc123.tar.gz"
+    destination = _remote_destination(key, payload)
+    monkeypatch.setattr(
+        backup_destination, "configured_destinations", lambda: [destination]
+    )
+    with backup_env.new_session() as session:
+        row = build_owned_storage_object(
+            session,
+            backend=destination.backend.backend_name,
+            namespace=destination.backend.source_namespace,
+            key=key,
+            object_kind="backup-legacy",
+            provider_ref=destination.provider_ref,
+            sha256=hashlib.sha256(payload).hexdigest(),
+            size_bytes=len(payload),
+            etag="remote-etag",
+        )
+        row_id = row.id
+    meta = BackupMeta(
+        id="abc123",
+        created_at="2024-01-01T00:00:00Z",
+        size_bytes=len(payload),
+        storage_backend="local",
+        file_count=0,
+        app_version="test",
+        path=key,
+        location=destination.location,
+        namespace=destination.backend.source_namespace,
+        provider_ref=destination.provider_ref,
+    )
+    return meta, destination, row_id, payload
+
+
+class TestVerifiedOpenDalDownload:
+    def test_reuses_only_a_verified_owned_cache(
+        self, backup_env, owned_opendal_archive
+    ):
+        from app.modules.backups.backup import downloads
+
+        meta, _, _, payload = owned_opendal_archive
+        cached = downloads._download_backup_to_local(meta)
+        assert cached.read_bytes() == payload
+        assert downloads._download_backup_to_local(meta) == cached
+
+    @pytest.mark.parametrize(
+        "case", ["different-bytes", "unowned", "wrong-ledger-hash"]
+    )
+    def test_preexisting_cache_is_not_silently_adopted(
+        self, backup_env, owned_opendal_archive, case
+    ):
+        from sqlmodel import select
+
+        from app.db.models import OwnedStorageObject
+        from app.modules.backups.backup import downloads
+        from app.modules.backups.backup.contracts import BackupOwnershipError
+        from app.modules.storage.storage_backend.local import LocalStorageBackend
+        from tests.factories import store_owned_bytes
+
+        meta, destination, _, payload = owned_opendal_archive
+        source_ref = backup_targets.source_reference(
+            location=meta.location,
+            namespace=meta.namespace,
+            path=meta.path,
+            provider_ref=destination.provider_ref,
+        )
+        identity = hashlib.sha256(f"{source_ref}\x1fremote-etag".encode()).hexdigest()
+        path = (
+            backup_env.backup_dir
+            / ".cloud-cache"
+            / f"{identity}-{Path(meta.path).name}"
+        )
+        path.parent.mkdir()
+        content = b"operator bytes" if case == "different-bytes" else payload
+        if case == "wrong-ledger-hash":
+            with backup_env.new_session() as session:
+                store_owned_bytes(
+                    session,
+                    LocalStorageBackend(),
+                    str(path),
+                    content,
+                    object_kind="backup-cloud-cache",
+                )
+                row = session.exec(
+                    select(OwnedStorageObject).where(
+                        OwnedStorageObject.key == str(path)
+                    )
+                ).one()
+                row.sha256 = "0" * 64
+                session.add(row)
+                session.commit()
+        else:
+            path.write_bytes(content)
+        with pytest.raises(BackupOwnershipError):
+            downloads._download_backup_to_local(meta)
+        assert path.read_bytes() == content
+
+    @pytest.mark.parametrize(
+        "case", ["disconnected", "remote-changed", "download-failed"]
+    )
+    def test_failed_download_leaves_no_new_owned_bytes(
+        self, backup_env, owned_opendal_archive, monkeypatch, case
+    ):
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.backups.backup import downloads
+        from app.modules.backups.backup.contracts import BackupOwnershipError
+
+        meta, destination, row_id, _ = owned_opendal_archive
+        if case == "disconnected":
+            monkeypatch.setattr(
+                backup_destination, "configured_destinations", lambda: []
+            )
+        elif case == "remote-changed":
+            destination.backend.payload = b"replacement with different size"
+        else:
+
+            class BrokenReader(io.BytesIO):
+                def read(self, size=-1):
+                    if self.tell():
+                        raise OSError("connection lost")
+                    return super().read(3)
+
+            @contextmanager
+            def broken_reader(key, *, expected=None):
+                with BrokenReader(b"partial") as reader:
+                    yield reader
+
+            monkeypatch.setattr(destination.backend, "open_reader", broken_reader)
+        with pytest.raises(
+            (BackupOwnershipError, backup_destination.BackupDestinationError, OSError)
+        ):
+            downloads._download_backup_to_local(meta)
+        assert list(backup_env.backup_dir.glob(".printstash-backup-download-*")) == []
+        with backup_env.new_session() as session:
+            assert (
+                session.get(OwnedStorageObject, row_id).state
+                == StorageObjectState.COMMITTED
+            )

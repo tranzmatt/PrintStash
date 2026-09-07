@@ -24,6 +24,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+import app.modules.library.revision_labels as models_revision_labels
 from app.db.models import (
     Collection,
     CollectionRole,
@@ -33,7 +34,7 @@ from app.db.models import (
     ModelTagLink,
     Tag,
 )
-from app.services import taxonomy
+from app.modules.library import taxonomy
 from tests.factories import build_file, build_model
 
 MAX_BATCH = 500
@@ -609,7 +610,6 @@ class TestBatchRevisionLabels:
         revision,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from app.services import model_views
 
         model = model_in("Rollback Revisions", None)
         first = revision(model, 1, "first")
@@ -621,7 +621,7 @@ class TestBatchRevisionLabels:
             session.flush()
             raise RuntimeError("injected batch failure")
 
-        monkeypatch.setattr(model_views, "set_revision_labels", fail_after_first)
+        monkeypatch.setattr(models_revision_labels, "set_revision_labels", fail_after_first)
 
         with pytest.raises(RuntimeError, match="injected batch failure"):
             client.patch(

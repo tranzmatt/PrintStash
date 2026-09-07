@@ -98,7 +98,7 @@ class TestAuthFlow:
 
     @pytest.mark.asyncio
     async def test_non_superuser_is_denied_admin_routes(self, api, e2e_db):
-        from app.services.auth import create_access_token
+        from app.modules.identity.auth import create_access_token
 
         # Seed a plain (non-superuser) writer.
         user = build_user(

@@ -30,8 +30,10 @@ from app.db.models import (
     File,
 )
 from app.db.scopes import live
-from app.services import external_library, runtime_config
-from app.services.jobs import registry
+from app.modules.administration import runtime_config
+from app.modules.sources import external_library
+from app.modules.storage import root_markers
+from app.runtime.jobs import registry
 from tests._env import use_local_storage
 from tests.factories import build_collection, build_external_library
 from tests.paths import FIXTURES_DIR
@@ -266,7 +268,7 @@ class TestRootEnrollment:
         root = tmp_path / "nas"
         root.mkdir()
         lib = build_external_library(db_session, root, root_identity=None, name="nas")
-        (root / external_library.ROOT_MARKER_FILENAME).write_text(
+        (root / root_markers.ROOT_MARKER_FILENAME).write_text(
             json.dumps(
                 {
                     "format": 1,
@@ -302,7 +304,7 @@ class TestRootEnrollment:
         assert response.status_code == 200, response.text
         assert response.json()["binding_state"] == "bound"
         assert response.json()["root_enrollable"] is False
-        assert (root / external_library.ROOT_MARKER_FILENAME).exists()
+        assert (root / root_markers.ROOT_MARKER_FILENAME).exists()
 
     def test_enrollment_rejects_a_different_confirmed_path(
         self, tmp_path: Path, client, db_session: Session, auth_headers: dict

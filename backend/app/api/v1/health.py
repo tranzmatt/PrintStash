@@ -22,9 +22,9 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.db.session import get_session_factory
-from app.services.printer_provider import provider_diagnostic_summary
-from app.services.release_check import get_release_status
-from app.services.storage_backend import get_backend
+from app.modules.administration.release_check import get_release_status
+from app.modules.printing.printer_provider import provider_diagnostic_summary
+from app.modules.storage.storage_backend.runtime import get_backend
 
 router = APIRouter(tags=["health"])
 
@@ -79,7 +79,7 @@ def _backup_probe() -> dict:
                 *backup_dir.glob("nexus3d-backup-*.tar.gz"),
             ]
         )
-        from app.services.backup_runs import execution_health
+        from app.modules.backups.backup_runs import execution_health
 
         execution = execution_health()
         return {
@@ -150,7 +150,7 @@ def _provider_probe() -> dict:
 
 def _jobs_probe() -> dict:
     # In-memory ingestion registry; informational, so always ``ok``.
-    from app.services.jobs import registry
+    from app.runtime.jobs import registry
 
     try:
         return {"ok": True, "counts": registry.snapshot_counts()}
@@ -160,7 +160,7 @@ def _jobs_probe() -> dict:
 
 def _fleet_scheduler_probe() -> dict:
     from app.db.models import PrintJobState
-    from app.services.printer_jobs import scheduler_snapshot
+    from app.modules.printing.printer_jobs import scheduler_snapshot
 
     try:
         with get_session_factory().session() as session:
@@ -216,7 +216,7 @@ def _spoolman_probe() -> dict:
     # unreachable) it returns ok=True so an optional, OFF-by-default integration
     # never flips the overall service status to degraded.
     try:
-        from app.services import runtime_config
+        from app.modules.administration import runtime_config
 
         with get_session_factory().session() as session:
             if not runtime_config.spoolman_enabled(session):

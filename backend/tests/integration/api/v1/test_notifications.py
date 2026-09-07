@@ -24,7 +24,7 @@ from sqlmodel import Session
 
 from app.core.url_safety import PinnedTarget
 from app.db.models import NotificationChannel, NotificationTarget
-from app.services.notifications import _REQUIRED_CONFIG_FIELDS
+from app.modules.notifications.notifications import _REQUIRED_CONFIG_FIELDS
 from tests.integration.conftest import UserHeaders
 
 MASK = "********"
@@ -71,9 +71,9 @@ def delivery_target():
 
     def send(client: TestClient, headers: dict[str, str], channel: int) -> str:
         with (
-            patch("app.services.notifications._client_for", return_value=transport),
+            patch("app.modules.notifications.notifications._client_for", return_value=transport),
             patch(
-                "app.services.notifications.resolve_public_target", return_value=pinned
+                "app.modules.notifications.notifications.resolve_public_target", return_value=pinned
             ),
         ):
             result = client.post(

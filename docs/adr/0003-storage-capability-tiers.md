@@ -7,7 +7,7 @@
 
 ## Context
 
-`StorageBackend` (`backend/app/services/storage_backend.py`) is not a
+`StorageBackend` (`backend/app/modules/storage/storage_backend.py`) is not a
 portability shim. Roughly a quarter of its surface implements one safety
 protocol: **create-only writes carrying positive proof of which exact object
 was created**, so that a rollback can never destroy bytes it did not write.
@@ -314,7 +314,7 @@ asserted against each adapter's declared capabilities.
 
 `verify_destructive_access` and `_owned_namespace` exist because a wrong answer
 during hard delete is permanent. On an adapter with
-`namespace_ownership = False`, `services/storage_deletion` operates on faith.
+`namespace_ownership = False`, `modules/storage/storage_deletion` operates on faith.
 Purge therefore requires explicit confirmation on a non-Verified backend **even
 after** `VAULT_STORAGE_ALLOW_UNVERIFIED` is set. The blanket acknowledgement
 covers ingest; it does not cover irreversible deletion.
@@ -472,7 +472,7 @@ Three further payoffs fall out of it:
 
 1. **Root validation happens once**, on `TransportSpec`, rather than being
    re-asserted by every provider — and given what an empty root does to
-   `services/storage_deletion` (see "Root is mandatory"), once is what we want.
+   `modules/storage/storage_deletion` (see "Root is mandatory"), once is what we want.
 2. **A provider can change transport without touching its configuration.** If a
    native Nextcloud client ever replaced WebDAV, only `NextcloudConfig.transport()`
    changes — env vars, the generated form, and stored `SystemConfig` rows are all
@@ -728,7 +728,7 @@ more" is low precisely so that the escape hatch is unnecessary.
 #### Root is mandatory
 
 `TransportSpec.root` is validated non-empty for every OpenDAL provider, because
-`walk_keys("")` and `usage("")` drive `services/storage_deletion`. With an empty
+`walk_keys("")` and `usage("")` drive `modules/storage/storage_deletion`. With an empty
 root on a shared container, a purge would enumerate and delete data that is not
 ours. Carry `f"{scheme}/{root}"` into `CreationReceipt.namespace`, exactly as the
 S3 adapter carries `f"{bucket}/{prefix}"`.
@@ -769,7 +769,7 @@ Independent of OpenDAL, and worth doing on its own merits:
   is the one that protects users.
 
 This shrinks the storage layer's boto3 surface to a single optional read-only
-call. It does **not** remove the dependency: `app/services/backup.py` builds its
+call. It does **not** remove the dependency: `app/modules/backups/backup.py` builds its
 own boto3 client (`_get_backup_s3`) against a different bucket with different
 credentials (`backup_s3_*`), doing `put_object`, `head_object`, `delete_object`
 and `list_objects` for backup archives. boto3 stays for backup regardless of

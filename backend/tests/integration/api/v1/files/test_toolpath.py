@@ -1,6 +1,6 @@
 """Toolpaths require original-download access and never mutate Artifact bytes."""
 
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
 
 
 class TestToolpath:

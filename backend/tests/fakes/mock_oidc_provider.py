@@ -1,7 +1,7 @@
 """A fake OpenID Connect IdP on loopback: discovery + JWKS + token endpoint.
 
 Speaks the subset of the OIDC authorization-code flow that
-``app/services/oidc.py`` actually drives: ``_discovery`` GETs
+``app/modules/identity/oidc.py`` actually drives: ``_discovery`` GETs
 ``/.well-known/openid-configuration``, ``exchange_code`` POSTs
 ``/token`` and GETs ``/jwks``, then verifies the returned ``id_token`` with a
 real RS256 signature check (issuer/audience/nonce all enforced for real).

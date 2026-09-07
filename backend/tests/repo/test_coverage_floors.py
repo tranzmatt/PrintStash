@@ -49,17 +49,17 @@ MODULE_FLOOR = 90.0
 #
 # Deleting an entry is the goal. See the module docstring for the ratchet.
 PINNED_BELOW_FLOOR = {
-    "app/services/source_covers.py": 76.5,
-    "app/services/staging_leases.py": 79.0,
-    "app/services/inbox.py": 81.0,
-    "app/services/provenance.py": 81.5,
-    "app/services/library_transfer.py": 84.0,
-    "app/services/ingestion.py": 85.5,
-    "app/services/capture_provider_connections.py": 86.5,
-    "app/services/ws_tickets.py": 87.0,
-    "app/services/library_watcher.py": 87.5,
+    "app/modules/library/source_covers.py": 76.5,
+    "app/modules/ingestion/staging_leases.py": 79.0,
+    "app/modules/ingestion/inbox.py": 81.0,
+    "app/modules/library/provenance.py": 81.5,
+    "app/modules/ingestion/library_transfer.py": 84.0,
+    "app/modules/ingestion/ingestion.py": 85.5,
+    "app/modules/ingestion/capture_provider_connections.py": 86.5,
+    "app/modules/identity/ws_tickets.py": 87.0,
+    "app/modules/sources/library_watcher.py": 87.5,
     "app/schemas/provenance.py": 89.0,
-    "app/services/importer.py": 89.5,
+    "app/modules/ingestion/importer.py": 89.5,
 }
 
 # How far a pinned module may rise above its pin before the pin has to move. Wide

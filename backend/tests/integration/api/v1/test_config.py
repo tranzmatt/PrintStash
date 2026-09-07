@@ -26,7 +26,7 @@ from sqlmodel import Session, select
 
 from app.core.config import _overlay
 from app.db.models import File, FileType, Model
-from app.services import runtime_config
+from app.modules.administration import runtime_config
 from tests.factories import build_file, build_model
 from tests.integration.conftest import UserHeaders
 
@@ -623,7 +623,7 @@ class TestStorageRemap:
         db_session: Session,
         storage_in_tmp: Path,
     ) -> None:
-        from app.services import runtime_config
+        from app.modules.administration import runtime_config
 
         runtime_config.mark_configured(db_session)
 

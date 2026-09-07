@@ -108,7 +108,7 @@ a real SeaweedFS that the suite starts as containers, so Docker must be running.
 - Run `tests/integration/postgres` — PostgreSQL 16 through Psycopg 3.
 - Run the async database contract once without extras (explicit capability
   error) and once with `--extra async-db` for SQLite async.
-- Run `tests/contract/services/test_storage_backend.py` — the pinned SeaweedFS
+- Run `tests/contract/modules/storage/test_storage_backend.py` — the pinned SeaweedFS
   image, started for the run.
 - Run the real Nextcloud and OpenSSH storage contracts. They must exercise the
   production adapters (authentication rejection, nested/Unicode paths,

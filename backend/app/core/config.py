@@ -257,7 +257,7 @@ class Settings(BaseSettings):
     # Empty = open on the trusted internal network (see docs/known-limitations).
     metrics_token: str = ""
 
-    # URL + ZIP import (see services/importer.py).
+    # URL + ZIP import (see modules/ingestion/importer.py).
     url_import_max_redirects: int = Field(default=5, ge=0)
     max_archive_entries: int = Field(default=500, gt=0)
     max_archive_entry_mb: int = Field(default=512, gt=0)

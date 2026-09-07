@@ -117,7 +117,7 @@ Goal: track filament inventory and per-print consumption by integrating with
 Spoolman is mature, well-documented, self-hosted filament-inventory software with
 a clean REST API, and our homelab audience already runs it. PrintStash already
 captures real consumption per print (`PrintJob.filament_used_g`, derived from
-Moonraker via `services/filament.mm_to_grams`), so the work is to *feed* that
+Moonraker via `modules/printing/filament.mm_to_grams`), so the work is to *feed* that
 inventory, not duplicate it. Spoolman becomes the source of truth for spools,
 vendors, and remaining weight; PrintStash reads it for display and writes
 consumption back.

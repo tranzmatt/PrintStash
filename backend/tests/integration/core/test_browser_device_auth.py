@@ -23,7 +23,7 @@ from app.core.browser_device_auth import (
 )
 from app.core.time import utcnow
 from app.db.models import BrowserDevice
-from app.services import inbox
+from app.modules.ingestion import inbox
 
 
 @pytest.fixture
@@ -164,7 +164,7 @@ class TestRequireUserOrBrowserImportUser:
     def test_rejects_a_token_whose_subject_is_not_an_account_id(
         self, db_session: Session
     ) -> None:
-        from app.services.auth import create_access_token
+        from app.modules.identity.auth import create_access_token
 
         # A well-signed token can still carry a subject this deployment never
         # issued — a legacy or tampered payload must not reach a user lookup.

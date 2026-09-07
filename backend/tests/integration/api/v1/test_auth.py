@@ -10,7 +10,7 @@ refused in an `Authorization` header, so a key leaked into a log cannot be repla
 directly. And **failed logins are rate-limited**, per limiter, so exhausting one does
 not lock out the other.
 
-OIDC's own protocol work lives in `integration/services/test_oidc.py` and
+OIDC's own protocol work lives in `integration/modules/identity/test_oidc.py` and
 `e2e/test_oidc.py`; what is here is the router's handling of a callback that never gets
 that far.
 """
@@ -23,9 +23,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+import app.runtime.maintenance as backup_maintenance
 from app.db.models import ApiKey, RefreshToken, User
-from app.services import backup, oidc
-from app.services.auth import ACCESS_BLOCKLIST, create_api_key
+from app.modules.identity import oidc
+from app.modules.identity.auth import ACCESS_BLOCKLIST, create_api_key
 from tests.factories import build_user
 
 PASSWORD = "Password123"
@@ -80,7 +81,7 @@ class TestLogin:
         self, client: TestClient, db_session: Session, account
     ) -> None:
         account("recovery-owner", is_superuser=True)
-        backup._restore_gate.set()
+        backup_maintenance._restore_gate.set()
         try:
             response = client.post(
                 "/api/v1/auth/login",
@@ -88,7 +89,7 @@ class TestLogin:
             )
             me = client.get("/api/v1/auth/me")
         finally:
-            backup._restore_gate.clear()
+            backup_maintenance._restore_gate.clear()
 
         assert response.status_code == 200, response.text
         assert response.json()["refresh_token"] is None
@@ -100,14 +101,14 @@ class TestLogin:
     ) -> None:
         user = account("recovery-script", is_superuser=True)
         key, raw_key = create_api_key(db_session, user.id, "Recovery key")
-        backup._restore_gate.set()
+        backup_maintenance._restore_gate.set()
         try:
             response = client.post(
                 "/api/v1/auth/login",
                 json={"username": "recovery-script", "api_key": raw_key},
             )
         finally:
-            backup._restore_gate.clear()
+            backup_maintenance._restore_gate.clear()
 
         db_session.expire_all()
         stored_key = db_session.get(ApiKey, key.id)

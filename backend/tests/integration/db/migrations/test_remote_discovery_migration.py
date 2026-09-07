@@ -102,9 +102,9 @@ class TestPostgresDiscoveryUpgrade:
         from app.db.migrate import run_migrations
         from app.db.session import SQLiteSessionFactory
         from app.db.url import normalize_database_url
-        from app.services import remote_discovery
-        from app.services.library_source import RemoteLibrarySource
-        from app.services.remote_io import RemoteEntry
+        from app.modules.sources import remote_discovery
+        from app.modules.sources.library_source import RemoteLibrarySource
+        from app.modules.storage.remote_io import RemoteEntry
         from tests.containers import postgres_url
         from tests.factories.migration_rows import (
             RELEASED_V0121_REVISION,

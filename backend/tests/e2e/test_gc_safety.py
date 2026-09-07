@@ -10,8 +10,9 @@ from sqlmodel import select
 
 from app.core.config import settings
 from app.db.models import File
-from app.services import artifact_content, external_library
-from app.services.library_source import SourceContent, SourceEntry, SourcePage
+from app.modules.sources import external_library
+from app.modules.sources.library_source import SourceContent, SourceEntry, SourcePage
+from app.modules.storage import artifact_content
 from tests.paths import FIXTURES_DIR
 
 

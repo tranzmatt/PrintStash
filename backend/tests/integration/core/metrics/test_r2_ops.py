@@ -15,8 +15,8 @@ from app.db.models import (
     ExternalLibraryScanStatus,
     FileType,
 )
-from app.services import external_library
-from app.services.jobs import JobRegistry
+from app.modules.sources import external_library
+from app.runtime.jobs import JobRegistry
 from tests.factories import build_file, build_model, build_print_job
 
 # --- Item 1: richer /health output --------------------------------------------

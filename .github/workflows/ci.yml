@@ -725,7 +725,7 @@ jobs:
           -v "$PWD/backend/tests/fixtures:/fixtures:ro"
           printstash-api:arm64-ci
           /app/.venv/bin/python -c
-          "from pathlib import Path; from app.services.mesh_processing import _load_mesh; mesh = _load_mesh(Path('/fixtures/cascadio_material.stp')); assert mesh is not None and len(mesh.faces) > 0"
+          "from pathlib import Path; from app.modules.media.mesh_processing import _load_mesh; mesh = _load_mesh(Path('/fixtures/cascadio_material.stp')); assert mesh is not None and len(mesh.faces) > 0"
 
       - name: Install uv for image contracts
         if: matrix.storage-smoke

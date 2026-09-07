@@ -31,7 +31,7 @@ from app.db.models import (
     InboxItem,
     InboxItemState,
 )
-from app.services import inbox
+from app.modules.ingestion import inbox
 from tests.integration.api.v1.inbox.conftest import CANONICAL_URL, capture_source
 
 BODY = b"slot-owned"

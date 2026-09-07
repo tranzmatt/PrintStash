@@ -35,9 +35,9 @@ VARIANT = ""
 
 TRANSPORT_PROBE = r"""
 import json
-from app.services.remote_io_adapters import remote_io_for
-from app.services.storage_backend import StorageConfigurationError
-from app.services.storage_providers import TransportKind, TransportSpec, provider_catalogue
+from app.modules.storage.remote_io_adapters import remote_io_for
+from app.modules.storage.storage_backend.contracts import StorageConfigurationError
+from app.modules.storage.storage_providers import TransportKind, TransportSpec, provider_catalogue
 
 options = {
     "root": "image-contract", "bucket": "image-contract", "region": "us-east-1",
@@ -156,8 +156,11 @@ class TestRuntimeImageBackup(unittest.TestCase):
             s3.close()
 
     def test_restores_sftp_backup_from_shipped_image(self) -> None:
-        from app.services.storage_opendal import OpenDALStorageBackend
-        from app.services.storage_providers import SFTPProviderConfig, resolve_transport
+        from app.modules.storage.storage_opendal import OpenDALStorageBackend
+        from app.modules.storage.storage_providers import (
+            SFTPProviderConfig,
+            resolve_transport,
+        )
 
         host, port, host_key = openssh_endpoint()
         root = f"image-sftp-{uuid4().hex}"

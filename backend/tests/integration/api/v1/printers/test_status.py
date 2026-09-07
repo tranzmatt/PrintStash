@@ -22,7 +22,7 @@ from app.db.models import (
     PrintJobState,
     User,
 )
-from app.services.printer_provider import ProviderError
+from app.modules.printing.printer_provider import ProviderError
 from tests.factories import (
     build_collection,
     build_file,
@@ -221,7 +221,7 @@ class TestDashboard:
             status=PrinterStatus.UNKNOWN,
         )
 
-        from app.services.printer_hub import PrinterHub
+        from app.modules.printing.printer_hub import PrinterHub
 
         hub = PrinterHub()
         asyncio.run(hub._mark_status(p1.id, status="printing", error=None))
@@ -290,12 +290,12 @@ class TestPrinterDiagnostics:
         # 10.0.0.1:7125 for the seconds it took to time out.
         with (
             patch(
-                "app.services.printer_provider.MoonrakerProvider.info",
+                "app.modules.printing.printer_provider.MoonrakerProvider.info",
                 new_callable=AsyncMock,
                 side_effect=offline,
             ),
             patch(
-                "app.services.printer_provider.MoonrakerProvider.query_status",
+                "app.modules.printing.printer_provider.MoonrakerProvider.query_status",
                 new_callable=AsyncMock,
                 side_effect=offline,
             ),

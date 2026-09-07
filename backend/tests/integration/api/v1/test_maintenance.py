@@ -9,7 +9,7 @@ than silently marking itself resolved.
 Everything on this router is superuser-only; the auth sweep at the bottom covers every
 route so a lost dependency cannot go unnoticed.
 
-The audit engine's own behaviour lives in `integration/services/test_vault_audit.py`.
+The audit engine's own behaviour lives in `integration/modules/administration/test_vault_audit.py`.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from app.db.models import (
     VaultAuditRunState,
     VaultAuditSeverity,
 )
-from app.services import vault_audit
+from app.modules.administration import vault_audit
 from tests.integration.conftest import UserHeaders
 
 # Every route on the router, for the auth sweeps.

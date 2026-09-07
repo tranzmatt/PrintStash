@@ -98,14 +98,14 @@ class TestBambuPrinter:
         with (
             patch("app.api.v1.printers.get_backend", return_value=FakeBackend()),
             patch(
-                "app.services.printer_provider.BambuLanProvider.query_status",
+                "app.modules.printing.printer_provider.BambuLanProvider.query_status",
                 new_callable=AsyncMock,
                 return_value={
                     "result": {"status": {"print_stats": {"state": "standby"}}}
                 },
             ),
             patch(
-                "app.services.printer_provider.BambuLanProvider.upload",
+                "app.modules.printing.printer_provider.BambuLanProvider.upload",
                 new_callable=AsyncMock,
                 return_value={"ok": True},
             ) as upload,
@@ -140,7 +140,7 @@ class TestBambuPrinter:
             bambu_access_code="access",
         )
         with patch(
-            "app.services.printer_provider.BambuLanProvider.query_status",
+            "app.modules.printing.printer_provider.BambuLanProvider.query_status",
             new_callable=AsyncMock,
             return_value={"result": {"status": {"print_stats": {"state": "printing"}}}},
         ):
@@ -204,7 +204,7 @@ class TestBambuPrinter:
         )
 
         with patch(
-            "app.services.printer_provider.BambuLanProvider.query_status",
+            "app.modules.printing.printer_provider.BambuLanProvider.query_status",
             new_callable=AsyncMock,
         ) as query_status:
             response = client.post(
@@ -245,7 +245,7 @@ class TestBambuPrinter:
         with (
             patch("app.api.v1.printers.get_backend", return_value=backend),
             patch(
-                "app.api.v1.printers.transfer_artifact", new_callable=AsyncMock
+                "app.modules.printing.dispatch.transfer_artifact", new_callable=AsyncMock
             ) as transfer,
         ):
             response = client.post(
@@ -271,7 +271,7 @@ class TestBambuPrinter:
             bambu_access_code="access",
         )
         with patch(
-            "app.services.printer_provider.BambuLanProvider.pause",
+            "app.modules.printing.printer_provider.BambuLanProvider.pause",
             new_callable=AsyncMock,
         ) as mock_pause:
             mock_pause.return_value = {"ok": True}
@@ -293,7 +293,7 @@ class TestBambuPrinter:
         )
 
         with patch(
-            "app.services.printer_provider.BambuLanProvider.query_status",
+            "app.modules.printing.printer_provider.BambuLanProvider.query_status",
             new_callable=AsyncMock,
         ) as mock_status:
             mock_status.return_value = {"result": {"status": {}}}
@@ -335,7 +335,7 @@ class TestBambuPrinter:
             return {"result": {"status": {}}}
 
         with patch(
-            "app.services.printer_provider.BambuLanProvider.query_status",
+            "app.modules.printing.printer_provider.BambuLanProvider.query_status",
             new=slow_status,
         ):
             resp = client.get(

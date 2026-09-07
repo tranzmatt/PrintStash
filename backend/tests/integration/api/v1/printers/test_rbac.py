@@ -148,7 +148,7 @@ class TestPrinterRbac:
         grant_printer(db_session, "controller", printer, PrinterRole.CONTROL)
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.pause",
+            "app.modules.printing.printer_provider.MoonrakerProvider.pause",
             new_callable=AsyncMock,
         ) as pause:
             pause.return_value = {"result": "ok"}

@@ -15,18 +15,16 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from printstash_core.gcode import declared_print_artifact_format
-from printstash_core.printers import ProviderRegistry
+from printstash_core.printers import ProviderError, ProviderRegistry
 from sqlmodel import Session, select
-from starlette.concurrency import run_in_threadpool
 
+from app.bootstrap.dependencies import get_hub, get_hub_from_ws
 from app.core.http import get_or_404
 from app.core.logging import get_logger
 from app.core.security import require_superuser, require_user
 from app.core.time import utcnow
 from app.db.models import (
     CollectionRole,
-    CompatibilityPolicy,
     File,
     FileType,
     Model,
@@ -41,6 +39,25 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.db.session import get_session
+from app.modules.identity import printer_rbac, rbac, ws_tickets
+from app.modules.identity.auth import get_user_by_id, verify_access_token
+from app.modules.printing import dispatch, materials
+from app.modules.printing.printer_files import (
+    list_printer_files,
+    sync_printer_files,
+)
+from app.modules.printing.printer_hub import PrinterHub
+from app.modules.printing.printer_jobs import (
+    reproducibility_payload,
+)
+from app.modules.printing.printer_provider import (
+    capabilities_for_provider,
+    detect_printer_model,
+    get_provider_client,
+    provider_diagnostic_summary,
+)
+from app.modules.printing.unattributed import ensure_unattributed_artifact
+from app.modules.storage.storage_backend.runtime import get_backend
 from app.schemas.materials import ManualMaterialStateUpdate, PrinterMaterialStateRead
 from app.schemas.printers import (
     HomeAxes,
@@ -57,33 +74,6 @@ from app.schemas.printers import (
     SetTemperature,
     StartPrinterFile,
 )
-from app.services import materials, printer_rbac, rbac, ws_tickets
-from app.services.auth import get_user_by_id, verify_access_token
-from app.services.printer_files import (
-    build_traceable_remote_filename,
-    list_printer_files,
-    sync_printer_files,
-    upsert_printer_file,
-)
-from app.services.printer_hub import (
-    PrinterHub,
-    _get_sentinel_ids,
-    get_hub,
-    get_hub_from_ws,
-)
-from app.services.printer_jobs import (
-    PrinterJobError,
-    reproducibility_payload,
-    transfer_artifact,
-)
-from app.services.printer_provider import (
-    ProviderError,
-    capabilities_for_provider,
-    detect_printer_model,
-    get_provider_client,
-    provider_diagnostic_summary,
-)
-from app.services.storage_backend import get_backend
 
 logger = get_logger(__name__)
 
@@ -870,165 +860,11 @@ async def send_to_printer(
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> PrintJobRead:
-    printer_rbac.require_printer_role(
-        session, current_user, printer_id, PrinterRole.PRINT
+    return await dispatch.send_to_printer(
+        printer_id, payload, current_user, session,
+        provider_builder=lambda printer: _provider_client(request, printer),
+        backend_provider=get_backend,
     )
-    p = get_or_404(session, Printer, printer_id, "printer_not_found")
-    provider = _provider_client(request, p)
-    if not provider.capabilities.can_upload:
-        raise HTTPException(
-            status_code=409,
-            detail="operation_not_supported_for_provider",
-        )
-    # Resolve and authorize the artifact before any provider I/O. Besides avoiding
-    # unnecessary traffic, this guarantees unsupported/corrupt requests cannot
-    # disclose a printer's live state or wake a device on the local network.
-    f = get_or_404(session, File, payload.file_id, "file_not_found")
-    if f.file_type != FileType.GCODE:
-        raise HTTPException(status_code=400, detail="file_not_gcode")
-    artifact_format = declared_print_artifact_format(f.original_filename)
-    if not provider.capabilities.accepts_format(artifact_format):
-        raise HTTPException(
-            status_code=409,
-            detail="artifact_format_not_supported",
-        )
-    _require_file_role(session, current_user, f, CollectionRole.EDIT)
-    if provider.capabilities.requires_ready_before_send:
-        try:
-            status = await provider.query_status()
-        except ProviderError as exc:
-            raise HTTPException(status_code=502, detail=exc.code) from exc
-        state = str(
-            status.get("result", {})
-            .get("status", {})
-            .get("print_stats", {})
-            .get("state", "")
-        ).lower()
-        if state not in {"standby", "ready", "idle", "complete", "cancelled"}:
-            raise HTTPException(status_code=409, detail="printer_not_ready")
-    if payload.start_print:
-        try:
-            compatibility = materials.compatibility_for_printer(
-                session, int(f.id), printer_id
-            )
-        except materials.MaterialStateError as exc:
-            raise HTTPException(status_code=404, detail=exc.code) from exc
-        if (
-            compatibility.verdict == "mismatch"
-            and payload.compatibility_policy == CompatibilityPolicy.SAFE
-        ):
-            raise HTTPException(
-                status_code=409, detail="material_mismatch_confirmation_required"
-            )
-    backend = get_backend()
-    blob_exists = await run_in_threadpool(backend.exists, f.path)
-    if not blob_exists:
-        raise HTTPException(status_code=410, detail="file_blob_missing")
-    remote_name = (
-        payload.remote_filename.strip()
-        if payload.remote_filename
-        else build_traceable_remote_filename(f)
-    )
-    if artifact_format.value == "bgcode_binary":
-        if not remote_name.lower().endswith(".bgcode"):
-            remote_name += ".bgcode"
-    elif not remote_name.lower().endswith((".gcode", ".g", ".gco")):
-        remote_name += ".gcode"
-
-    job = PrintJob(
-        printer_id=printer_id,
-        file_id=f.id,  # type: ignore[arg-type]
-        model_id=f.model_id,
-        remote_filename=remote_name,
-        state=PrintJobState.UPLOADING,
-        spool_id=payload.spool_id,
-        spool_name=payload.spool_name,
-        spool_filament_id=payload.spool_filament_id,
-        compatibility_policy=payload.compatibility_policy,
-        material_override_by=(
-            current_user.id
-            if payload.compatibility_policy == CompatibilityPolicy.ALLOW_MISMATCH
-            else None
-        ),
-        material_override_at=(
-            utcnow()
-            if payload.compatibility_policy == CompatibilityPolicy.ALLOW_MISMATCH
-            else None
-        ),
-    )
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-
-    try:
-        await transfer_artifact(
-            backend, provider, f, remote_name, start_print=payload.start_print
-        )
-    except ProviderError as exc:
-        job.state = PrintJobState.FAILED
-        job.error = _provider_action_code(exc)
-        job.finished_at = utcnow()
-        session.add(job)
-        session.commit()
-        raise HTTPException(status_code=502, detail=_provider_action_code(exc)) from exc
-    except PrinterJobError as exc:
-        job.state = PrintJobState.FAILED
-        job.error = exc.code
-        job.finished_at = utcnow()
-        session.add(job)
-        session.commit()
-        status_code = {
-            "invalid_binary_gcode": 400,
-            "print_artifact_extension_mismatch": 400,
-            "artifact_format_not_supported": 409,
-            "file_blob_missing": 410,
-        }.get(exc.code, 502)
-        raise HTTPException(status_code=status_code, detail=exc.code) from exc
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("send_to_printer failed printer=%s file=%s", printer_id, f.id)
-        job.state = PrintJobState.FAILED
-        job.error = "provider_error"
-        job.finished_at = utcnow()
-        session.add(job)
-        session.commit()
-        raise HTTPException(status_code=502, detail="provider_error") from exc
-    # Upload-only is not a queued print. It only records transfer history; user
-    # can start the remote file later from printer inventory.
-    job.state = (
-        PrintJobState.STARTED if payload.start_print else PrintJobState.COMPLETED
-    )
-    if not payload.start_print:
-        job.finished_at = utcnow()
-    job.updated_at = utcnow()
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-    out = PrintJobRead(
-        **job.model_dump(
-            exclude={"artifact_capture_error_code", "artifact_capture_error_message"}
-        ),
-        **reproducibility_payload(
-            job,
-            file_type=f.file_type,
-            download_url=(
-                f"/api/v1/files/{job.file_id}/download"
-                if job.source == "vault" or job.artifact_evidence.endswith("_archived")
-                else None
-            ),
-        ),
-    )
-    upsert_printer_file(
-        session,
-        printer_id=printer_id,
-        file_id=f.id,  # type: ignore[arg-type]
-        remote_filename=remote_name,
-        size_bytes=f.size_bytes,
-        sha256=f.sha256,
-        matched_by="upload_history",
-    )
-    return out
 
 
 @router.post(
@@ -1089,7 +925,7 @@ async def start_printer_file(
         file_id = int(file_row.id)
         model_id = file_row.model_id
     else:
-        file_id, model_id = _get_sentinel_ids(session)
+        file_id, model_id = ensure_unattributed_artifact(session)
 
     job = PrintJob(
         printer_id=printer_id,
@@ -1567,7 +1403,7 @@ async def printer_ws(
         return
 
     await websocket.accept()
-    await hub.attach(printer_id, websocket)
+    await hub.attach(printer_id, websocket.send_json)
     try:
         while True:
             # Client messages are ignored; we just need to detect disconnect.
@@ -1575,4 +1411,4 @@ async def printer_ws(
     except WebSocketDisconnect:
         pass
     finally:
-        await hub.detach(printer_id, websocket)
+        await hub.detach(printer_id, websocket.send_json)

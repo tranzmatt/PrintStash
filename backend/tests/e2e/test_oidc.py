@@ -2,7 +2,7 @@
 
 Unlike ``tests/test_oidc.py`` (which monkeypatches ``_discovery``/
 ``_post_token``/``_get_json``), this drives the real HTTP calls in
-``app/services/oidc.py`` against a real fake IdP server
+``app/modules/identity/oidc.py`` against a real fake IdP server
 (``fakes/mock_oidc_provider.py``) on a real loopback socket: discovery,
 JWKS fetch, RS256 signature verification, issuer/audience/nonce checks all
 run for real.

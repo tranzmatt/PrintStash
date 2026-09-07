@@ -63,7 +63,7 @@ selected for a build.
 **Artifact persistence**:
 The invariant-heavy sequence `version → canonical publication → File row +
 Metadata + committed ownership`, owned solely by
-`services/ingestion.persist_artifact`. That primary boundary is atomic: once
+`modules/ingestion/ingestion.persist_artifact`. That primary boundary is atomic: once
 the database commit begins, uncertain outcomes preserve the published bytes and
 their ownership evidence for reconciliation rather than deleting them.
 Thumbnails are retryable derivatives published after the primary transaction;
@@ -82,7 +82,7 @@ clears it from the rest, and deleting the recommended revision promotes the
 newest surviving revision (or leaves none when it was the last).
 
 **Model views**:
-The read-model module (`services/model_views`) — single owner of every
+The read-model module (`modules/library/model_views`) — single owner of every
 Model → response-schema composition (browse list, detail, export, trash
 list, vault stats). Routers never hand-map Model rows.
 _Avoid_: serializers, read builders scattered in routers
@@ -101,8 +101,8 @@ _Avoid_: deleted (ambiguous with hard delete)
 
 **Trash lifecycle**:
 soft-delete → restore or expiry → GC preview → explicit approval → quarantine →
-revalidated hard delete. `services/trash` owns individual transitions and
-`services/gc_planner` owns automatic expiry. Automatic GC never approves its
+revalidated hard delete. `modules/library/trash` owns individual transitions and
+`modules/backups/gc_planner` owns automatic expiry. Automatic GC never approves its
 own plan. It requires a recent, verified S3 backup in an independent failure domain,
 an unchanged candidate digest, Verified active storage, and a completed
 quarantine interval. PrintStash never walks configured storage and deletes
@@ -166,7 +166,7 @@ temp download remotely. The only sanctioned way to feed a stored blob to
 code that needs a filesystem path (mesh loading, tar, restore).
 
 **Artifact content**:
-`services/artifact_content` is the only read seam for an Artifact's bytes. It
+`modules/storage/artifact_content` is the only read seam for an Artifact's bytes. It
 resolves managed storage, descriptor-pinned mounted files, and read-only remote
 sources without asking callers to understand `File.path`. Mounted reads reject
 symlinks and changes between open, hash and close. Remote reads verify stable
@@ -185,7 +185,7 @@ A user-managed mounted folder or read-only S3, WebDAV, or SFTP namespace that
 PrintStash indexes in place. The source remains authoritative; only generated
 thumbnails and metadata are stored by the Vault. Opt-in and OFF by default
 (`SystemConfig.external_libraries_enabled`). Owned by
-`services/external_library`. The UI calls these **Library sources**.
+`modules/sources/external_library`. The UI calls these **Library sources**.
 
 **Remote I/O**:
 The typed `RemoteIO` interface serves remote Library sources and backup replicas.

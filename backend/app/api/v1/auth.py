@@ -15,11 +15,29 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 
+from app.api.session_cookie import clear_session_cookie, set_session_cookie
 from app.core.config import settings
 from app.core.ratelimit import rate_limit
 from app.core.security import oauth2_scheme, require_user
 from app.db.models import User
 from app.db.session import get_session, get_session_factory
+from app.modules.identity import oidc
+from app.modules.identity.auth import (
+    authenticate_api_key,
+    authenticate_user,
+    create_access_token,
+    create_api_key,
+    create_refresh_token,
+    invalidate_user_sessions,
+    list_active_api_keys,
+    revoke_access_token,
+    revoke_api_key,
+    rotate_refresh_token,
+)
+from app.runtime.maintenance import (
+    begin_mutating_operation,
+    end_mutating_operation,
+)
 from app.schemas.auth import (
     ApiKeyCreateRequest,
     ApiKeyCreateResponse,
@@ -31,22 +49,6 @@ from app.schemas.auth import (
     TokenResponse,
     UserRead,
 )
-from app.services import oidc
-from app.services.auth import (
-    authenticate_api_key,
-    authenticate_user,
-    clear_session_cookie,
-    create_access_token,
-    create_api_key,
-    create_refresh_token,
-    invalidate_user_sessions,
-    list_active_api_keys,
-    revoke_access_token,
-    revoke_api_key,
-    rotate_refresh_token,
-    set_session_cookie,
-)
-from app.services.backup import begin_mutating_operation, end_mutating_operation
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

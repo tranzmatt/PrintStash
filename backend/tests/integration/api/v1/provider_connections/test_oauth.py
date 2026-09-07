@@ -22,8 +22,8 @@ from sqlmodel import Session, select
 
 from app.core.time import utcnow
 from app.db.models import CaptureProvider, ProviderConnection, ProviderOAuthState
-from app.services import provider_connections as service
-from app.services.capture_provider_connections import (
+from app.modules.ingestion import provider_connections as service
+from app.modules.ingestion.capture_provider_connections import (
     MyMiniFactoryTokens,
     ProviderConnectionError,
 )

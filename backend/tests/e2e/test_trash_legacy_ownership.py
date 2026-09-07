@@ -9,7 +9,7 @@ import pytest
 
 from app.core.time import utcnow
 from app.db.models import FileType
-from app.services.storage_backend import get_backend
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import build_file, build_model
 
 

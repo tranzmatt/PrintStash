@@ -21,7 +21,7 @@ from pycentauri.models import PrintStatus, Status
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 
-from app.services.elegoo_centauri import ElegooCentauriError
+from app.modules.printing.elegoo_centauri import ElegooCentauriError
 
 from .print_sim import PrintSim
 

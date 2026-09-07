@@ -12,9 +12,12 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.security import require_superuser
 from app.db.session import get_session
-from app.services import runtime_config
-from app.services.storage_backend import get_backend
-from app.services.storage_operations import serialize_operations, vault_operations
+from app.modules.administration import runtime_config
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_operations import (
+    serialize_operations,
+    vault_operations,
+)
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -137,7 +140,7 @@ def enroll_storage_root(
         )
     if settings.storage_backend != "local":
         raise HTTPException(status_code=409, detail="storage_backend_not_local")
-    from app.services.storage_backend import enroll_legacy_local_root
+    from app.modules.storage.storage_backend.local import enroll_legacy_local_root
 
     identity = runtime_config.ensure_storage_identity(session)
     root = settings.data_dir if body.role == "data" else settings.thumb_dir

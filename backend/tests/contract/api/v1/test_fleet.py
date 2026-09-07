@@ -26,8 +26,11 @@ from app.db.models import (
     PrintJobState,
 )
 from app.db.session import get_session_factory
-from app.services.printer_hub import PrinterHub
-from app.services.printer_provider import build_provider_registry, get_provider_client
+from app.modules.printing.printer_hub import PrinterHub
+from app.modules.printing.printer_provider import (
+    build_provider_registry,
+    get_provider_client,
+)
 from tests.factories import a_gcode_artifact, build_printer
 from tests.fakes.mock_printer import create_app
 from tests.fakes.server import start_server
@@ -152,9 +155,9 @@ class TestPrinter:
             ).json()
 
             with patch(
-                "app.services.printer_jobs.get_backend", return_value=_Backend()
+                "app.modules.printing.printer_jobs.get_backend", return_value=_Backend()
             ):
-                from app.services.printer_jobs import dispatch_next
+                from app.modules.printing.printer_jobs import dispatch_next
 
                 dispatched = asyncio.run(dispatch_next(_provider_builder))
                 assert dispatched == queued["id"]
@@ -217,9 +220,9 @@ class TestPrinter:
             ).json()
 
             with patch(
-                "app.services.printer_jobs.get_backend", return_value=_Backend()
+                "app.modules.printing.printer_jobs.get_backend", return_value=_Backend()
             ):
-                from app.services.printer_jobs import dispatch_next
+                from app.modules.printing.printer_jobs import dispatch_next
 
                 async def _dispatch_and_drive_both() -> tuple[int | None, int | None]:
                     # Keep the pooled HTTP client and both printer hubs on the event

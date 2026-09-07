@@ -16,8 +16,8 @@ from app.db.models import (
     MultipartModel,
     MultipartModelChoice,
 )
-from app.services import multipart_models
-from app.services.storage_backend import get_backend
+from app.modules.library import multipart_models
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories.content import png
 
 

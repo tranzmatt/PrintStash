@@ -12,17 +12,17 @@ changes those layers. The user-facing behavior and privacy contract live in
 - `backend/packages/printstash-core/src/printstash_core/imports/contracts.py`
   owns portable capture contracts shared with the browser extension. Re-export
   public contract types through the package's `imports/__init__.py`.
-- `backend/app/services/inbox.py` owns Pending Import state transitions,
+- `backend/app/modules/ingestion/inbox.py` owns Pending Import state transitions,
   selection/retry behavior, and the handoff from durable review data to an
   import job.
-- `backend/app/services/staging_leases.py` owns staging capacity, leases,
+- `backend/app/modules/ingestion/staging_leases.py` owns staging capacity, leases,
   expiry, reconciliation, and ownership transfer. A database row alone does not
   prove that staged bytes exist.
-- `backend/app/services/import_resolvers.py` and `provider_connections.py` own
+- `backend/app/modules/ingestion/import_resolvers.py` and `provider_connections.py` own
   server-side resolution and user-scoped source-provider credentials.
-- `backend/app/services/provenance.py` and `source_covers.py` own Model Source
+- `backend/app/modules/library/provenance.py` and `source_covers.py` own Model Source
   snapshots, overrides, and cover lifecycle. API response composition still
-  belongs in `services/model_views`.
+  belongs in `modules/library/model_views`.
 - `browser-extension/capture-adapter.ts` and `capture-transport.ts` own the
   browser-to-server boundary; provider-specific page extraction stays in an
   adapter rather than leaking into transport or popup code.

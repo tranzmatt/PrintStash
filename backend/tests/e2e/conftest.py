@@ -34,11 +34,14 @@ import pytest
 import pytest_asyncio
 from sqlmodel import Session, SQLModel, create_engine
 
+import app.modules.storage.storage_backend.runtime as storage_runtime
+import app.runtime.maintenance as backup_maintenance
 from app.core import url_safety
 from app.core.config import _overlay
 from app.db.session import SQLiteSessionFactory, override_session_factory
-from app.services import notification_renderers as renderers
-from app.services.storage_backend import LocalStorageBackend, bind_backend
+from app.modules.notifications import notification_renderers as renderers
+from app.modules.storage.storage_backend.local import LocalStorageBackend
+from app.modules.storage.storage_backend.runtime import bind_backend
 from tests._env import use_local_storage
 from tests.fakes.provider_targets import build_provider_app
 from tests.fakes.recorder import Recorder
@@ -111,17 +114,15 @@ def e2e_db(tmp_path: Path) -> Iterator[Session]:
     try:
         yield session
     finally:
-        from app.services import backup as backup_service
-        from app.services import storage_backend
 
         # A failed restore may leave the process gate set while its durable
         # journal remains under this test's private backup directory. Clear
         # only test-owned evidence after all clients have stopped, so the next
         # E2E case cannot inherit maintenance state or a bound backend.
-        backup_service._end_restore_maintenance()
+        backup_maintenance.end_restore_maintenance()
         for journal in backup_dir.glob(".restore-*.journal"):
             journal.unlink(missing_ok=True)
-        storage_backend._backend = None
+        storage_runtime._backend = None
         session.close()
         engine.dispose()
         for key in dir_keys:
@@ -160,13 +161,13 @@ async def api(e2e_db: Session) -> "httpx.AsyncClient":
     from app.core.http_client import close_http_client
     from app.db.session import get_session_factory
     from app.main import app
-    from app.services.printer_hub import PrinterHub
-    from app.services.printer_provider import (
+    from app.modules.printing.printer_hub import PrinterHub
+    from app.modules.printing.printer_provider import (
         build_provider_registry,
         get_provider_client,
     )
-    from app.services.realtime import InProcessBus
-    from app.services.task_queue import LocalTaskQueue
+    from app.runtime.realtime import InProcessBus
+    from app.runtime.work_wakeup import LocalWorkWakeup
 
     # E2E must initialize its own process-local runtime state instead of
     # depending on an earlier unit test's app fixture having populated it.
@@ -179,7 +180,7 @@ async def api(e2e_db: Session) -> "httpx.AsyncClient":
             printer, registry=registry
         ),
     )
-    app.state.task_queue = LocalTaskQueue()
+    app.state.work_wakeup = LocalWorkWakeup()
 
     await close_http_client()
     transport = httpx.ASGITransport(app=app)
@@ -198,7 +199,7 @@ async def api(e2e_db: Session) -> "httpx.AsyncClient":
 def superuser_headers(e2e_db, tmp_path: Path) -> dict[str, str]:
     """Seed a superuser and return its bearer header (for admin-only endpoints)."""
     from app.db.models import User
-    from app.services.auth import create_access_token, hash_password
+    from app.modules.identity.auth import create_access_token, hash_password
 
     user = User(
         username="e2e-admin",

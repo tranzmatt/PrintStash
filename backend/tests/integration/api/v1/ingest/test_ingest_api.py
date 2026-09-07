@@ -47,9 +47,9 @@ from app.db.models import (
     PrinterProfile,
     User,
 )
-from app.services import ingestion as ingestion_service
-from app.services.jobs import registry
-from app.services.storage_backend import get_backend
+from app.modules.ingestion import ingestion as ingestion_service
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.runtime.jobs import registry
 from tests._env import use_local_storage
 from tests.factories import (
     bearer,
@@ -412,7 +412,7 @@ class TestIngestModel:
     ) -> None:
         use_local_storage(tmp_path)
         monkeypatch.setattr(
-            "app.services.mesh_processing.analyze_mesh",
+            'app.modules.media.mesh_operations.analyze_mesh',
             lambda _path, report=None, output_format="PNG": (
                 {"bbox_x_mm": 1.0},
                 None,
@@ -720,7 +720,7 @@ class TestIngestModel:
         Image.new("RGB", (12, 10), (220, 30, 20)).save(replacement_buffer, format="PNG")
         replacement = replacement_buffer.getvalue()
 
-        from app.services.thumbnail_engine import (
+        from app.modules.media.thumbnail_engine import (
             ThumbnailEngine,
             ThumbnailResult,
             ThumbnailStrategy,

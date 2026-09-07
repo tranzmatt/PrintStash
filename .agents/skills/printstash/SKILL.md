@@ -33,8 +33,8 @@ and changelog instead of reconstructing their contents.
    - Library / trash / storage code → `CONTEXT.md`
    - Any UI work → `DESIGN.md` (tokens, motion scale, `components/ui/` primitives)
 3. Trace the real flow in code before editing — e.g. artifact writes go through
-   `services/ingestion.persist_artifact`, Model→response mapping through
-   `services/model_views`, live/trashed queries through `app.db.scopes`.
+   `modules/ingestion/ingestion.persist_artifact`, Model→response mapping through
+   `modules/library/model_views`, live/trashed queries through `app.db.scopes`.
    Single-owner seams like these are the norm; don't re-implement one.
 4. Feature claims: check `docs/provider-support.md` (stable/beta levels),
    `docs/known-limitations.md`, and `docs/roadmap.md` before stating something

@@ -4,6 +4,10 @@
 
 ### Changed
 
+- Backend code is organized by capability, with separate startup, storage,
+  backup recovery and library query modules. G-code Revision deletion uses a
+  shared business operation with product-specific authorization and persistence.
+
 - The simple Docker Compose deployment now uses the light API image.
 
 - The browser extension is now named PrintStash in the browser, help and store
@@ -1005,7 +1009,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
 
 ### Internal
 
-- New `app.services.spoolman` (`SpoolmanClient` over the shared httpx pool, plus
+- New `app.modules.printing.spoolman` (`SpoolmanClient` over the shared httpx pool, plus
   a blocking `use_spool_weight_sync` for the worker-thread finish tick),
   `app.api.v1.spoolman` router (superuser, secret-masked config), a
   `record_spool_usage` helper in `print_results`, a `_spoolman_probe` health
@@ -1013,11 +1017,11 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
   migration. Covered by client/helper/API unit tests and a frontend API-contract
   test; e2e mock routes added for the Spoolman endpoints.
 - Consumption write-back gained a write-time double-count guard: a blocking
-  `active_spool_sync` probe in `app.services.spoolman` and a
+  `active_spool_sync` probe in `app.modules.printing.spoolman` and a
   `spoolman_write_force` override on `SystemConfig` (third Alembic migration).
   `record_spool_usage` skips the decrement when Spoolman reports an active spool
   unless the override is set. Covered by unit tests.
-- `app.services.filament_sync` (Spoolman→preset reconcile), `spoolman_filament_id`
+- `app.modules.printing.filament_sync` (Spoolman→preset reconcile), `spoolman_filament_id`
   /`density_g_cm3`/`diameter_mm` on `FilamentProfile` and `spool_filament_id` on
   `PrintJob` (second Alembic migration), a `density` override on `mm_to_grams`,
   and `model_views.filament_cost_for_job` for spool-exact cost. Read-only
@@ -1058,7 +1062,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
 
 ### Internal
 
-- New stdlib-only `app.services.bgcode` reader (container walk, deflate, INI
+- New stdlib-only `app.modules.media.bgcode` reader (container walk, deflate, INI
   metadata, thumbnail blocks) with safety caps for truncated/hostile files.
   Covered by synthetic-container unit tests plus a guarded real-fixture test,
   and the `.bgcode`-skipped assertions in the import and shared-volume suites

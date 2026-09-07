@@ -19,11 +19,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+import app.modules.ingestion.provider_metadata_cache as provider_metadata_cache
 from app.core.time import utcnow
 from app.db.models import CaptureProvider, ProviderConnection
-from app.services import import_resolvers
-from app.services import provider_connections as service
-from app.services.capture_provider_connections import (
+from app.modules.ingestion import provider_connections as service
+from app.modules.ingestion.capture_provider_connections import (
     ProviderConnectionError,
     ProviderModelMetadata,
 )
@@ -219,7 +219,7 @@ class TestDisconnect:
             json=CULTS_LOGIN,
         )
         key = (user.id, "cults", "cached-model")
-        import_resolvers._provider_metadata_cache[key] = (
+        provider_metadata_cache._provider_metadata_cache[key] = (
             ProviderModelMetadata("cached-model", "stale", None, None, None),
             utcnow() + timedelta(minutes=5),
         )
@@ -227,7 +227,7 @@ class TestDisconnect:
         client.delete("/api/v1/provider-connections/cults/disconnect", headers=headers)
 
         # Serving metadata fetched with a credential the user just revoked is a leak.
-        assert key not in import_resolvers._provider_metadata_cache
+        assert key not in provider_metadata_cache._provider_metadata_cache
 
     def test_accepts_a_disconnect_of_a_provider_that_was_never_connected(
         self, client: TestClient, user_headers

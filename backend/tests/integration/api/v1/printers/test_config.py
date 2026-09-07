@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.services.printer_provider import ProviderError
+from app.modules.printing.printer_provider import ProviderError
 from tests.factories import build_printer
 
 
@@ -28,19 +28,19 @@ class TestPrinterConfig:
 
         with (
             patch(
-                "app.services.printer_provider.MoonrakerProvider.server_info",
+                "app.modules.printing.printer_provider.MoonrakerProvider.server_info",
                 new_callable=AsyncMock,
             ) as mock_server_info,
             patch(
-                "app.services.printer_provider.MoonrakerProvider.info",
+                "app.modules.printing.printer_provider.MoonrakerProvider.info",
                 new_callable=AsyncMock,
             ) as mock_printer_info,
             patch(
-                "app.services.printer_provider.MoonrakerProvider.server_config",
+                "app.modules.printing.printer_provider.MoonrakerProvider.server_config",
                 new_callable=AsyncMock,
             ) as mock_server_config,
             patch(
-                "app.services.printer_provider.MoonrakerProvider.printer_config",
+                "app.modules.printing.printer_provider.MoonrakerProvider.printer_config",
                 new_callable=AsyncMock,
             ) as mock_printer_config,
         ):
@@ -98,7 +98,7 @@ class TestPrinterConfig:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.server_info",
+            "app.modules.printing.printer_provider.MoonrakerProvider.server_info",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):

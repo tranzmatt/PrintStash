@@ -15,8 +15,8 @@ from app.core.security import oauth2_scheme
 from app.core.time import utcnow
 from app.db.models import BrowserDevice, User
 from app.db.session import get_session
-from app.services.auth import verify_access_token
-from app.services.provider_connections import credential_matches
+from app.modules.identity.auth import verify_access_token
+from app.modules.ingestion.provider_connections import credential_matches
 
 
 def require_browser_import_user(

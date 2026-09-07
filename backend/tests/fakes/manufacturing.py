@@ -1,15 +1,15 @@
 """Two independent database sessions confirming physical output at one barrier."""
 
-from app.services import multipart_builds
+from app.modules.printing import multipart_builds
 
 
 def race_confirmations(engine, owner_id, build_id, attempt_id, same_request):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
-    from fastapi import HTTPException
     from sqlmodel import Session
 
+    from app.core.errors import OperationError
     from app.db.models import MultipartBuild, User
     from app.schemas.multipart_builds import BuildConfirm
 
@@ -32,12 +32,12 @@ def race_confirmations(engine, owner_id, build_id, attempt_id, same_request):
                         idempotency_key="same" if same_request else f"result-{index}",
                     ),
                 )
-                return 200, multipart_builds.read(session, owner, result).parts[
+                return "success", multipart_builds.read(session, owner, result).parts[
                     0
                 ].missing_units
-            except HTTPException as error:
+            except OperationError as error:
                 session.rollback()
-                return error.status_code, error.detail
+                return error.kind.value, error.detail
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         return list(executor.map(submit, range(2)))
@@ -68,9 +68,9 @@ def race_queues(engine):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
-    from fastapi import HTTPException
     from sqlmodel import Session, SQLModel, select
 
+    from app.core.errors import OperationError
     from app.db.models import FileType, MultipartBuild, MultipartBuildAttempt, User
     from app.schemas.multipart_builds import BuildQueue
     from tests import factories
@@ -101,10 +101,10 @@ def race_queues(engine):
                     part_id,
                     BuildQueue(version=0, units_per_job=4),
                 )
-                return 201, len(jobs)
-            except HTTPException as error:
+                return "success", len(jobs)
+            except OperationError as error:
                 session.rollback()
-                return error.status_code, 0
+                return error.kind.value, 0
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(submit, range(2)))

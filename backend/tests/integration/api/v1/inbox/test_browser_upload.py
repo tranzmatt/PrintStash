@@ -177,7 +177,7 @@ class TestCaptureBrowserUpload:
     def test_reports_a_file_past_the_upload_cap(
         self, client: TestClient, user_headers, staging, monkeypatch
     ) -> None:
-        from app.services import inbox
+        from app.modules.ingestion import inbox
 
         def too_large(*_args: object, **_kwargs: object):
             raise inbox.storage.UploadTooLarge("upload_too_large")
@@ -197,7 +197,7 @@ class TestCaptureBrowserUpload:
     def test_reports_staging_that_has_no_room_left(
         self, client: TestClient, user_headers, staging, monkeypatch
     ) -> None:
-        from app.services import inbox
+        from app.modules.ingestion import inbox
 
         def full(*_args: object, **_kwargs: object):
             raise inbox.staging_leases.StagingCapacityExceeded("staging_full")

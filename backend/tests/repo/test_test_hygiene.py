@@ -108,6 +108,17 @@ MIRROR_ROOTS = {
 # that tier — an e2e test crosses every module rather than defending one.
 MIRRORED_TIERS = ("unit", "integration", "contract")
 
+# These cohesive modules are now implemented as packages. Their cross-operation
+# contracts still belong to the whole module, just as their grouped tests did
+# when the implementation occupied one .py file. Namespace packages such as
+# api/v1 or modules/library do not qualify: arbitrary test names there remain
+# an error. Focused tests can always mirror an individual implementation file.
+GROUPED_MODULE_PACKAGES = {
+    Path("modules/backups/backup"),
+    Path("modules/library/model_views"),
+    Path("modules/storage/storage_backend"),
+}
+
 # Directories that mirror something that is not a production module, each for a
 # stated reason. This is not a backlog: nothing here will ever acquire a mirror.
 NON_MIRRORED_DIRS = {
@@ -217,6 +228,8 @@ def _mirror_of(module: Path) -> Path | None:
         ]
         if stem == relative.parent.name:
             candidates.append(source_root / relative.parent / "__init__.py")
+        if relative.parent in GROUPED_MODULE_PACKAGES:
+            candidates.append(source_root / relative.parent / "__init__.py")
         return next((path for path in candidates if path.exists()), None)
     return None
 
@@ -246,6 +259,20 @@ def _mirror_checked_modules() -> list[Path]:
 
 
 class TestSuiteHygiene:
+    def test_namespace_packages_do_not_hide_unowned_tests(self):
+        assert (
+            _mirror_of(TESTS_ROOT / "integration/modules/library/test_unowned.py")
+            is None
+        )
+        assert _mirror_of(TESTS_ROOT / "integration/api/v1/test_unowned.py") is None
+
+    def test_grouped_contract_retains_its_module_after_package_extraction(self):
+        test = TESTS_ROOT / "integration/modules/backups/backup/test_core.py"
+        assert (
+            _mirror_of(test)
+            == TESTS_ROOT.parent / "app/modules/backups/backup/__init__.py"
+        )
+
     @pytest.mark.parametrize("module", _all_test_modules(), ids=_relative)
     def test_every_test_belongs_to_a_group(self, module: Path) -> None:
         """No test is defined at module level. Every one lives in a `class Test*`.
@@ -298,11 +325,11 @@ class TestSuiteHygiene:
         `test_staging_lease_ownership.py`, `test_provenance_helpers.py` and
         `test_storage_ownership_quarantine.py` each defended a real service and none
         of them could be found from it. That is the failure this catches: an audit of
-        `app/services/trash.py` has to be an audit of one file, and "does this module
+        `app/modules/library/trash.py` has to be an audit of one file, and "does this module
         have tests?" has to be one `ls`, or the coverage matrix is guesswork.
 
         When one file would be too long, the answer is a *folder* named for the
-        module — `integration/services/storage_backend/{test_objects,test_ownership}.py`
+        module — `integration/modules/storage/storage_backend/{test_objects,test_ownership}.py`
         — not a second file named for a topic.
         """
         assert _mirror_of(module) is not None, (

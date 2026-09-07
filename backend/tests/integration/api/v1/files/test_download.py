@@ -18,7 +18,8 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.time import utcnow
-from app.services.storage_backend import LocalStorageBackend, get_backend
+from app.modules.storage.storage_backend.local import LocalStorageBackend
+from app.modules.storage.storage_backend.runtime import get_backend
 
 PRESIGNED = "https://s3.example.test/pre-signed"
 
@@ -133,7 +134,7 @@ class TestDownloadFile:
         make_model,
         make_file,
     ) -> None:
-        from app.services import artifact_content
+        from app.modules.storage import artifact_content
 
         model = make_model("remote-backend")
         row = make_file(model, path="remote.stl")
@@ -166,7 +167,7 @@ class TestDownloadFile:
         make_file,
         tmp_path: Path,
     ) -> None:
-        from app.services import artifact_content
+        from app.modules.storage import artifact_content
 
         payload = b"bytes from a mounted NAS"
         source = tmp_path / "mounted-nas" / "part.stl"

@@ -1,14 +1,15 @@
 # Backend
 
-FastAPI + SQLModel + Alembic under `backend/app/{api,core,db,services,schemas}`.
+FastAPI + SQLModel + Alembic under `backend/app/`. Capability owners and allowed
+dependencies are documented in `docs/architecture/backend.md`.
 Domain language in `CONTEXT.md` is binding — read it before touching
 library/trash/storage code.
 
 ## Architecture map
 
 - `api/v1/` — routers. Thin: no Model→response hand-mapping (that's
-  `services/model_views`), no business logic.
-- `services/` — one module per concern; single-owner seams are the rule:
+  `modules/library/model_views`), no business logic.
+- `modules/` — capabilities own their commands, reads and adapters:
   - `ingestion.persist_artifact` — the ONLY artifact-persistence path
     (version → canonical move → File row → thumbnail → Metadata).
   - `model_views` — the ONLY Model→response composition.
@@ -23,9 +24,12 @@ library/trash/storage code.
     [providers.md](providers.md).
 - `db/scopes.py` — `live()` / `trashed()` predicates. Hand-written
   `deleted_at.is_(None)` is a bug.
-- Cloud seams (keep clean, per AGENTS.md rule 5): StorageBackend,
-  SessionFactory, RealtimeBus, TaskQueue — interface + local default, no
-  external-service hard deps in core.
+- `bootstrap/` constructs and closes dependencies; `runtime/` owns local
+  scheduling hints, maintenance and event delivery. `WorkWakeup` is not a
+  durable Cloud queue. Event publication accepts message sinks, not WebSockets.
+- Shared business lives in `printstash-core` behind operation-specific ports;
+  product adapters own authorization and SQL transactions. Core has no ORM,
+  framework or external-service dependencies.
 - Heavy mesh dependencies stay lazy-loaded (`CONTRIBUTING.md` boundary).
 
 ## Configuration
@@ -126,8 +130,8 @@ them, because `backend/tests/containers.py` starts both services itself.
 A `schedule` (nightly) + `workflow_dispatch` re-runs the whole gauntlet as a
 comprehensive off-peak / on-demand gate. The `backend` job now starts a real
 SeaweedFS through `backend/tests/containers.py`, so `S3StorageBackend`
-(`app/services/storage_backend.py`) and the S3 branches of
-`app/services/backup.py` execute under the coverage gate rather than being
+(`app/modules/storage/storage_backend.py`) and the S3 branches of
+`app/modules/backups/backup.py` execute under the coverage gate rather than being
 excluded from it.
 
 Coverage is gated in three places, all with **branch coverage on** and all
@@ -165,7 +169,7 @@ than the source of the matrix.
   secret (guarded in code + `test_jwt_secret.py`).
 - Outbound fetches go through the SSRF guard (`browser_fetch`/import
   resolvers pin the validated address).
-- Secrets are redacted in audit diffs (`services/audit`) and never returned
+- Secrets are redacted in audit diffs (`modules/administration/audit`) and never returned
   by diagnostics endpoints — keep new fields on that path.
 - Login/refresh are rate-limited; don't add unauthenticated endpoints beyond
   health/setup.

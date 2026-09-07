@@ -23,6 +23,7 @@ from fastapi import (
 from fastapi import (
     File as FileParam,
 )
+from printstash_core.files import slugify
 from sqlalchemy import func
 from sqlmodel import Session, delete, select
 
@@ -46,6 +47,11 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.db.session import get_session
+from app.modules.identity import rbac
+from app.modules.library import library_search, taxonomy, trash
+from app.modules.storage.storage_backend.contracts import StorageCollisionError
+from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_ownership import publish_bytes
 from app.schemas.models import (
     CollectionCreate,
     CollectionImageUpload,
@@ -59,10 +65,6 @@ from app.schemas.models import (
     TagRead,
     TagSetUpdate,
 )
-from app.services import library_search, rbac, taxonomy, trash
-from app.services.storage_backend import StorageCollisionError, get_backend
-from app.services.storage_ownership import publish_bytes
-from app.services.taxonomy import slugify
 
 # Raster image formats only — no SVG (script-capable) — keeps readme images
 # safe to serve inline. Maps extension -> media type.

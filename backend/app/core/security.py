@@ -6,9 +6,13 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
+from app.api.session_cookie import extract_access_token
 from app.db.models import User
 from app.db.session import get_session
-from app.services.auth import extract_access_token, get_user_by_id, verify_access_token
+from app.modules.identity.auth import (
+    get_user_by_id,
+    verify_access_token,
+)
 
 
 class BearerToken(HTTPBearer):

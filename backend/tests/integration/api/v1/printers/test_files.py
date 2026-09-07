@@ -26,7 +26,7 @@ from app.db.models import (
     PrintJobState,
     User,
 )
-from app.services.printer_provider import ProviderError
+from app.modules.printing.printer_provider import ProviderError
 from tests.factories import (
     build_collection,
     build_file,
@@ -112,7 +112,7 @@ class TestPrinterFiles:
             db_session, name="Ender 3", moonraker_url="http://10.0.0.1:7125"
         )
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.list_files",
+            "app.modules.printing.printer_provider.MoonrakerProvider.list_files",
             new_callable=AsyncMock,
         ) as mock_list:
             mock_list.return_value = [{"path": "bracket.gcode", "size": 100}]
@@ -148,7 +148,7 @@ class TestPrinterFiles:
         db_session.commit()
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.list_files",
+            "app.modules.printing.printer_provider.MoonrakerProvider.list_files",
             new_callable=AsyncMock,
         ) as mock_list:
             mock_list.return_value = [{"path": "still-there.gcode", "size": 123}]
@@ -186,11 +186,11 @@ class TestPrinterFiles:
 
         with (
             patch(
-                "app.services.printer_provider.MoonrakerProvider.delete_file",
+                "app.modules.printing.printer_provider.MoonrakerProvider.delete_file",
                 new_callable=AsyncMock,
             ) as mock_delete,
             patch(
-                "app.services.printer_provider.MoonrakerProvider.list_files",
+                "app.modules.printing.printer_provider.MoonrakerProvider.list_files",
                 new_callable=AsyncMock,
             ) as mock_list,
         ):
@@ -373,7 +373,7 @@ class TestPrinterFiles:
         db_session.commit()
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.start",
+            "app.modules.printing.printer_provider.MoonrakerProvider.start",
             new_callable=AsyncMock,
         ) as mock_start:
             mock_start.return_value = {"result": "ok"}
@@ -409,7 +409,7 @@ class TestPrinterFiles:
         db_session.commit()
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.start",
+            "app.modules.printing.printer_provider.MoonrakerProvider.start",
             new_callable=AsyncMock,
         ) as mock_start:
             mock_start.return_value = {"result": "ok"}
@@ -441,7 +441,7 @@ class TestPrinterFiles:
         )
 
         with patch(
-            "app.services.printer_provider.BambuLanProvider.start",
+            "app.modules.printing.printer_provider.BambuLanProvider.start",
             new_callable=AsyncMock,
             return_value={"ok": True},
         ):
@@ -461,7 +461,7 @@ class TestPrinterFiles:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.list_files",
+            "app.modules.printing.printer_provider.MoonrakerProvider.list_files",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):
@@ -517,7 +517,7 @@ class TestPrinterFiles:
         db_session.refresh(row)
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.delete_file",
+            "app.modules.printing.printer_provider.MoonrakerProvider.delete_file",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):
@@ -547,12 +547,12 @@ class TestPrinterFiles:
 
         with (
             patch(
-                "app.services.printer_provider.MoonrakerProvider.delete_file",
+                "app.modules.printing.printer_provider.MoonrakerProvider.delete_file",
                 new_callable=AsyncMock,
                 return_value={"result": "ok"},
             ),
             patch(
-                "app.services.printer_provider.MoonrakerProvider.list_files",
+                "app.modules.printing.printer_provider.MoonrakerProvider.list_files",
                 new_callable=AsyncMock,
                 side_effect=ProviderError("boom", code="printer_offline"),
             ),
@@ -699,7 +699,7 @@ class TestStartPrinterFile:
         db_session.refresh(p)
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.start",
+            "app.modules.printing.printer_provider.MoonrakerProvider.start",
             new_callable=AsyncMock,
             return_value={"result": "ok"},
         ):
@@ -768,7 +768,7 @@ class TestStartPrinterFile:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.start",
+            "app.modules.printing.printer_provider.MoonrakerProvider.start",
             new_callable=AsyncMock,
             side_effect=ProviderError("boom", code="printer_offline"),
         ):
@@ -790,7 +790,7 @@ class TestStartPrinterFile:
         )
 
         with patch(
-            "app.services.printer_provider.MoonrakerProvider.start",
+            "app.modules.printing.printer_provider.MoonrakerProvider.start",
             new_callable=AsyncMock,
             side_effect=RuntimeError("secret stack"),
         ):
@@ -808,7 +808,7 @@ class TestStartPrinterFile:
     ) -> None:
         from dataclasses import replace
 
-        from app.services.printer_provider import MoonrakerProvider
+        from app.modules.printing.printer_provider import MoonrakerProvider
 
         printer = build_printer(
             db_session, name="No start", moonraker_url="http://nostart.local:7125"

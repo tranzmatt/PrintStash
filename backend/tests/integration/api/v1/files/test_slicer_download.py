@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.db.models import FileType
-from app.services import auth
+from app.modules.identity import auth
 from tests._env import use_local_storage
 from tests.integration.api.v1._ingest_assertions import (
     assert_file_created,

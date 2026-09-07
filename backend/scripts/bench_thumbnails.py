@@ -23,7 +23,7 @@ from typing import Callable, Protocol
 
 import trimesh
 
-from app.services.thumbnail import to_webp
+from app.modules.media.thumbnail import to_webp
 
 
 class _BenchmarkEngine(Protocol):
@@ -32,11 +32,11 @@ class _BenchmarkEngine(Protocol):
 
 def _engine_factory() -> _BenchmarkEngine:
     try:
-        from app.services.thumbnail_engine import ThumbnailEngine
+        from app.modules.media.thumbnail_engine import ThumbnailEngine
 
         return ThumbnailEngine()
     except ImportError:
-        from app.services.mesh_processing import render_thumbnail
+        from app.modules.media.mesh_operations import render_thumbnail
 
         class LegacyEngine:
             def generate(self, request):
@@ -53,7 +53,7 @@ def _engine_factory() -> _BenchmarkEngine:
 
 def _recipe_fingerprint() -> str:
     try:
-        from app.services.thumbnail_generations import recipe_fingerprint
+        from app.modules.media.thumbnail_generations import recipe_fingerprint
 
         return recipe_fingerprint()
     except ImportError:

@@ -24,7 +24,7 @@ size, cross-stack scope, and repository profiles are not authorization to
 delegate.
 
 ## Layout
-- `backend/` FastAPI + SQLModel + Alembic. App code in `backend/app/{api,core,db,services,schemas}`; tests in `backend/tests`.
+- `backend/` FastAPI + SQLModel + Alembic. Capability owners in `backend/app/modules/`, composition in `bootstrap/`, process coordination in `runtime/`; HTTP in `api/`, tables in `db/models/`. Boundaries: `docs/architecture/backend.md`. Tests in `backend/tests` mirror these owners.
 - `frontend/` Vite + React + TS.
 - Domain language: read `CONTEXT.md` before touching library/trash/storage code — terms there are binding (Model, Artifact, Revision, live/trashed, storage key…).
 - Design + motion language: read `DESIGN.md` before adding or restyling UI — tokens, the motion scale, and the `components/ui/` primitives are binding. Compose the primitives; never hand-roll an overlay, and never type a raw duration, cubic-bezier, or `[var(--…)]` color into a component.
@@ -43,7 +43,7 @@ delegate.
 (the default: real SQLite, real routers, egress stood in for), `contract/` (our clients
 against contract-enforcing fakes over a real loopback socket), `e2e/` (the whole app
 over ASGITransport), plus `fakes/`, `fixtures/` and `repo/` (repo-level invariants).
-So `app/services/trash.py` ↔ `tests/integration/services/test_trash.py`, and "is this
+So `app/modules/library/trash.py` ↔ `tests/integration/modules/library/test_trash.py`, and "is this
 module tested?" is one `ls`. Lanes: `./scripts/test.sh fast|contract|e2e|full|coverage`
 (`--help` explains each). Then mock-API Playwright (`frontend/tests/e2e/`,
 `pnpm test:e2e`) and real-backend Playwright (`frontend/tests/e2e-real/`,
@@ -81,7 +81,7 @@ executed rather than what was asserted. Playwright is invisible to all of it.
 2. Version bumps are a triple: `backend/pyproject.toml` + `backend/app/core/config.py` + `frontend/package.json` (+ git tag) must match.
 3. Use one short-lived branch per change, branched from `main` and named for its purpose (`feat/<issue>-<slug>`, `fix/<issue>-<slug>`, `docs/<slug>`, etc.). Merge features independently; version only after the planned release set is on `main`, then tag and publish. Semver: 0.x.y patch = fixes only.
 4. One PR per bug/feature. **Tests are mandatory for any change to production code** — no "too small to test" exception; the test-design coverage matrix is the proof. Tests first on data-integrity/security fixes.
-5. Keep cloud seams clean (StorageBackend, SessionFactory, RealtimeBus, TaskQueue): interface + local default; no external-service hard deps in core.
+5. Keep cloud seams clean: StorageBackend and SessionFactory retain explicit contracts; event publication is separate from WebSocket delivery. OSS WorkWakeup is a local scheduler hint, not Cloud's durable task queue. Shared business in printstash-core has no framework, ORM or external-service hard dependencies.
 6. Frontend UI follows `DESIGN.md`. The zero-counts are load-bearing: no `transition-all`, no `ease-in`, no raw durations/cubic-beziers, no arbitrary `[var(--…)]` colors. Nothing animates over 300ms; route navigation never animates.
 
 ## Release & roadmap

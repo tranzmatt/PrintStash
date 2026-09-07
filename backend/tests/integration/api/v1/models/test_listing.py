@@ -215,7 +215,7 @@ class TestPageModels:
         def unexpected(*_args: object, **_kwargs: object):
             raise ValueError("something_nobody_planned_for")
 
-        monkeypatch.setattr(models_api.model_views, "page_items", unexpected)
+        monkeypatch.setattr(models_api.models_pagination, "page_items", unexpected)
 
         # Only the cursor error becomes a 400; anything else is a bug, and
         # reporting a bug as a client error is how it stays unfixed.

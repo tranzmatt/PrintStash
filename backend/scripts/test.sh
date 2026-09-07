@@ -31,7 +31,7 @@ Lanes
   serial     `full` without xdist. For debugging an ordering or state bug.
 
 Anything after the lane goes to pytest, so a path or `-k` still works:
-  ./scripts/test.sh fast tests/unit/services/test_gcode_parser.py
+  ./scripts/test.sh fast tests/unit/modules/media/test_gcode_parser.py
   ./scripts/test.sh full -k "trash and not slow" -x
 
 Coverage is measured with branches on, so a guard clause whose false path never
@@ -39,7 +39,7 @@ runs counts as half-covered rather than covered. Read the gap three ways:
 
   ./scripts/test.sh coverage              # the gate, plus term-missing
   open .coverage-html/index.html          # per-line, per-branch, clickable
-  ./scripts/test.sh coverage tests/integration/services/test_trash.py
+  ./scripts/test.sh coverage tests/integration/modules/library/test_trash.py
                                           # one module's own contribution
 
 The `postgres`- and `s3`-marked subsets run against a real PostgreSQL and a real

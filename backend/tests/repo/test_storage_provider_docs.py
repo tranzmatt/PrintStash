@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from app.services.storage_providers import render_storage_provider_docs
+from app.modules.storage.storage_providers import render_storage_provider_docs
 
 
 class TestStorageProviderDocumentation:

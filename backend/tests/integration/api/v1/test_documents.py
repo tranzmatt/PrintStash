@@ -26,8 +26,8 @@ from sqlmodel import Session, select
 from app.api.v1 import documents as documents_router
 from app.core.config import _overlay
 from app.db.models import CollectionRole, Document, User
-from app.services import taxonomy
-from app.services.storage_backend import get_backend
+from app.modules.library import taxonomy
+from app.modules.storage.storage_backend.runtime import get_backend
 from tests._env import use_local_storage
 from tests.factories import (
     bearer,
@@ -837,7 +837,7 @@ class TestPermanentlyDeleteDocument:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import app.api.v1.documents as documents_api
-        from app.services.storage_ownership import UnsafeStorageDeleteError
+        from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
 
         doc = markdown_doc("Unverifiable")
         client.delete(f"/api/v1/documents/{doc['id']}", headers=admin_headers)
@@ -863,7 +863,7 @@ class TestPermanentlyDeleteDocument:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import app.api.v1.documents as documents_api
-        from app.services.storage_ownership import UnsafeStorageDeleteError
+        from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
 
         doc = markdown_doc("Unverifiable")
         client.delete(f"/api/v1/documents/{doc['id']}", headers=admin_headers)

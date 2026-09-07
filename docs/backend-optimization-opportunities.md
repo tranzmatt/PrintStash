@@ -44,7 +44,7 @@ se presenta como opción detrás de los seams existentes (`StorageBackend`,
 - **Evidencia.** `backend/app/api/v1/taxonomy.py:139` (y el mismo patrón en
   `documents.py:96` para el detalle, y `taxonomy.py:174` en el create — estos
   dos son por-item, aceptables). El helper batched ya existe:
-  `rbac.effective_roles_for_collections` (`services/rbac.py:126`), usado por
+  `rbac.effective_roles_for_collections` (`modules/identity/rbac.py:126`), usado por
   `model_views.list_items`.
 - **Impacto esperado.** Con 100 colecciones y un usuario con permisos: ~200
   queries → 3. Es el endpoint que alimenta el sidebar/outliner en cada carga.
@@ -69,7 +69,7 @@ ordenado por path.
   `Metadata` de archivos vivos (`_live_file_metadata`) y hacen el matching
   perfil↔metadata en Python, O(archivos × perfiles), en cada
   `GET /filaments` y `GET /printer-profiles`.
-- **Evidencia.** `backend/app/services/model_views.py:247-287`; llamadas desde
+- **Evidencia.** `backend/app/modules/library/model_views.py:247-287`; llamadas desde
   `api/v1/filaments.py:48` y `api/v1/printer_profiles.py:48`.
 - **Impacto esperado.** Con 10k archivos, cada visita a Settings hidrata 10k
   filas ORM. Hoy es correcto pero es el punto de crecimiento lineal más claro
@@ -97,7 +97,7 @@ ordenado por path.
   (guard de acceso y campo `effective_role` de la respuesta); cada llamada son
   2 queries. Además `tag_names_for` lanza una query aunque `Model.tags` ya se
   carga vía `selectin`.
-- **Evidencia.** `backend/app/services/model_views.py:558` y `:581`; `:582`.
+- **Evidencia.** `backend/app/modules/library/model_views.py:558` y `:581`; `:582`.
 - **Impacto esperado.** 3 queries menos por carga de detalle (el endpoint más
   visitado tras la grid).
 - **Complejidad.** Baja. **Riesgos.** Ninguno.
@@ -149,7 +149,7 @@ ordenado por path.
   (detalle, facetas de la grid, presencia en impresoras). Hoy solo hay índices
   de una columna; SQLite/Postgres usan `model_id` y post-filtran.
 - **Evidencia.** `backend/app/db/models.py:198-239` (definición);
-  `services/model_views.py:435-514` (consultas).
+  `modules/library/model_views.py:435-514` (consultas).
 - **Impacto esperado.** Imperceptible hasta ~10⁴ archivos; a partir de ahí
   evita escaneos secundarios por modelo. Es barato asegurar el futuro.
 - **Complejidad.** Baja — **nueva migración Alembic aditiva** (regla dura: no
@@ -164,7 +164,7 @@ ordenado por path.
 
 - **Problema observado.** Ocho `SELECT count(...)` independientes por carga
   del dashboard.
-- **Evidencia.** `backend/app/services/model_views.py:869-928`.
+- **Evidencia.** `backend/app/modules/library/model_views.py:869-928`.
 - **Impacto esperado.** Menor (SQLite local los resuelve en µs); en Postgres
   remoto son 8 round-trips → 2.
 - **Complejidad.** Baja: los tres counts sobre `files` colapsan en un
@@ -212,7 +212,7 @@ ordenado por path.
 
 - **Problema observado.** Carga todas las filas de jobs completados de la
   ventana y agrega colecciones/filamentos/buckets en Python.
-- **Evidencia.** `backend/app/services/model_views.py:942-1140`.
+- **Evidencia.** `backend/app/modules/library/model_views.py:942-1140`.
 - **Impacto esperado.** Con miles de prints/año sigue siendo milisegundos; el
   diseño actual (coste congelado en la fila al completar, ver docstring) ya
   eliminó el problema caro. Solo migrar a `GROUP BY` si el dashboard se nota
@@ -244,7 +244,7 @@ ordenado por path.
 - **Problema observado.** Dict módulo-level keyed por
   `(backend, data_dir)`; cada reconfiguración runtime / test añade una entrada
   que nunca se elimina.
-- **Evidencia.** `backend/app/services/model_views.py:848-866`.
+- **Evidencia.** `backend/app/modules/library/model_views.py:848-866`.
 - **Impacto esperado.** Insignificante en producción (1–2 claves); es higiene.
 - **Pasos.** Cota trivial (limpiar el dict al insertar si supera ~8 entradas)
   o dejarlo documentado como está — coste real ≈ 0. Prioridad mínima; se lista
@@ -255,7 +255,7 @@ ordenado por path.
 ## Observaciones sin acción propuesta (estado ya sano)
 
 - **Uploads**: streaming a staging con cap de tamaño
-  (`api/v1/ingest.py:_stage_upload`, `services/storage.py:43-47`) — correcto.
+  (`api/v1/ingest.py:_stage_upload`, `modules/storage/storage.py:43-47`) — correcto.
 - **SQLite**: WAL, `synchronous=NORMAL`, `busy_timeout=5000`,
   `foreign_keys=ON` por conexión (`db/session.py:28-41`) — correcto.
 - **N+1 en browse/trash/export**: ya batcheado y documentado como invariante
