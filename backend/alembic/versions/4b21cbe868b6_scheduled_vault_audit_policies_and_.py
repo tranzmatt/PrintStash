@@ -1,8 +1,8 @@
-"""scheduled vault audit policies and events
+"""Persist optional schedules, admission claims, and atomic audit event evidence.
 
 Revision ID: 4b21cbe868b6
-Revises: 9cbee9215a34
-Create Date: 2026-09-07 21:36:30.352163
+Revises: d6e9d78801ef
+Create Date: 2026-09-07 22:58:32.101036
 
 """
 from typing import Sequence, Union
@@ -13,15 +13,15 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '4b21cbe868b6'
-down_revision: Union[str, Sequence[str], None] = '9cbee9215a34'
+down_revision: Union[str, Sequence[str], None] = 'd6e9d78801ef'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Native PostgreSQL enums require extending the existing type explicitly.
-    # SQLite's generated batch below updates its string representation.
+    # PostgreSQL enum labels are an additive change Alembic does not detect.
+    # The generated column operation also widens SQLite's representation.
     if op.get_bind().dialect.name == "postgresql":
         with op.get_context().autocommit_block():
             op.execute("ALTER TYPE notificationeventtype ADD VALUE IF NOT EXISTS 'STORAGE_REGRESSION'")
@@ -71,7 +71,7 @@ def upgrade() -> None:
 
     with op.batch_alter_table('notification_deliveries', schema=None) as batch_op:
         batch_op.alter_column('event_type',
-               existing_type=sa.VARCHAR(length=15),
+               existing_type=sa.Enum('PRINT_COMPLETED', 'PRINT_FAILED', 'PRINT_CANCELLED', 'PRINTER_OFFLINE', name='notificationeventtype'),
                type_=sa.Enum('PRINT_COMPLETED', 'PRINT_FAILED', 'PRINT_CANCELLED', 'PRINTER_OFFLINE', 'STORAGE_REGRESSION', 'STORAGE_RECOVERY', name='notificationeventtype'),
                existing_nullable=False)
 
@@ -120,7 +120,7 @@ def downgrade() -> None:
     with op.batch_alter_table('notification_deliveries', schema=None) as batch_op:
         batch_op.alter_column('event_type',
                existing_type=sa.Enum('PRINT_COMPLETED', 'PRINT_FAILED', 'PRINT_CANCELLED', 'PRINTER_OFFLINE', 'STORAGE_REGRESSION', 'STORAGE_RECOVERY', name='notificationeventtype'),
-               type_=sa.VARCHAR(length=15),
+               type_=sa.Enum('PRINT_COMPLETED', 'PRINT_FAILED', 'PRINT_CANCELLED', 'PRINTER_OFFLINE', name='notificationeventtype'),
                existing_nullable=False)
 
     with op.batch_alter_table('vault_audit_events', schema=None) as batch_op:
