@@ -47,10 +47,20 @@ def archive_export(size_bytes: int) -> list[CapacityResource]:
 
 def backup_create(size_bytes: int, destination: Path) -> list[CapacityResource]:
     peak = size_bytes * 2 + 16 * 1024**2
-    return [
+    resources = [
         CapacityResource.for_path(settings.backup_dir, peak, role="backup build"),
         CapacityResource.for_path(destination, peak, role="backup publication"),
     ]
+    backend = get_backend()
+    if backend.direct_path(backend.thumbnail_key(0)) is None:
+        # Snapshot streaming materializes remote originals through local_path;
+        # that adapter uses the process temporary directory, not backup_dir.
+        resources.append(
+            CapacityResource.for_path(
+                Path(tempfile.gettempdir()), size_bytes, role="backup remote source"
+            )
+        )
+    return resources
 
 
 def backup_restore(size_bytes: int) -> list[CapacityResource]:

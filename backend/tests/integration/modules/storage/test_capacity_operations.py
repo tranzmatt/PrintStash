@@ -72,3 +72,27 @@ class TestOperationAdmission:
                 filename="model.stl",
                 stream=BytesIO(b"solid"),
             )
+
+    def test_reserves_remote_backup_source_volume(
+        self, db_session, monkeypatch, tmp_path
+    ):
+        import tempfile
+        from pathlib import Path
+
+        from app.modules.storage import capacity_estimates
+        from app.modules.storage.capacity import CapacityResource
+        from app.modules.storage.storage_backend import runtime
+        from app.modules.storage.storage_backend.s3 import S3StorageBackend
+
+        monkeypatch.setitem(_overlay, "s3_bucket", "capacity-test")
+        monkeypatch.setitem(_overlay, "s3_access_key", "test-access")
+        monkeypatch.setitem(_overlay, "s3_secret_key", "test-secret")
+        monkeypatch.setattr(runtime, "_backend", S3StorageBackend(check_bucket=False))
+        resources = capacity_estimates.backup_create(83, tmp_path)
+        scratch = next(r for r in resources if r.role == "backup remote source")
+        expected = CapacityResource.for_path(
+            Path(tempfile.gettempdir()), 83, role="test"
+        )
+        assert scratch.path == expected.path
+        assert scratch.domain_id == expected.domain_id
+        assert scratch.required_bytes == 83
