@@ -298,7 +298,9 @@ def _hash_blob(
             consumed += len(chunk)
             run.bytes_read += len(chunk)
             session.add(run)
-            session.flush()
+            # Release SQLite's writer before another provider read or a
+            # throttling wait so cancellation can commit from another request.
+            session.commit()
             if run.bytes_per_second:
                 delay = consumed / run.bytes_per_second - (time.monotonic() - started)
                 while delay > 0:
@@ -673,7 +675,9 @@ def _check_backups(
         consumed += size
         run.bytes_read += size
         session.add(run)
-        session.flush()
+        # Verification can reserve scratch space or persist a downloaded
+        # receipt in another session immediately after this callback returns.
+        session.commit()
         if _cancelled(session, run):
             raise AuditWindowExpired
         if run.bytes_per_second:
@@ -694,6 +698,11 @@ def _check_backups(
             path=row.key,
             provider_ref=row.provider_ref,
         )
+        # Publish prior findings/progress before entering the backup owner.
+        # Its receipt and capacity transactions must never nest under our
+        # SQLite writer; result events still commit with record_success below.
+        session.add(run)
+        session.commit()
         try:
             result = (
                 backup_verification.verify_backup_ownership(

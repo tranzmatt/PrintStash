@@ -274,3 +274,49 @@ def test_unavailable_storage_preserves_success_baseline(
     )
     assert claim_due(db_session, now=NOW, deferred_reason="storage_unavailable") is None
     assert ensure_utc(policy.last_success_at) == NOW - timedelta(days=8)
+
+
+def test_throttled_hash_allows_cancellation_from_another_session(
+    tmp_path, local_storage, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from sqlmodel import Session, SQLModel, create_engine
+
+    from app.modules.storage.storage_backend.runtime import get_backend
+    from tests.factories import build_audit_run, build_user
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'audit-cancellation.sqlite'}",
+        connect_args={"timeout": 0.1},
+    )
+    SQLModel.metadata.create_all(engine)
+    path = str(local_storage / "cancel-during-throttle.bin")
+    get_backend().write_bytes(b"audit bytes", path)
+    try:
+        with Session(engine) as session:
+            run = build_audit_run(
+                session,
+                build_user(session),
+                state=VaultAuditRunState.RUNNING,
+                bytes_per_second=1,
+            )
+            run_id = run.id
+
+            def cancel(_seconds):
+                with Session(engine) as requesting_session:
+                    vault_audit.request_cancel(requesting_session, run_id)
+
+            monkeypatch.setattr(
+                vault_audit,
+                "time",
+                SimpleNamespace(monotonic=lambda: 0.0, sleep=cancel),
+            )
+            with pytest.raises(vault_audit.AuditWindowExpired):
+                vault_audit._hash_blob(path, session, run)
+            session.refresh(run)
+            assert run.state == VaultAuditRunState.CANCELLED
+            assert run.cancel_requested
+            assert run.bytes_read == len(b"audit bytes")
+    finally:
+        engine.dispose()

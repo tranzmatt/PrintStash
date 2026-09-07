@@ -228,3 +228,42 @@ async def test_scheduled_full_audit_finds_authoritative_corruption(
         ).all()
     )
     assert Path(artifact.path).read_bytes() == b"X" + original[1:]
+
+
+@pytest.mark.asyncio
+async def test_scheduled_full_audit_verifies_backup_with_capacity_callbacks(
+    api, tmp_path, e2e_db
+):
+    from app.core.time import utcnow
+    from app.db.models import CapacityReservation, VaultAuditPolicy
+    from app.runtime.audit_scheduler import run_due_audit
+
+    headers = await _setup_and_login(api, tmp_path)
+    backup = await api.post("/api/v1/backups", headers=headers)
+    assert backup.status_code == 202, backup.text
+    now = utcnow()
+    configured = await api.put(
+        "/api/v1/maintenance/audit-policies/full",
+        headers=headers,
+        json={
+            "enabled": True,
+            "full_cost_acknowledged": True,
+            "start_time": now.strftime("%H:%M"),
+        },
+    )
+    assert configured.status_code == 200, configured.text
+    policy = e2e_db.get(VaultAuditPolicy, "full")
+    policy.next_due_at = now
+    e2e_db.add(policy)
+    e2e_db.commit()
+
+    run_id = await asyncio.to_thread(run_due_audit, now=now)
+    audited = await api.get(f"/api/v1/maintenance/audits/{run_id}", headers=headers)
+    assert audited.status_code == 200, audited.text
+    body = audited.json()
+    assert body["state"] == "completed", body
+    assert body["bytes_read"] > 0
+    assert not [row for row in body["findings"] if row["resource_type"] == "backup"]
+    e2e_db.expire_all()
+    assert e2e_db.get(VaultAuditPolicy, "full").last_success_at is not None
+    assert e2e_db.get(CapacityReservation, f"audit:{run_id}") is None
