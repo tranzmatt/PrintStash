@@ -11,6 +11,7 @@ _STATUS = {
     ErrorKind.NOT_FOUND: 404,
     ErrorKind.CONFLICT: 409,
     ErrorKind.GONE: 410,
+    ErrorKind.CAPACITY: 507,
     ErrorKind.TOO_LARGE: 413,
     ErrorKind.UNPROCESSABLE: 422,
     ErrorKind.BUSY: 429,
