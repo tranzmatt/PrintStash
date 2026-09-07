@@ -9,6 +9,8 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { AuditSchedulePanel } from "@/components/audit-schedule-panel";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -188,6 +190,7 @@ export function MaintenancePanel() {
 
   return (
     <div className="space-y-5">
+      <AuditSchedulePanel />
       <Card>
         <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>

@@ -4,9 +4,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlmodel import Session
 
 from app.core.security import require_superuser
-from app.db.models import User, VaultAuditRun
+from app.db.models import User, VaultAuditMode, VaultAuditRun
 from app.db.session import get_session
-from app.modules.administration import vault_audit
+from app.modules.administration import vault_audit, vault_audit_policy
+from app.schemas.audit_policy import AuditPolicyRead, AuditPolicyUpdate, policy_read
 from app.schemas.maintenance import (
     VaultAuditCreate,
     VaultAuditFindingRead,
@@ -16,7 +17,9 @@ from app.schemas.maintenance import (
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
 
-@router.post("/audits", response_model=VaultAuditRunRead, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/audits", response_model=VaultAuditRunRead, status_code=status.HTTP_202_ACCEPTED
+)
 def start_audit(
     payload: VaultAuditCreate,
     background_tasks: BackgroundTasks,
@@ -97,3 +100,31 @@ def ignore_finding(
     if row is None:
         raise HTTPException(status_code=404, detail="audit_finding_not_found")
     return vault_audit.finding_read(row)
+
+
+@router.get("/audit-policies", response_model=list[AuditPolicyRead])
+def audit_policies(
+    _user: User = Depends(require_superuser), session: Session = Depends(get_session)
+) -> list[AuditPolicyRead]:
+    return [policy_read(row) for row in vault_audit_policy.list_policies(session)]
+
+
+@router.put("/audit-policies/{mode}", response_model=AuditPolicyRead)
+def save_audit_policy(
+    mode: VaultAuditMode,
+    payload: AuditPolicyUpdate,
+    user: User = Depends(require_superuser),
+    session: Session = Depends(get_session),
+) -> AuditPolicyRead:
+    return policy_read(
+        vault_audit_policy.update_policy(session, mode, payload.model_dump(), user.id)
+    )
+
+
+@router.post("/audit-policies/{mode}/skip", response_model=AuditPolicyRead)
+def skip_audit(
+    mode: VaultAuditMode,
+    _user: User = Depends(require_superuser),
+    session: Session = Depends(get_session),
+) -> AuditPolicyRead:
+    return policy_read(vault_audit_policy.skip_once(session, mode))

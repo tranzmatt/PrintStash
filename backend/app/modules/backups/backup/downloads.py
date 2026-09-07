@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -193,7 +193,12 @@ def _require_backup_archive_owned(
 # ---------------------------------------------------------------------------
 
 
-def _download_backup_to_local(meta: _contracts_module.BackupMeta) -> Path:
+def _download_backup_to_local(
+    meta: _contracts_module.BackupMeta,
+    *,
+    progress: Callable[[int], None] | None = None,
+    fresh_remote: bool = False,
+) -> Path:
     """Ensure a local copy of the backup exists, downloading from S3 if needed."""
     local_path = Path(meta.path) if meta.location == "local" else None
 
@@ -225,6 +230,8 @@ def _download_backup_to_local(meta: _contracts_module.BackupMeta) -> Path:
         cache_dir = settings.backup_dir / ".cloud-cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
         local_path = cache_dir / f"{cache_identity}-{archive_name}"
+        if fresh_remote and local_path.exists():
+            _caches_module.cleanup_backup_cache(local_path)
         if local_path.exists():
             if (
                 not owned.sha256
@@ -247,7 +254,10 @@ def _download_backup_to_local(meta: _contracts_module.BackupMeta) -> Path:
         download_temp = Path(raw_temp)
         download_temp.unlink()
         try:
-            destination.download_owned(owned, download_temp)
+            if progress is None:
+                destination.download_owned(owned, download_temp)
+            else:
+                destination.download_owned(owned, download_temp, progress=progress)
             with get_session_factory().session() as publish_session:
                 publish_file(
                     publish_session,
@@ -297,6 +307,8 @@ def _download_backup_to_local(meta: _contracts_module.BackupMeta) -> Path:
         ).hexdigest()
         local_path = cache_dir / f"{cache_identity}-{archive_name}"
         settings.backup_dir.mkdir(parents=True, exist_ok=True)
+        if fresh_remote and local_path.exists():
+            _caches_module.cleanup_backup_cache(local_path)
         if local_path.exists():
             try:
                 existing_hash = _archive_format_module._sha256_path(local_path)
@@ -335,7 +347,15 @@ def _download_backup_to_local(meta: _contracts_module.BackupMeta) -> Path:
             body = response["Body"]
             try:
                 with download_temp.open("wb") as destination:
-                    shutil.copyfileobj(body, destination)
+                    while True:
+                        if progress is not None:
+                            progress(0)
+                        chunk = body.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        if progress is not None:
+                            progress(len(chunk))
+                        destination.write(chunk)
             finally:
                 body.close()
             _targets_module._assert_s3_identity(

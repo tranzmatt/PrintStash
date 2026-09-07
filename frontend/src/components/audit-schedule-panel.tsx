@@ -1,0 +1,286 @@
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  listAuditPolicies,
+  listVaultAudits,
+  saveAuditPolicy,
+  skipAuditSlot,
+} from "@/lib/api/maintenance";
+import { useI18n } from "@/lib/i18n";
+import type { AuditPolicy, VaultAuditRun } from "@/types/maintenance";
+
+function shownDate(value: string | null): string {
+  return value ? new Date(value).toLocaleString() : "—";
+}
+
+function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () => void }) {
+  const { t } = useI18n();
+  const [policy, setPolicy] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const title = policy.mode === "quick" ? t("auditSchedule.1") : t("auditSchedule.2");
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      setPolicy(await saveAuditPolicy(policy));
+      onSaved();
+    } catch {
+      setError(t("auditSchedule.3"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function skip() {
+    setBusy(true);
+    try {
+      setPolicy(await skipAuditSlot(policy.mode));
+      onSaved();
+    } catch {
+      setError(t("auditSchedule.4"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form
+      aria-label={`${title} ${t("auditSchedule.5")}`}
+      className="space-y-3 border-t border-border py-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-4">
+        <h4 className="text-sm font-semibold">{title}</h4>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={policy.enabled}
+            onChange={(enabled) => setPolicy({ ...policy, enabled })}
+          />
+          {t("auditSchedule.6")}
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={policy.paused}
+            onChange={(paused) => setPolicy({ ...policy, paused })}
+          />
+          {t("auditSchedule.7")}
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.8")}
+          <Input
+            value={policy.timezone}
+            onChange={(event) => setPolicy({ ...policy, timezone: event.target.value })}
+            required
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.9")}
+          <Input
+            type="time"
+            value={policy.start_time}
+            onChange={(event) => setPolicy({ ...policy, start_time: event.target.value })}
+            required
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.10")}
+          <Input
+            type="number"
+            min={1}
+            max={1440}
+            value={policy.window_minutes}
+            onChange={(event) =>
+              setPolicy({ ...policy, window_minutes: Number(event.target.value) })
+            }
+            required
+          />
+        </label>
+        {policy.cadence === "weekly" ? (
+          <label className="space-y-1 text-sm">
+            {t("auditSchedule.11")}
+            <Input
+              type="number"
+              min={0}
+              max={6}
+              value={policy.weekday}
+              onChange={(event) => setPolicy({ ...policy, weekday: Number(event.target.value) })}
+            />
+          </label>
+        ) : (
+          <label className="space-y-1 text-sm">
+            {t("auditSchedule.12")}
+            <Input
+              type="number"
+              min={1}
+              max={31}
+              value={policy.month_day}
+              onChange={(event) => setPolicy({ ...policy, month_day: Number(event.target.value) })}
+            />
+          </label>
+        )}
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.13")}
+          <Input
+            type="number"
+            min={1024}
+            max={1073741824}
+            value={policy.bytes_per_second}
+            onChange={(event) =>
+              setPolicy({ ...policy, bytes_per_second: Number(event.target.value) })
+            }
+            required
+          />
+        </label>
+      </div>
+      {policy.mode === "full" && (
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            checked={policy.full_cost_acknowledged}
+            onChange={(full_cost_acknowledged) => setPolicy({ ...policy, full_cost_acknowledged })}
+          />
+          {t(
+            "I understand Full audits read all managed Artifact bytes and may incur remote transfer costs.",
+          )}
+        </label>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox
+          checked={policy.auto_repair}
+          onChange={(auto_repair) => setPolicy({ ...policy, auto_repair })}
+        />
+        {t("auditSchedule.14")}
+      </label>
+      {policy.auto_repair && (
+        <div className="flex flex-wrap gap-4 text-sm">
+          {(["reparse_metadata", "regenerate_thumbnail"] as const).map((action) => (
+            <label key={action} className="flex items-center gap-2">
+              <Checkbox
+                checked={policy.repair_actions.includes(action)}
+                onChange={(checked) =>
+                  setPolicy({
+                    ...policy,
+                    repair_actions: checked
+                      ? [...policy.repair_actions, action]
+                      : policy.repair_actions.filter((item) => item !== action),
+                  })
+                }
+              />
+              {action === "reparse_metadata" ? t("auditSchedule.15") : t("auditSchedule.16")}
+            </label>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {t("auditSchedule.17")}: {shownDate(policy.next_due_at)} · {t("auditSchedule.18")}:{" "}
+        {shownDate(policy.last_success_at)}
+      </p>
+      {policy.deferred_reason && (
+        <p role="status" className="text-sm text-warning">
+          {t("auditSchedule.19")}: {policy.deferred_reason.replaceAll("_", " ")}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={busy}>
+          {t("auditSchedule.20")}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || !policy.next_due_at}
+          onClick={() => void skip()}
+        >
+          {t("auditSchedule.21")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export function AuditSchedulePanel() {
+  const { t } = useI18n();
+  const [policies, setPolicies] = useState<AuditPolicy[] | null>(null);
+  const [history, setHistory] = useState<VaultAuditRun[]>([]);
+  const [error, setError] = useState(false);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listAuditPolicies(), listVaultAudits()])
+      .then(([nextPolicies, runs]) => {
+        if (!cancelled) {
+          setPolicies(nextPolicies);
+          setHistory(runs);
+          setError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [revision]);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("auditSchedule.22")}</CardTitle>
+        <CardDescription>
+          {t(
+            "Opt in to weekly Quick or monthly Full checks. Missed schedules catch up once inside the next daily window. One read runs at a time.",
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <div role="alert">
+            <p>{t("auditSchedule.23")}</p>
+            <Button variant="outline" onClick={() => setRevision(revision + 1)}>
+              {t("auditSchedule.24")}
+            </Button>
+          </div>
+        ) : !policies ? (
+          <p role="status">{t("auditSchedule.25")}</p>
+        ) : (
+          policies.map((policy) => (
+            <PolicyForm
+              key={`${policy.mode}-${policy.revision}`}
+              initial={policy}
+              onSaved={() => setRevision((value) => value + 1)}
+            />
+          ))
+        )}
+        <h4 className="border-t border-border pt-4 text-sm font-semibold">
+          {t("auditSchedule.26")}
+        </h4>
+        {!history.length ? (
+          <p className="mt-2 text-sm text-muted-foreground">{t("auditSchedule.27")}</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {history.map((run) => (
+              <li key={run.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm">
+                <span>
+                  #{run.id} · {run.mode} · {run.state}
+                </span>
+                <span className="text-muted-foreground">
+                  {shownDate(run.finished_at ?? run.created_at)} · {run.critical_count}{" "}
+                  {t("auditSchedule.28")} · {run.warning_count} {t("auditSchedule.29")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

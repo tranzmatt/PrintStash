@@ -403,3 +403,11 @@ class MakeMultipartBuildConfirmation(Protocol):
     def __call__(
         self, attempt: MultipartBuildAttempt, **overrides: Any
     ) -> MultipartBuildConfirmation: ...
+
+
+class MakeAuditPolicy(Protocol):
+    def __call__(self, requested_by: User, *, mode: str = "quick", **overrides: Any) -> Any: ...
+
+
+class MakeAuditEvent(Protocol):
+    def __call__(self, run: Any, **overrides: Any) -> Any: ...

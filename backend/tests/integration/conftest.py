@@ -407,6 +407,8 @@ __all__ = [
     "grant_role",
     "headers_for",
     "make_artifact_link",
+    "make_audit_policy",
+    "make_audit_event",
     "make_audit_finding",
     "make_audit_run",
     "make_background_job",
@@ -472,3 +474,13 @@ def make_multipart_build_confirmation(
 ) -> MakeMultipartBuildConfirmation:
     """Session-bound manufacturing history builder."""
     return _bound(factories.build_multipart_build_confirmation, db_session)
+
+
+@pytest.fixture
+def make_audit_policy(db_session: Session) -> Any:
+    return _bound(factories.build_audit_policy, db_session)
+
+
+@pytest.fixture
+def make_audit_event(db_session: Session) -> Any:
+    return _bound(factories.build_audit_event, db_session)

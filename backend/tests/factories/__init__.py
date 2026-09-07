@@ -101,6 +101,8 @@ from tests.factories.manufacturing import (
     build_multipart_part,
 )
 from tests.factories.ops import (
+    build_audit_policy,
+    build_audit_event,
     build_audit_finding,
     build_audit_run,
     build_background_job,
@@ -163,6 +165,8 @@ __all__ = [
     "a_printer_with_a_queue",
     "bearer",
     "build_artifact_link",
+    "build_audit_policy",
+    "build_audit_event",
     "build_audit_finding",
     "build_audit_run",
     "build_background_job",

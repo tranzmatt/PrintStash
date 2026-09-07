@@ -44,6 +44,8 @@ from app.db.models import (
     StorageFailureDomainDeclaration,
     SystemConfig,
     User,
+    VaultAuditEvent,
+    VaultAuditPolicy,
     VaultAuditFinding,
     VaultAuditFindingState,
     VaultAuditMode,
@@ -456,3 +458,16 @@ def build_backup_retry_attempt(
             **overrides,
         ),
     )
+
+
+def build_audit_policy(session: Session, requested_by: User, *, mode: str = "quick", **overrides: Any) -> VaultAuditPolicy:
+    """A disabled policy unless its caller explicitly enables it."""
+    overrides.setdefault("cadence", "weekly" if mode == "quick" else "monthly")
+    return save(session, VaultAuditPolicy(mode=mode, requested_by=requested_by.id, **overrides))
+
+
+def build_audit_event(session: Session, run: VaultAuditRun, **overrides: Any) -> VaultAuditEvent:
+    """A uniquely deduplicated aggregate storage event."""
+    overrides.setdefault("dedup_key", f"audit-event-{nth('audit_event')}")
+    overrides.setdefault("event_type", "storage_regression")
+    return save(session, VaultAuditEvent(run_id=run.id, **overrides))

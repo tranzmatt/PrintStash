@@ -6,9 +6,11 @@ from .administration import (
 from .administration import (
     SystemConfig as SystemConfig,
 )
+from .administration import VaultAuditEvent as VaultAuditEvent
 from .administration import (
     VaultAuditFinding as VaultAuditFinding,
 )
+from .administration import VaultAuditPolicy as VaultAuditPolicy
 from .administration import (
     VaultAuditRun as VaultAuditRun,
 )

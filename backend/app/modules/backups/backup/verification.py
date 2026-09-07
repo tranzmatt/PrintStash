@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
 import tarfile
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import app.modules.backups.backup.archive_format as _archive_format_module
@@ -29,12 +31,27 @@ from app.modules.administration import audit
 logger = get_logger(__name__)
 
 
+class _ProgressReader(io.BufferedReader):
+    """Cooperative bounded read hook for scheduled verification."""
+
+    def __init__(self, path: Path, progress: Callable[[int], None]) -> None:
+        super().__init__(path.open("rb"))
+        self.progress = progress
+
+    def read(self, size: int = -1) -> bytes:
+        self.progress(0)
+        data = super().read(size)
+        self.progress(len(data))
+        return data
+
+
 def verify_backup(
     backup_id: str,
     *,
     source_ref: str | None = None,
     archive_path: Path | None = None,
     record_audit: bool = True,
+    progress: Callable[[int], None] | None = None,
 ) -> _contracts_module.BackupVerification:
     """Validate archive structure, manifest membership, sizes, and safe paths."""
     explicit_archive = archive_path is not None
@@ -50,7 +67,12 @@ def verify_backup(
     manifest: dict | None = None
     members: list[tarfile.TarInfo] = []
     try:
-        with tarfile.open(archive, mode="r:gz") as tar:
+        with (
+            (
+                _ProgressReader(archive, progress) if progress else archive.open("rb")
+            ) as archive_stream,
+            tarfile.open(fileobj=archive_stream, mode="r:gz") as tar,
+        ):
             members = tar.getmembers()
             for member in members:
                 if (
@@ -280,6 +302,9 @@ def verify_backup(
 
 def verify_backup_ownership(
     ownership_id: int,
+    *,
+    progress: Callable[[int], None] | None = None,
+    fresh_remote: bool = False,
 ) -> _contracts_module.BackupOwnershipVerification:
     """Verify one exact committed backup receipt without discovery/listing.
 
@@ -353,7 +378,9 @@ def verify_backup_ownership(
         archive = (
             Path(row.key)
             if location == "local"
-            else _downloads_module._download_backup_to_local(meta)
+            else _downloads_module._download_backup_to_local(
+                meta, progress=progress, fresh_remote=fresh_remote
+            )
         )
         if location != "local":
             cache_path = archive
@@ -361,6 +388,7 @@ def verify_backup_ownership(
             backup_id,
             archive_path=archive,
             record_audit=False,
+            progress=progress,
         )
     except FileNotFoundError as exc:
         return _contracts_module.BackupOwnershipVerification(

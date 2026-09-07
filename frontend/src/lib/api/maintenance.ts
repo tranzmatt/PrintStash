@@ -1,5 +1,6 @@
 import { getJson, sendJson } from "@/lib/api/request";
 import type {
+  AuditPolicy,
   BackupVerification,
   VaultAuditFinding,
   VaultAuditMode,
@@ -40,4 +41,29 @@ export function verifyBackup(
     "POST",
     {},
   );
+}
+
+export function listAuditPolicies(): Promise<AuditPolicy[]> {
+  return getJson<AuditPolicy[]>("/api/v1/maintenance/audit-policies", { fresh: true });
+}
+
+export function saveAuditPolicy(policy: AuditPolicy): Promise<AuditPolicy> {
+  const {
+    mode,
+    revision: _revision,
+    next_due_at: _next,
+    last_attempt_at: _attempt,
+    last_success_at: _success,
+    deferred_reason: _reason,
+    ...payload
+  } = policy;
+  return sendJson<AuditPolicy>(`/api/v1/maintenance/audit-policies/${mode}`, "PUT", payload);
+}
+
+export function skipAuditSlot(mode: VaultAuditMode): Promise<AuditPolicy> {
+  return sendJson<AuditPolicy>(`/api/v1/maintenance/audit-policies/${mode}/skip`, "POST", {});
+}
+
+export function listVaultAudits(): Promise<VaultAuditRun[]> {
+  return getJson<VaultAuditRun[]>("/api/v1/maintenance/audits", { fresh: true });
 }

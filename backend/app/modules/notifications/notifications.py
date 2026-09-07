@@ -861,3 +861,25 @@ def _record_channel_test(channel_id: int, ok: bool, error: Optional[str]) -> Non
         channel.updated_at = now
         session.add(channel)
         session.commit()
+
+
+def enqueue_storage_event(
+    session: Session,
+    event_type: NotificationEventType,
+    *,
+    run_id: int,
+    mode: str,
+    summary: dict[str, int],
+) -> int:
+    """Enqueue a storage-only context; caller owns the event/outbox transaction."""
+    if event_type not in {NotificationEventType.STORAGE_REGRESSION, NotificationEventType.STORAGE_RECOVERY}:
+        raise ValueError("storage_event_required")
+    if not notifications_enabled(session):
+        return 0
+    context = {"event": event_type.value, "audit_run_id": run_id, "audit_mode": mode,
+               "timestamp": utcnow().isoformat(),
+               "summary": {key: int(summary.get(key, 0)) for key in ("new", "worsened", "unchanged", "improved", "resolved")}}
+    matching = [row for row in session.exec(select(NotificationChannel).where(NotificationChannel.enabled == True)).all() if _channel_subscribes(row, event_type, None)]  # noqa: E712
+    for channel in matching:
+        session.add(NotificationDelivery(channel_id=channel.id, event_type=event_type, context_json=json.dumps(context)))
+    return len(matching)

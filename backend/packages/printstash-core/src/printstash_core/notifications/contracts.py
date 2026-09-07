@@ -14,6 +14,8 @@ class NotificationEventType(str, Enum):
     PRINT_FAILED = "print_failed"
     PRINT_CANCELLED = "print_cancelled"
     PRINTER_OFFLINE = "printer_offline"
+    STORAGE_REGRESSION = "storage_regression"
+    STORAGE_RECOVERY = "storage_recovery"
 
 
 class NotificationTarget(str, Enum):

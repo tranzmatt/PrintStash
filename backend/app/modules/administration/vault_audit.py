@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import app.modules.backups.backup.targets as backup_targets
 import app.modules.backups.backup.verification as backup_verification
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.time import utcnow
+from app.core.time import ensure_utc, utcnow
 from app.db.models import (
     BackgroundJob,
     Collection,
@@ -43,6 +44,10 @@ from app.schemas.maintenance import VaultAuditFindingRead, VaultAuditRunRead
 
 _ACTIVE_STATES = (VaultAuditRunState.PENDING, VaultAuditRunState.RUNNING)
 logger = get_logger(__name__)
+
+
+class AuditWindowExpired(Exception):
+    """The scheduled read budget ended; do not classify this as corrupt storage."""
 
 
 def _safe_name(blob: OwnedBlob) -> str:
@@ -165,18 +170,9 @@ def _sync_counts(session: Session, run: VaultAuditRun) -> None:
 def create_run(
     session: Session, requested_by: int, mode: VaultAuditMode
 ) -> tuple[VaultAuditRun, bool]:
-    active = session.exec(
-        select(VaultAuditRun)
-        .where(VaultAuditRun.state.in_(_ACTIVE_STATES))  # type: ignore[attr-defined]
-        .order_by(VaultAuditRun.created_at.desc())  # type: ignore[attr-defined]
-    ).first()
-    if active is not None:
-        return active, False
-    row = VaultAuditRun(requested_by=requested_by, mode=mode)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row, True
+    from app.modules.administration.vault_audit_policy import admit_run
+
+    return admit_run(session, requested_by, mode)
 
 
 def list_runs(session: Session, limit: int = 25) -> list[VaultAuditRunRead]:
@@ -209,11 +205,10 @@ def request_cancel(session: Session, run_id: int) -> VaultAuditRun | None:
 def reconcile_interrupted_runs() -> int:
     with get_session_factory().scoped_session() as session:
         rows = session.exec(
-            select(VaultAuditRun).where(
-                VaultAuditRun.state == VaultAuditRunState.RUNNING
-            )
+            select(VaultAuditRun).where(VaultAuditRun.state.in_(_ACTIVE_STATES))
         ).all()
         for row in rows:
+            row.active_slot = None
             row.state = VaultAuditRunState.FAILED
             row.error_code = "audit_interrupted"
             row.finished_at = utcnow()
@@ -254,8 +249,12 @@ def _add(
 
 def _cancelled(session: Session, run: VaultAuditRun) -> bool:
     session.refresh(run)
-    if not run.cancel_requested:
+    expired = run.deadline_at is not None and utcnow() >= ensure_utc(run.deadline_at)
+    if not run.cancel_requested and not expired:
         return False
+    run.active_slot = None
+    if expired:
+        run.error_code = "audit_window_expired"
     run.state = VaultAuditRunState.CANCELLED
     run.finished_at = utcnow()
     run.current_phase = "cancelled"
@@ -264,9 +263,29 @@ def _cancelled(session: Session, run: VaultAuditRun) -> bool:
     return True
 
 
-def _hash_blob(key: str) -> str:
+def _hash_blob(
+    key: str, session: Session | None = None, run: VaultAuditRun | None = None
+) -> str:
     digest = hashlib.sha256()
+    started = time.monotonic()
+    consumed = 0
     for chunk in get_backend().stream_chunks(key):
+        if run is not None and session is not None:
+            if _cancelled(session, run):
+                raise AuditWindowExpired
+            consumed += len(chunk)
+            run.bytes_read += len(chunk)
+            session.add(run)
+            session.flush()
+            if run.bytes_per_second:
+                delay = consumed / run.bytes_per_second - (time.monotonic() - started)
+                while delay > 0:
+                    if _cancelled(session, run):
+                        raise AuditWindowExpired
+                    time.sleep(min(delay, 0.2))
+                    delay = consumed / run.bytes_per_second - (
+                        time.monotonic() - started
+                    )
         digest.update(chunk)
     return digest.hexdigest()
 
@@ -310,7 +329,7 @@ def _check_primary(
                     },
                 )
             if run.mode == VaultAuditMode.FULL and blob.expected_sha256:
-                actual = _hash_blob(blob.key)
+                actual = _hash_blob(blob.key, session, run)
                 if actual != blob.expected_sha256.lower():
                     _add(
                         session,
@@ -321,6 +340,8 @@ def _check_primary(
                         identifier=name,
                         details=details,
                     )
+        except AuditWindowExpired:
+            return False
         except Exception:
             _add(
                 session,
@@ -488,6 +509,8 @@ def _check_external(
     session: Session, run: VaultAuditRun, blobs: list[OwnedBlob]
 ) -> None:
     for library in session.exec(select(ExternalLibrary)).all():
+        if _cancelled(session, run):
+            return
         root = Path(library.root_path)
         if not root.exists() or not root.is_dir():
             _add(
@@ -500,6 +523,8 @@ def _check_external(
                 details={"library_id": library.id, "root_label": library.name},
             )
     for blob in (blob for blob in blobs if _blob_is_live(session, blob)):
+        if _cancelled(session, run):
+            return
         path = Path(blob.key)
         file_row = session.get(File, blob.resource_id)
         try:
@@ -585,7 +610,10 @@ def _check_backups(session: Session, run: VaultAuditRun) -> None:
     # derivatives, not authoritative backup sources.
     rows = session.exec(
         select(OwnedStorageObject).where(
-            OwnedStorageObject.backend.in_(("local", "backup-s3")),
+            (
+                OwnedStorageObject.backend.in_(("local", "backup-s3"))
+                | OwnedStorageObject.backend.startswith("backup-opendal-")
+            ),
             OwnedStorageObject.object_kind.in_(("backup", "backup-legacy")),
             OwnedStorageObject.state.in_(
                 (StorageObjectState.COMMITTED, StorageObjectState.BLOCKED)
@@ -594,6 +622,25 @@ def _check_backups(session: Session, run: VaultAuditRun) -> None:
     ).all()
     if _cancelled(session, run):
         return
+    started = time.monotonic()
+    consumed = 0
+
+    def progress(size: int) -> None:
+        nonlocal consumed
+        consumed += size
+        run.bytes_read += size
+        session.add(run)
+        session.flush()
+        if _cancelled(session, run):
+            raise AuditWindowExpired
+        if run.bytes_per_second:
+            delay = consumed / run.bytes_per_second - (time.monotonic() - started)
+            while delay > 0:
+                if _cancelled(session, run):
+                    raise AuditWindowExpired
+                time.sleep(min(delay, 0.2))
+                delay = consumed / run.bytes_per_second - (time.monotonic() - started)
+
     for row in rows:
         if _cancelled(session, run):
             return
@@ -604,7 +651,16 @@ def _check_backups(session: Session, run: VaultAuditRun) -> None:
             path=row.key,
             provider_ref=row.provider_ref,
         )
-        result = backup_verification.verify_backup_ownership(int(row.id))
+        try:
+            result = (
+                backup_verification.verify_backup_ownership(
+                    int(row.id), progress=progress, fresh_remote=True
+                )
+                if run.trigger == "scheduled"
+                else backup_verification.verify_backup_ownership(int(row.id))
+            )
+        except AuditWindowExpired:
+            return
         if result.status == "valid":
             continue
         if result.status in {"missing", "inaccessible"}:
@@ -737,11 +793,23 @@ def execute_run(run_id: int) -> None:
                 _check_backups(session, run)
                 if run.state == VaultAuditRunState.CANCELLED:
                     return
+            if _cancelled(session, run):
+                return
             run.state = VaultAuditRunState.COMPLETED
             run.progress = 100.0
             run.current_phase = "completed"
             run.finished_at = utcnow()
             _sync_counts(session, run)
+            from app.modules.administration.vault_audit_results import (
+                record_success,
+                repair_safe_findings,
+            )
+
+            record_success(session, run)
+            session.add(run)
+            session.commit()
+            repair_safe_findings(session, run)
+            run.active_slot = None
             session.add(run)
             session.commit()
         except Exception:
@@ -749,6 +817,7 @@ def execute_run(run_id: int) -> None:
             session.rollback()
             run = session.get(VaultAuditRun, run_id)
             if run is not None:
+                run.active_slot = None
                 run.state = VaultAuditRunState.FAILED
                 run.error_code = "audit_failed"
                 run.finished_at = utcnow()

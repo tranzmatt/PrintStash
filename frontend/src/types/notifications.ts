@@ -4,7 +4,9 @@ export type NotificationEvent =
   | "print_completed"
   | "print_failed"
   | "print_cancelled"
-  | "printer_offline";
+  | "printer_offline"
+  | "storage_regression"
+  | "storage_recovery";
 
 export interface NotificationChannel {
   id: number;

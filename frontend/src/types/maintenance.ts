@@ -78,3 +78,25 @@ export interface BackupVerification {
   checked_members: number;
   findings: Array<{ code: string; member: string; expected_size?: number; actual_size?: number }>;
 }
+
+export interface AuditPolicy {
+  mode: VaultAuditMode;
+  enabled: boolean;
+  paused: boolean;
+  cadence: "weekly" | "monthly";
+  timezone: string;
+  weekday: number;
+  month_day: number;
+  start_time: string;
+  window_minutes: number;
+  bytes_per_second: number;
+  read_concurrency: number;
+  auto_repair: boolean;
+  repair_actions: ("reparse_metadata" | "regenerate_thumbnail")[];
+  full_cost_acknowledged: boolean;
+  revision: number;
+  next_due_at: string | null;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  deferred_reason: string | null;
+}
