@@ -3,6 +3,15 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const messages = {
   en: {
+    "auditSchedule.deferMaintenance": "Maintenance is active",
+    "auditSchedule.deferStorage": "Storage is unavailable",
+    "auditSchedule.deferWindow": "Waiting for the next allowed window",
+    "auditSchedule.deferActive": "Another audit is active",
+    "auditSchedule.deferJitter": "Waiting for the configured start delay",
+    "auditSchedule.deferRetry": "Retrying after a temporary launch failure",
+    "auditSchedule.deferSkipped": "Next scheduled slot was skipped",
+    "auditSchedule.deferShutdown": "Application is shutting down",
+
     "auditSchedule.cadence": "Frequency",
     "auditSchedule.weekly": "Weekly",
     "auditSchedule.monthly": "Monthly",
@@ -773,6 +782,15 @@ const messages = {
     "multipart.notFoundError": "This multipart model or collection no longer exists.",
   },
   es: {
+    "auditSchedule.deferMaintenance": "Hay un mantenimiento activo",
+    "auditSchedule.deferStorage": "El almacenamiento no está disponible",
+    "auditSchedule.deferWindow": "Esperando a la siguiente ventana permitida",
+    "auditSchedule.deferActive": "Hay otra auditoría activa",
+    "auditSchedule.deferJitter": "Esperando el retraso de inicio configurado",
+    "auditSchedule.deferRetry": "Reintentando tras un fallo temporal de inicio",
+    "auditSchedule.deferSkipped": "Se omitió la siguiente ejecución programada",
+    "auditSchedule.deferShutdown": "La aplicación se está cerrando",
+
     "auditSchedule.cadence": "Frecuencia",
     "auditSchedule.weekly": "Semanal",
     "auditSchedule.monthly": "Mensual",

@@ -73,6 +73,19 @@ describe("Audit schedules", () => {
     await waitFor(() => expect(view.requestsWithMethod("PUT")[0]?.body).toContain('"paused":true'));
   });
 
+  it("renders a safe deferred explanation", async () => {
+    renderApp(<AuditSchedulePanel />, {
+      routes: {
+        "GET /api/v1/maintenance/audit-policies": json([
+          anAuditPolicy({ deferred_reason: "storage_unavailable" }),
+        ]),
+        "GET /api/v1/maintenance/audits": json([]),
+      },
+    });
+    expect(await screen.findByText(/Storage is unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText(/storage_unavailable/)).not.toBeInTheDocument();
+  });
+
   it("shows a recoverable loading failure", async () => {
     renderApp(<AuditSchedulePanel />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load audit schedules.");
