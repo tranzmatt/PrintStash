@@ -53,6 +53,10 @@ const EVENTS: { value: NotificationEvent; label: string }[] = [
   { value: "printer_offline", label: "Printer offline" },
   { value: "storage_regression", label: "Vault audit regression" },
   { value: "storage_recovery", label: "Vault audit recovery" },
+  { value: "storage_audit_failed", label: "Scheduled Vault audit failed" },
+  { value: "storage_audit_cancelled", label: "Scheduled Vault audit cancelled" },
+  { value: "storage_audit_overdue", label: "Scheduled Vault audit overdue" },
+  { value: "storage_repair_failed", label: "Vault repair failed" },
 ];
 
 /** One editable entry of a channel's `config` map. */

@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Integer,
     String,
     Text,
 )
@@ -215,6 +216,27 @@ class VaultAuditPolicy(SQLModel, table=True):
     month_day: int = Field(default=1)
     start_time: str = Field(default="02:00", max_length=5)
     window_minutes: int = Field(default=120)
+    jitter_seconds: int = Field(
+        default=0, sa_column=Column(Integer, nullable=False, server_default="0")
+    )
+    max_lateness_minutes: int = Field(
+        default=120, sa_column=Column(Integer, nullable=False, server_default="120")
+    )
+    notification_threshold: str = Field(
+        default="warning",
+        sa_column=Column(String(16), nullable=False, server_default="warning"),
+    )
+    notification_channels_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False, server_default="[]")
+    )
+    notification_cooldown_minutes: int = Field(
+        default=60, sa_column=Column(Integer, nullable=False, server_default="60")
+    )
+    last_notified_at: Optional[datetime] = None
+    retry_after: Optional[datetime] = None
+    launch_failures: int = Field(
+        default=0, sa_column=Column(Integer, nullable=False, server_default="0")
+    )
     bytes_per_second: int = Field(default=10485760)
     read_concurrency: int = Field(default=1)
     auto_repair: bool = Field(default=False)
@@ -237,7 +259,9 @@ class VaultAuditEvent(SQLModel, table=True):
     __tablename__ = "vault_audit_events"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    run_id: int = Field(foreign_key="vault_audit_runs.id", index=True)
+    run_id: Optional[int] = Field(
+        default=None, foreign_key="vault_audit_runs.id", index=True
+    )
     dedup_key: str = Field(max_length=128, unique=True)
     event_type: str = Field(max_length=32)
     summary_json: str = Field(default="{}", sa_column=Column(Text, nullable=False))
@@ -262,6 +286,9 @@ class VaultAuditRun(SQLModel, table=True):
     scheduled_for: Optional[datetime] = None
     deadline_at: Optional[datetime] = None
     bytes_per_second: Optional[int] = None
+    planned_bytes: int = Field(
+        default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
+    )
     bytes_read: int = Field(
         default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
     )

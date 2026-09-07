@@ -54,6 +54,9 @@ export interface VaultAuditFinding {
 }
 
 export interface VaultAuditRun {
+  trigger?: "manual" | "scheduled";
+  planned_bytes?: number;
+  bytes_read?: number;
   id: number;
   requested_by: number;
   mode: VaultAuditMode;
@@ -80,6 +83,12 @@ export interface BackupVerification {
 }
 
 export interface AuditPolicy {
+  expected_revision?: number | null;
+  jitter_seconds?: number;
+  max_lateness_minutes?: number;
+  notification_threshold?: "off" | "critical" | "warning" | "info";
+  notification_channels?: number[];
+  notification_cooldown_minutes?: number;
   estimated_remote_bytes?: number;
   overdue?: boolean;
   mode: VaultAuditMode;

@@ -26,6 +26,34 @@ describe("Audit schedules", () => {
       expect(view.requestsWithMethod("PUT")[0]?.body).toContain('"enabled":true'),
     );
     expect(view.requestsWithMethod("PUT")[0]?.body).not.toContain('"revision"');
+    expect(view.requestsWithMethod("PUT")[0]?.body).toContain('"expected_revision":1');
+  });
+
+  it("saves frequency, lateness and notification threshold controls", async () => {
+    const user = userEvent.setup();
+    const view = renderApp(<AuditSchedulePanel />, {
+      routes: {
+        "GET /api/v1/maintenance/audit-policies": json([anAuditPolicy()]),
+        "GET /api/v1/maintenance/audits": json([]),
+        "PUT /api/v1/maintenance/audit-policies/quick": json(anAuditPolicy({ revision: 2 })),
+      },
+    });
+    const form = await screen.findByRole("form", { name: "Quick audit schedule" });
+    await user.selectOptions(within(form).getByLabelText("Frequency"), "monthly");
+    await user.selectOptions(
+      within(form).getByLabelText("Issue notification threshold"),
+      "critical",
+    );
+    await user.clear(within(form).getByLabelText("Overdue after (minutes)"));
+    await user.type(within(form).getByLabelText("Overdue after (minutes)"), "45");
+    await user.click(within(form).getByRole("button", { name: "Save schedule" }));
+    await waitFor(() =>
+      expect(view.requestsWithMethod("PUT")[0]?.body).toContain(
+        '"notification_threshold":"critical"',
+      ),
+    );
+    expect(view.requestsWithMethod("PUT")[0]?.body).toContain('"cadence":"monthly"');
+    expect(view.requestsWithMethod("PUT")[0]?.body).toContain('"max_lateness_minutes":45');
   });
 
   it("saves a paused schedule", async () => {

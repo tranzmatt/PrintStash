@@ -100,8 +100,24 @@ def test_preserves_populated_postgres_audits():
                 event_type="PRINT_COMPLETED",
                 status="PENDING",
             )
+        command.upgrade(config, "4b21cbe868b6")
+        with engine.begin() as connection:
+            seed_schema_row(
+                connection,
+                "vault_audit_policies",
+                mode="quick",
+                requested_by=1,
+                enabled=True,
+                paused=False,
+                revision=8,
+            )
         command.upgrade(config, "head")
         with engine.begin() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT revision, jitter_seconds, max_lateness_minutes, notification_threshold FROM vault_audit_policies WHERE mode='quick'"
+                )
+            ).one() == (8, 0, 120, "warning")
             assert connection.execute(
                 text(
                     "SELECT requested_by, trigger, result_recorded FROM vault_audit_runs WHERE id=1"
@@ -128,6 +144,26 @@ def test_preserves_populated_postgres_audits():
                 == "STORAGE_REGRESSION"
             )
             connection.execute(text("DELETE FROM notification_deliveries WHERE id=2"))
+            for index, event in enumerate(
+                (
+                    "STORAGE_AUDIT_FAILED",
+                    "STORAGE_AUDIT_CANCELLED",
+                    "STORAGE_AUDIT_OVERDUE",
+                    "STORAGE_REPAIR_FAILED",
+                ),
+                start=3,
+            ):
+                seed_schema_row(
+                    connection,
+                    "notification_deliveries",
+                    id=index,
+                    channel_id=1,
+                    event_type=event,
+                    status="PENDING",
+                )
+            connection.execute(
+                text("DELETE FROM notification_deliveries WHERE id >= 3")
+            )
         command.downgrade(config, "d6e9d78801ef")
         with engine.connect() as connection:
             assert (
@@ -150,3 +186,29 @@ def test_preserves_populated_postgres_audits():
         with admin.connect() as connection:
             connection.exec_driver_sql(f'DROP DATABASE "{database}" WITH (FORCE)')
         admin.dispose()
+
+
+def test_preserves_populated_policy_controls(tmp_path):
+    url = f"sqlite:///{tmp_path / 'policy-upgrade.sqlite'}"
+    config = _alembic_config(url)
+    command.upgrade(config, "4b21cbe868b6")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        seed_schema_row(
+            connection,
+            "vault_audit_policies",
+            mode="quick",
+            enabled=True,
+            paused=True,
+            revision=9,
+        )
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        assert connection.execute(
+            text(
+                "SELECT revision, paused, jitter_seconds, max_lateness_minutes, notification_threshold FROM vault_audit_policies WHERE mode='quick'"
+            )
+        ).one() == (9, 1, 0, 120, "warning")
+    command.downgrade(config, "4b21cbe868b6")
+    command.upgrade(config, "head")
+    engine.dispose()

@@ -199,6 +199,16 @@ def request_cancel(session: Session, run_id: int) -> VaultAuditRun | None:
     if row is None:
         return None
     if row.state in _ACTIVE_STATES:
+        from app.db.models import AuditLog
+
+        session.add(
+            AuditLog(
+                action="audit.cancel_requested",
+                resource_type="vault_audit_run",
+                resource_id=run_id,
+                actor_id=audit.current_audit_context()[0],
+            )
+        )
         row.cancel_requested = True
         session.add(row)
         session.commit()
@@ -219,6 +229,9 @@ def reconcile_interrupted_runs() -> int:
             row.state = VaultAuditRunState.FAILED
             row.error_code = "audit_interrupted"
             row.finished_at = utcnow()
+            from app.modules.administration.vault_audit_results import record_terminal
+
+            record_terminal(session, row)
             session.add(row)
         claims = session.exec(
             select(VaultAuditRun).where(col(VaultAuditRun.active_slot).is_not(None))
@@ -280,6 +293,9 @@ def _cancelled(session: Session, run: VaultAuditRun) -> bool:
     run.state = VaultAuditRunState.CANCELLED
     run.finished_at = utcnow()
     run.current_phase = "cancelled"
+    from app.modules.administration.vault_audit_results import record_terminal
+
+    record_terminal(session, run)
     session.add(run)
     session.commit()
     return True
@@ -806,6 +822,11 @@ def execute_run(run_id: int) -> None:
                     run.error_code = exc.code
                     run.active_slot = None
                     run.finished_at = utcnow()
+                    from app.modules.administration.vault_audit_results import (
+                        record_terminal,
+                    )
+
+                    record_terminal(session, run)
                     session.add(run)
                     session.commit()
     finally:
@@ -903,7 +924,7 @@ def _execute_run(
             session.add(run)
             session.commit()
         except Exception:
-            logger.exception("vault audit %s failed", run_id)
+            logger.error("vault audit %s failed", run_id)
             session.rollback()
             run = session.get(VaultAuditRun, run_id)
             if run is not None:
@@ -911,6 +932,11 @@ def _execute_run(
                 run.state = VaultAuditRunState.FAILED
                 run.error_code = "audit_failed"
                 run.finished_at = utcnow()
+                from app.modules.administration.vault_audit_results import (
+                    record_terminal,
+                )
+
+                record_terminal(session, run)
                 session.add(run)
                 session.commit()
 

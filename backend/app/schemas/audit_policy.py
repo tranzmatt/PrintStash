@@ -13,6 +13,12 @@ from app.db.models import VaultAuditPolicy
 
 class AuditPolicyUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    expected_revision: int | None = Field(default=None, ge=1)
+    jitter_seconds: int = Field(default=0, ge=0, le=3600)
+    max_lateness_minutes: int = Field(default=120, ge=1, le=44640)
+    notification_threshold: Literal["off", "critical", "warning", "info"] = "warning"
+    notification_channels: list[int] = Field(default_factory=list, max_length=100)
+    notification_cooldown_minutes: int = Field(default=60, ge=0, le=1440)
     enabled: bool = False
     paused: bool = False
     cadence: Literal["weekly", "monthly"] = "weekly"
@@ -67,17 +73,26 @@ def policy_read(
     row: VaultAuditPolicy, *, estimated_remote_bytes: int = 0
 ) -> AuditPolicyRead:
     values = row.model_dump(
-        exclude={"repair_actions_json", "requested_by", "updated_at"}
+        exclude={
+            "repair_actions_json",
+            "notification_channels_json",
+            "last_notified_at",
+            "retry_after",
+            "launch_failures",
+            "requested_by",
+            "updated_at",
+        }
     )
     return AuditPolicyRead(
         **values,
         repair_actions=json.loads(row.repair_actions_json),
+        notification_channels=json.loads(row.notification_channels_json),
         estimated_remote_bytes=estimated_remote_bytes,
         overdue=bool(
             row.enabled
             and not row.paused
             and row.next_due_at is not None
             and utcnow()
-            > ensure_utc(row.next_due_at) + timedelta(minutes=row.window_minutes)
+            > ensure_utc(row.next_due_at) + timedelta(minutes=row.max_lateness_minutes)
         ),
     )

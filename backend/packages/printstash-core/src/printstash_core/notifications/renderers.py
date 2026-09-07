@@ -32,6 +32,10 @@ _EVENT_LABELS: dict[NotificationEventType, str] = {
     NotificationEventType.PRINTER_OFFLINE: "Printer offline",
     NotificationEventType.STORAGE_REGRESSION: "Vault audit found new issues",
     NotificationEventType.STORAGE_RECOVERY: "Vault audit recovery verified",
+    NotificationEventType.STORAGE_AUDIT_FAILED: "Scheduled Vault audit failed",
+    NotificationEventType.STORAGE_AUDIT_CANCELLED: "Scheduled Vault audit cancelled",
+    NotificationEventType.STORAGE_AUDIT_OVERDUE: "Scheduled Vault audit overdue",
+    NotificationEventType.STORAGE_REPAIR_FAILED: "Vault audit repair failed",
 }
 _EVENT_COLORS: dict[NotificationEventType, int] = {
     NotificationEventType.PRINT_COMPLETED: 0x2ECC71,
@@ -92,10 +96,13 @@ def _fmt_duration(seconds: int | None) -> str | None:
 def summary_lines(context: NotificationContext) -> list[str]:
     """Build human-readable detail lines shared by text-based targets."""
     lines: list[str] = []
-    if context.get("event") in {"storage_regression", "storage_recovery"}:
+    if str(context.get("event", "")).startswith("storage_"):
         summary = context.get("summary", {})
         return [
             f"Audit: {context.get('audit_mode', 'vault')} #{context.get('audit_run_id', '')}",
+            f"Duration: {_fmt_duration(context.get('duration_s')) or '0s'}",
+            f"Categories: {', '.join(context.get('categories', [])) or 'none'}",
+            f"Maintenance: {context.get('maintenance_path', '/settings?tab=maintenance')}",
             *[
                 f"{key.title()}: {summary.get(key, 0)}"
                 for key in ("new", "worsened", "resolved", "improved")

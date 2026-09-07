@@ -6,7 +6,11 @@ export type NotificationEvent =
   | "print_cancelled"
   | "printer_offline"
   | "storage_regression"
-  | "storage_recovery";
+  | "storage_recovery"
+  | "storage_audit_failed"
+  | "storage_audit_cancelled"
+  | "storage_audit_overdue"
+  | "storage_repair_failed";
 
 export interface NotificationChannel {
   id: number;

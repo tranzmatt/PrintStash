@@ -55,3 +55,66 @@ API: `GET /api/v1/maintenance/audit-policies`,
 `POST /api/v1/maintenance/audit-policies/{quick|full}/skip`. All policy controls
 require an administrator. Existing audit start/history/finding endpoints remain
 available, with additive trigger, deadline, comparison and bytes-read fields.
+
+Policy saves support `expected_revision`; a stale editor receives
+`audit_policy_revision_conflict` (409), and Settings always supplies its loaded
+revision. Pause, skip, policy edits, manual starts, cancellation and automatic
+repair attempts leave administrative audit entries. Optional jitter is stable
+for the due slot and policy revision and leaves at least one minute of the
+window. Launch retries start after 60 seconds and back off to 30 minutes, plus
+configured jitter, while preserving the due slot. The maximum lateness defaults
+to 120 minutes and determines overdue health and a single durable overdue event
+per policy revision and missed slot. Pausing suppresses overdue execution and
+health without erasing the due slot.
+
+Notification policy selects a minimum severity and optional channel IDs (an
+empty list uses every subscribed channel). Severity filtering considers only
+new or worsened findings; an old critical finding does not promote a new
+warning. Failed, cancelled, overdue and unsuccessful repair outcomes have
+separate subscription events. Turning the policy threshold off suppresses all
+its deliveries while retaining event evidence. The default minimum spacing is
+60 minutes: deliveries are durably scheduled with that spacing, including
+recovery, while transport retries retain the existing dispatcher semantics.
+Notifications carry safe counts, categories, elapsed duration and an authenticated
+Maintenance navigation path, without exposing Artifact names or storage keys.
+A receiver may see a repeated transport delivery if a process stops after send
+but before recording acknowledgement; durable event creation itself is unique.
+
+Full runs record `planned_bytes` from the committed owned-object inventory
+before execution, and `bytes_read` from authoritative read callbacks. Unknown
+sizes are excluded from the estimate, and decompression, retries and repair
+verification can make actual reads differ from planned bytes. A cached Artifact
+never substitutes for authoritative audit reads.
+
+Detailed finding rows expire after 90 days. The newest successful comparison
+run for every mode/scope/storage generation and its immediately referenced
+baseline retain their details, as do active runs. Compact run summaries,
+immutable comparison digests and durable event evidence remain indefinitely;
+pruning old detail rows never changes a regression baseline or its counts.
+Process diagnostics expose bounded-label audit gauges for retained run outcomes,
+duration, bytes, finding severity/category, current deferrals/overdue state,
+notification evidence and recorded repair outcomes. There are no resource IDs,
+paths or policy revisions in metric labels. Detailed health also includes
+policy enabled/paused state, last-success age and latest run result.
+
+Implementation verification maps the issue's phases to focused behavior tests:
+
+| Requirement | Implementation | Verification |
+| --- | --- | --- |
+| Existing Quick/Full phases, manual repairs and restart behavior | Shared `vault_audit` executor and capacity callbacks | Existing audit tests; scheduled Full real-backup E2E |
+| Persisted opt-in cadence, DST, jitter and missed slots | Policy calendar and `4b21cbe868b6` / `71bd0ebbf381` migrations | Calendar unit tests; policy integration tests; populated SQLite/PostgreSQL upgrades |
+| Revision compare-and-set, one manual/scheduled admission | Conditional revision update and unique active claim | Concurrent two-session SQLite/PostgreSQL admission and policy-edit tests |
+| Maintenance deferral, retry/backoff and overdue | Local scheduler and durable policy state | Runtime shutdown/gate tests; overdue and launch retry integration tests |
+| Planned/actual owned bytes, rate and deadline | Inventory estimate and shared authoritative read callbacks | Byte estimate, deadline, bandwidth and cancellation tests; Full backup E2E |
+| Comparable successful baseline, regression and ignored state | Immutable finding digests scoped by mode/storage generation | Comparison unit tests; failed/cancelled/incomparable baseline integration tests |
+| Storage events, safe payload, preferences, spacing and retries | Existing transactional notification outbox and dispatcher | Threshold/channel, cooldown, terminal rollback/dedup tests; real notification-fake E2E |
+| Opt-in verified Metadata/thumbnail repairs | Narrow managed-local allowlist with post-verification | Rejected unsafe/hash-mismatch repairs, failed repair evidence, both repair E2Es |
+| Settings controls, history and detailed health | Audit schedule card and policy diagnostics | Component controls/save/recovery tests; actual Settings Chromium persistence test |
+| Bounded metrics and retention preserving evidence | Audit observability owner | Retention baseline and persisted metric assertions |
+| Administrative evidence | Policy, skip, run, cancel and repair audit entries | Stale-editor transaction and repair failure log assertions |
+
+An ignored finding stays in the immutable observation at its original severity.
+An unchanged recurrence is quiet; a changed resource identity or worse severity
+is evaluated as a new regression. Display-name changes cannot alter a receipt's
+identity. Failed repair attempts leave the finding open and emit a deduplicated
+repair-failed event; they are attempted once per run, with no retry loop.

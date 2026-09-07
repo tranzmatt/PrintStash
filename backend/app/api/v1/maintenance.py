@@ -137,4 +137,4 @@ def skip_audit(
     _user: User = Depends(require_superuser),
     session: Session = Depends(get_session),
 ) -> AuditPolicyRead:
-    return policy_read(vault_audit_policy.skip_once(session, mode))
+    return policy_read(vault_audit_policy.skip_once(session, mode, actor_id=_user.id))

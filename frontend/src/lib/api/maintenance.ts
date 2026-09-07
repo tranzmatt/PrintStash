@@ -59,7 +59,10 @@ export function saveAuditPolicy(policy: AuditPolicy): Promise<AuditPolicy> {
     deferred_reason: _reason,
     ...payload
   } = policy;
-  return sendJson<AuditPolicy>(`/api/v1/maintenance/audit-policies/${mode}`, "PUT", payload);
+  return sendJson<AuditPolicy>(`/api/v1/maintenance/audit-policies/${mode}`, "PUT", {
+    ...payload,
+    expected_revision: _revision,
+  });
 }
 
 export function skipAuditSlot(mode: VaultAuditMode): Promise<AuditPolicy> {

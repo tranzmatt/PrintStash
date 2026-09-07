@@ -33,6 +33,7 @@ def finding_identity(row: VaultAuditFinding) -> str:
             str(details[key])
             for key in (
                 "resource_id",
+                "ownership_id",
                 "file_id",
                 "model_id",
                 "library_id",
@@ -82,6 +83,7 @@ def record_event(
     summary: dict[str, int],
     *,
     phase: str = "result",
+    regression_rank: int = 3,
 ) -> None:
     assert run.id is not None
     key = f"audit:{run.id}:{phase}:{event_type.value}"
@@ -100,9 +102,98 @@ def record_event(
             summary_json=json.dumps(summary, sort_keys=True),
         )
     )
-    enqueue_storage_event(
-        session, event_type, run_id=run.id, mode=run.mode.value, summary=summary
+    policy = session.get(VaultAuditPolicy, run.mode.value)
+    threshold = policy.notification_threshold if policy else "warning"
+    from datetime import timedelta
+
+    rank = {"off": 4, "critical": 3, "warning": 2, "info": 1}[threshold]
+    regression = event_type == NotificationEventType.STORAGE_REGRESSION
+    eligible = threshold != "off" and (not regression or regression_rank >= rank)
+    # Durable evidence is never rate-limited. Delay deliveries to preserve every
+    # new regression while spacing external sends across policy runs.
+    before_ids = {id(row) for row in session.new}
+    if eligible:
+        categories = sorted(
+            {
+                category(row.code)
+                for row in session.exec(
+                    select(VaultAuditFinding).where(VaultAuditFinding.run_id == run.id)
+                ).all()
+            }
+        )
+        enqueue_storage_event(
+            session,
+            event_type,
+            run_id=run.id,
+            mode=run.mode.value,
+            summary=summary,
+            channel_ids=json.loads(policy.notification_channels_json)
+            if policy
+            else None,
+            duration_s=max(
+                0,
+                (
+                    ensure_utc(run.finished_at or utcnow())
+                    - ensure_utc(run.started_at or run.created_at)
+                ).total_seconds(),
+            ),
+            categories=categories,
+        )
+        from app.db.models import NotificationDelivery
+
+        deliveries = [
+            row
+            for row in session.new
+            if id(row) not in before_ids and isinstance(row, NotificationDelivery)
+        ]
+        if policy and deliveries:
+            due = (
+                max(
+                    utcnow(),
+                    ensure_utc(policy.last_notified_at)
+                    + timedelta(minutes=policy.notification_cooldown_minutes),
+                )
+                if policy.last_notified_at
+                else utcnow()
+            )
+            for delivery in deliveries:
+                delivery.next_retry_at = due
+            policy.last_notified_at = due
+            session.add(policy)
+
+
+def category(code: str) -> str:
+    """Bounded operational categories, never resource identifiers or paths."""
+    prefix = code.split("_", 1)[0]
+    return (
+        prefix
+        if prefix
+        in {
+            "backup",
+            "thumbnail",
+            "metadata",
+            "artifact",
+            "revision",
+            "database",
+            "embedded",
+            "external",
+        }
+        else "other"
     )
+
+
+def record_terminal(session: Session, run: VaultAuditRun) -> None:
+    """Caller persists terminal state and notification evidence atomically."""
+    if run.trigger != "scheduled" or run.result_recorded:
+        return
+    event = {
+        VaultAuditRunState.FAILED: NotificationEventType.STORAGE_AUDIT_FAILED,
+        VaultAuditRunState.CANCELLED: NotificationEventType.STORAGE_AUDIT_CANCELLED,
+    }.get(run.state)
+    if event:
+        record_event(session, run, event, {}, phase="terminal")
+        run.result_recorded = True
+        session.add(run)
 
 
 def record_success(session: Session, run: VaultAuditRun) -> None:
@@ -136,7 +227,20 @@ def record_success(session: Session, run: VaultAuditRun) -> None:
     )
     run.result_recorded = True
     if summary["new"] or summary["worsened"]:
-        record_event(session, run, NotificationEventType.STORAGE_REGRESSION, summary)
+        record_event(
+            session,
+            run,
+            NotificationEventType.STORAGE_REGRESSION,
+            summary,
+            regression_rank=max(
+                (
+                    value
+                    for key, value in snapshot.items()
+                    if key not in previous or value > previous[key]
+                ),
+                default=0,
+            ),
+        )
     if summary["resolved"] or summary["improved"]:
         record_event(session, run, NotificationEventType.STORAGE_RECOVERY, summary)
     policy = session.get(VaultAuditPolicy, run.mode.value)
@@ -163,9 +267,15 @@ def _authoritative_hash(file: File, run: VaultAuditRun, session: Session) -> str
         if run.cancel_requested:
             raise ValueError("audit_cancelled")
         consumed += len(chunk)
+        run.bytes_read += len(chunk)
+        session.add(run)
+        session.commit()
         if run.bytes_per_second:
             delay = consumed / run.bytes_per_second - (time.monotonic() - started)
             while delay > 0:
+                session.refresh(run)
+                if run.cancel_requested:
+                    raise ValueError("audit_cancelled")
                 if run.deadline_at is not None and utcnow() >= ensure_utc(
                     run.deadline_at
                 ):
@@ -288,6 +398,15 @@ def repair_safe_findings(session: Session, run: VaultAuditRun) -> None:
             actor_id=None,
             diff={"action": finding.repair_action, "verified": ok, "run_id": run.id},
         )
+        if not ok:
+            record_event(
+                session,
+                run,
+                NotificationEventType.STORAGE_REPAIR_FAILED,
+                {"failed": 1},
+                phase=f"repair-{finding.id}",
+            )
+            session.commit()
         if ok:
             finding.state = VaultAuditFindingState.RESOLVED
             finding.resolved_at = utcnow()

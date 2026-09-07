@@ -867,19 +867,45 @@ def enqueue_storage_event(
     session: Session,
     event_type: NotificationEventType,
     *,
-    run_id: int,
+    run_id: int | None,
     mode: str,
     summary: dict[str, int],
+    channel_ids: list[int] | None = None,
+    duration_s: float = 0,
+    categories: list[str] | None = None,
 ) -> int:
     """Enqueue a storage-only context; caller owns the event/outbox transaction."""
-    if event_type not in {NotificationEventType.STORAGE_REGRESSION, NotificationEventType.STORAGE_RECOVERY}:
+    if not event_type.value.startswith("storage_"):
         raise ValueError("storage_event_required")
     if not notifications_enabled(session):
         return 0
-    context = {"event": event_type.value, "audit_run_id": run_id, "audit_mode": mode,
-               "timestamp": utcnow().isoformat(),
-               "summary": {key: int(summary.get(key, 0)) for key in ("new", "worsened", "unchanged", "improved", "resolved")}}
-    matching = [row for row in session.exec(select(NotificationChannel).where(NotificationChannel.enabled == True)).all() if _channel_subscribes(row, event_type, None)]  # noqa: E712
+    context = {
+        "event": event_type.value,
+        "audit_run_id": run_id,
+        "audit_mode": mode,
+        "timestamp": utcnow().isoformat(),
+        "duration_s": max(0, duration_s),
+        "categories": categories or [],
+        "maintenance_path": "/settings?tab=maintenance",
+        "summary": {
+            key: int(summary.get(key, 0))
+            for key in ("new", "worsened", "unchanged", "improved", "resolved")
+        },
+    }
+    matching = [
+        row
+        for row in session.exec(
+            select(NotificationChannel).where(NotificationChannel.enabled == True)
+        ).all()
+        if _channel_subscribes(row, event_type, None)
+        and (not channel_ids or row.id in channel_ids)
+    ]  # noqa: E712
     for channel in matching:
-        session.add(NotificationDelivery(channel_id=channel.id, event_type=event_type, context_json=json.dumps(context)))
+        session.add(
+            NotificationDelivery(
+                channel_id=channel.id,
+                event_type=event_type,
+                context_json=json.dumps(context),
+            )
+        )
     return len(matching)

@@ -34,3 +34,35 @@ def test_skipped_calendar_date_advances_to_valid_instant():
     assert window_start(date(2011, 12, 30), "02:30", "Pacific/Apia") == datetime(
         2011, 12, 30, 10, tzinfo=UTC
     )
+
+
+def test_jitter_is_deterministic_and_bounded_by_window():
+    from app.db.models import VaultAuditPolicy
+    from app.modules.administration.vault_audit_policy import slot_jitter
+
+    policy = VaultAuditPolicy(
+        mode="full", revision=7, jitter_seconds=3600, window_minutes=2
+    )
+    assert slot_jitter(policy) == slot_jitter(policy)
+    assert 0 <= slot_jitter(policy) <= 60
+    policy.window_minutes = 1
+    assert slot_jitter(policy) == 0
+
+
+def test_backup_identity_uses_ownership_id_not_display_reference():
+    from app.db.models import VaultAuditFinding, VaultAuditSeverity
+    from app.modules.administration.vault_audit_results import finding_identity
+
+    finding = VaultAuditFinding(
+        run_id=1,
+        code="backup_corrupt",
+        severity=VaultAuditSeverity.CRITICAL,
+        resource_type="backup",
+        resource_identifier="old-display",
+        details_json='{"ownership_id":42}',
+    )
+    identity = finding_identity(finding)
+    finding.resource_identifier = "changed-display"
+    assert finding_identity(finding) == identity
+    finding.details_json = '{"ownership_id":43}'
+    assert finding_identity(finding) != identity

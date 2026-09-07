@@ -48,6 +48,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
   }
   return (
     <form
+      id={`audit-policy-${policy.mode}`}
       aria-label={`${title} ${t("auditSchedule.schedule")}`}
       className="space-y-3 border-t border-border py-4"
       onSubmit={(event) => {
@@ -73,6 +74,80 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
         </label>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.cadence")}
+          <select
+            className="w-full rounded-md border border-input bg-background p-2"
+            value={policy.cadence}
+            onChange={(event) =>
+              setPolicy({
+                ...policy,
+                cadence: event.target.value === "monthly" ? "monthly" : "weekly",
+              })
+            }
+          >
+            <option value="weekly">{t("auditSchedule.weekly")}</option>
+            <option value="monthly">{t("auditSchedule.monthly")}</option>
+          </select>
+        </label>
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.jitter")}
+          <Input
+            type="number"
+            min={0}
+            max={3600}
+            value={policy.jitter_seconds ?? 0}
+            onChange={(event) =>
+              setPolicy({ ...policy, jitter_seconds: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.lateness")}
+          <Input
+            type="number"
+            min={1}
+            max={44640}
+            value={policy.max_lateness_minutes ?? 120}
+            onChange={(event) =>
+              setPolicy({ ...policy, max_lateness_minutes: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.notifications")}
+          <select
+            className="w-full rounded-md border border-input bg-background p-2"
+            value={policy.notification_threshold ?? "warning"}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (
+                value === "off" ||
+                value === "info" ||
+                value === "warning" ||
+                value === "critical"
+              )
+                setPolicy({ ...policy, notification_threshold: value });
+            }}
+          >
+            <option value="off">{t("auditSchedule.notifyOff")}</option>
+            <option value="critical">{t("auditSchedule.notifyCritical")}</option>
+            <option value="warning">{t("auditSchedule.notifyWarning")}</option>
+            <option value="info">{t("auditSchedule.notifyInfo")}</option>
+          </select>
+        </label>
+        <label className="space-y-1 text-sm">
+          {t("auditSchedule.cooldown")}
+          <Input
+            type="number"
+            min={0}
+            max={1440}
+            value={policy.notification_cooldown_minutes ?? 60}
+            onChange={(event) =>
+              setPolicy({ ...policy, notification_cooldown_minutes: Number(event.target.value) })
+            }
+          />
+        </label>
         <label className="space-y-1 text-sm">
           {t("auditSchedule.timezone")}
           <Input
@@ -140,6 +215,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
           />
         </label>
       </div>
+      <p className="text-xs text-muted-foreground">{t("auditSchedule.channelHelp")}</p>
       {policy.mode === "full" && (
         <label className="flex items-start gap-2 text-sm">
           <Checkbox
@@ -275,7 +351,19 @@ export function AuditSchedulePanel() {
             {history.map((run) => (
               <li key={run.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm">
                 <span>
-                  #{run.id} · {run.mode} · {run.state}
+                  #{run.id} · {run.mode} · {run.state} ·{" "}
+                  {run.trigger === "scheduled"
+                    ? t("auditSchedule.scheduled")
+                    : t("auditSchedule.manual")}
+                  {run.trigger === "scheduled" && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <a className="underline" href={`#audit-policy-${run.mode}`}>
+                        {t("auditSchedule.schedule")}
+                      </a>
+                    </>
+                  )}
                 </span>
                 <span className="text-muted-foreground">
                   {shownDate(run.finished_at ?? run.created_at)} · {run.critical_count}{" "}

@@ -3,6 +3,22 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const messages = {
   en: {
+    "auditSchedule.cadence": "Frequency",
+    "auditSchedule.weekly": "Weekly",
+    "auditSchedule.monthly": "Monthly",
+    "auditSchedule.jitter": "Start delay maximum (seconds)",
+    "auditSchedule.lateness": "Overdue after (minutes)",
+    "auditSchedule.notifications": "Issue notification threshold",
+    "auditSchedule.notifyOff": "Off",
+    "auditSchedule.notifyCritical": "Critical only",
+    "auditSchedule.notifyWarning": "Warning and critical",
+    "auditSchedule.notifyInfo": "All severities",
+    "auditSchedule.cooldown": "Minimum alert spacing (minutes)",
+    "auditSchedule.channelHelp":
+      "Delivery uses enabled subscriptions in Notifications. Failed, cancelled, overdue and repair failure alerts follow the same channel settings.",
+    "auditSchedule.scheduled": "Scheduled",
+    "auditSchedule.manual": "Manual",
+
     "auditSchedule.estimatedReads": "Known remote bytes to read (before retries)",
     "auditSchedule.overdue": "Audit overdue",
     "auditSchedule.fullCost":
@@ -757,6 +773,22 @@ const messages = {
     "multipart.notFoundError": "This multipart model or collection no longer exists.",
   },
   es: {
+    "auditSchedule.cadence": "Frecuencia",
+    "auditSchedule.weekly": "Semanal",
+    "auditSchedule.monthly": "Mensual",
+    "auditSchedule.jitter": "Retraso máximo de inicio (segundos)",
+    "auditSchedule.lateness": "Atrasada después de (minutos)",
+    "auditSchedule.notifications": "Umbral de avisos de incidencias",
+    "auditSchedule.notifyOff": "Desactivados",
+    "auditSchedule.notifyCritical": "Solo críticos",
+    "auditSchedule.notifyWarning": "Avisos y críticos",
+    "auditSchedule.notifyInfo": "Todas las severidades",
+    "auditSchedule.cooldown": "Intervalo mínimo entre alertas (minutos)",
+    "auditSchedule.channelHelp":
+      "Los envíos usan las suscripciones activas en Notificaciones. Los avisos de fallo, cancelación, retraso y reparación fallida respetan esos canales.",
+    "auditSchedule.scheduled": "Programada",
+    "auditSchedule.manual": "Manual",
+
     "auditSchedule.estimatedReads": "Bytes remotos conocidos que se leerán (sin reintentos)",
     "auditSchedule.overdue": "Auditoría pendiente",
     "auditSchedule.fullCost":

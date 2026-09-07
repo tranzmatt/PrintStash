@@ -9,7 +9,14 @@ from datetime import datetime
 from app.core.logging import get_logger
 from app.db.session import get_session_factory
 from app.modules.administration.vault_audit import execute_run, request_cancel
-from app.modules.administration.vault_audit_policy import claim_due
+from app.modules.administration.vault_audit_observability import (
+    prune_details,
+    refresh_metrics,
+)
+from app.modules.administration.vault_audit_policy import (
+    claim_due,
+    defer_launch_failure,
+)
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.runtime.maintenance import begin_mutating_operation, end_mutating_operation
 
@@ -38,7 +45,14 @@ def run_due_audit(
                 with get_session_factory().scoped_session() as session:
                     request_cancel(session, run_id)
             execute_run(run_id)
+        with get_session_factory().scoped_session() as session:
+            prune_details(session)
+            refresh_metrics(session)
         return run_id
+    except Exception:
+        with get_session_factory().scoped_session() as session:
+            defer_launch_failure(session, now=now)
+        raise
     finally:
         if admitted:
             end_mutating_operation()
@@ -57,7 +71,7 @@ async def run_audit_scheduler() -> None:
             await task
             raise
         except Exception:
-            logger.exception("scheduled vault audit tick failed")
+            logger.error("scheduled vault audit tick failed")
         await asyncio.sleep(30)
 
 

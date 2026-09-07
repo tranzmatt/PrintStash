@@ -9,6 +9,8 @@ from datetime import UTC, date, datetime, time, timedelta
 from time import sleep
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, col, select
 
@@ -16,6 +18,7 @@ from app.core.config import settings
 from app.core.errors import ErrorKind, OperationError
 from app.core.time import ensure_utc, utcnow
 from app.db.models import (
+    AuditLog,
     RestoreMarker,
     SystemConfig,
     VaultAuditMode,
@@ -93,7 +96,29 @@ def update_policy(
     now: datetime | None = None,
 ) -> VaultAuditPolicy:
     now = ensure_utc(now or utcnow())
+    values = dict(values)
+    expected = values.pop("expected_revision", None)
     policy = session.get(VaultAuditPolicy, mode.value)
+    if policy is not None:
+        expected = policy.revision if expected is None else expected
+        result = session.execute(
+            update(VaultAuditPolicy)
+            .where(
+                col(VaultAuditPolicy.mode) == mode.value,
+                col(VaultAuditPolicy.revision) == expected,
+            )
+            .values(revision=expected + 1)
+            .execution_options(synchronize_session=False)
+        )
+        assert isinstance(result, CursorResult)
+        if result.rowcount != 1:
+            session.rollback()
+            raise OperationError(
+                "audit_policy_revision_conflict", kind=ErrorKind.CONFLICT
+            )
+        session.refresh(policy)
+    elif expected not in (None, 1):
+        raise OperationError("audit_policy_revision_conflict", kind=ErrorKind.CONFLICT)
     if policy is None:
         policy = VaultAuditPolicy(
             mode=mode.value,
@@ -110,8 +135,8 @@ def update_policy(
     old_schedule = tuple(getattr(policy, name) for name in schedule_fields)
     was_enabled = policy.enabled
     for key, value in values.items():
-        if key == "repair_actions":
-            policy.repair_actions_json = json.dumps(value)
+        if key in {"repair_actions", "notification_channels"}:
+            setattr(policy, f"{key}_json", json.dumps(value))
         else:
             setattr(policy, key, value)
     if (
@@ -121,7 +146,8 @@ def update_policy(
     ):
         raise OperationError("full_audit_cost_acknowledgement_required")
     policy.requested_by = actor_id
-    policy.revision += 1
+    if policy not in session:
+        policy.revision += 1
     policy.updated_at = now
     if not policy.enabled:
         policy.next_due_at = None
@@ -132,14 +158,35 @@ def update_policy(
     ):
         policy.next_due_at = next_slot(policy, now)
     policy.deferred_reason = None
+    session.add(
+        AuditLog(
+            action="audit.policy_updated",
+            resource_type="vault_audit_policy",
+            actor_id=actor_id,
+            diff_json=json.dumps(
+                {"mode": mode.value, "revision": policy.revision, "changes": values},
+                default=str,
+            ),
+        )
+    )
     session.add(policy)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise OperationError(
+            "audit_policy_revision_conflict", kind=ErrorKind.CONFLICT
+        ) from exc
     session.refresh(policy)
     return policy
 
 
 def skip_once(
-    session: Session, mode: VaultAuditMode, *, now: datetime | None = None
+    session: Session,
+    mode: VaultAuditMode,
+    *,
+    now: datetime | None = None,
+    actor_id: int | None = None,
 ) -> VaultAuditPolicy:
     policy = session.get(VaultAuditPolicy, mode.value)
     if policy is None or policy.next_due_at is None:
@@ -148,6 +195,15 @@ def skip_once(
         policy, max(ensure_utc(now or utcnow()), ensure_utc(policy.next_due_at))
     )
     policy.deferred_reason = "skipped_once"
+    policy.revision += 1
+    session.add(
+        AuditLog(
+            action="audit.policy_skipped",
+            resource_type="vault_audit_policy",
+            actor_id=actor_id,
+            diff_json=json.dumps({"mode": mode.value, "revision": policy.revision}),
+        )
+    )
     session.add(policy)
     session.commit()
     session.refresh(policy)
@@ -217,6 +273,7 @@ def _admit_once(
         mode=mode,
         active_slot="audit",
         storage_generation=storage_generation(session),
+        planned_bytes=estimated_owned_bytes(session, mode),
     )
     if policy is not None:
         assert policy.next_due_at is not None
@@ -229,11 +286,21 @@ def _admit_once(
         run.repair_actions_json = (
             policy.repair_actions_json if policy.auto_repair else "[]"
         )
+        policy.launch_failures = 0
+        policy.retry_after = None
         policy.last_attempt_at = now
         policy.next_due_at = next_slot(policy, now)
         policy.deferred_reason = None
         session.add(policy)
     session.add(run)
+    session.add(
+        AuditLog(
+            action="audit.run_requested",
+            resource_type="vault_audit_run",
+            actor_id=actor_id,
+            diff_json=json.dumps({"mode": mode.value, "trigger": run.trigger}),
+        )
+    )
     try:
         session.commit()
     except IntegrityError:
@@ -273,8 +340,19 @@ def claim_due(
             or policy.requested_by is None
         ):
             continue
+        from app.modules.administration.vault_audit_observability import record_overdue
+
+        record_overdue(session, policy, now=now)
+        if policy.retry_after is not None and ensure_utc(policy.retry_after) > now:
+            continue
         window = eligible_window(policy, now)
         reason = deferred_reason or ("outside_window" if window is None else None)
+        if (
+            window
+            and not reason
+            and now < window[0] + timedelta(seconds=slot_jitter(policy))
+        ):
+            reason = "jitter"
         if reason:
             policy.deferred_reason = reason
             session.add(policy)
@@ -300,18 +378,32 @@ def claim_due(
 
 def health(session: Session, *, now: datetime | None = None) -> dict:
     now = ensure_utc(now or utcnow())
-    policies = [row for row in list_policies(session) if row.enabled and not row.paused]
+    policies = list_policies(session)
     states = []
     for policy in policies:
         overdue = policy.next_due_at is not None and now > ensure_utc(
             policy.next_due_at
-        ) + timedelta(minutes=policy.window_minutes)
+        ) + timedelta(minutes=policy.max_lateness_minutes)
         if policy.last_success_at is not None:
             overdue = overdue or now > next_slot(
                 policy, policy.last_success_at
-            ) + timedelta(minutes=policy.window_minutes)
+            ) + timedelta(minutes=policy.max_lateness_minutes)
+        overdue = bool(policy.enabled and not policy.paused and overdue)
+        latest = session.exec(
+            select(VaultAuditRun)
+            .where(VaultAuditRun.mode == VaultAuditMode(policy.mode))
+            .order_by(col(VaultAuditRun.id).desc())
+        ).first()
         states.append(
             {
+                "enabled": policy.enabled,
+                "paused": policy.paused,
+                "last_success_age_seconds": max(
+                    0, (now - ensure_utc(policy.last_success_at)).total_seconds()
+                )
+                if policy.last_success_at
+                else None,
+                "latest_result": latest.state.value if latest else None,
                 "mode": policy.mode,
                 "overdue": overdue,
                 "last_success_at": policy.last_success_at,
@@ -330,6 +422,46 @@ def estimated_remote_bytes(session: Session, mode: VaultAuditMode) -> int:
         select(OwnedStorageObject).where(
             OwnedStorageObject.state == StorageObjectState.COMMITTED,
             OwnedStorageObject.backend != "local",
+        )
+    ).all()
+    return sum(
+        row.size_bytes or 0
+        for row in rows
+        if mode == VaultAuditMode.FULL or row.object_kind.startswith("thumbnail")
+    )
+
+
+def slot_jitter(policy: VaultAuditPolicy) -> int:
+    """Stable per due slot and revision, bounded to leave at least one minute."""
+    bound = min(policy.jitter_seconds, max(0, policy.window_minutes * 60 - 60))
+    key = f"{policy.mode}:{policy.revision}:{policy.next_due_at}"
+    return int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) % (bound + 1)
+
+
+def defer_launch_failure(session: Session, *, now: datetime | None = None) -> None:
+    """Bound transient launch retries; preserve due slots and overdue evidence."""
+    now = ensure_utc(now or utcnow())
+    for policy in session.exec(
+        select(VaultAuditPolicy).where(col(VaultAuditPolicy.enabled).is_(True))
+    ).all():
+        if policy.next_due_at is None or ensure_utc(policy.next_due_at) > now:
+            continue
+        policy.launch_failures = min(6, policy.launch_failures + 1)
+        policy.retry_after = now + timedelta(
+            seconds=min(1800, 30 * 2**policy.launch_failures) + slot_jitter(policy)
+        )
+        policy.deferred_reason = "launch_retry"
+        session.add(policy)
+    session.commit()
+
+
+def estimated_owned_bytes(session: Session, mode: VaultAuditMode) -> int:
+    """Committed physical objects only; excludes externally referenced libraries."""
+    from app.db.models import OwnedStorageObject, StorageObjectState
+
+    rows = session.exec(
+        select(OwnedStorageObject).where(
+            OwnedStorageObject.state == StorageObjectState.COMMITTED
         )
     ).all()
     return sum(

@@ -124,13 +124,29 @@ class TestVaultAudit:
     ],
 )
 async def test_scheduled_audit_records_verified_recovery(
-    api, tmp_path, e2e_db, repair_action, code
+    api, tmp_path, e2e_db, fakes, repair_action, code
 ):
     from app.core.time import utcnow
     from app.db.models import Metadata, VaultAuditEvent, VaultAuditPolicy
     from app.runtime.audit_scheduler import run_due_audit
 
     headers = await _setup_and_login(api, tmp_path)
+    from app.modules.notifications import notifications
+
+    assert (
+        await api.put("/api/v1/notifications", headers=headers, json={"enabled": True})
+    ).status_code == 200
+    channel = await api.post(
+        "/api/v1/notifications/channels",
+        headers=headers,
+        json={
+            "name": "audit-e2e",
+            "target": "webhook",
+            "config": {"url": fakes.webhook_url},
+            "events": ["storage_regression", "storage_recovery"],
+        },
+    )
+    assert channel.status_code in (200, 201), channel.text
     upload = await api.post(
         "/api/v1/ingest/model",
         files={"file": ("scheduled.stl", _STL, "model/stl")},
@@ -154,7 +170,9 @@ async def test_scheduled_audit_records_verified_recovery(
         json={
             "enabled": True,
             "start_time": now.strftime("%H:%M"),
-            "auto_repair": True,
+            "auto_repair": False,
+            "notification_cooldown_minutes": 0,
+            "notification_threshold": "info",
             "repair_actions": [repair_action],
         },
     )
@@ -165,6 +183,33 @@ async def test_scheduled_audit_records_verified_recovery(
     e2e_db.commit()
     run_id = await asyncio.to_thread(run_due_audit, now=now)
     assert run_id is not None
+    assert await notifications.dispatch_due() == 1
+    assert fakes.recorder.for_target("webhook")[0].json["event"] == "storage_regression"
+    # The unchanged next successful run is quiet, then explicitly enable repair.
+    e2e_db.expire_all()
+    policy = e2e_db.get(VaultAuditPolicy, "quick")
+    policy.next_due_at = utcnow()
+    e2e_db.add(policy)
+    e2e_db.commit()
+    unchanged_id = await asyncio.to_thread(run_due_audit, now=utcnow())
+    assert unchanged_id != run_id
+    assert await notifications.dispatch_due() == 0
+    enabled = await api.put(
+        "/api/v1/maintenance/audit-policies/quick",
+        headers=headers,
+        json={
+            "expected_revision": policy.revision,
+            "auto_repair": True,
+            "repair_actions": [repair_action],
+        },
+    )
+    assert enabled.status_code == 200, enabled.text
+    e2e_db.expire_all()
+    policy = e2e_db.get(VaultAuditPolicy, "quick")
+    policy.next_due_at = utcnow()
+    e2e_db.add(policy)
+    e2e_db.commit()
+    run_id = await asyncio.to_thread(run_due_audit, now=utcnow())
     audited = await api.get(f"/api/v1/maintenance/audits/{run_id}", headers=headers)
     assert audited.json()["state"] == "completed", audited.text
     finding = next(row for row in audited.json()["findings"] if row["code"] == code)
@@ -172,11 +217,23 @@ async def test_scheduled_audit_records_verified_recovery(
     events = e2e_db.exec(
         select(VaultAuditEvent).where(VaultAuditEvent.run_id == run_id)
     ).all()
-    assert {row.event_type for row in events} == {
+    assert {row.event_type for row in events} == {"storage_recovery"}
+    assert e2e_db.exec(select(Metadata)).first() is not None
+    assert await notifications.dispatch_due() == 1
+    received = fakes.recorder.for_target("webhook")
+    assert {row.json["event"] for row in received} == {
         "storage_regression",
         "storage_recovery",
     }
-    assert e2e_db.exec(select(Metadata)).first() is not None
+    for row in received:
+        data = row.json["data"]
+        assert data["maintenance_path"] == "/settings?tab=maintenance"
+        assert data["duration_s"] >= 0
+        assert "scheduled.stl" not in str(row.json)
+    history = await api.get("/api/v1/maintenance/audits", headers=headers)
+    assert any(
+        row["id"] == run_id and row["trigger"] == "scheduled" for row in history.json()
+    )
 
 
 @pytest.mark.asyncio

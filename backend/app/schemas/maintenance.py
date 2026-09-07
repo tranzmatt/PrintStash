@@ -52,5 +52,6 @@ class VaultAuditRunRead(BaseModel):
     scheduled_for: datetime | None = None
     deadline_at: datetime | None = None
     baseline_run_id: int | None = None
+    planned_bytes: int = 0
     bytes_read: int = 0
     findings: list[VaultAuditFindingRead] = Field(default_factory=list)
