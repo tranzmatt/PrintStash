@@ -15,6 +15,8 @@
 
 ### Added
 
+- Storage insights with logical and unique-object inventory, shared-volume capacity reservations, dated growth evidence, and explicit audited expired-staging cleanup. Heavy operations now preserve configurable disk headroom before allocation.
+
 - Successful browser-extension CI jobs provide the validated Chrome Web Store
   ZIP as a direct download, retained for 30 days.
 

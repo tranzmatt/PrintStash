@@ -228,6 +228,8 @@ def _merge_config_overlay(config: SystemConfig) -> None:
             _overlay["s3_root"] = config.s3_root or LEGACY_S3_ROOT
     if config.backup_retention_days is not None:
         _overlay["backup_retention_days"] = config.backup_retention_days
+    if config.storage_min_free_bytes is not None:
+        _overlay["storage_min_free_bytes"] = config.storage_min_free_bytes
     if config.trash_retention_days is not None:
         _overlay["trash_retention_days"] = config.trash_retention_days
     if config.model_thumbnail_width is not None:
@@ -733,6 +735,7 @@ def update_config(
     s3_access_key: Optional[str] = None,
     s3_secret_key: Optional[str] = None,
     backup_retention_days: Optional[int] = None,
+    storage_min_free_bytes: Optional[int] = None,
     trash_retention_days: Optional[int] = None,
     backup_s3_bucket: Optional[str] = None,
     backup_s3_endpoint_url: Optional[str] = None,
@@ -810,6 +813,7 @@ def update_config(
         config.s3_root = str(settings.s3_root)
         pending_overlay["s3_root"] = config.s3_root
     _apply_int("backup_retention_days", backup_retention_days)
+    _apply_int("storage_min_free_bytes", storage_min_free_bytes)
     _apply_int("trash_retention_days", trash_retention_days)
     _apply_int("model_thumbnail_width", model_thumbnail_width)
     _apply_str("backup_s3_bucket", backup_s3_bucket)
@@ -1085,6 +1089,7 @@ def get_effective_config(session: Session) -> dict:
         "automatic_local_backup_enabled": (
             config.automatic_local_backup_enabled if config else True
         ),
+        "storage_min_free_bytes": int(settings.storage_min_free_bytes),
         "trash_retention_days": int(settings.trash_retention_days),
         "model_thumbnail_width": int(settings.model_thumbnail_width),
         "backup_s3_bucket": str(settings.backup_s3_bucket),

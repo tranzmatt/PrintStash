@@ -887,6 +887,37 @@ def create_browser_upload(
     filename: str,
     stream: BinaryIO,
 ) -> InboxItem:
+    from app.modules.storage.capacity import CapacityManager, CapacityResource
+
+    with CapacityManager(get_session_factory()).hold(
+        f"browser-upload:{uuid.uuid4().hex}",
+        [
+            CapacityResource.for_path(
+                settings.incoming_dir, settings.max_upload_bytes, role="browser upload"
+            )
+        ],
+    ):
+        return _create_browser_upload(
+            session,
+            user,
+            source_url=source_url,
+            title=title,
+            capture_source=capture_source,
+            filename=filename,
+            stream=stream,
+        )
+
+
+def _create_browser_upload(
+    session: Session,
+    user: User,
+    *,
+    source_url: str,
+    title: str | None,
+    capture_source: str | None,
+    filename: str,
+    stream: BinaryIO,
+) -> InboxItem:
     """Durably stage browser-selected bytes without reusing browser credentials.
 
     The source URL is metadata only: the server deliberately never resolves or

@@ -119,6 +119,7 @@ class SystemConfig(SQLModel, table=True):
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="1"),
     )
+    storage_min_free_bytes: Optional[int] = Field(default=None)
     trash_retention_days: Optional[int] = Field(default=None)
 
     # Backup S3 destination (separate from vault S3 — allows local vault + cloud backups)

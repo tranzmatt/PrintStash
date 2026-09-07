@@ -9,6 +9,8 @@ last allocation. Actual free space is re-probed under the admission lock.
 from __future__ import annotations
 
 import json
+import os
+import socket
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import timedelta
@@ -18,7 +20,7 @@ from typing import Callable, Iterator, Sequence
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.core.config import settings
 from app.core.errors import ErrorKind, OperationError
@@ -96,6 +98,42 @@ class CapacityResource:
             ) from exc
 
 
+def _process_identity() -> dict[str, str | int]:
+    try:
+        return {
+            "host": Path("/etc/machine-id").read_text().strip()
+            + ":"
+            + socket.gethostname(),
+            "boot": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+            "pid": os.getpid(),
+            "start": Path(f"/proc/{os.getpid()}/stat")
+            .read_text()
+            .rsplit(")", 1)[1]
+            .split()[19],
+        }
+    except (OSError, IndexError):
+        return {}
+
+
+def _owner_stopped(payload: str) -> bool:
+    identity = json.loads(payload)
+    current = _process_identity()
+    if not identity or identity.get("host") != current.get("host"):
+        return False
+    if identity.get("boot") != current.get("boot"):
+        return True
+    pid = identity.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        start = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+        return start != identity.get("start")
+    except FileNotFoundError:
+        return True
+    except (OSError, IndexError):
+        return False
+
+
 def _decode(payload: str) -> list[CapacityResource]:
     return [CapacityResource(**item) for item in json.loads(payload)]
 
@@ -137,10 +175,15 @@ class CapacityManager:
             raise ValueError("negative headroom")
 
     @staticmethod
-    def _lock(session: Session) -> None:
+    def serialize_admission(session: Session) -> None:
+        """Serialize admission in a caller transaction; caller owns its outcome.
+
+        Do not call reserve while holding this lock in another session. Owners
+        can atomically check their own durable quotas under this boundary.
+        """
         # INSERT conflict handling also serializes the first concurrent callers;
         # UPDATE keeps the lock through commit on SQLite and PostgreSQL alike.
-        table = CapacityLock.__table__
+        table = getattr(CapacityLock, "__table__")  # noqa: B009
         insert = (
             sqlite_insert if session.get_bind().dialect.name == "sqlite" else pg_insert
         )
@@ -151,8 +194,8 @@ class CapacityManager:
         )
         session.execute(
             update(CapacityLock)
-            .where(CapacityLock.id == 1)
-            .values(revision=CapacityLock.revision + 1)
+            .where(col(CapacityLock.id) == 1)
+            .values(revision=col(CapacityLock.revision) + 1)
         )
 
     def reserve(
@@ -183,7 +226,8 @@ class CapacityManager:
             raise ValueError("invalid capacity reservation")
         payload = json.dumps([asdict(item) for item in resources], sort_keys=True)
         with self.session_factory.scoped_session() as session:
-            self._lock(session)
+            self.serialize_admission(session)
+            self._reconcile_stopped(session)
             existing = session.get(CapacityReservation, operation_id)
             if renew and existing is None:
                 raise OperationError(
@@ -230,7 +274,10 @@ class CapacityManager:
                         "storage_capacity_exceeded", kind=ErrorKind.CAPACITY
                     )
             row = existing or CapacityReservation(
-                operation_id=operation_id, resources_json=payload, expires_at=utcnow()
+                operation_id=operation_id,
+                resources_json=payload,
+                expires_at=utcnow(),
+                owner_identity_json=json.dumps(_process_identity()),
             )
             row.resources_json = payload
             row.expires_at = utcnow() + timedelta(seconds=ttl_seconds)
@@ -256,7 +303,7 @@ class CapacityManager:
 
     def release(self, operation_id: str) -> None:
         with self.session_factory.scoped_session() as session:
-            self._lock(session)
+            self.serialize_admission(session)
             row = session.get(CapacityReservation, operation_id)
             if row is not None:
                 session.delete(row)
@@ -272,11 +319,30 @@ class CapacityManager:
                     )
             return totals
 
+    @staticmethod
+    def _reconcile_stopped(session: Session) -> int:
+        released = 0
+        for row in session.exec(select(CapacityReservation)):
+            if ensure_utc(row.expires_at) <= utcnow() and _owner_stopped(
+                row.owner_identity_json
+            ):
+                session.delete(row)
+                released += 1
+        session.flush()
+        return released
+
+    def reconcile_stopped_processes(self) -> int:
+        with self.session_factory.scoped_session() as session:
+            self.serialize_admission(session)
+            released = self._reconcile_stopped(session)
+            session.commit()
+            return released
+
     def reconcile(self, is_operation_active: Callable[[str], bool]) -> int:
         """Release only expired claims whose owner proves no further writes."""
         released = 0
         with self.session_factory.scoped_session() as session:
-            self._lock(session)
+            self.serialize_admission(session)
             for row in session.exec(select(CapacityReservation)):
                 if ensure_utc(row.expires_at) <= utcnow() and not is_operation_active(
                     row.operation_id

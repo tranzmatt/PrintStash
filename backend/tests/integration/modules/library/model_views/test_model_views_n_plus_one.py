@@ -169,7 +169,7 @@ class TestVaultStats:
         monkeypatch.setattr(
             models_statistics,
             "_cached_storage_usage",
-            lambda: {"backend": "local", "ok": True},
+            lambda session: {"backend": "local", "ok": True},
         )
 
         count = _count_queries(

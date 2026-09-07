@@ -456,6 +456,21 @@ def persist_artifact(
             filename=original_filename,
         )
     )
+    from app.modules.storage.capacity import CapacityManager, CapacityResource
+    from app.modules.storage.capacity_estimates import vault_allocation
+
+    reservation = None
+    if move_blob:
+        allocation = (
+            CapacityResource.for_path(
+                Path(dest_key), staged_path.stat().st_size, role="external writeback"
+            )
+            if is_external
+            else vault_allocation(staged_path.stat().st_size)
+        )
+        reservation = CapacityManager(get_session_factory()).reserve(
+            f"artifact:{model_id}:{version}", [allocation]
+        )
     blob_receipt = None
     commit_started = False
     commit_resolved = False
@@ -626,6 +641,10 @@ def persist_artifact(
             if blob_receipt is not None and not is_external:
                 backend.rollback_create(blob_receipt)
             raise
+
+    finally:
+        if reservation is not None:
+            reservation.release()
 
     # A successfully resolved commit is terminal for this call. The detached
     # row is returned and thumbnail work is left to the derivative reconciler;
