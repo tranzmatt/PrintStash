@@ -17,6 +17,8 @@
 
 - Optional scheduled Quick and Full Vault audits with maintenance windows, safe regression and recovery alerts, history, and verified opt-in derived-data repair.
 
+- Storage insights with logical and unique-object inventory, shared-volume capacity reservations, dated growth evidence, and explicit audited expired-staging cleanup. Heavy operations now preserve configurable disk headroom before allocation.
+
 - Successful browser-extension CI jobs provide the validated Chrome Web Store
   ZIP as a direct download, retained for 30 days.
 

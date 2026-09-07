@@ -114,3 +114,72 @@ class TestCapacityManager:
         manager = CapacityManager(get_session_factory(), headroom_bytes=0)
         assert manager.reconcile(lambda operation_id: False) == 0
         assert manager.reserved_bytes() == {"quota:test": 10}
+
+    def test_recovers_dead_process_reservation(
+        self, db_session, make_capacity_reservation
+    ):
+        import json
+
+        from app.modules.storage.capacity import _process_identity
+
+        identity = _process_identity()
+        identity["pid"] = 2147483647
+        make_capacity_reservation(
+            expired=True, owner_identity_json=json.dumps(identity)
+        )
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        assert manager.reconcile_stopped_processes() == 1
+        assert manager.reserved_bytes() == {}
+
+    def test_retains_live_process_reservation(
+        self, db_session, make_capacity_reservation
+    ):
+        import json
+
+        from app.modules.storage.capacity import _process_identity
+
+        make_capacity_reservation(
+            expired=True, owner_identity_json=json.dumps(_process_identity())
+        )
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        assert manager.reconcile_stopped_processes() == 0
+        assert manager.reserved_bytes() == {"quota:test": 10}
+
+    def test_retains_unknown_process_identity(
+        self, db_session, make_capacity_reservation
+    ):
+        make_capacity_reservation(expired=True)
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        assert manager.reconcile_stopped_processes() == 0
+        assert manager.reserved_bytes() == {"quota:test": 10}
+
+    def test_refuses_renewal_after_release(self, db_session):
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        handle = manager.reserve(
+            "lost", [CapacityResource.for_quota("one", 10, 100, role="test")]
+        )
+        handle.release()
+        with pytest.raises(OperationError, match="capacity_reservation_lost"):
+            handle.renew()
+
+    def test_rejects_invalid_operation_identity(self, db_session):
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        with pytest.raises(ValueError, match="invalid capacity reservation"):
+            manager.reserve(
+                "", [CapacityResource.for_quota("one", 10, 100, role="test")]
+            )
+
+    def test_fails_closed_when_volume_probe_is_unavailable(
+        self, db_session, tmp_path, monkeypatch
+    ):
+        import os
+
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        resource = CapacityResource.for_path(tmp_path, 10, role="staging")
+
+        def unavailable(path):
+            raise OSError("unavailable")
+
+        monkeypatch.setattr(os, "statvfs", unavailable)
+        with pytest.raises(OperationError, match="storage_capacity_unavailable"):
+            manager.reserve("probe", [resource])

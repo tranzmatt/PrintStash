@@ -109,13 +109,20 @@ def _stage_upload(upload: UploadFile, suffix: str) -> tuple[Path, int, str]:
     """Stream an UploadFile into the staging dir; reject if it exceeds the limit."""
     staged = settings.incoming_dir / f"{uuid.uuid4().hex}{suffix}"
     digest = hashlib.sha256()
+    from app.modules.storage.capacity import CapacityManager, CapacityResource
+
+    estimate = upload.size if upload.size is not None else settings.max_upload_bytes
     try:
-        size = storage.stream_to_path(
-            upload.file,
-            staged,
-            max_bytes=settings.max_upload_bytes,
-            digest=digest,
-        )
+        with CapacityManager(get_session_factory()).hold(
+            f"upload:{staged.name}",
+            [CapacityResource.for_path(staged.parent, estimate, role="upload staging")],
+        ):
+            size = storage.stream_to_path(
+                upload.file,
+                staged,
+                max_bytes=settings.max_upload_bytes,
+                digest=digest,
+            )
     except storage.UploadTooLarge as exc:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,

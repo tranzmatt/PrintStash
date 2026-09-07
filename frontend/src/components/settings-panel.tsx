@@ -50,6 +50,7 @@ import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "@/lib/navigation";
 import { CURRENCY_OPTIONS } from "@/lib/currency";
 import { ExternalLibrariesPanel } from "@/components/external-libraries-panel";
+import { StorageInventoryPanel } from "@/components/storage-inventory-panel";
 import { StorageConfigCard } from "@/components/storage-config-card";
 import { RemoteStorageConnections } from "@/components/remote-storage-connections";
 import { MakerWorldConnectCard } from "@/components/makerworld-connect-card";
@@ -2592,6 +2593,7 @@ export function SettingsPanel() {
             {activeSection === "storage" && (
               <div className="space-y-6 animate-panel-in">
                 <StorageConfigCard storageHealth={storageHealth} />
+                {user?.is_superuser && <StorageInventoryPanel />}
               </div>
             )}
 

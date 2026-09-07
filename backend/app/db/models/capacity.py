@@ -20,6 +20,9 @@ class CapacityReservation(SQLModel, table=True):
     __tablename__ = "capacity_reservations"
     operation_id: str = Field(primary_key=True, max_length=200)
     resources_json: str = Field(sa_column=Column(Text, nullable=False))
+    owner_identity_json: str = Field(
+        default="{}", sa_column=Column(Text, nullable=False, server_default="{}")
+    )
     expires_at: datetime = Field(index=True)
     created_at: datetime = Field(default_factory=utcnow)
 

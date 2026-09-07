@@ -93,3 +93,5 @@ persistence, health version, routes free of uncaught errors).
 model name so the backend's content-hash dedupe doesn't collapse separate
 uploads. `helpers.ts` also exposes `authBundleFor`/`authedContext` to drive a
 second browser as a non-admin user.
+
+Storage insights: reads real capacity evidence, persists a measurement, and confirms receipt-verified expired staging cleanup.

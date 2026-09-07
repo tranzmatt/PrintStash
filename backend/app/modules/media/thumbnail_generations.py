@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
+from pathlib import Path
 from typing import Callable, Protocol, TypeVar
 
 from printstash_core.mesh.preview_profile import PREVIEW_PROFILE
@@ -16,6 +18,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, or_, select
 
 from app.core.config import settings
+from app.core.errors import OperationError
 from app.core.logging import get_logger
 from app.core.time import ensure_utc, utcnow
 from app.db.models import (
@@ -25,6 +28,7 @@ from app.db.models import (
     ThumbnailGenerationState,
     ThumbnailRenderSlot,
 )
+from app.db.session import get_session_factory
 from app.modules.media import thumbnail
 from app.modules.media.thumbnail_engine import (
     ThumbnailEngine,
@@ -34,6 +38,7 @@ from app.modules.media.thumbnail_engine import (
     ThumbnailStrategy,
 )
 from app.modules.storage.artifact_content import ArtifactContentError, resolve
+from app.modules.storage.capacity import CapacityManager, CapacityResource
 from app.modules.storage.storage_backend.contracts import (
     StorageBackend,
     StorageCollisionError,
@@ -494,69 +499,95 @@ def ensure_thumbnail(
         return ThumbnailEnsureResult(ThumbnailEnsureOutcome.COALESCED, generation.id)
 
     try:
-        with resolve(file_row, backend=backend).materialize() as source:
-            rendered = (engine or ThumbnailEngine()).generate(
-                ThumbnailRequest(
-                    path=source,
-                    file_type=file_row.file_type.value,
-                    include_geometry=False,
-                    reason="repair",
-                    output_format="WEBP",
-                )
-            )
-    except ArtifactContentError:
-        return _mark_failure(
-            session,
-            generation,
-            ThumbnailFailureReason.INVALID_SOURCE.value,
-            slot_id=slot.id,
-            token=token,
+        capacity_claim = CapacityManager(get_session_factory()).reserve(
+            f"thumbnail:{generation.id}:{token}",
+            [
+                CapacityResource.for_path(
+                    Path(tempfile.gettempdir()),
+                    file_row.size_bytes * 3 + 16 * 1024**2,
+                    role="thumbnail rendering",
+                ),
+                CapacityResource.for_path(
+                    settings.thumb_dir, 16 * 1024**2, role="thumbnail output"
+                ),
+            ],
         )
-    if rendered.image is None:
-        return _mark_failure(
-            session,
-            generation,
-            (
-                rendered.failure_reason or ThumbnailFailureReason.RENDERER_NO_OUTPUT
-            ).value,
-            slot_id=slot.id,
-            token=token,
-        )
-    try:
-        encoded = thumbnail.to_webp(rendered.image)
-    except ValueError:
-        return _mark_failure(
-            session,
-            generation,
-            ThumbnailFailureReason.INVALID_SOURCE.value,
-            slot_id=slot.id,
-            token=token,
-        )
-    try:
-        return _publish_encoded(
-            session,
-            backend,
-            generation,
-            file_row,
-            encoded,
-            rendered,
-            promote=promote,
-            slot_id=slot.id,
-            token=token,
-        )
-    except Exception:  # noqa: BLE001 - derivative failure is persisted, not fatal
-        logger.exception(
-            "thumbnail generation publication failed",
-            extra={"file_id": file_row.id},
-        )
-        session.rollback()
-        return _mark_failure(
+    except OperationError:
+        _mark_failure(
             session,
             generation,
             ThumbnailFailureReason.STORAGE.value,
             slot_id=slot.id,
             token=token,
         )
+        raise
+    try:
+        try:
+            with resolve(file_row, backend=backend).materialize() as source:
+                rendered = (engine or ThumbnailEngine()).generate(
+                    ThumbnailRequest(
+                        path=source,
+                        file_type=file_row.file_type.value,
+                        include_geometry=False,
+                        reason="repair",
+                        output_format="WEBP",
+                    )
+                )
+        except ArtifactContentError:
+            return _mark_failure(
+                session,
+                generation,
+                ThumbnailFailureReason.INVALID_SOURCE.value,
+                slot_id=slot.id,
+                token=token,
+            )
+        if rendered.image is None:
+            return _mark_failure(
+                session,
+                generation,
+                (
+                    rendered.failure_reason or ThumbnailFailureReason.RENDERER_NO_OUTPUT
+                ).value,
+                slot_id=slot.id,
+                token=token,
+            )
+        try:
+            encoded = thumbnail.to_webp(rendered.image)
+        except ValueError:
+            return _mark_failure(
+                session,
+                generation,
+                ThumbnailFailureReason.INVALID_SOURCE.value,
+                slot_id=slot.id,
+                token=token,
+            )
+        try:
+            return _publish_encoded(
+                session,
+                backend,
+                generation,
+                file_row,
+                encoded,
+                rendered,
+                promote=promote,
+                slot_id=slot.id,
+                token=token,
+            )
+        except Exception:  # noqa: BLE001 - derivative failure is persisted, not fatal
+            logger.exception(
+                "thumbnail generation publication failed",
+                extra={"file_id": file_row.id},
+            )
+            session.rollback()
+            return _mark_failure(
+                session,
+                generation,
+                ThumbnailFailureReason.STORAGE.value,
+                slot_id=slot.id,
+                token=token,
+            )
+    finally:
+        capacity_claim.release()
 
 
 def publish_precomputed_thumbnail(

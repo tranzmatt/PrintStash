@@ -27,6 +27,7 @@ import app.modules.backups.backup.restore as backup_restore
 import app.modules.backups.backup.snapshot as backup_snapshot
 import app.modules.backups.backup.verification as backup_verification
 import app.runtime.maintenance as backup_maintenance
+from app.core.errors import OperationError
 from app.core.logging import get_logger
 from app.core.security import require_superuser
 from app.modules.backups.backup_capabilities import backup_operations
@@ -414,7 +415,9 @@ def download_backup(
         archive_path = (
             backup_catalogue.get_backup_archive_path(backup_id)
             if source_ref is None
-            else backup_catalogue.get_backup_archive_path(backup_id, source_ref=source_ref)
+            else backup_catalogue.get_backup_archive_path(
+                backup_id, source_ref=source_ref
+            )
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="backup_not_found") from exc
@@ -495,6 +498,8 @@ def restore_backup(backup_id: str, source_ref: str | None = None) -> dict:
         ) from exc
     except BackupIdentityConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OperationError:
+        raise
     except Exception as exc:
         logger.exception("restore %s failed", backup_id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

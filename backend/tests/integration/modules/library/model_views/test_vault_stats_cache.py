@@ -1,108 +1,36 @@
-"""``vault_stats`` must not walk the storage tree on every dashboard load.
+"""Dashboard usage uses database evidence without enumerating storage."""
 
-The row counts are SQL aggregates and cheap. ``backend.usage()`` is not: locally
-it walks every file under the data dir, and on S3 it lists the bucket.
-"""
-
-from __future__ import annotations
-
-from pathlib import Path
-
-import pytest
-from sqlmodel import Session
-
-import app.modules.library.model_views.statistics as models_statistics
-from app.core.config import _overlay
-from app.db.models import User
-from tests.factories import build_user
-
-
-@pytest.fixture(autouse=True)
-def _clear_cache(tmp_path: Path):
-    models_statistics._usage_cache.clear()
-    _overlay["storage_backend"] = "local"
-    _overlay["data_dir"] = tmp_path / "files"
-    _overlay["thumb_dir"] = tmp_path / "thumbs"
-    (tmp_path / "files").mkdir()
-    (tmp_path / "thumbs").mkdir()
-    yield
-    models_statistics._usage_cache.clear()
-    for key in ("storage_backend", "data_dir", "thumb_dir"):
-        _overlay.pop(key, None)
-
-
-@pytest.fixture
-def admin(db_session: Session) -> User:
-    user = build_user(
-        db_session, username="dash", password="Password123", active=True, superuser=True
-    )
-    return user
-
-
-class _CountingBackend:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def usage(self, prefix: str = "") -> dict:
-        self.calls += 1
-        return {
-            "backend": "local",
-            "ok": True,
-            "total_size_bytes": 1,
-            "object_count": 1,
-        }
+from app.modules.library.model_views import statistics
+from app.modules.storage.storage_backend.runtime import get_backend
 
 
 class TestVaultStats:
-    def test_storage_usage_is_computed_once_per_window(
-        self, db_session: Session, admin: User, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        backend = _CountingBackend()
-        monkeypatch.setattr(models_statistics, "get_backend", lambda: backend)
+    def test_never_enumerates_storage(self, db_session, make_user, monkeypatch):
+        backend = get_backend()
 
-        models_statistics.vault_stats(db_session, admin)
-        models_statistics.vault_stats(db_session, admin)
-        models_statistics.vault_stats(db_session, admin)
+        def forbidden(*args, **kwargs):
+            raise AssertionError("dashboard attempted remote enumeration")
 
-        assert backend.calls == 1, "storage was walked on every dashboard load"
+        monkeypatch.setattr(backend, "usage", forbidden)
+        result = statistics.vault_stats(db_session, make_user(superuser=True))
+        assert result.storage.ok is True
 
-    def test_cache_expires_after_the_ttl(
-        self, db_session: Session, admin: User, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        backend = _CountingBackend()
-        monkeypatch.setattr(models_statistics, "get_backend", lambda: backend)
+    def test_reports_recorded_usage(
+        self, db_session, make_user, make_owned_storage_object
+    ):
+        statistics._usage_cache.clear()
+        make_owned_storage_object(size_bytes=23)
+        result = statistics.vault_stats(db_session, make_user(superuser=True))
+        assert result.storage.total_size_bytes == 23
 
-        clock = {"now": 1000.0}
-        monkeypatch.setattr(models_statistics, "monotonic", lambda: clock["now"])
-
-        models_statistics.vault_stats(db_session, admin)
-        clock["now"] += models_statistics._USAGE_TTL_S + 1
-        models_statistics.vault_stats(db_session, admin)
-
-        assert backend.calls == 2
-
-    def test_failures_are_not_cached(
-        self, db_session: Session, admin: User, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A transient S3 error must not pin an error state for the whole window."""
-        calls = {"n": 0}
-
-        class _FlakyBackend:
-            def usage(self, prefix: str = "") -> dict:
-                calls["n"] += 1
-                if calls["n"] == 1:
-                    raise RuntimeError("s3 down")
-                return {
-                    "backend": "s3",
-                    "ok": True,
-                    "total_size_bytes": 5,
-                    "object_count": 2,
-                }
-
-        monkeypatch.setattr(models_statistics, "get_backend", lambda: _FlakyBackend())
-
-        first = models_statistics.vault_stats(db_session, admin)
-        assert first.storage.ok is False
-
-        second = models_statistics.vault_stats(db_session, admin)
-        assert second.storage.ok is True, "an error response was served from the cache"
+    def test_refreshes_evidence_after_ttl(
+        self, db_session, make_user, make_owned_storage_object, monkeypatch
+    ):
+        statistics._usage_cache.clear()
+        clock = [1000.0]
+        monkeypatch.setattr(statistics, "monotonic", lambda: clock[0])
+        user = make_user(superuser=True)
+        assert statistics.vault_stats(db_session, user).storage.total_size_bytes == 0
+        make_owned_storage_object(size_bytes=24)
+        clock[0] += statistics._USAGE_TTL_S + 1
+        assert statistics.vault_stats(db_session, user).storage.total_size_bytes == 24

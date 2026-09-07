@@ -4,6 +4,40 @@ import { Children, cloneElement, isValidElement, useEffect, useRef, type ReactNo
 import { useI18n, useOptionalI18n, type Locale } from "@/lib/i18n";
 
 const ES_PHRASES: ReadonlyArray<readonly [string, string]> = [
+  ["Storage insights", "Información de almacenamiento"],
+  [
+    "Recorded usage, shared disk headroom, and growth history.",
+    "Uso registrado, espacio libre compartido e historial de crecimiento.",
+  ],
+  ["Refresh measurement", "Actualizar medición"],
+  ["Loading storage insights…", "Cargando información de almacenamiento…"],
+  [
+    "Storage insights could not be loaded. Retry the measurement.",
+    "No se pudo cargar la información de almacenamiento. Vuelve a intentar la medición.",
+  ],
+  ["Logical references", "Referencias lógicas"],
+  ["Unique owned objects", "Objetos propios únicos"],
+  ["External references", "Referencias externas"],
+  ["Temporary staging", "Archivos temporales"],
+  ["Capacity unknown", "Capacidad desconocida"],
+  ["Capacity available", "Capacidad disponible"],
+  ["New allocations blocked", "Nuevas asignaciones bloqueadas"],
+  ["Usage by category", "Uso por categoría"],
+  ["No recorded library bytes.", "No hay datos registrados en la biblioteca."],
+  ["Growth forecast", "Previsión de crecimiento"],
+  ["Expired staging", "Archivos temporales caducados"],
+  ["Clean up expired staging", "Limpiar archivos temporales caducados"],
+  ["Clean up expired staging?", "¿Limpiar los archivos temporales caducados?"],
+  ["Clean up", "Limpiar"],
+  [
+    "Remove only expired files whose ownership can still be verified.",
+    "Eliminar solo archivos caducados cuya propiedad aún pueda verificarse.",
+  ],
+  [
+    "Only expired staging with verified ownership is eligible. Uncertain files are retained. This action is recorded in the audit log.",
+    "Solo se incluyen archivos temporales caducados con propiedad verificada. Los archivos inciertos se conservan. Esta acción se registra en el registro de auditoría.",
+  ],
+
   ["Cancel editing", "Cancelar edición"],
   [
     "Leave stored credentials blank to keep them. Target changes are blocked while Library sources or backups depend on this connection.",
