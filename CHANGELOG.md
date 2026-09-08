@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The Model detail back arrow returns to its containing collection instead of
+  always returning to the library root, including nested collection paths.
+
 - Mounted Library source enrollment now rolls back known marker failures instead
   of leaving a conflicted source behind, reports read-only marker failures
   explicitly, and documents the one-time writable mount required for enrollment.
