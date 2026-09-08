@@ -142,12 +142,15 @@ def sample_storage_inventory(
 def storage_logical_models(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
+    collection_id: int | None = Query(default=None, ge=0),
     session: Session = Depends(get_session),
     actor: User = Depends(require_user),
 ):
     from app.modules.storage.storage_inventory import logical_drilldown
 
-    return logical_drilldown(session, actor, offset=offset, limit=limit)
+    return logical_drilldown(
+        session, actor, offset=offset, limit=limit, collection_id=collection_id
+    )
 
 
 @router.post("/inventory/cleanup-staging")
@@ -158,3 +161,15 @@ def cleanup_storage_staging(
     from app.modules.storage.storage_inventory import cleanup_expired_staging
 
     return cleanup_expired_staging(session, actor)
+
+
+@router.get("/inventory/collections")
+def storage_logical_collections(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_user),
+):
+    from app.modules.storage.storage_inventory import collection_drilldown
+
+    return collection_drilldown(session, actor, offset=offset, limit=limit)

@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.time import ensure_utc, utcnow
 from app.db.models import (
     SENTINEL_FILE_HASH,
+    Collection,
     File,
     Model,
     OwnedStorageObject,
@@ -335,9 +336,20 @@ def history(session: Session, target_ref: str) -> list[dict]:
 
 
 def logical_drilldown(
-    session: Session, user: User, *, offset: int = 0, limit: int = 50
+    session: Session,
+    user: User,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+    collection_id: int | None = None,
 ) -> list[dict]:
     visible = accessible_live_model_ids_stmt(session, user)
+    if collection_id is not None:
+        visible = visible.where(
+            col(Model.collection_id).is_(None)
+            if collection_id == 0
+            else col(Model.collection_id) == collection_id
+        )
     rows = session.exec(
         select(
             col(Model.id),
@@ -430,3 +442,43 @@ def inventory_report(session: Session, manager) -> InventoryReport:
             available,
         ),
     )
+
+
+def collection_drilldown(
+    session: Session, user: User, *, offset: int = 0, limit: int = 50
+) -> list[dict]:
+    """Attribute logical references only within the caller's live Model scope."""
+    visible = accessible_live_model_ids_stmt(session, user)
+    rows = session.exec(
+        select(
+            col(Model.collection_id),
+            col(Collection.name),
+            func.coalesce(func.sum(col(File.size_bytes)), 0),
+            func.coalesce(
+                func.sum(case((col(File.is_external), col(File.size_bytes)), else_=0)),
+                0,
+            ),
+            func.count(func.distinct(col(Model.id))),
+        )
+        .join(File, col(File.model_id) == col(Model.id))
+        .outerjoin(Collection, col(Collection.id) == col(Model.collection_id))
+        .where(
+            col(Model.id).in_(visible),
+            live(File),
+            col(File.sha256) != SENTINEL_FILE_HASH,
+        )
+        .group_by(col(Model.collection_id), col(Collection.name))
+        .order_by(func.sum(col(File.size_bytes)).desc(), col(Model.collection_id))
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "collection_id": identity,
+            "name": name or "Uncollected",
+            "logical_bytes": size,
+            "external_bytes": external,
+            "model_count": count,
+        }
+        for identity, name, size, external, count in rows
+    ]

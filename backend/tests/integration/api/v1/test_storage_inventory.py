@@ -109,3 +109,83 @@ class TestStorageInventory:
             ]
             == original
         )
+
+
+class TestCollectionInventory:
+    def test_hides_inaccessible_collection_storage(
+        self,
+        client,
+        make_user,
+        headers_for,
+        grant_role,
+        make_collection,
+        make_model,
+        make_file,
+    ):
+        from app.db.models import CollectionRole
+
+        reader = make_user()
+        visible = make_collection("Visible")
+        private = make_collection("Private")
+        grant_role(reader, visible, CollectionRole.VIEW)
+        make_file(make_model(collection_id=visible.id), size_bytes=30)
+        make_file(make_model(collection_id=private.id), size_bytes=9000)
+
+        response = client.get(
+            "/api/v1/storage/inventory/collections", headers=headers_for(reader)
+        )
+
+        assert response.status_code == 200
+        assert response.json() == [
+            {
+                "collection_id": visible.id,
+                "name": "Visible",
+                "logical_bytes": 30,
+                "external_bytes": 0,
+                "model_count": 1,
+            }
+        ]
+
+    def test_paginates_collection_storage(
+        self, client, auth_headers, make_collection, make_model, make_file
+    ):
+        small = make_collection("Small")
+        large = make_collection("Large")
+        make_file(make_model(collection_id=small.id), size_bytes=10)
+        make_file(make_model(collection_id=large.id), size_bytes=20)
+
+        response = client.get(
+            "/api/v1/storage/inventory/collections?offset=1&limit=1",
+            headers=auth_headers,
+        )
+
+        assert [row["collection_id"] for row in response.json()] == [small.id]
+
+    def test_filters_models_by_authorized_collection(
+        self, client, auth_headers, make_collection, make_model, make_file
+    ):
+        selected = make_collection("Selected")
+        model = make_model(collection_id=selected.id)
+        make_file(model, size_bytes=11)
+        make_file(make_model(), size_bytes=999)
+
+        response = client.get(
+            f"/api/v1/storage/inventory/models?collection_id={selected.id}",
+            headers=auth_headers,
+        )
+
+        assert response.json() == [
+            {"model_id": model.id, "name": model.name, "logical_bytes": 11}
+        ]
+
+    def test_excludes_trashed_models_from_collection_storage(
+        self, client, auth_headers, make_collection, make_model, make_file
+    ):
+        collection = make_collection()
+        make_file(make_model(collection_id=collection.id, trashed=True), size_bytes=50)
+
+        response = client.get(
+            "/api/v1/storage/inventory/collections", headers=auth_headers
+        )
+
+        assert response.json() == []
