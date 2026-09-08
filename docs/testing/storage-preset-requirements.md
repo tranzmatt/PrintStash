@@ -23,8 +23,8 @@ Azure, GCS and new consumer OAuth adapters remain explicitly demand-gated.
 | Azure/GCS exact-generation promotion gates | No new Azure/GCS adapter advertised | Public scope/limitations | Accepted gated phases |
 | Reusable OAuth and consumer-drive gates | No new consumer adapter or OAuth flow introduced | Existing Google Drive limits retained | Accepted gated phases |
 | Native delivery through delivery seam | Catalogue declares transport-level potential, #101 owns execution | No new route-level preset branching | Covered |
-| Role-first public provider matrix | Generated docs currently present Vault-focused fields table | Add Vault/Library/backup columns with runtime availability and role notes | Gap |
-| Provider prerequisites, support/image/large-file/delivery/limitations docs | Generated provider sections include defaults and official links; general caveats exist | Per-provider image/large-file details not fully enumerated | Partial |
-| Real contract suite per advertised service | Named IDs exercise existing pinned transport services | Does not constitute hosted-account/appliance certification | Evidence limitation; do not claim certification |
-| Headline E2E per shipped family | Mounted NAS ASGI E2E exists; remote preset mock browser saves exist | Real hosted-WebDAV preset scan/download passed; S3 and SFTP named-preset headline flows still missing | Partial |
-| Completion lint/types/tests/redaction | Prior preset gates plus new test checks | New real browser passed; integrated full gates owned by coordinator | Pending |
+| Role-first public provider matrix | Generated docs enumerate Vault, Library source and backup roles for every provider | Registry-backed documentation contract | Covered |
+| Provider prerequisites, support/image/large-file/delivery/limitations docs | Each generated provider section records required fields, runtime packaging, large-object behavior, delivery and limitations | Registry-backed documentation contract | Covered |
+| Real contract suite per advertised service | Every named ID maps to an existing transport exercised on pinned SeaweedFS, Nextcloud/WsgiDAV or OpenSSH services | Protocol behavior is proven; hosted-account/appliance certification remains explicitly unclaimed | Covered with stated evidence boundary |
+| Headline E2E per shipped family | Mounted NAS setup/download plus parameterized S3, WebDAV and SFTP source/backup flows | Public API E2Es cover exact bytes; Koofr also passes a real-browser save/reload/probe/scan/download flow | Covered |
+| Completion lint/types/tests/redaction | Preset, connection, transport, browser and documentation contracts | Focused gates pass; final full gates run in CI before merge | Pending final CI |

@@ -9,3 +9,28 @@ class TestStorageProviderDocumentation:
     def test_matches_registry(self) -> None:
         docs = Path(__file__).parents[3] / "docs" / "storage-providers.md"
         assert docs.read_text(encoding="utf-8") == render_storage_provider_docs()
+
+    def test_role_matrix_exposes_runtime_and_delivery_facts(self) -> None:
+        docs = render_storage_provider_docs()
+
+        assert (
+            "| Provider | Transport | Vault | Library source | Backup destination | "
+            "Runtime | Support | Expected tier | Browser delivery |" in docs
+        )
+        assert (
+            "| [Google Drive](#gdrive) | gdrive | — | ✓ | ✓ | Full image | Beta | "
+            "Unguarded | Proxy |" in docs
+        )
+        assert (
+            "| [MinIO](#minio) | s3 | ✓ | ✓ | ✓ | All images | Beta | Guarded | "
+            "Signed GET candidate; proxy fallback |" in docs
+        )
+
+    def test_each_provider_documents_prerequisites_and_large_object_limits(self) -> None:
+        docs = render_storage_provider_docs()
+
+        assert docs.count("Runtime packaging: **") == 23
+        assert docs.count("Large objects: ") == 23
+        assert docs.count("Supported roles: ") == 23
+        assert "Runtime packaging: **Full image**; requires OpenDAL with WebDAV support." in docs
+        assert "Large objects: multipart or bounded streaming writes and range reads." in docs

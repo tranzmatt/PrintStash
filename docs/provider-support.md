@@ -242,7 +242,7 @@ Administrator-facing reason codes include `storage_dependency_missing`,
 `storage_independent_backup_required`. The UI translates these into the action
 available and the bytes that remain.
 
-There are two storage roles:
+There are three storage roles:
 
 - **Managed Vault storage** contains bytes PrintStash owns and may eventually
   delete through capability and ownership checks.
@@ -383,7 +383,8 @@ configured endpoint and intended role. The runtime image must include the chosen
 transport dependency. Delivery support never promotes a deletion safety tier.
 
 Google Drive retains its beta read-only Library source and backup replica roles;
-managed Drive Vault storage remains unavailable. Direct SMB, Azure Blob, GCS,
-new consumer OAuth onboarding and new consumer-drive roles are separate future
-features subject to demand and provider-specific evidence. The preset milestone
-does not complete the provider expansion umbrella.
+managed Drive Vault storage remains unavailable. This catalogue and preset scope
+closes the current provider-expansion issue. Direct SMB, Azure Blob, GCS, new
+consumer OAuth onboarding and new consumer-drive roles remain demand-gated future
+features that require separate issues and provider-specific evidence before they
+can enter the catalogue.

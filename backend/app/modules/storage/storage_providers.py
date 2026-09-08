@@ -900,13 +900,35 @@ def provider_catalogue() -> list[StorageProvider]:
 
 def render_storage_provider_docs() -> str:
     """Render the public provider reference from the authoritative registry."""
-    category_labels = {
-        ProviderCategory.THIS_MACHINE: "This machine",
-        ProviderCategory.S3_COMPATIBLE: "S3-compatible object storage",
-        ProviderCategory.WEBDAV: "Nextcloud and WebDAV",
-        ProviderCategory.SFTP: "NAS over SFTP",
-        ProviderCategory.CONSUMER_CLOUD: "Consumer cloud storage",
-    }
+    providers = provider_catalogue()
+
+    def role_mark(provider: StorageProvider, use: str) -> str:
+        return "✓" if provider.uses[use].supported else "—"
+
+    def runtime_packaging(transport: str) -> tuple[str, str]:
+        if transport in {"local", "s3"}:
+            return "All images", "uses a built-in transport."
+        if transport == "sftp":
+            return "Full image", "requires AsyncSSH."
+        service = "WebDAV" if transport == "webdav" else "Google Drive"
+        return "Full image", f"requires OpenDAL with {service} support."
+
+    def browser_delivery(provider: StorageProvider) -> str:
+        return (
+            "Signed GET candidate; proxy fallback"
+            if provider.delivery.signed_get
+            else "Proxy"
+        )
+
+    def large_object_note(transport: str) -> str:
+        return {
+            "local": "bounded filesystem streaming and range reads.",
+            "s3": "multipart or bounded streaming writes and range reads.",
+            "webdav": "bounded streaming/materialization with proxy delivery; provider limits apply.",
+            "sftp": "bounded streaming/materialization with proxy delivery; server limits apply.",
+            "gdrive": "bounded materialization/readback with proxy delivery; provider quotas and throttling apply.",
+        }[transport]
+
     lines = [
         "# Storage providers",
         "",
@@ -914,16 +936,17 @@ def render_storage_provider_docs() -> str:
         "",
         "PrintStash probes the configured storage at startup. Support maturity and storage safety are separate: the expected tier below is guidance, while `/api/v1/health` and Settings report the measured active tier.",
         "",
-        "| Provider | Category | Support | Expected tier | Configuration fields |",
-        "| --- | --- | --- | --- | --- |",
+        "| Provider | Transport | Vault | Library source | Backup destination | Runtime | Support | Expected tier | Browser delivery |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for provider in provider_catalogue():
-        fields = ", ".join(
-            f"`{field.name}`" + (" (secret)" if field.secret else "")
-            for field in provider.fields
-        )
+    for provider in providers:
+        runtime, _ = runtime_packaging(provider.transport)
         lines.append(
-            f"| [{provider.label}](#{provider.id}) | {category_labels[provider.category]} | {provider.support_level.title()} | {provider.expected_tier.title()} | {fields} |"
+            f"| [{provider.label}](#{provider.id}) | {provider.transport} | "
+            f"{role_mark(provider, 'vault')} | {role_mark(provider, 'library')} | "
+            f"{role_mark(provider, 'backup')} | {runtime} | "
+            f"{provider.support_level.title()} | {provider.expected_tier.title()} | "
+            f"{browser_delivery(provider)} |"
         )
     lines.extend(
         [
@@ -944,14 +967,44 @@ def render_storage_provider_docs() -> str:
             "",
         ]
     )
-    for provider in provider_catalogue():
+    for provider in providers:
+        runtime, runtime_requirement = runtime_packaging(provider.transport)
+        supported_roles = ", ".join(
+            label
+            for use, label in (
+                ("vault", "Vault"),
+                ("library", "Library source"),
+                ("backup", "Backup destination"),
+            )
+            if provider.uses[use].supported
+        )
+        primary_use = "vault" if provider.uses["vault"].supported else "library"
+        required_fields = ", ".join(
+            f"`{field.name}`" + (" (write-only secret)" if field.secret else "")
+            for field in provider.fields_by_use[primary_use]
+            if field.required
+        )
         lines.extend(
             [
                 f"## {provider.id}",
                 "",
                 provider.description,
                 "",
+                f"Transport: **{provider.transport}**.",
+                "",
+                f"Supported roles: {supported_roles}.",
+                "",
+                f"Runtime packaging: **{runtime}**; {runtime_requirement}",
+                "",
+                f"Configuration prerequisites: {required_fields}.",
+                "",
+                f"Large objects: {large_object_note(provider.transport)}",
+                "",
+                f"Browser delivery: {browser_delivery(provider)}. Signed targets are never returned by catalogue metadata.",
+                "",
                 f"Expected tier: **{provider.expected_tier.title()}**. {provider.expected_tier_note}",
+                "",
+                f"Known limitations: {provider.expected_tier_note}",
                 "",
             ]
         )
