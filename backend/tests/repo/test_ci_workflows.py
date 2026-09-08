@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import yaml
 
 from tests.paths import REPO_ROOT
@@ -53,6 +54,7 @@ class TestMultiArchWorkflows:
             "printstash-api",
             "printstash-api-lite",
             "printstash-frontend",
+            "printstash",
         }
         assert all(row["runner"] == "ubuntu-24.04-arm" for row in arm_rows)
         assert job["runs-on"] == "${{ matrix.runner }}"
@@ -94,7 +96,7 @@ class TestMultiArchWorkflows:
         job = workflow["jobs"]["build"]
         rows = job["strategy"]["matrix"]["include"]
 
-        assert len(rows) == 6
+        assert len(rows) == 8
         assert {(row["image"], row["platform"], row["runner"]) for row in rows} == {
             ("printstash-api", "linux/amd64", "ubuntu-latest"),
             ("printstash-api", "linux/arm64", "ubuntu-24.04-arm"),
@@ -102,6 +104,8 @@ class TestMultiArchWorkflows:
             ("printstash-api-lite", "linux/arm64", "ubuntu-24.04-arm"),
             ("printstash-frontend", "linux/amd64", "ubuntu-latest"),
             ("printstash-frontend", "linux/arm64", "ubuntu-24.04-arm"),
+            ("printstash", "linux/amd64", "ubuntu-latest"),
+            ("printstash", "linux/arm64", "ubuntu-24.04-arm"),
         }
         assert job["runs-on"] == "${{ matrix.runner }}"
         assert all(
@@ -120,11 +124,12 @@ class TestMultiArchWorkflows:
         )
 
         merge = workflow["jobs"]["merge"]
-        assert merge["needs"] == "build"
+        assert "build" in merge["needs"]
         assert set(merge["strategy"]["matrix"]["image"]) == {
             "printstash-api",
             "printstash-api-lite",
             "printstash-frontend",
+            "printstash",
         }
         merge_step = next(
             step
@@ -162,3 +167,51 @@ class TestMultiArchWorkflows:
 
         assert release["jobs"]["publish"]["uses"] == expected
         assert manual["jobs"]["publish"]["uses"] == expected
+
+
+class TestUnifiedImageWorkflow:
+    @pytest.mark.parametrize(
+        ("workflow", "job_name"),
+        [("ci.yml", "docker-build"), ("container-publish.yml", "build")],
+        ids=["pull-request", "publish"],
+    )
+    def test_bake_uses_authenticated_actions_cache(self, workflow, job_name) -> None:
+        steps = _workflow(workflow)["jobs"][job_name]["steps"]
+        build = next(
+            step
+            for step in steps
+            if step.get("uses", "").startswith("docker/bake-action@")
+        )
+
+        assert build["if"] == "matrix.image == 'printstash'"
+        assert build["with"]["source"] == "."
+        assert build["with"]["files"] == "docker-bake.hcl"
+        assert build["with"]["targets"] == "unified"
+        assert "*.platform=${{ matrix.platform }}" in build["with"]["set"]
+        assert "type=gha" in build["with"]["set"]
+
+    def test_requires_smoke_test_before_exporting_digest(self) -> None:
+        steps = _workflow("container-publish.yml")["jobs"]["build"]["steps"]
+        unified = next(step for step in steps if step.get("id") == "unified")
+        build = next(step for step in steps if step.get("id") == "unified-build")
+
+        assert unified["if"] == "matrix.image == 'printstash'"
+        assert "unified.tags=\n" in build["with"]["set"]
+        assert unified["run"].index("test-unified-image.sh") < unified["run"].index(
+            'echo "digest='
+        )
+        assert (
+            next(step for step in steps if step["name"] == "Export digest")["env"][
+                "DIGEST"
+            ]
+            == "${{ steps.build.outputs.digest || steps.unified.outputs.digest }}"
+        )
+
+    def test_ci_exercises_unified_container(self) -> None:
+        steps = _ci_workflow()["jobs"]["docker-build"]["steps"]
+        smoke = next(
+            step for step in steps if step["name"] == "Smoke-test unified container"
+        )
+
+        assert smoke["if"] == "matrix.image == 'printstash'"
+        assert "test-unified-image.sh" in smoke["run"]

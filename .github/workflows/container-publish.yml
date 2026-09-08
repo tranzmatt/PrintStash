@@ -15,7 +15,7 @@ jobs:
   build:
     name: Build ${{ matrix.image }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.image == 'printstash' && 45 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +62,14 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+          - image: printstash
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - image: printstash
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -88,6 +96,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push platform image by digest
+        if: matrix.image != 'printstash'
         id: build
         uses: docker/build-push-action@v7
         with:
@@ -100,10 +109,47 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }},mode=max,ignore-error=true
 
+      - name: Normalize unified image name
+        if: matrix.image == 'printstash'
+        id: unified-name
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "image=${REGISTRY}/${OWNER,,}/printstash" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push unified image by digest
+        if: matrix.image == 'printstash'
+        id: unified-build
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: docker-bake.hcl
+          targets: unified
+          set: |
+            *.platform=${{ matrix.platform }}
+            unified.tags=
+            unified.output=type=image,name=${{ steps.unified-name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+            unified.labels.org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            unified.labels.org.opencontainers.image.revision=${{ github.sha }}
+            *.cache-from=type=gha,scope=printstash-${{ matrix.arch }}
+            unified.cache-to=type=gha,scope=printstash-${{ matrix.arch }},mode=max,ignore-error=true
+
+      - name: Test unified image before promoting its digest
+        if: matrix.image == 'printstash'
+        id: unified
+        env:
+          IMAGE: ${{ steps.unified-name.outputs.image }}
+          METADATA: ${{ steps.unified-build.outputs.metadata }}
+        run: |
+          digest=$(jq -er '.unified["containerimage.digest"]' <<< "$METADATA")
+          docker pull "${IMAGE}@${digest}"
+          bash backend/scripts/test-unified-image.sh "${IMAGE}@${digest}"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
       - name: Export digest
         shell: bash
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.build.outputs.digest || steps.unified.outputs.digest }}
         run: |
           mkdir -p "${RUNNER_TEMP}/digests"
           touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
@@ -127,6 +173,7 @@ jobs:
           - printstash-api
           - printstash-api-lite
           - printstash-frontend
+          - printstash
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -163,6 +210,7 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          IMAGE="${IMAGE,,}"
           tag_args=()
           while IFS= read -r tag; do
             if [[ -n "$tag" ]]; then
