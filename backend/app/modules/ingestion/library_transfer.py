@@ -804,7 +804,9 @@ def create_archive(session: Session, user: User) -> Path:
                     actual_size = len(manifest_bytes)
                     for artifact, entry in file_entries:
                         try:
-                            with resolve(artifact).materialize() as source:
+                            with resolve(artifact).materialize(
+                                capacity_claimed=True
+                            ) as source:
                                 digest = hashlib.sha256()
                                 artifact_size = 0
                                 with (

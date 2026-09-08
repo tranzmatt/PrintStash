@@ -523,7 +523,9 @@ def ensure_thumbnail(
         raise
     try:
         try:
-            with resolve(file_row, backend=backend).materialize() as source:
+            with resolve(file_row, backend=backend).materialize(
+                capacity_claimed=True
+            ) as source:
                 rendered = (engine or ThumbnailEngine()).generate(
                     ThumbnailRequest(
                         path=source,

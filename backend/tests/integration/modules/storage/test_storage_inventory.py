@@ -5,9 +5,18 @@ from datetime import timedelta
 import pytest
 
 from app.core.time import utcnow
-from app.db.models import FileType
+from app.db.models import (
+    FileType,
+    User,
+    VaultAuditFinding,
+    VaultAuditMode,
+    VaultAuditRun,
+    VaultAuditRunState,
+    VaultAuditSeverity,
+)
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_inventory import (
+    capacity_activity,
     history,
     inventory,
     logical_drilldown,
@@ -79,6 +88,68 @@ class TestInventory:
         monkeypatch.setattr(backend, "usage", forbid)
         assert inventory(db_session).measured_provider_bytes is None
 
+    def test_refresh_records_typed_local_capacity(self, db_session):
+        current = inventory(db_session, refresh_provider=True)
+
+        assert current.schema_version == 1
+        assert current.provider_capacity.status == "known"
+        assert current.provider_capacity.method == "filesystem_statvfs"
+        assert current.provider_capacity.reliability == "exact"
+        assert current.provider_capacity.available_bytes is not None
+
+    def test_failed_refresh_retains_last_measurement_as_degraded(
+        self, db_session, monkeypatch
+    ):
+        current = inventory(db_session, refresh_provider=True)
+        record_sample(db_session, current)
+        backend = get_backend()
+
+        def fail_capacity():
+            raise OSError("provider unavailable")
+
+        monkeypatch.setattr(backend, "capacity", fail_capacity)
+        degraded = inventory(db_session, refresh_provider=True).provider_capacity
+
+        assert degraded.status == "degraded"
+        assert degraded.available_bytes == current.provider_capacity.available_bytes
+        assert degraded.measured_at == current.provider_capacity.measured_at
+        assert degraded.error == "OSError"
+
+    def test_reports_latest_audit_unclaimed_count_without_object_names(
+        self, db_session, make_user
+    ):
+        user: User = make_user(superuser=True)
+        run = VaultAuditRun(
+            requested_by=user.id,
+            mode=VaultAuditMode.QUICK,
+            state=VaultAuditRunState.COMPLETED,
+            finished_at=utcnow(),
+            unclaimed_bytes=4096,
+            unclaimed_unknown_size_count=1,
+        )
+        db_session.add(run)
+        db_session.commit()
+        db_session.refresh(run)
+        db_session.add(
+            VaultAuditFinding(
+                run_id=run.id,
+                code="unowned_blob_detected",
+                severity=VaultAuditSeverity.INFO,
+                resource_type="storage_object",
+                resource_identifier="secret-object-name.stl",
+            )
+        )
+        db_session.commit()
+
+        observation = inventory(db_session).latest_audit
+
+        assert observation is not None
+        assert observation.run_id == run.id
+        assert observation.unclaimed_object_count == 1
+        assert observation.unclaimed_bytes == 4096
+        assert observation.unknown_size_count == 1
+        assert "secret-object-name" not in observation.model_dump_json()
+
     def test_counts_documents(self, db_session, make_document):
         make_document(filename="guide.pdf", size_bytes=43)
         current = inventory(db_session)
@@ -107,6 +178,42 @@ class TestInventory:
         )
         record_sample(db_session, current)
         assert len(history(db_session, current.target_ref)) == 1
+
+    def test_downsamples_old_hourly_rows_to_one_per_day(
+        self, db_session, make_storage_inventory_sample
+    ):
+        current = inventory(db_session)
+        old = utcnow() - timedelta(days=30)
+        make_storage_inventory_sample(
+            target_ref=current.target_ref, sampled_at=old.replace(hour=8)
+        )
+        make_storage_inventory_sample(
+            target_ref=current.target_ref, sampled_at=old.replace(hour=16)
+        )
+
+        record_sample(db_session, current)
+
+        assert len(history(db_session, current.target_ref)) == 2
+
+    def test_history_separates_growth_categories(
+        self, db_session, make_model, make_file, make_owned_storage_object
+    ):
+        make_file(make_model(), file_type=FileType.STL, size_bytes=10)
+        make_file(make_model(trashed=True), file_type=FileType.GCODE, size_bytes=20)
+        make_owned_storage_object(
+            key="backup-one", object_kind="backup_archive", size_bytes=30
+        )
+        current = inventory(db_session)
+
+        record_sample(db_session, current)
+
+        categories = history(db_session, current.target_ref)[0]["categories"]
+        assert categories == {
+            "live_originals": 10,
+            "trash": 20,
+            "derived_cache": 0,
+            "backups": 30,
+        }
 
     def test_hides_inaccessible_model_drilldowns(
         self, db_session, make_user, make_model, make_file
@@ -208,3 +315,13 @@ class TestInventory:
             b for b in inventory(db_session).buckets if b.category == "thumbnail"
         )
         assert thumbnail.logical_bytes == 29
+
+    def test_capacity_activity_omits_operation_identifiers(
+        self, db_session, make_capacity_reservation
+    ):
+        make_capacity_reservation(operation_id="artifact-upload:private-session-id")
+
+        payload = capacity_activity(db_session).model_dump()
+
+        assert payload["active_reservations"][0]["operation_kind"] == "artifact-upload"
+        assert "private-session-id" not in str(payload)

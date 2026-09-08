@@ -25,7 +25,7 @@ from sqlmodel import Session, col, select
 from app.core.config import settings
 from app.core.errors import ErrorKind, OperationError
 from app.core.time import ensure_utc, utcnow
-from app.db.models import CapacityLock, CapacityReservation
+from app.db.models import CapacityAdmissionEvent, CapacityLock, CapacityReservation
 from app.db.session import SessionFactory
 from app.modules.storage.capacity_policy import CapacityPolicy
 
@@ -254,103 +254,162 @@ class CapacityManager:
         ):
             raise ValueError("invalid capacity reservation")
         payload = json.dumps([asdict(item) for item in resources], sort_keys=True)
-        with self.session_factory.scoped_session() as session:
-            self.serialize_admission(session)
-            self._reconcile_stopped(session)
-            existing = session.get(CapacityReservation, operation_id)
-            if renew and existing is None:
-                raise OperationError(
-                    "capacity_reservation_lost", kind=ErrorKind.CONFLICT
-                )
-            if (
-                existing is not None
-                and not renew
-                and json.dumps(
-                    [asdict(item) for item in _decode(existing.resources_json)],
-                    sort_keys=True,
-                )
-                != payload
-            ):
-                raise OperationError(
-                    "capacity_operation_conflict", kind=ErrorKind.CONFLICT
-                )
-            totals: dict[str, int] = {}
-            for row in session.exec(
-                select(CapacityReservation).where(
-                    CapacityReservation.operation_id != operation_id
-                )
-            ):
-                for item in _decode(row.resources_json):
+        try:
+            with self.session_factory.scoped_session() as session:
+                self.serialize_admission(session)
+                self._reconcile_stopped(session)
+                existing = session.get(CapacityReservation, operation_id)
+                if renew and existing is None:
+                    raise OperationError(
+                        "capacity_reservation_lost", kind=ErrorKind.CONFLICT
+                    )
+                if (
+                    existing is not None
+                    and not renew
+                    and json.dumps(
+                        [asdict(item) for item in _decode(existing.resources_json)],
+                        sort_keys=True,
+                    )
+                    != payload
+                ):
+                    raise OperationError(
+                        "capacity_operation_conflict", kind=ErrorKind.CONFLICT
+                    )
+                totals: dict[str, int] = {}
+                for persisted in session.exec(
+                    select(CapacityReservation).where(
+                        CapacityReservation.operation_id != operation_id
+                    )
+                ):
+                    for item in _decode(persisted.resources_json):
+                        totals[item.domain_id] = (
+                            totals.get(item.domain_id, 0) + item.required_bytes
+                        )
+                free: dict[str, int | None] = {}
+                volume_totals: dict[str, int | None] = {}
+                requested: dict[str, int] = {}
+                for item in resources:
                     totals[item.domain_id] = (
                         totals.get(item.domain_id, 0) + item.required_bytes
                     )
-            free: dict[str, int | None] = {}
-            volume_totals: dict[str, int | None] = {}
-            requested: dict[str, int] = {}
-            for item in resources:
-                totals[item.domain_id] = (
-                    totals.get(item.domain_id, 0) + item.required_bytes
-                )
-                requested[item.domain_id] = (
-                    requested.get(item.domain_id, 0) + item.required_bytes
-                )
-                measured, total = item.measure()
-                previous_total = volume_totals.get(item.domain_id)
-                volume_totals[item.domain_id] = (
-                    total if previous_total is None else max(previous_total, total or 0)
-                )
-                previous = free.get(item.domain_id)
-                free[item.domain_id] = (
-                    measured
-                    if previous is None
-                    else previous
-                    if measured is None
-                    else min(previous, measured)
-                )
-            warnings = []
-            for domain, available in free.items():
-                decision = self.policy.evaluate(
-                    requested[domain],
-                    available_bytes=available,
-                    reserved_bytes=totals[domain] - requested[domain],
-                    total_bytes=volume_totals[domain],
-                )
-                if decision.outcome == "warn":
-                    warnings.append(f"{decision.reason}:{domain}")
-                elif decision.outcome == "deny":
-                    raise OperationError(
-                        "storage_capacity_exceeded",
-                        kind=ErrorKind.CAPACITY,
-                        retry_after_seconds=decision.refresh_after_seconds,
-                        capacity={
-                            "required_bytes": decision.required_bytes,
-                            "available_bytes": decision.available_bytes,
-                            "reserved_bytes": decision.reserved_bytes,
-                            "headroom_bytes": decision.headroom_bytes,
-                        },
+                    requested[item.domain_id] = (
+                        requested.get(item.domain_id, 0) + item.required_bytes
                     )
-            row = existing or CapacityReservation(
-                operation_id=operation_id,
-                resources_json=payload,
-                expires_at=utcnow(),
-                owner_identity_json=json.dumps(
-                    {
-                        **_process_identity(),
-                        "lifetime": "workflow" if durable else "process",
-                    }
-                ),
-            )
-            if durable:
-                identity = json.loads(row.owner_identity_json)
-                identity["lifetime"] = "workflow"
-                row.owner_identity_json = json.dumps(identity)
-            row.resources_json = payload
-            row.expires_at = utcnow() + timedelta(seconds=ttl_seconds)
-            session.add(row)
-            session.commit()
+                    measured, total = item.measure()
+                    previous_total = volume_totals.get(item.domain_id)
+                    volume_totals[item.domain_id] = (
+                        total
+                        if previous_total is None
+                        else max(previous_total, total or 0)
+                    )
+                    previous = free.get(item.domain_id)
+                    free[item.domain_id] = (
+                        measured
+                        if previous is None
+                        else previous
+                        if measured is None
+                        else min(previous, measured)
+                    )
+                warnings = []
+                for domain, available in free.items():
+                    decision = self.policy.evaluate(
+                        requested[domain],
+                        available_bytes=available,
+                        reserved_bytes=totals[domain] - requested[domain],
+                        total_bytes=volume_totals[domain],
+                    )
+                    if decision.outcome == "warn":
+                        warnings.append(f"{decision.reason}:{domain}")
+                    elif decision.outcome == "deny":
+                        raise OperationError(
+                            "storage_capacity_exceeded",
+                            kind=ErrorKind.CAPACITY,
+                            retry_after_seconds=decision.refresh_after_seconds,
+                            capacity={
+                                "required_bytes": decision.required_bytes,
+                                "available_bytes": decision.available_bytes,
+                                "reserved_bytes": decision.reserved_bytes,
+                                "headroom_bytes": decision.headroom_bytes,
+                            },
+                        )
+                row = existing or CapacityReservation(
+                    operation_id=operation_id,
+                    resources_json=payload,
+                    expires_at=utcnow(),
+                    owner_identity_json=json.dumps(
+                        {
+                            **_process_identity(),
+                            "lifetime": "workflow" if durable else "process",
+                        }
+                    ),
+                )
+                if durable:
+                    identity = json.loads(row.owner_identity_json)
+                    identity["lifetime"] = "workflow"
+                    row.owner_identity_json = json.dumps(identity)
+                row.resources_json = payload
+                row.expires_at = utcnow() + timedelta(seconds=ttl_seconds)
+                session.add(row)
+                session.commit()
+        except OperationError as exc:
+            if exc.kind is ErrorKind.CAPACITY and exc.capacity is not None:
+                self._record_admission_event(operation_id, exc.detail, exc.capacity)
+                from app.modules.storage.capacity_observability import record_decision
+
+                record_decision(operation_id, "deny", exc.detail)
+            raise
+        from app.modules.storage.capacity_observability import (
+            change_reservations,
+            record_decision,
+        )
+
+        record_decision(
+            operation_id,
+            "warn" if warnings else "allow",
+            warnings[0].partition(":")[0] if warnings else "capacity_available",
+        )
+        if existing is None:
+            change_reservations(operation_id, 1)
         return CapacityReservationHandle(
             self, operation_id, tuple(resources), tuple(warnings)
         )
+
+    def _record_admission_event(
+        self, operation_id: str, reason: str, capacity: dict[str, int | None]
+    ) -> None:
+        """Persist bounded diagnostics after the denied admission rolls back."""
+        operation_kind = operation_id.partition(":")[0]
+        if not operation_kind.replace("-", "").isalnum() or len(operation_kind) > 64:
+            operation_kind = "unknown"
+        with self.session_factory.scoped_session() as session:
+            session.add(
+                CapacityAdmissionEvent(
+                    operation_kind=operation_kind,
+                    decision="deny",
+                    reason=reason[:64],
+                    required_bytes=int(capacity.get("required_bytes") or 0),
+                    available_bytes=capacity.get("available_bytes"),
+                    reserved_bytes=int(capacity.get("reserved_bytes") or 0),
+                    headroom_bytes=int(capacity.get("headroom_bytes") or 0),
+                )
+            )
+            cutoff = utcnow() - timedelta(days=7)
+            for row in session.exec(
+                select(CapacityAdmissionEvent).where(
+                    CapacityAdmissionEvent.occurred_at < cutoff
+                )
+            ):
+                session.delete(row)
+            overflow = list(
+                session.exec(
+                    select(CapacityAdmissionEvent)
+                    .order_by(col(CapacityAdmissionEvent.occurred_at).desc())
+                    .offset(100)
+                )
+            )
+            for row in overflow:
+                session.delete(row)
+            session.commit()
 
     @contextmanager
     def hold(
@@ -367,12 +426,18 @@ class CapacityManager:
             handle.release()
 
     def release(self, operation_id: str) -> None:
+        released = False
         with self.session_factory.scoped_session() as session:
             self.serialize_admission(session)
             row = session.get(CapacityReservation, operation_id)
             if row is not None:
                 session.delete(row)
+                released = True
             session.commit()
+        if released:
+            from app.modules.storage.capacity_observability import change_reservations
+
+            change_reservations(operation_id, -1)
 
     def reserved_bytes(self) -> dict[str, int]:
         with self.session_factory.scoped_session() as session:

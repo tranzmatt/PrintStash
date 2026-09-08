@@ -133,7 +133,7 @@ def sample_storage_inventory(
 ):
     from app.modules.storage.storage_inventory import inventory, record_sample
 
-    current = inventory(session)
+    current = inventory(session, refresh_provider=True)
     record_sample(session, current)
     return current
 
@@ -173,3 +173,19 @@ def storage_logical_collections(
     from app.modules.storage.storage_inventory import collection_drilldown
 
     return collection_drilldown(session, actor, offset=offset, limit=limit)
+
+
+@router.get("/inventory/activity", dependencies=[Depends(require_superuser)])
+def storage_capacity_activity(session: Session = Depends(get_session)):
+    from app.modules.storage.storage_inventory import capacity_activity
+
+    return capacity_activity(session)
+
+
+@router.get(
+    "/inventory/cleanup-opportunities", dependencies=[Depends(require_superuser)]
+)
+def storage_cleanup_opportunities(session: Session = Depends(get_session)):
+    from app.modules.storage.storage_inventory import cleanup_opportunities
+
+    return cleanup_opportunities(session)

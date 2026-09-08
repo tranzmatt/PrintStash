@@ -54,6 +54,25 @@ class TestOperationAdmission:
         with pytest.raises(OperationError, match="storage_capacity_exceeded"):
             restore_backup(meta.id)
 
+    def test_denies_backup_upload_before_staging(self, backup_env, monkeypatch):
+        from io import BytesIO
+
+        from app.modules.backups.backup import adoption
+
+        monkeypatch.setitem(_overlay, "storage_min_free_bytes", 10**18)
+        monkeypatch.setattr(
+            adoption.tempfile,
+            "mkstemp",
+            lambda *args, **kwargs: pytest.fail("backup staging was allocated"),
+        )
+
+        with pytest.raises(OperationError, match="storage_capacity_exceeded"):
+            adoption.upload_backup_archive(
+                "printstash-backup-capacity.tar.gz",
+                BytesIO(b"archive"),
+                expected_size=7,
+            )
+
     def test_denies_browser_upload_before_staging(
         self, db_session, make_user, monkeypatch
     ):

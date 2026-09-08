@@ -33,7 +33,7 @@ from app.db.models import (
 from app.db.session import get_session_factory
 from app.modules.administration import audit
 from app.modules.storage import capacity_estimates
-from app.modules.storage.capacity import CapacityManager, CapacityResource
+from app.modules.storage.capacity import CapacityManager
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.runtime.jobs import registry
 from app.runtime.maintenance import (
@@ -157,18 +157,13 @@ def restore_backup(backup_id: str, *, source_ref: str | None = None) -> dict:
             )
 
         try:
-            capacity_claim = CapacityManager(get_session_factory()).reserve(
-                f"restore:{backup_id}",
-                [
-                    CapacityResource.for_path(
-                        settings.backup_dir, meta.size_bytes, role="restore download"
-                    )
-                ],
-            )
             archive_path = _downloads_module._download_backup_to_local(meta)
             with tarfile.open(archive_path, "r:gz") as capacity_archive:
                 expanded_bytes = sum(member.size for member in capacity_archive)
-            capacity_claim.renew(capacity_estimates.backup_restore(expanded_bytes))
+            capacity_claim = CapacityManager(get_session_factory()).reserve(
+                f"restore:{backup_id}",
+                capacity_estimates.backup_restore(expanded_bytes),
+            )
             if meta.location == "s3":
                 restore_cache_path = archive_path
             settings.backup_dir.mkdir(parents=True, exist_ok=True)

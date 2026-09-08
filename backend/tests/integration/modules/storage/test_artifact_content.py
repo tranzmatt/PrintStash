@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from app.core.config import _overlay
+from app.core.errors import OperationError
 from app.modules.sources.library_source import SourceContent, SourceEntry
 from app.modules.storage import artifact_content
 from tests.factories import detached_file
@@ -166,6 +168,9 @@ class TestManagedArtifactContent:
         def stream_chunks(self, _key: str, _chunk_size: int):
             yield from ()
 
+        def direct_path(self, _key: str):
+            return self.path
+
         @contextmanager
         def local_path(self, _key: str):
             yield self.path
@@ -210,6 +215,30 @@ class TestManagedArtifactContent:
 
 
 class TestBoundedExternalContent:
+    def test_capacity_denial_precedes_external_tempfile(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "bounded.gcode"
+        source.write_bytes(b"bounded")
+        row = detached_file(
+            model_id=1,
+            path=str(source),
+            original_filename=source.name,
+            size_bytes=7,
+            sha256=hashlib.sha256(b"bounded").hexdigest(),
+            is_external=True,
+        )
+        monkeypatch.setitem(_overlay, "storage_min_free_bytes", 10**18)
+        monkeypatch.setattr(
+            artifact_content.tempfile,
+            "mkstemp",
+            lambda *args, **kwargs: pytest.fail("temporary file allocated"),
+        )
+
+        with pytest.raises(OperationError, match="storage_capacity_exceeded"):
+            with artifact_content.resolve(row).materialize():
+                pass
+
     def test_changed_size_is_refused_before_opening_source(self, tmp_path, monkeypatch):
         source = tmp_path / "grown.gcode"
         source.write_bytes(b"unexpectedly larger content")

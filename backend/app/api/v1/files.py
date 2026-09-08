@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -345,43 +347,57 @@ def stl_response(
 
     # Lazy import: trimesh is heavy; pull it in only when we must convert.
     from app.modules.media import mesh_processing
+    from app.modules.storage.capacity import CapacityManager, CapacityResource
+    from app.modules.storage.capacity_estimates import vault_allocation
 
-    try:
-        with resolve(f).materialize() as path:
-            data = mesh_processing.to_stl_bytes(path)
-    except ArtifactContentMissingError as exc:
-        raise HTTPException(status_code=410, detail="file_blob_missing") from exc
-    if data is None:
-        raise HTTPException(status_code=500, detail="stl_conversion_failed")
+    estimate = max(f.size_bytes * 3, 16 * 1024**2)
+    with CapacityManager(get_session_factory()).hold(
+        f"media-conversion:{secrets.token_hex(12)}",
+        [
+            CapacityResource.for_path(
+                Path(tempfile.gettempdir()), estimate, role="mesh conversion"
+            ),
+            vault_allocation(estimate, role="derived STL publication"),
+        ],
+    ):
+        try:
+            with resolve(f).materialize(capacity_claimed=True) as path:
+                data = mesh_processing.to_stl_bytes(path)
+        except ArtifactContentMissingError as exc:
+            raise HTTPException(status_code=410, detail="file_blob_missing") from exc
+        if data is None:
+            raise HTTPException(status_code=500, detail="stl_conversion_failed")
 
-    cached = False
-    try:
-        with get_session_factory().scoped_session() as ownership_session:
-            publish_bytes(
-                ownership_session,
-                backend,
-                cache_key,
-                data,
-                object_kind="derived_stl_cache",
+        cached = False
+        try:
+            with get_session_factory().scoped_session() as ownership_session:
+                publish_bytes(
+                    ownership_session,
+                    backend,
+                    cache_key,
+                    data,
+                    object_kind="derived_stl_cache",
+                )
+                ownership_session.commit()
+                cached = True
+        except StorageCollisionError:
+            # Another request won the create-only race. Serve our in-memory result;
+            # subsequent requests will use the already-published cache object.
+            pass
+        except Exception:
+            logger.warning("stl cache write failed for file %s", f.id, exc_info=True)
+
+        if cached:
+            return render_delivery(
+                plan_stored_representation(backend, cache_key, delivery)
             )
-            ownership_session.commit()
-            cached = True
-    except StorageCollisionError:
-        # Another request won the create-only race. Serve our in-memory result;
-        # subsequent requests will use the already-published cache object.
-        pass
-    except Exception:
-        logger.warning("stl cache write failed for file %s", f.id, exc_info=True)
-
-    if cached:
-        return render_delivery(plan_stored_representation(backend, cache_key, delivery))
-    status_code, headers = bytes_response_headers(data, delivery)
-    return Response(
-        content=data if status_code == 200 else b"",
-        status_code=status_code,
-        media_type="application/sla",
-        headers=headers,
-    )
+        status_code, headers = bytes_response_headers(data, delivery)
+        return Response(
+            content=data if status_code == 200 else b"",
+            status_code=status_code,
+            media_type="application/sla",
+            headers=headers,
+        )
 
 
 def _run_thumbnail_rebuild(

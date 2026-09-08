@@ -4,9 +4,10 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import SQLModel, create_engine, select
 
 from app.core.errors import OperationError
+from app.db.models import CapacityAdmissionEvent
 from app.db.session import SQLiteSessionFactory, get_session_factory
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 
@@ -20,6 +21,23 @@ class TestCapacityManager:
         ]
         with pytest.raises(OperationError, match="storage_capacity_exceeded"):
             manager.reserve("upload", resources)
+        event = db_session.exec(select(CapacityAdmissionEvent)).one()
+        assert event.operation_kind == "upload"
+        assert event.decision == "deny"
+        assert event.required_bytes == 100
+        assert event.available_bytes == 100
+
+    def test_redacts_invalid_operation_kind_from_denial_history(self, db_session):
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+
+        with pytest.raises(OperationError, match="storage_capacity_exceeded"):
+            manager.reserve(
+                "private name/with path",
+                [CapacityResource.for_quota("one", 101, 100, role="input")],
+            )
+
+        event = db_session.exec(select(CapacityAdmissionEvent)).one()
+        assert event.operation_kind == "unknown"
 
     def test_preserves_exact_headroom(self, db_session):
         manager = CapacityManager(get_session_factory(), headroom_bytes=10)

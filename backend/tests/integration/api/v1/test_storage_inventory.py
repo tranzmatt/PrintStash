@@ -64,6 +64,33 @@ class TestStorageInventory:
             == 422
         )
 
+    def test_reports_privacy_safe_capacity_activity(
+        self, client, auth_headers, make_capacity_reservation
+    ):
+        make_capacity_reservation(operation_id="backup:private-backup-id")
+
+        response = client.get(
+            "/api/v1/storage/inventory/activity", headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["active_reservations"][0]["operation_kind"] == "backup"
+        assert "private-backup-id" not in response.text
+
+    def test_previews_cleanup_without_deleting(self, client, auth_headers):
+        response = client.get(
+            "/api/v1/storage/inventory/cleanup-opportunities", headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        assert [item["owner"] for item in response.json()] == [
+            "staging",
+            "trash",
+            "backups",
+            "cache",
+        ]
+        assert all("key" not in item and "path" not in item for item in response.json())
+
     def test_denies_upload_when_headroom_unavailable(
         self, client, auth_headers, monkeypatch
     ):

@@ -19,8 +19,18 @@ def test_capacity_upgrade_preserves_existing_models(tmp_path):
     with Session(engine) as session:
         model = build_model(session, name="Preserved model")
         identity = model.id
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO vault_audit_runs "
+                "(requested_by, mode, state, info_count, warning_count, "
+                "critical_count, progress, cancel_requested, created_at) "
+                "VALUES (1, 'quick', 'completed', 0, 0, 0, 100, 0, CURRENT_TIMESTAMP)"
+            )
+        )
     command.upgrade(config, "head")
     assert {
+        "capacity_admission_events",
         "capacity_locks",
         "capacity_reservations",
         "storage_inventory_samples",
@@ -32,4 +42,10 @@ def test_capacity_upgrade_preserves_existing_models(tmp_path):
             ).scalar_one()
             == "Preserved model"
         )
+        assert connection.execute(
+            text(
+                "SELECT unclaimed_bytes, unclaimed_unknown_size_count "
+                "FROM vault_audit_runs LIMIT 1"
+            )
+        ).one() == (0, 0)
     engine.dispose()
