@@ -1,5 +1,12 @@
 "use client";
 
+import { knownUiText } from "@/lib/locale";
+import { getErrorMessage } from "@/lib/errors";
+import { filterValueText } from "@/lib/filter-labels";
+
+import { uiText } from "@/lib/locale";
+import { useUiLocale } from "@/lib/i18n";
+
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "@/lib/navigation";
@@ -36,7 +43,8 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { SavedViewSelector } from "@/components/saved-view-selector";
-import { Localized, translateUiText } from "@/components/ui/localized";
+import { Localized } from "@/components/ui/localized";
+import { translateUiText } from "@/lib/locale";
 import { useI18n } from "@/lib/i18n";
 import { useMobileFilterDrawer } from "@/lib/mobile-filter-context";
 import {
@@ -114,15 +122,60 @@ type LibraryItem =
 
 const PAGE_SIZE = 60;
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "date-desc", label: "Newest" },
-  { value: "date-asc", label: "Oldest" },
-  { value: "name-asc", label: "Name A–Z" },
-  { value: "name-desc", label: "Name Z–A" },
-  { value: "success-desc", label: "Best success rate" },
-  { value: "printed-desc", label: "Recently printed" },
-  { value: "duration-asc", label: "Shortest print" },
-  { value: "filament-asc", label: "Least filament" },
-  { value: "cost-asc", label: "Lowest cost" },
+  {
+    value: "date-desc",
+    get label() {
+      return uiText("Newest");
+    },
+  },
+  {
+    value: "date-asc",
+    get label() {
+      return uiText("Oldest");
+    },
+  },
+  {
+    value: "name-asc",
+    get label() {
+      return uiText("Name A–Z");
+    },
+  },
+  {
+    value: "name-desc",
+    get label() {
+      return uiText("Name Z–A");
+    },
+  },
+  {
+    value: "success-desc",
+    get label() {
+      return uiText("Best success rate");
+    },
+  },
+  {
+    value: "printed-desc",
+    get label() {
+      return uiText("Recently printed");
+    },
+  },
+  {
+    value: "duration-asc",
+    get label() {
+      return uiText("Shortest print");
+    },
+  },
+  {
+    value: "filament-asc",
+    get label() {
+      return uiText("Least filament");
+    },
+  },
+  {
+    value: "cost-asc",
+    get label() {
+      return uiText("Lowest cost");
+    },
+  },
 ];
 
 /** Sort the two card types as one library whenever they share a meaningful key. */
@@ -172,6 +225,7 @@ function SortMenu({
   triggerClassName,
   wrapperClassName,
 }: SortMenuProps) {
+  useUiLocale();
   return (
     <DropdownMenu
       open={open}
@@ -248,6 +302,7 @@ function DisplayMenu({
   triggerClassName,
   onSelectComplete,
 }: DisplayMenuProps) {
+  useUiLocale();
   return (
     <DropdownMenu
       open={open}
@@ -285,7 +340,7 @@ function DisplayMenu({
           key={mode}
           type="button"
           role="menuitem"
-          aria-label={`${labelFor(label)} View`}
+          aria-label={uiText("{value1} View", { value1: String(labelFor(label)) })}
           onClick={() => {
             onSelectMode(mode);
             onOpenChange(false);
@@ -471,6 +526,7 @@ export interface BrowserInitialData {
 }
 
 export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
+  useUiLocale();
   const { locale, t } = useI18n();
   const ui = useCallback((value: string) => translateUiText(locale, value), [locale]);
   const router = useRouter();
@@ -865,7 +921,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       );
       setSaveViewOpen(false);
       setSaveViewName("");
-      toast.success("View saved");
+      toast.success(uiText("View saved"));
     } catch (error) {
       toast.error(error);
     } finally {
@@ -924,9 +980,13 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
 
   function duplicateViewName(name: string): string {
     const used = new Set(savedViews.map((view) => view.name.toLowerCase()));
-    let candidate = `${name} copy`;
+    let candidate = uiText("{value1} copy", { value1: String(name) });
     let suffix = 2;
-    while (used.has(candidate.toLowerCase())) candidate = `${name} copy ${suffix++}`;
+    while (used.has(candidate.toLowerCase()))
+      candidate = uiText("{value1} copy {value2}", {
+        value1: String(name),
+        value2: String(suffix++),
+      });
     return candidate;
   }
   // The paginated grid. `keepPreviousData` (in the hook) holds the current page
@@ -1128,7 +1188,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       }
       setSelectedIds(new Set(all.map((model) => model.id)));
       selectedModelSnapshot.current = new Map(all.map((model) => [model.id, model]));
-      toast.info(`${all.length} matching models selected`);
+      toast.info(uiText("{value1} matching models selected", { value1: String(all.length) }));
     } catch (error) {
       toast.error(error);
     } finally {
@@ -1169,7 +1229,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         event.target.matches("input, textarea, select, [contenteditable=true]");
       if (event.key === "/" && !typing) {
         event.preventDefault();
-        document.querySelector<HTMLInputElement>('[aria-label="Search models"]')?.focus();
+        document.querySelector<HTMLInputElement>("[data-model-search]")?.focus();
       } else if (event.key.toLowerCase() === "s" && !typing && auth.isAuthenticated) {
         event.preventDefault();
         setSelectMode(true);
@@ -1197,7 +1257,11 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       }
     }
     if (succeeded) toast.success(`${verb} ${succeeded}`);
-    if (failed) toast.warning(`${failed} skipped`, failedFolders.join(" · "));
+    if (failed)
+      toast.warning(
+        uiText("{value1} skipped", { value1: String(failed) }),
+        failedFolders.join(" · "),
+      );
     refresh();
     clearSelection();
     setBatchBusy(false);
@@ -1218,7 +1282,12 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         failed += result.failed_count;
         movedModelIds.push(...result.succeeded_ids);
         failureDetails.push(
-          ...result.failed.map((failure) => `Model #${failure.model_id}: ${failure.reason}`),
+          ...result.failed.map((failure) =>
+            uiText("Model #{value1}: {value2}", {
+              value1: String(failure.model_id),
+              value2: getErrorMessage(failure.reason),
+            }),
+          ),
         );
       }
       for (const collection of selectedCollections) {
@@ -1228,11 +1297,11 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           movedCollections.push(collection);
         } catch {
           failed += 1;
-          failureDetails.push(`Folder: ${collection.path}`);
+          failureDetails.push(uiText("Folder: {value1}", { value1: String(collection.path) }));
         }
       }
       if (succeeded)
-        toast.undo(`Moved ${succeeded}`, async () => {
+        toast.undo(uiText("Moved {value1}", { value1: String(succeeded) }), async () => {
           const groups = new Map<string, number[]>();
           for (const id of movedModelIds) {
             const original = originalModels.get(id)?.collection ?? "";
@@ -1244,9 +1313,13 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           for (const collection of movedCollections)
             await moveCollection(collection.id, collection.parent_id);
           refresh();
-          toast.success("Move undone");
+          toast.success(uiText("Move undone"));
         });
-      if (failed) toast.warning(`${failed} skipped`, failureDetails.join(" · "));
+      if (failed)
+        toast.warning(
+          uiText("{value1} skipped", { value1: String(failed) }),
+          failureDetails.join(" · "),
+        );
       refresh();
       clearSelection();
     } catch (error) {
@@ -1269,7 +1342,12 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         failed += result.failed_count;
         deletedModelIds.push(...result.succeeded_ids);
         failureDetails.push(
-          ...result.failed.map((failure) => `Model #${failure.model_id}: ${failure.reason}`),
+          ...result.failed.map((failure) =>
+            uiText("Model #{value1}: {value2}", {
+              value1: String(failure.model_id),
+              value2: getErrorMessage(failure.reason),
+            }),
+          ),
         );
       }
       for (const collection of selectedCollections) {
@@ -1278,20 +1356,27 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           succeeded += 1;
         } catch {
           failed += 1;
-          failureDetails.push(`Folder: ${collection.path}`);
+          failureDetails.push(uiText("Folder: {value1}", { value1: String(collection.path) }));
         }
       }
       if (deletedModelIds.length)
         toast.undo(
-          `Moved ${deletedModelIds.length} model${deletedModelIds.length !== 1 ? "s" : ""} to trash`,
+          uiText("models.trashed", {
+            value1: String(deletedModelIds.length),
+            count: Number(deletedModelIds.length),
+          }),
           async () => {
             await Promise.all(deletedModelIds.map(restoreModel));
             refresh();
-            toast.success("Models restored");
+            toast.success(uiText("Models restored"));
           },
         );
-      else if (succeeded) toast.success(`Deleted ${succeeded}`);
-      if (failed) toast.warning(`${failed} skipped`, failureDetails.join(" · "));
+      else if (succeeded) toast.success(uiText("Deleted {value1}", { value1: String(succeeded) }));
+      if (failed)
+        toast.warning(
+          uiText("{value1} skipped", { value1: String(failed) }),
+          failureDetails.join(" · "),
+        );
       refresh();
       clearSelection();
     } catch (error) {
@@ -1307,17 +1392,20 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     try {
       const result = await batchInChunks((ids) => batchTagModels(ids, add, remove));
       if (result.succeeded_count)
-        toast.undo(`Tagged ${result.succeeded_count}`, async () => {
-          for (const id of result.succeeded_ids) {
-            const original = originalModels.get(id);
-            if (original) await updateModel(id, { tags: original.tags });
-          }
-          refresh();
-          toast.success("Tags restored");
-        });
+        toast.undo(
+          uiText("Tagged {value1}", { value1: String(result.succeeded_count) }),
+          async () => {
+            for (const id of result.succeeded_ids) {
+              const original = originalModels.get(id);
+              if (original) await updateModel(id, { tags: original.tags });
+            }
+            refresh();
+            toast.success(uiText("Tags restored"));
+          },
+        );
       if (result.failed_count)
         toast.warning(
-          `${result.failed_count} skipped`,
+          uiText("{value1} skipped", { value1: String(result.failed_count) }),
           result.failed.map((failure) => `#${failure.model_id}: ${failure.reason}`).join(" · "),
         );
       refresh();
@@ -1394,7 +1482,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       return;
     }
     if (!canAdminSelectedCollection) {
-      toast.warning("Admin access required");
+      toast.warning(uiText("Admin access required"));
       return;
     }
     try {
@@ -1404,7 +1492,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       await createCollection({ name, parent_id: parentId });
       setNewCollectionName("");
       setIsCreatingCollection(false);
-      toast.success(`Collection "${name}" created`);
+      toast.success(uiText('Collection "{value1}" created', { value1: String(name) }));
     } catch (e: any) {
       toast.error(e);
     }
@@ -1417,7 +1505,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     }
     try {
       await updateModel(modelId, { collection: targetCollection ?? "" });
-      toast.success("Moved");
+      toast.success(uiText("Moved"));
       refresh();
     } catch (e: any) {
       toast.error(e);
@@ -1431,7 +1519,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     }
     try {
       await moveCollection(collectionId, newParentId);
-      toast.success("Moved");
+      toast.success(uiText("Moved"));
       refresh();
     } catch (e: any) {
       toast.error(e);
@@ -1445,7 +1533,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     }
     try {
       await deleteCollection(id, recursive);
-      toast.success("Collection deleted");
+      toast.success(uiText("Collection deleted"));
       refresh();
     } catch (e: any) {
       toast.error(e);
@@ -1456,7 +1544,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     try {
       await replaceCollectionTags(collection.id, nextTags);
       await collectionsQuery.refetch();
-      toast.success(`Tags updated for ${collection.name}`);
+      toast.success(uiText("Tags updated for {value1}", { value1: String(collection.name) }));
     } catch (error) {
       toast.error(error);
       throw error;
@@ -1559,7 +1647,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     }
     if (selectedPrinterPresence !== null) {
       items.push({
-        label: selectedPrinterPresence === "none" ? "Vault only" : "On a printer",
+        label: selectedPrinterPresence === "none" ? uiText("Vault only") : uiText("On a printer"),
         onRemove: () => setSelectedPrinterPresence(null),
       });
     }
@@ -1567,7 +1655,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       const values = structured[key];
       for (const value of values) {
         items.push({
-          label: `${key.replaceAll("_", " ")}: ${value.replaceAll("_", " ")}`,
+          label: `${knownUiText(key)}: ${filterValueText(key, value)}`,
           onRemove: () =>
             setStructuredFilter(
               key,
@@ -1602,7 +1690,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
               setSaveViewName("");
             }
           }}
-          title="Save current view"
+          title={uiText("Save current view")}
           className="max-w-md"
         >
           <form
@@ -1613,13 +1701,13 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
             }}
           >
             <label className="block space-y-1.5">
-              <span className="text-sm font-medium text-foreground">View name</span>
+              <span className="text-sm font-medium text-foreground">{uiText("View name")}</span>
               <Input
                 autoFocus
                 value={saveViewName}
                 onChange={(event) => setSaveViewName(event.target.value)}
                 maxLength={128}
-                placeholder="Ready to print"
+                placeholder={uiText("Ready to print")}
               />
             </label>
             <div className="flex justify-end gap-2">
@@ -1632,10 +1720,10 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 }}
                 disabled={saveViewBusy}
               >
-                Cancel
+                {uiText("Cancel")}
               </Button>
               <Button type="submit" loading={saveViewBusy} disabled={!saveViewName.trim()}>
-                Save view
+                {uiText("Save view")}
               </Button>
             </div>
           </form>
@@ -1753,7 +1841,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           {isDragging && canUploadToVault && (
             <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center border-2 border-dashed border-primary bg-primary/5">
               <span className="bg-background border border-border rounded px-4 py-2 font-mono text-xs uppercase tracking-widest shadow">
-                Drop to upload
+                {uiText("Drop to upload")}
               </span>
             </div>
           )}
@@ -1765,7 +1853,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   onClick={() => handleCollectionChange(null)}
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  All Models
+                  {uiText("All Models")}
                 </button>
                 {breadcrumbs.map((crumb) => (
                   <span key={crumb.id} className="flex items-center space-x-2">
@@ -1784,7 +1872,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 onClick={() => handleCollectionChange(null)}
                 className="text-foreground font-medium"
               >
-                All Models
+                {uiText("All Models")}
               </button>
             )}
             {availableRecentFolders.length > 0 && (
@@ -1807,7 +1895,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 contentClassName="w-64 rounded border border-border bg-popover p-1 text-popover-foreground shadow-lg"
               >
                 <p className="px-2.5 py-1.5 font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                  Recent folders
+                  {uiText("Recent folders")}
                 </p>
                 {availableRecentFolders.map((path) => (
                   <button
@@ -1833,7 +1921,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   }}
                   className="mt-1 w-full border-t border-border px-2.5 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-popover-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  Clear recent folders
+                  {uiText("Clear recent folders")}
                 </button>
               </DropdownMenu>
             )}
@@ -1845,15 +1933,17 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
               <div className="flex min-w-0 items-start justify-between gap-3 sm:block">
                 <div className="min-w-0 flex-1 space-y-1">
                   <h1 className="break-words text-lg font-bold tracking-tight text-foreground sm:truncate sm:text-2xl">
-                    {selectedName ?? "All Models"}
+                    {selectedName ?? uiText("All Models")}
                   </h1>
                   <p className="text-sm text-muted-foreground">
                     {loading
-                      ? "Loading..."
-                      : `${displayCount} item${displayCount !== 1 ? "s" : ""} shown${selectedName ? ` in this collection` : ""}`}
+                      ? uiText("Loading...")
+                      : uiText(selectedName ? "counts.collectionItems" : "counts.items", {
+                          count: displayCount,
+                        })}
                     {refreshing && (
                       <span className="ml-2 font-mono text-xs text-muted-foreground">
-                        Updating...
+                        {uiText("Updating...")}
                       </span>
                     )}
                   </p>
@@ -1866,11 +1956,13 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   }}
                   disabled={!canUploadToVault}
                   title={
-                    canUploadToVault ? "Upload artifacts" : "Sign in and get edit access to upload"
+                    canUploadToVault
+                      ? uiText("Upload artifacts")
+                      : uiText("Sign in and get edit access to upload")
                   }
                   className="shrink-0 sm:hidden"
                 >
-                  Upload
+                  {uiText("Upload")}
                 </Button>
               </div>
 
@@ -1883,7 +1975,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                     className="w-full min-w-0 px-2"
                   >
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-                    <span className="min-w-0 truncate">Filters</span>
+                    <span className="min-w-0 truncate">{uiText("Filters")}</span>
                   </Button>
                   <SortMenu
                     open={sortOpen}
@@ -1931,7 +2023,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                           className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm transition-colors hover:bg-popover-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${favoritesOnly ? "bg-accent text-accent-foreground" : ""}`}
                         >
                           <Star className={`h-4 w-4 ${favoritesOnly ? "fill-current" : ""}`} />
-                          <span className="flex-1">Favorites</span>
+                          <span className="flex-1">{uiText("Favorites")}</span>
                           {favoritesOnly && <Check className="h-3.5 w-3.5" />}
                         </button>
                         <SavedViewSelector
@@ -1979,7 +2071,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                           type="button"
                           role="menuitemcheckbox"
                           aria-checked={selectMode}
-                          title="Select Models and folders (S)"
+                          title={uiText("Select Models and folders (S)")}
                           onClick={() => {
                             toggleSelectMode();
                             setMoreOpen(false);
@@ -1987,7 +2079,9 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                           className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm transition-colors hover:bg-popover-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectMode ? "bg-accent text-accent-foreground" : ""}`}
                         >
                           <CheckSquare className="h-4 w-4" />
-                          <span className="flex-1">{selectMode ? "Done" : "Select"}</span>
+                          <span className="flex-1">
+                            {selectMode ? uiText("Done") : uiText("Select")}
+                          </span>
                           {selectMode && <Check className="h-3.5 w-3.5" />}
                         </button>
                       </>
@@ -2018,7 +2112,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                     className="h-10 md:hidden sm:h-8"
                   >
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-                    Filters
+                    {uiText("Filters")}
                   </Button>
                   <Button
                     variant="outline"
@@ -2027,13 +2121,13 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                     disabled={!canAdminSelectedCollection}
                     title={
                       canAdminSelectedCollection
-                        ? "Create a collection"
-                        : "Admin access required for this collection"
+                        ? uiText("Create a collection")
+                        : uiText("Admin access required for this collection")
                     }
                     className="hidden md:inline-flex"
                   >
                     <Plus className="w-4 h-4 text-muted-foreground" />
-                    New collection
+                    {uiText("New collection")}
                   </Button>
                   <Button
                     size="xs"
@@ -2045,12 +2139,12 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                     disabled={!canUploadToVault}
                     title={
                       canUploadToVault
-                        ? "Upload artifacts"
-                        : "Sign in and get edit access to upload"
+                        ? uiText("Upload artifacts")
+                        : uiText("Sign in and get edit access to upload")
                     }
                     className="h-10 sm:h-8"
                   >
-                    Upload
+                    {uiText("Upload")}
                   </Button>
                   <Button
                     type="button"
@@ -2078,7 +2172,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                       className="h-10 sm:h-8"
                     >
                       <Star className={`h-4 w-4 ${favoritesOnly ? "fill-current" : ""}`} />{" "}
-                      Favorites
+                      {uiText("Favorites")}
                     </Button>
                     <SavedViewSelector
                       views={savedViews}
@@ -2116,12 +2210,12 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                       variant={selectMode ? "secondary" : "outline"}
                       size="xs"
                       aria-pressed={selectMode}
-                      title="Select Models and folders (S)"
+                      title={uiText("Select Models and folders (S)")}
                       onClick={toggleSelectMode}
                       className="h-10 sm:h-8"
                     >
                       <CheckSquare className="w-4 h-4" />
-                      {selectMode ? "Done" : "Select"}
+                      {selectMode ? uiText("Done") : uiText("Select")}
                     </Button>
                   </div>
                 )}
@@ -2159,7 +2253,9 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 tags={selectedCollectionRow.tags}
                 availableTags={tags}
                 canEdit={!!user?.is_superuser || canWriteCollection(selectedCollectionRow)}
-                help="Collection tags are inherited by Models in this collection and every descendant for search and filtering."
+                help={uiText(
+                  "Collection tags are inherited by Models in this collection and every descendant for search and filtering.",
+                )}
                 onSave={(nextTags) => saveCollectionTags(selectedCollectionRow, nextTags)}
               />
               <CollectionReadme
@@ -2173,7 +2269,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           {activeFilterItems.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 sm:px-6">
               <span className="text-3xs font-mono uppercase tracking-wider text-muted-foreground">
-                Filters
+                {uiText("Filters")}
               </span>
               {activeFilterItems.map((item) => (
                 <Button
@@ -2183,14 +2279,14 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   size="xs"
                   onClick={item.onRemove}
                   className="gap-1.5"
-                  title={`Remove ${item.label}`}
+                  title={uiText("Remove {value1}", { value1: String(item.label) })}
                 >
                   {item.label}
                   <X className="h-3 w-3" aria-hidden />
                 </Button>
               ))}
               <Button type="button" variant="ghost" size="xs" onClick={clearAllFilters}>
-                Clear all
+                {uiText("Clear all")}
               </Button>
             </div>
           )}
@@ -2230,9 +2326,11 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   placeholder={
                     auth.isAuthenticated
                       ? selectedCollection
-                        ? `New subcollection in "${selectedName ?? selectedCollection}"...`
-                        : "Collection name..."
-                      : "Sign in to add"
+                        ? uiText('New subcollection in "{value1}"...', {
+                            value1: String(selectedName ?? selectedCollection),
+                          })
+                        : uiText("Collection name...")
+                      : uiText("Sign in to add")
                   }
                   disabled={!auth.isAuthenticated}
                   className="flex-1 max-w-xs bg-background text-foreground text-sm border border-border rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent disabled:opacity-50"
@@ -2242,7 +2340,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   disabled={!newCollectionName.trim() || !auth.isAuthenticated}
                   className="px-3 py-1.5 text-xs font-medium text-primary-foreground bg-primary rounded hover:bg-primary-hover transition-colors disabled:opacity-50"
                 >
-                  Create
+                  {uiText("Create")}
                 </button>
                 <button
                   type="button"
@@ -2252,7 +2350,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   }}
                   className="px-3 py-1.5 text-xs font-medium text-foreground bg-background border border-border rounded hover:bg-muted transition-colors"
                 >
-                  Cancel
+                  {uiText("Cancel")}
                 </button>
               </form>
             </div>
@@ -2260,13 +2358,16 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
 
           {docView === "models" && selectMode && (
             <div className="px-4 sm:px-6 py-2 bg-muted border-b border-border flex items-center gap-3 text-xs">
-              <span className="font-mono text-muted-foreground">{selectionCount} selected</span>
+              <span className="font-mono text-muted-foreground">
+                {uiText("{value1} selected", { value1: String(selectionCount ?? "") })}
+              </span>
               <button
                 type="button"
                 onClick={selectAllVisible}
                 className="font-medium text-primary hover:underline"
               >
-                Select all on screen ({sortedModels.length + visibleCollections.length})
+                {uiText("Select all on screen (")}
+                {sortedModels.length + visibleCollections.length})
               </button>
               <button
                 type="button"
@@ -2274,7 +2375,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 disabled={selectingAll}
                 className="font-medium text-primary hover:underline disabled:opacity-50"
               >
-                {selectingAll ? "Selecting…" : "Select all matching models"}
+                {selectingAll ? uiText("Selecting…") : uiText("Select all matching models")}
               </button>
               {selectionCount > 0 && (
                 <button
@@ -2285,7 +2386,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   }}
                   className="font-medium text-muted-foreground hover:text-foreground"
                 >
-                  Clear
+                  {uiText("Clear")}
                 </button>
               )}
             </div>
@@ -2316,20 +2417,22 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 visibleMultipartModels.length === 0 &&
                 visibleCollections.length === 0 ? (
                 <EmptyState
-                  title="No models found"
+                  title={uiText("No models found")}
                   description={
                     query ||
                     selectedCollection ||
                     selectedTags.length ||
                     selectedPrinterId ||
                     selectedPrinterPresence
-                      ? "Try clearing some filters."
-                      : "Upload a model when you're ready, or skim the wiki first if this is a new install."
+                      ? uiText("Try clearing some filters.")
+                      : uiText(
+                          "Upload a model when you're ready, or skim the wiki first if this is a new install.",
+                        )
                   }
                   action={
                     hasActiveFilters ? (
                       <Button type="button" variant="outline" size="xs" onClick={clearAllFilters}>
-                        Clear all filters
+                        {uiText("Clear all filters")}
                       </Button>
                     ) : (
                       <div className="flex flex-wrap items-center justify-center gap-2">
@@ -2347,7 +2450,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                             setUploadOpen(true);
                           }}
                         >
-                          Upload files
+                          {uiText("Upload files")}
                         </Button>
                         <Button
                           type="button"
@@ -2359,11 +2462,11 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                             setUploadOpen(true);
                           }}
                         >
-                          Import from URL
+                          {uiText("Import from URL")}
                         </Button>
                         {user?.is_superuser && (
                           <Button asChild variant="outline" size="sm">
-                            <Link href="/settings">Connect folder or NAS</Link>
+                            <Link href="/settings">{uiText("Connect folder or NAS")}</Link>
                           </Button>
                         )}
                       </div>
@@ -2415,11 +2518,13 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 <div key="list" className="flex-1 overflow-y-auto animate-panel-in">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-3 px-4 py-2 border-b border-border text-xs font-mono text-muted-foreground uppercase tracking-wider bg-muted/50">
-                      <span className="w-10 flex-shrink-0">Thumb</span>
-                      <span className="flex-1">Name</span>
-                      <span className="w-24 text-right hidden sm:block">Collection</span>
-                      <span className="w-20 text-right">Contents</span>
-                      <span className="w-24 text-right hidden md:block">Updated</span>
+                      <span className="w-10 flex-shrink-0">{uiText("Thumb")}</span>
+                      <span className="flex-1">{uiText("Name")}</span>
+                      <span className="w-24 text-right hidden sm:block">
+                        {uiText("Collection")}
+                      </span>
+                      <span className="w-20 text-right">{uiText("Contents")}</span>
+                      <span className="w-24 text-right hidden md:block">{uiText("Updated")}</span>
                     </div>
                     {visibleCollections.map((collection) => (
                       <CollectionListRow
@@ -2536,6 +2641,7 @@ function CollectionFolderCard({
   selected?: boolean;
   onToggleSelect?: (id: number) => void;
 }) {
+  useUiLocale();
   const { dragOver, handlers } = useModelDropTarget(collection.path, onDropModel);
   return (
     <Localized>
@@ -2567,7 +2673,7 @@ function CollectionFolderCard({
               <Checkbox
                 checked={!!selected}
                 onChange={() => onToggleSelect?.(collection.id)}
-                ariaLabel={`Select folder ${collection.name}`}
+                ariaLabel={uiText("Select folder {value1}", { value1: String(collection.name) })}
               />
             </span>
           )}
@@ -2576,7 +2682,7 @@ function CollectionFolderCard({
         <div className="p-3 border-t border-border">
           <div className="flex items-center justify-end gap-2 mb-0.5">
             <span className="text-3xs text-muted-foreground font-mono">
-              {collection.model_count} models
+              {uiText("{value1} models", { value1: String(collection.model_count ?? "") })}
             </span>
           </div>
           <p className="text-sm font-bold text-foreground truncate tracking-tight">
@@ -2603,6 +2709,7 @@ function CollectionListRow({
   selected?: boolean;
   onToggleSelect?: (id: number) => void;
 }) {
+  useUiLocale();
   const { dragOver, handlers } = useModelDropTarget(collection.path, onDropModel);
   return (
     <Localized>
@@ -2632,7 +2739,7 @@ function CollectionListRow({
           <Checkbox
             checked={!!selected}
             onChange={() => onToggleSelect?.(collection.id)}
-            ariaLabel={`Select folder ${collection.name}`}
+            ariaLabel={uiText("Select folder {value1}", { value1: String(collection.name) })}
           />
         )}
         <span className="w-8 h-8 md:w-10 md:h-10 rounded bg-accent flex-shrink-0 border border-primary-soft flex items-center justify-center text-primary">
@@ -2647,7 +2754,7 @@ function CollectionListRow({
           </span>
         </span>
         <span className="w-24 text-right text-xs font-mono text-muted-foreground truncate hidden sm:block">
-          Folder
+          {uiText("Folder")}
         </span>
         <span className="w-20 text-right text-xs font-mono text-muted-foreground">
           {collection.model_count}
@@ -2668,6 +2775,7 @@ function MultipartModelListRow({
   item: MultipartModelListItem;
   returnTo: string;
 }) {
+  useUiLocale();
   const { t } = useI18n();
   const thumb = useAuthenticatedAssetUrl(item.cover_thumbnail_url);
   return (
@@ -2715,6 +2823,7 @@ function ModelListRow({
   onToggleSelect?: (id: number, range?: boolean) => void;
   draggable?: boolean;
 }) {
+  useUiLocale();
   const router = useRouter();
   const thumb = useAuthenticatedAssetUrl(model.thumbnail_url);
   const printerPresence = model.printer_presence ?? [];
@@ -2746,7 +2855,7 @@ function ModelListRow({
           <Checkbox
             checked={selected}
             onChange={() => onToggleSelect?.(model.id)}
-            ariaLabel={`Select ${model.name}`}
+            ariaLabel={uiText("Select {value1}", { value1: String(model.name) })}
           />
         )}
         <div className="w-8 h-8 md:w-10 md:h-10 rounded bg-muted flex-shrink-0 overflow-hidden border border-border">
@@ -2814,6 +2923,7 @@ function LoadMore({
   loading: boolean;
   onClick: () => void;
 }) {
+  useUiLocale();
   if (!hasMore) return null;
   return (
     <Localized>
@@ -2823,7 +2933,7 @@ function LoadMore({
           disabled={loading}
           className="px-4 py-2 rounded border border-border bg-background text-foreground hover:bg-muted disabled:opacity-50 font-mono text-[13px] uppercase tracking-wider transition-colors"
         >
-          {loading ? "Loading..." : "Load more"}
+          {loading ? uiText("Loading...") : uiText("Load more")}
         </button>
       </div>
     </Localized>
@@ -2831,6 +2941,7 @@ function LoadMore({
 }
 
 export function ModelGridSkeleton() {
+  useUiLocale();
   return (
     <div className="p-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -2848,6 +2959,7 @@ export function ModelGridSkeleton() {
 }
 
 function ModelListSkeleton() {
+  useUiLocale();
   return (
     <div className="flex flex-col">
       {Array.from({ length: 6 }).map((_, i) => (
