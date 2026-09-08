@@ -15,6 +15,9 @@
 
 ### Changed
 
+- Artifact downloads use the canonical `/files/{id}/download` endpoint. The
+  separate `download-url` and `download-direct` endpoints have been removed.
+
 - Interface text, accessible labels, errors, plural counts and offline screens
   use shared language catalogs. Dates and numbers follow the selected language;
   the language menu supports adding further locales without a two-language toggle.
@@ -31,6 +34,12 @@
   listing. Its connection settings and extension identity are unchanged.
 
 ### Added
+- Download strategy and proxied-byte diagnostics use bounded labels; signed query credentials are redacted from application and access logs.
+
+- Authorized Artifact downloads can offload managed S3 bodies through short-lived
+  HTTPS redirects when browser CORS is supported. Local files retain range
+  delivery; originals, previews and thumbnails now revalidate privately, and
+  shares/slicer downloads remain noncacheable.
 
 - Grype scans every AMD64 and ARM64 container image in CI and scans immutable
   publishing digests before promotion. Each run retains readable, JSON and SARIF
