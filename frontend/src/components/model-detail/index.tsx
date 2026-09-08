@@ -514,7 +514,7 @@ export function ModelDetail({ model: initialModel }: { model: ModelRead }) {
         <header className="flex flex-wrap items-center justify-between px-4 md:px-6 py-3 gap-2 border-b border-outline-variant bg-surface-container-lowest shrink-0">
           <div className="flex items-center gap-4">
             <Link
-              href="/"
+              href={model.collection ? `/?c=${encodeURIComponent(model.collection)}` : "/"}
               className="w-10 h-10 flex items-center justify-center rounded hover:bg-surface-container-high text-on-surface-variant transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />

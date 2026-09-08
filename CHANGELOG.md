@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The Model detail back arrow returns to its containing collection instead of
+  always returning to the library root, including nested collection paths.
+
 - Mounted Library source enrollment now rolls back known marker failures instead
   of leaving a conflicted source behind, reports read-only marker failures
   explicitly, and documents the one-time writable mount required for enrollment.
@@ -14,6 +17,19 @@
   failure.
 
 ### Changed
+
+- The getting-started reminder can be dismissed with Don't show again. The choice
+  is remembered per user in the current browser across Settings and the empty library.
+
+- First-run setup uses a centered, responsive form with inline password visibility
+  controls. Storage choices and server folders are visible immediately, with a
+  clear access-check step before account creation and guidance in English and Spanish.
+  A compact branded frame, slim progress steps, and a prominent server-storage
+  choice bring the guide closer to the app's forms and reduce mobile scrolling.
+  The first-model guide now offers a focused file upload or a two-field folder
+  connection that starts scanning immediately. Upload progress, recoverable scan
+  errors, and verified Model links stay visible in the guide; backup and printer
+  shortcuts follow the first Model.
 
 - Artifact downloads use the canonical `/files/{id}/download` endpoint. The
   separate `download-url` and `download-direct` endpoints have been removed.
