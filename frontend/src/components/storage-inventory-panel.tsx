@@ -108,9 +108,8 @@ export function StorageInventoryPanel() {
       if (cleanupTarget === "cache") {
         const cleaned = await cleanupStorageCache();
         setResult(
-          t("{completed} derived cache objects cleared; {pending} pending.", {
-            completed: cleaned.completed,
-            pending: cleaned.pending + cleaned.blocked,
+          t("{count} derived cache objects queued for verified cleanup.", {
+            count: cleaned.enqueued,
           }),
         );
       } else {

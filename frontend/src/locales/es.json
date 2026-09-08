@@ -2940,7 +2940,7 @@
   "Only rebuildable derived STL cache objects with verified ownership receipts are eligible. Thumbnails and original Artifacts are retained. This action is recorded in the audit log.": "Solo se incluyen objetos reconstruibles de caché STL derivada con recibos de propiedad verificados. Se conservan las miniaturas y los artefactos originales. Esta acción se registra en el registro de auditoría.",
   "Clean up": "Limpiar",
   "{files} files removed; {leases} expired leases cleared.": "Se eliminaron {files} archivos y {leases} concesiones caducadas.",
-  "{completed} derived cache objects cleared; {pending} pending.": "Se eliminaron {completed} objetos de caché derivada; {pending} pendientes.",
+  "{count} derived cache objects queued for verified cleanup.": "Se encolaron {count} objetos de caché derivada para una limpieza verificada.",
   "setup.showField": "Mostrar {field}",
   "setup.hideField": "Ocultar {field}",
   "setup.storageChoice": "¿Dónde debe guardar PrintStash los archivos nuevos?",

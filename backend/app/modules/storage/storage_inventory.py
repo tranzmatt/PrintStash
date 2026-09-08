@@ -30,6 +30,7 @@ from app.db.models import (
     Model,
     OwnedStorageObject,
     StagingLease,
+    StorageDeleteIntent,
     StorageInventorySample,
     StorageObjectState,
     User,
@@ -416,9 +417,15 @@ def inventory(
     objects: dict[tuple[str, str, str], int | None] = {}
     current_provider = provider_ref_for_backend(backend)
     receipts = list(session.exec(select(OwnedStorageObject)))
+    pending_deletions = list(
+        session.exec(
+            select(StorageDeleteIntent).where(StorageDeleteIntent.status != "completed")
+        )
+    )
+    owned_evidence = [*receipts, *pending_deletions]
     receipt_sizes = {
         (row.provider_ref or "legacy", row.namespace, row.key): row.size_bytes
-        for row in receipts
+        for row in owned_evidence
     }
     for blob in snapshot.primary + snapshot.derived + snapshot.embedded:
         try:
@@ -449,7 +456,7 @@ def inventory(
             )
     backup_bytes = 0
     backup_count = 0
-    for row in receipts:
+    for row in owned_evidence:
         identity = (row.provider_ref or "legacy", row.namespace, row.key)
         if row.size_bytes is not None:
             objects[identity] = row.size_bytes
@@ -813,7 +820,7 @@ def cleanup_derived_cache(session: Session, actor: User) -> dict:
         ):
             enqueued += 1
     session.commit()
-    result = process_storage_delete_intents(limit=max(100, enqueued))
+    process_storage_delete_intents(limit=max(100, enqueued))
     audit.record(
         session,
         action="storage.cleanup_derived_cache",
@@ -822,22 +829,14 @@ def cleanup_derived_cache(session: Session, actor: User) -> dict:
         diff={
             "candidates": len(candidates),
             "enqueued": enqueued,
-            "completed": result.completed,
-            "pending": result.pending,
-            "blocked": result.blocked,
         },
     )
     current = inventory(session)
     record_sample(session, current)
-    record_cleanup(
-        "cache", "success" if result.pending == 0 and result.blocked == 0 else "error"
-    )
+    record_cleanup("cache", "success" if enqueued == len(candidates) else "error")
     return {
         "candidates": len(candidates),
         "enqueued": enqueued,
-        "completed": result.completed,
-        "pending": result.pending,
-        "blocked": result.blocked,
         "inventory": current,
     }
 

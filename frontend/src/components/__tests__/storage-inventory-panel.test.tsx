@@ -190,9 +190,6 @@ describe("Storage insights", () => {
         "POST /api/v1/storage/inventory/cleanup-cache": json({
           candidates: 2,
           enqueued: 2,
-          completed: 2,
-          pending: 0,
-          blocked: 0,
         }),
       },
     });
@@ -203,7 +200,7 @@ describe("Storage insights", () => {
     );
     await user.click(view.getByRole("button", { name: "Clean up" }));
     expect(await view.findByRole("status")).toHaveTextContent(
-      "2 derived cache objects cleared; 0 pending.",
+      "2 derived cache objects queued for verified cleanup.",
     );
   });
 });

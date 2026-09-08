@@ -139,7 +139,6 @@ class TestStorageInventory:
 
         assert response.status_code == 200
         assert response.json()["enqueued"] == 1
-        assert response.json()["completed"] == 1
         assert not backend.exists(cache_key)
         assert backend.exists(thumbnail_key)
         assert (

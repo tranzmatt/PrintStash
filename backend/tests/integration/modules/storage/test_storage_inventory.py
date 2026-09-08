@@ -22,6 +22,7 @@ from app.modules.storage.storage_inventory import (
     logical_drilldown,
     record_sample,
 )
+from tests.factories import build_storage_delete_intent
 
 
 class TestInventory:
@@ -78,6 +79,15 @@ class TestInventory:
         )
         assert inventory(db_session).unique_owned_bytes == 46
 
+    def test_keeps_pending_delete_bytes_in_owned_total(self, db_session):
+        backend = get_backend()
+        receipt = backend.create_bytes(
+            b"queued", backend.stl_cache_key("f" * 64)
+        )
+        build_storage_delete_intent(db_session, backend, receipt, status="pending")
+
+        assert inventory(db_session).unique_owned_bytes == 6
+
     def test_never_walks_provider_on_read(self, db_session, monkeypatch):
         backend = get_backend()
 
@@ -119,6 +129,7 @@ class TestInventory:
         self, db_session, make_user
     ):
         user: User = make_user(superuser=True)
+        assert user.id is not None
         run = VaultAuditRun(
             requested_by=user.id,
             mode=VaultAuditMode.QUICK,
@@ -130,6 +141,7 @@ class TestInventory:
         db_session.add(run)
         db_session.commit()
         db_session.refresh(run)
+        assert run.id is not None
         db_session.add(
             VaultAuditFinding(
                 run_id=run.id,
