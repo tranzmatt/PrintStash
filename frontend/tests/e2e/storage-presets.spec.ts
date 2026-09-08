@@ -46,7 +46,7 @@ test.describe("storage presets", () => {
         }),
       );
       await page.goto("/settings?section=remote-storage");
-      await page.getByLabel("Provider", { exact: true }).selectOption(preset.id);
+      await page.getByLabel("Provider").selectOption(preset.id);
       await page.getByLabel("Connection name").fill("Preset backup");
       await page.getByRole("combobox", { name: /Use for/ }).selectOption("backup");
       for (const [name, value] of Object.entries(preset.fields))

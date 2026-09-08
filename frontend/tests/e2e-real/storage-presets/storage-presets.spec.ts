@@ -19,7 +19,7 @@ test.describe("storage presets", () => {
     expect((await page.request.put(remoteUrl, { data: body })).ok()).toBe(true);
     try {
       await page.goto("/settings?section=remote-storage");
-      await page.getByLabel("Provider", { exact: true }).selectOption("koofr");
+      await page.getByLabel("Provider").selectOption("koofr");
       await page.getByLabel("Connection name").fill(name);
       await page.getByRole("combobox", { name: "Use for", exact: true }).selectOption("library");
       await page.getByLabel("Server URL").fill(webdavBase);

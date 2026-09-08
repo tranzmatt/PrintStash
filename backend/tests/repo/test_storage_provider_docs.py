@@ -10,7 +10,7 @@ class TestStorageProviderDocumentation:
         docs = Path(__file__).parents[3] / "docs" / "storage-providers.md"
         assert docs.read_text(encoding="utf-8") == render_storage_provider_docs()
 
-    def test_role_matrix_exposes_runtime_and_delivery_facts(self) -> None:
+    def test_role_matrix_exposes_operational_facts(self) -> None:
         docs = render_storage_provider_docs()
 
         assert (
@@ -26,7 +26,7 @@ class TestStorageProviderDocumentation:
             "Signed GET candidate; proxy fallback |" in docs
         )
 
-    def test_each_provider_documents_prerequisites_and_large_object_limits(self) -> None:
+    def test_each_provider_documents_operational_limits(self) -> None:
         docs = render_storage_provider_docs()
 
         assert docs.count("Runtime packaging: **") == 23

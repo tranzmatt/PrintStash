@@ -422,11 +422,8 @@ describe("Storage form recovery", () => {
     ]);
     const user = await reachStorage();
     await user.click(screen.getByRole("button", { name: "S3-compatible object storage" }));
-    expect(screen.getByRole("button", { name: /Cloudflare R2/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByRole("button", { name: /Amazon S3/ })).toBeDisabled();
+    expect(screen.getByLabelText("Provider")).toHaveValue("cloudflare_r2");
+    expect(screen.getByRole("option", { name: "Amazon S3" })).toBeDisabled();
     expect(screen.getByLabelText("Bucket")).toBeVisible();
   });
 
@@ -445,10 +442,8 @@ describe("Storage form recovery", () => {
     const user = await reachStorage();
     await user.click(screen.getByRole("button", { name: "S3-compatible object storage" }));
     expect(
-      screen.getByRole("button", {
-        name: /Amazon S3.*This connection requires the full API image/,
-      }),
-    ).toBeDisabled();
+      screen.getByText(/Amazon S3.*This connection requires the full API image/),
+    ).toBeVisible();
   });
 
   it("recovers a failed storage check", async () => {
