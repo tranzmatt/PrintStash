@@ -4,9 +4,10 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import SQLModel, create_engine, select
 
 from app.core.errors import OperationError
+from app.db.models import CapacityAdmissionEvent
 from app.db.session import SQLiteSessionFactory, get_session_factory
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 
@@ -20,6 +21,23 @@ class TestCapacityManager:
         ]
         with pytest.raises(OperationError, match="storage_capacity_exceeded"):
             manager.reserve("upload", resources)
+        event = db_session.exec(select(CapacityAdmissionEvent)).one()
+        assert event.operation_kind == "upload"
+        assert event.decision == "deny"
+        assert event.required_bytes == 100
+        assert event.available_bytes == 100
+
+    def test_redacts_invalid_operation_kind_from_denial_history(self, db_session):
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+
+        with pytest.raises(OperationError, match="storage_capacity_exceeded"):
+            manager.reserve(
+                "private name/with path",
+                [CapacityResource.for_quota("one", 101, 100, role="input")],
+            )
+
+        event = db_session.exec(select(CapacityAdmissionEvent)).one()
+        assert event.operation_kind == "unknown"
 
     def test_preserves_exact_headroom(self, db_session):
         manager = CapacityManager(get_session_factory(), headroom_bytes=10)
@@ -183,3 +201,121 @@ class TestCapacityManager:
         monkeypatch.setattr(os, "statvfs", unavailable)
         with pytest.raises(OperationError, match="storage_capacity_unavailable"):
             manager.reserve("probe", [resource])
+
+
+class TestPercentageHeadroom:
+    def test_prevents_allocating_reserved_percentage(self, db_session):
+        manager = CapacityManager(
+            get_session_factory(), headroom_bytes=0, headroom_percent=10
+        )
+        resource = CapacityResource.for_quota(
+            "one", 91, 100, role="vault", total_bytes=100
+        )
+
+        with pytest.raises(OperationError, match="storage_capacity_exceeded") as denied:
+            manager.reserve("percent-upload", [resource])
+
+        assert denied.value.capacity == {
+            "required_bytes": 91,
+            "available_bytes": 100,
+            "reserved_bytes": 0,
+            "headroom_bytes": 10,
+        }
+        assert manager.reserved_bytes() == {}
+
+    def test_deduplicates_percentage_for_shared_domain(self, db_session):
+        manager = CapacityManager(
+            get_session_factory(), headroom_bytes=0, headroom_percent=10
+        )
+        resources = [
+            CapacityResource.for_quota("one", 45, 100, role=role, total_bytes=100)
+            for role in ("input", "output")
+        ]
+
+        handle = manager.reserve("shared-percent", resources)
+
+        assert manager.reserved_bytes() == {"quota:one": 90}
+        handle.release()
+
+
+class TestDurableCapacityLifetime:
+    @pytest.mark.parametrize(
+        "operation_id",
+        [
+            "artifact-upload:old-session",
+            "vault-migration:old-run",
+            "postgres-restore:old-backup",
+        ],
+    )
+    def test_preserves_legacy_workflow_budget_after_process_death(
+        self, db_session, make_capacity_reservation, operation_id
+    ):
+        import json
+
+        from app.modules.storage.capacity import _process_identity
+
+        identity = {**_process_identity(), "boot": "previous-boot"}
+        make_capacity_reservation(
+            expired=True,
+            operation_id=operation_id,
+            owner_identity_json=json.dumps(identity),
+        )
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+
+        assert manager.reconcile_stopped_processes() == 0
+        assert manager.reserved_bytes() == {"quota:test": 10}
+
+    def test_preserves_explicit_durable_budget_after_process_death(
+        self, db_session, make_capacity_reservation
+    ):
+        import json
+
+        from app.modules.storage.capacity import _process_identity
+
+        identity = {
+            **_process_identity(),
+            "boot": "previous-boot",
+            "lifetime": "workflow",
+        }
+        make_capacity_reservation(
+            expired=True,
+            operation_id="durable-owner",
+            owner_identity_json=json.dumps(identity),
+        )
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+
+        assert manager.reconcile_stopped_processes() == 0
+        assert manager.reserved_bytes() == {"quota:test": 10}
+        assert manager.reconcile(lambda operation_id: False) == 1
+
+    def test_records_durable_lifetime_on_reservation(self, db_session):
+        import json
+
+        from app.db.models import CapacityReservation
+
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        handle = manager.reserve(
+            "durable",
+            [CapacityResource.for_quota("one", 10, 100, role="input")],
+            durable=True,
+        )
+        handle.renew()
+
+        row = db_session.get(CapacityReservation, "durable")
+        assert json.loads(row.owner_identity_json)["lifetime"] == "workflow"
+        handle.release()
+
+
+class TestLegacyCapacityReservation:
+    def test_reuses_without_total_evidence(
+        self, db_session, make_capacity_reservation
+    ):
+        row = make_capacity_reservation(operation_id="legacy")
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+
+        handle = manager.reserve(
+            "legacy", [CapacityResource.for_quota("test", 10, 100, role="test")]
+        )
+
+        assert manager.reserved_bytes() == {"quota:test": 10}
+        assert handle.operation_id == row.operation_id

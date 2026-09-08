@@ -133,7 +133,7 @@ def sample_storage_inventory(
 ):
     from app.modules.storage.storage_inventory import inventory, record_sample
 
-    current = inventory(session)
+    current = inventory(session, refresh_provider=True)
     record_sample(session, current)
     return current
 
@@ -142,12 +142,15 @@ def sample_storage_inventory(
 def storage_logical_models(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
+    collection_id: int | None = Query(default=None, ge=0),
     session: Session = Depends(get_session),
     actor: User = Depends(require_user),
 ):
     from app.modules.storage.storage_inventory import logical_drilldown
 
-    return logical_drilldown(session, actor, offset=offset, limit=limit)
+    return logical_drilldown(
+        session, actor, offset=offset, limit=limit, collection_id=collection_id
+    )
 
 
 @router.post("/inventory/cleanup-staging")
@@ -158,3 +161,41 @@ def cleanup_storage_staging(
     from app.modules.storage.storage_inventory import cleanup_expired_staging
 
     return cleanup_expired_staging(session, actor)
+
+
+@router.post("/inventory/cleanup-cache")
+def cleanup_storage_derived_cache(
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_superuser),
+):
+    from app.modules.storage.storage_inventory import cleanup_derived_cache
+
+    return cleanup_derived_cache(session, actor)
+
+
+@router.get("/inventory/collections")
+def storage_logical_collections(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_user),
+):
+    from app.modules.storage.storage_inventory import collection_drilldown
+
+    return collection_drilldown(session, actor, offset=offset, limit=limit)
+
+
+@router.get("/inventory/activity", dependencies=[Depends(require_superuser)])
+def storage_capacity_activity(session: Session = Depends(get_session)):
+    from app.modules.storage.storage_inventory import capacity_activity
+
+    return capacity_activity(session)
+
+
+@router.get(
+    "/inventory/cleanup-opportunities", dependencies=[Depends(require_superuser)]
+)
+def storage_cleanup_opportunities(session: Session = Depends(get_session)):
+    from app.modules.storage.storage_inventory import cleanup_opportunities
+
+    return cleanup_opportunities(session)

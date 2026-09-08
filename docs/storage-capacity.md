@@ -12,10 +12,26 @@ remain unknown. S3 free space and provider quota remain unknown when the provide
 not supply capacity evidence. Local free space comes from `statvfs` on the actual
 filesystem; roots sharing one device share one capacity budget.
 
-The maintenance tick saves at most one sample per UTC day. History keeps up to 366
-daily samples per target. The forecast requires seven distinct daily samples spanning
-at least seven days and positive, stable growth. It uses the median daily change,
-withholds estimates around large outliers, and never authorizes an allocation.
+The optional adapter `capacity()` result records total, used, available and quota bytes
+with its timestamp, method and exact/estimated reliability. Unsupported WebDAV, SFTP
+and S3 quota evidence remains unknown. A failed refresh retains the last measurement
+as degraded evidence, and concurrent refreshes share one bounded adapter probe. The
+interactive inventory, health endpoint and Prometheus scrape path only read persisted
+or database-aggregated evidence; none performs a remote namespace walk.
+
+The maintenance tick saves at most one sample per UTC hour. History keeps hourly
+evidence for 14 days, then one sample per UTC day, and expires evidence after 366 days.
+Each sample separates live originals, trash, derived/cache and backups. The forecast
+requires seven distinct daily samples spanning at least seven days and positive,
+stable growth. It uses the median daily change, withholds estimates around large
+outliers, reports its sample window/confidence, records prediction error without
+private labels, and never authorizes an allocation.
+
+The latest completed Vault audit contributes only its run id, completion time and
+aggregate unclaimed-object count. Object names and keys are not copied into inventory,
+health or metrics. Collection and Model drilldowns use the normal live-resource access
+scope and fixed pagination limits; Vault-wide operator metrics never use their names as
+labels.
 
 ## Admission policy
 
@@ -46,10 +62,57 @@ it never grants additional local staging space.
 
 ## Cleanup
 
-The **Clean up expired staging** action requires explicit confirmation and is audited.
-It calls the existing staging owner: only expired files whose device/inode/ctime/size
-still match their receipts can be removed. Replaced or uncertain files stay in place
-and remain charged. Cleanup refreshes the saved inventory. Library artifacts, trash,
-backups and other authoritative data are never automatically deleted by this policy.
+The **Clean up expired staging** and **Clear derived cache** actions require explicit
+confirmation and are audited. Staging cleanup calls the existing staging owner: only
+expired files whose device/inode/ctime/size still match their receipts can be removed.
+Derived-cache cleanup queues exact, receipt-verified `stl_cache` objects through the
+durable deletion outbox. Replaced or uncertain files stay in place and remain charged.
+Both actions refresh the saved inventory. Thumbnails, Library artifacts, trash,
+backups and other authoritative data are never automatically deleted by this policy;
+their existing owner-specific Settings actions remain the only route.
 
 The [behavior matrix](storage-capacity-test-matrix.md) records the feature verification.
+
+## Percentage headroom and durable work
+
+`STORAGE_MIN_FREE_PERCENT` (0–100, default 0) reserves a percentage of each
+measured filesystem or quota domain. Admission uses the larger of that amount
+and the configured minimum free bytes, once per domain. Unknown provider quota
+remains a warning; an unavailable local measurement prevents unsafe admission.
+A capacity rejection includes numeric required, available, reserved and headroom
+bytes plus a refresh hint. Neither the response nor telemetry needs object keys.
+
+Resumable work uses `CapacityManager.reserve(..., durable=True)`. Its estimate
+survives the creator process and automatic expiry reconciliation. The workflow
+owner releases it only after completing or safely cleaning its surviving bytes.
+Older upload, PostgreSQL restore and Vault migration claims are conservatively
+retained too. Process-scoped scratch work still reconciles after a proven exit.
+Reservations remain budget evidence and never authorize storage deletion.
+
+## Allocation census
+
+Every application workflow that can create a substantial local or Vault allocation
+uses `CapacityManager` directly or enters through the guarded Artifact materializer.
+Helpers listed as inherited must not add an independent reservation because their
+owning workflow already reserves the combined peak.
+
+| Workflow | Admission owner | Recheck / release boundary |
+|---|---|---|
+| Browser/API upload and capture | upload/inbox owner | Before body staging; released after publication or receipt-safe cleanup |
+| URL/library import and Artifact publication | importer/ingestion owner | Before download and immediately before the final Vault allocation |
+| Archive export/import | library-transfer owner | Before archive creation/extraction; export rechecks its measured census |
+| Backup creation | backup creation owner | Before snapshot/archive work and again after the snapshot census; publication helpers inherit the claim |
+| Backup upload/download/adoption | backup transfer owner | Before local staging or consuming a remote body; immutable-identity validation remains unchanged |
+| Backup restore | restore owner | Remote download is admitted first, then restore is admitted again after the archive member census; rollback and publication are included |
+| Vault migration | migration owner | Durable destination plus transfer staging claim; released only after terminal reconciliation |
+| Thumbnail/render/conversion work | thumbnail owner | Before source materialization and derivative publication; renderer subprocess helpers inherit the claim |
+| Printer-side external capture | printer hub | Before bounded printer download and Vault publication |
+| Other external/remote Artifact materialization | `ArtifactHandle` | Before creating the verified local copy; the claim follows stream/path lifetime |
+| Expired staging cleanup | staging receipt owner | No admission needed: it only removes exact expired receipt identities after confirmation |
+
+Provider streaming reads, direct local-path reads, inventory SQL aggregation, quick
+Vault audit enumeration, backup catalogue listing, health and metrics are read-only and
+make no application-sized local allocation. Small configuration probes use fixed-size
+temporary files and are not storage workflows. Remote-adapter temporary publication
+buffers, backup snapshot/publication helpers and mesh worker files execute inside the
+owning workflow's peak claim.

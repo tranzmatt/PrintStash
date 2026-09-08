@@ -107,7 +107,10 @@ def _compose_storage_backend(
     try:
         if settings.storage_provider_error:
             raise RuntimeError(settings.storage_provider_error)
-        if settings.storage_backend in {"nextcloud", "webdav", "sftp"}:
+        from app.modules.storage.storage_providers import provider_transport
+
+        transport = provider_transport(str(settings.storage_backend))
+        if transport in {"webdav", "sftp"}:
             from app.modules.storage.storage_opendal import OpenDALStorageBackend
             from app.modules.storage.storage_providers import (
                 parse_provider_config,
@@ -118,10 +121,12 @@ def _compose_storage_backend(
                 json.loads(str(settings.storage_provider_config))
             )
             storage_backend = OpenDALStorageBackend(resolve_transport(provider_config))
-        elif settings.storage_backend == "s3":
+        elif transport == "s3":
             storage_backend = S3StorageBackend(check_bucket=not recovery_only)
-        else:
+        elif transport == "local":
             storage_backend = LocalStorageBackend()
+        else:
+            raise ValueError("storage_provider_not_available_for_vault")
     except Exception as exc:
         # An explicit but invalid provider must never silently become local
         # storage. Keep the API/health surface available in recovery mode while

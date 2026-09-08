@@ -117,6 +117,22 @@ afterEach(() => {
 });
 
 describe("ModelDetail", () => {
+  describe("collection navigation", () => {
+    it.each([
+      { label: "containing collection", collection: "parts", expected: "/?c=parts" },
+      {
+        label: "nested collection with special characters",
+        collection: "Wall mounts/Backpack & gear #2",
+        expected: "/?c=Wall%20mounts%2FBackpack%20%26%20gear%20%232",
+      },
+      { label: "root for an uncollected model", collection: null, expected: "/" },
+    ])("returns to $label", async ({ collection, expected }) => {
+      renderDetail({ model: aModel({ collection }) });
+
+      expect(await screen.findByRole("link", { name: "" })).toHaveAttribute("href", expected);
+    });
+  });
+
   describe("what it shows", () => {
     it("names the model", async () => {
       renderDetail();

@@ -1,3 +1,9 @@
+/*
+ * Storage insights must distinguish unknown capacity from a hard block, expose
+ * persisted history accessibly, and require confirmation before removing any
+ * expired staging. The tests exercise those operator-visible safety contracts.
+ */
+
 import "@testing-library/jest-dom/vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -8,6 +14,7 @@ import type { StorageInventoryReport } from "@/lib/api/storage-inventory";
 
 const report: StorageInventoryReport = {
   inventory: {
+    schema_version: 1,
     generated_at: "2026-09-07T00:00:00Z",
     measured_at: null,
     target_ref: "test",
@@ -20,6 +27,18 @@ const report: StorageInventoryReport = {
     measured_provider_bytes: null,
     method: "database ownership census",
     confidence: "known sizes only",
+    provider_capacity: {
+      status: "unknown",
+      total_bytes: null,
+      used_bytes: null,
+      available_bytes: null,
+      quota_bytes: null,
+      measured_at: null,
+      method: "unsupported",
+      reliability: "unknown",
+      error: null,
+    },
+    latest_audit: null,
     buckets: [],
     volumes: [
       {
@@ -35,7 +54,15 @@ const report: StorageInventoryReport = {
     ],
   },
   history: [],
-  forecast: { status: "insufficient_data", days_remaining: null, bytes_per_day: null },
+  forecast: {
+    status: "insufficient_data",
+    days_remaining: null,
+    bytes_per_day: null,
+    sample_count: 0,
+    window_days: 0,
+    confidence: "insufficient",
+    threshold_at: null,
+  },
 };
 
 function setup(response = report) {
@@ -51,6 +78,26 @@ describe("Storage insights", () => {
     expect(await screen.findByText("Capacity unknown")).toBeVisible();
     expect(screen.getByText(/2 objects have no recorded size/)).toBeVisible();
   });
+  it("shows only aggregate unattributed audit evidence", async () => {
+    setup({
+      ...report,
+      inventory: {
+        ...report.inventory,
+        latest_audit: {
+          run_id: 9,
+          completed_at: "2026-09-07T00:00:00Z",
+          unclaimed_object_count: 3,
+          unclaimed_bytes: 4096,
+          unknown_size_count: 1,
+          method: "vault_audit_findings",
+        },
+      },
+    });
+
+    expect(await screen.findByText(/Latest audit found 3/)).toHaveTextContent(
+      "Known size: 4 KB. Unknown sizes: 1.",
+    );
+  });
   it("explains allocation blockers", async () => {
     setup({
       ...report,
@@ -65,13 +112,57 @@ describe("Storage insights", () => {
     setup({
       ...report,
       history: [
-        { sampled_at: "2026-09-01T00:00:00Z", owned_bytes: 40 },
-        { sampled_at: "2026-09-07T00:00:00Z", owned_bytes: 80 },
+        {
+          sampled_at: "2026-09-01T00:00:00Z",
+          owned_bytes: 40,
+          categories: { live_originals: 40, trash: 0, derived_cache: 0, backups: 0 },
+        },
+        {
+          sampled_at: "2026-09-07T00:00:00Z",
+          owned_bytes: 80,
+          categories: { live_originals: 80, trash: 0, derived_cache: 0, backups: 0 },
+        },
       ],
     });
     expect(
       await screen.findByRole("img", { name: "Recorded owned storage over time" }),
     ).toBeVisible();
+  });
+
+  it("shows a privacy-safe reservation beside the paginated Collection drilldown", async () => {
+    const view = renderApp(<StorageInventoryPanel />, {
+      auth: adminSession(),
+      routes: {
+        "GET /api/v1/storage/inventory": () => json(report),
+        "GET /api/v1/storage/inventory/activity": () =>
+          json({
+            active_reservations: [
+              {
+                operation_kind: "backup",
+                required_bytes: 1024,
+                roles: ["backup archive"],
+                durable: false,
+                created_at: "2026-09-07T00:00:00Z",
+                expires_at: "2026-09-07T01:00:00Z",
+              },
+            ],
+            recent_denials: [],
+          }),
+        "GET /api/v1/storage/inventory/collections?offset=0&limit=10": () =>
+          json([
+            {
+              collection_id: 7,
+              name: "Private collection name",
+              logical_bytes: 2048,
+              external_bytes: 0,
+              model_count: 1,
+            },
+          ]),
+      },
+    });
+
+    expect(await view.findByText("backup · 0 GB")).toBeVisible();
+    expect(await view.findByText(/Private collection name/)).toBeVisible();
   });
   it("requires confirmation for staging cleanup", async () => {
     setup();
@@ -80,5 +171,36 @@ describe("Storage insights", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent("Uncertain files are retained");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+  it("clears only verified rebuildable cache after confirmation", async () => {
+    const view = renderApp(<StorageInventoryPanel />, {
+      auth: adminSession(),
+      routes: {
+        "GET /api/v1/storage/inventory": () => json(report),
+        "GET /api/v1/storage/inventory/cleanup-opportunities": () =>
+          json([
+            {
+              owner: "cache",
+              candidate_count: 2,
+              candidate_bytes: 4096,
+              action: "cleanup_derived_cache",
+              available: true,
+            },
+          ]),
+        "POST /api/v1/storage/inventory/cleanup-cache": json({
+          candidates: 2,
+          enqueued: 2,
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(await view.findByRole("button", { name: "Clear derived cache" }));
+    expect(await view.findByRole("dialog")).toHaveTextContent(
+      "Thumbnails and original Artifacts are retained",
+    );
+    await user.click(view.getByRole("button", { name: "Clean up" }));
+    expect(await view.findByRole("status")).toHaveTextContent(
+      "2 derived cache objects queued for verified cleanup.",
+    );
   });
 });

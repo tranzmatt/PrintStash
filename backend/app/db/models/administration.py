@@ -312,6 +312,14 @@ class VaultAuditRun(SQLModel, table=True):
     info_count: int = Field(default=0)
     warning_count: int = Field(default=0)
     critical_count: int = Field(default=0)
+    unclaimed_bytes: int = Field(
+        default=0,
+        sa_column=Column(BigInteger, nullable=False, server_default="0"),
+    )
+    unclaimed_unknown_size_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
     progress: float = Field(default=0.0)
     current_phase: Optional[str] = Field(default=None, max_length=64)
     cancel_requested: bool = Field(default=False)

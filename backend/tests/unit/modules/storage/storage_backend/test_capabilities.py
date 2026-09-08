@@ -14,10 +14,12 @@ from typing import Iterator
 import pytest
 
 from app.modules.storage.storage_backend.contracts import (
+    CapacityReliability,
     CreationReceipt,
     ObjectIdentity,
     StorageBackend,
     StorageCapabilities,
+    StorageCapacity,
     StorageConfigurationError,
     StorageObjectInfo,
     StorageTier,
@@ -141,7 +143,7 @@ class TestUnavailableStorageBackend:
             ("delete", ("any-key",)),
             ("list_keys", ("prefix",)),
             ("usage", ("prefix",)),
-            ("presigned_download_url", ("any-key", "part.stl")),
+            ("browser_download", ("any-key", "part.stl", "application/sla")),
         ],
     )
     def test_rejects_storage_io(
@@ -249,9 +251,6 @@ class _ProbeBackend(StorageBackend):
     def usage(self, prefix: str = "") -> dict:
         return {"prefix": prefix}
 
-    def presigned_download_url(self, key: str, filename: str) -> str | None:
-        return f"{key}/{filename}"
-
     def health_probe(self) -> dict:
         return {"backend": self.backend_name, "ok": True}
 
@@ -266,10 +265,35 @@ class TestStorageBackendDefaults:
         assert backend.capabilities.tier.value == "unguarded"
         assert backend.probe_diagnostics == {}
         assert backend.destructive_lifecycle_findings() == []
+        assert backend.capacity() is None
         assert (
             backend.reclaim_unverified("key", expected_size=1, expected_etag=None)
             is False
         )
+
+    def test_capacity_rejects_negative_or_unlabelled_evidence(self) -> None:
+        from app.core.time import utcnow
+
+        with pytest.raises(ValueError, match="nonnegative"):
+            StorageCapacity(
+                total_bytes=1,
+                used_bytes=-1,
+                available_bytes=1,
+                quota_bytes=None,
+                measured_at=utcnow(),
+                method="probe",
+                reliability=CapacityReliability.EXACT,
+            )
+        with pytest.raises(ValueError, match="method"):
+            StorageCapacity(
+                total_bytes=None,
+                used_bytes=None,
+                available_bytes=None,
+                quota_bytes=None,
+                measured_at=utcnow(),
+                method="",
+                reliability=CapacityReliability.ESTIMATED,
+            )
 
     def test_requires_provider_namespace_for_restore_validation(self) -> None:
         backend = _ProbeBackend()

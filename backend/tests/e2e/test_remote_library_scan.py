@@ -20,7 +20,12 @@ from sqlmodel import select
 from app.db.models import File, LibrarySourceKind
 from app.modules.storage.storage_connections import parse_connection_config
 from app.modules.storage.storage_opendal import OpenDALStorageBackend
-from app.modules.storage.storage_providers import resolve_transport
+from app.modules.storage.storage_providers import (
+    PRESETS,
+    parse_provider_config,
+    resolve_transport,
+    split_provider_config,
+)
 from tests.containers import (
     S3_ACCESS_KEY,
     S3_SECRET_KEY,
@@ -28,6 +33,7 @@ from tests.containers import (
     openssh_endpoint,
     s3_endpoint,
 )
+from tests.fixtures.storage_presets import real_preset_configuration
 from tests.paths import FIXTURES_DIR
 
 
@@ -105,10 +111,30 @@ def _s3_provider() -> _RemoteProvider:
         ),
         pytest.param(_sftp_provider, id="sftp", marks=pytest.mark.remote_storage),
         pytest.param(_s3_provider, id="s3", marks=pytest.mark.s3),
+        *[
+            pytest.param(
+                provider,
+                id=provider,
+                marks=pytest.mark.s3
+                if preset["transport"] == "s3"
+                else pytest.mark.remote_storage,
+            )
+            for provider, preset in PRESETS.items()
+            if preset["transport"] != "local"
+        ],
     ]
 )
 def remote_provider(request) -> _RemoteProvider:
-    return request.param()
+    if callable(request.param):
+        return request.param()
+    config = parse_provider_config(real_preset_configuration(request.param))
+    spec = resolve_transport(config)
+    configuration, secrets = split_provider_config(config)
+    backend = OpenDALStorageBackend(spec)
+    if spec.kind.value == "sftp":
+        backend.provision_root()
+    backend.ensure_setup()
+    return _RemoteProvider(spec.kind.value, configuration, secrets, backend)
 
 
 class TestRemoteLibraryScan:

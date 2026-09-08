@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlmodel import Session, select
 
+from app.core.config import _overlay
 from app.db.models import (
     MaterialSlotState,
     MaterialSource,
@@ -1327,6 +1328,35 @@ class TestPrinterHubSyncActiveJob:
             )
 
         persist.assert_called_once()
+
+    def test_external_capture_reserves_before_download(
+        self, printer: Printer, hub: PrinterHub, db_session, monkeypatch
+    ) -> None:
+        artifact = a_gcode_artifact(db_session, "Capacity capture")
+        job = build_print_job(
+            db_session,
+            artifact,
+            remote_filename="external.gcode",
+            source="external",
+            state=PrintJobState.PRINTING,
+            artifact_evidence="capture_pending",
+        )
+        client = MagicMock()
+        client.download_artifact = AsyncMock()
+        monkeypatch.setitem(_overlay, "storage_min_free_bytes", 10**18)
+
+        with _capture_limit_mb(1):
+            asyncio.run(
+                hub._capture_external_artifact(
+                    printer.id, job.id, "/cache/external.gcode", client
+                )
+            )
+
+        client.download_artifact.assert_not_awaited()
+        db_session.expire_all()
+        failed = db_session.get(PrintJob, job.id)
+        assert failed is not None
+        assert failed.artifact_capture_error_code == "storage_capacity_exceeded"
 
     def test_external_capture_lets_cancellation_propagate(
         self, printer: Printer, hub: PrinterHub

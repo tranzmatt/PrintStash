@@ -235,7 +235,7 @@ beforeEach(() => {
 
 describe("SetupPage", () => {
   it.each([
-    ["unavailable", "Requires the full image"],
+    ["unavailable", "This connection requires the full API image."],
     ["unknown", "Choose an available storage provider."],
   ])("refuses a storage check for an %s provider", async (kind, message) => {
     vi.mocked(deps.getSetupStatus).mockResolvedValue({
@@ -246,7 +246,12 @@ describe("SetupPage", () => {
     vi.mocked(deps.getStorageProviders).mockResolvedValue(
       providers.map((provider) =>
         provider.id === "s3"
-          ? { ...provider, available: false, selectable: false, disabled_reason: message }
+          ? {
+              ...provider,
+              available: false,
+              selectable: false,
+              disabled_reason: "storage_dependency_missing",
+            }
           : provider,
       ),
     );
@@ -273,6 +278,7 @@ describe("SetupPage", () => {
     const user = await reachStorage();
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Password")).toHaveValue("Password123");
+    expect(screen.getByRole("heading", { name: "Your account" })).toHaveFocus();
   });
   it("requires a successful check before creating an account", async () => {
     await reachStorage();
@@ -336,27 +342,128 @@ describe("SetupPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Initial registration is disabled");
     expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
   });
-  it("lets a password manager generated password be inspected", async () => {
+  it.each([
+    { field: "Password", other: "Confirm password" },
+    { field: "Confirm password", other: "Password" },
+  ])("toggles $field independently", async ({ field, other }) => {
+    const user = userEvent.setup();
     renderSetup();
-    const password = await screen.findByLabelText("Password");
-    fireEvent.click(screen.getByRole("button", { name: "Show passwords" }));
+    const password = await screen.findByLabelText(field);
+    await user.type(password, "Password123");
+    await user.click(screen.getByRole("button", { name: `Show ${field}` }));
     expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("Password123");
+    expect(screen.getByLabelText(other)).toHaveAttribute("type", "password");
+    await user.click(screen.getByRole("button", { name: `Hide ${field}` }));
+    expect(password).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: `Show ${field}` })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
   it("offers Spanish from the first screen", async () => {
     renderSetup();
     await screen.findByLabelText("Username");
     fireEvent.click(screen.getByRole("button", { name: /Language: English/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Español" }));
     expect(await screen.findByLabelText("Usuario")).toBeVisible();
   });
 });
 
 describe("Storage form recovery", () => {
+  it("shows storage destinations immediately", async () => {
+    await reachStorage();
+    expect(screen.getByLabelText("Data directory")).toBeVisible();
+    expect(screen.getByLabelText("Data directory")).toHaveValue("/data/files");
+    expect(screen.getByLabelText("Thumbnail directory")).toHaveValue("/data/thumbs");
+    expect(screen.queryByRole("button", { name: /Local disk/ })).not.toBeInTheDocument();
+  });
+
+  it("selects a single-provider category directly", async () => {
+    const user = await reachStorage();
+    await user.click(screen.getByRole("button", { name: "S3-compatible object storage" }));
+    expect(screen.getByLabelText("Bucket")).toBeVisible();
+    expect(screen.queryByLabelText("Data directory")).not.toBeInTheDocument();
+    expect(screen.getByText("Guarded storage consequences")).toBeVisible();
+  });
+
+  it("explains the required storage check", async () => {
+    await reachStorage();
+    expect(
+      screen.getByText(
+        "Check that PrintStash can read and write here before creating your account.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("restores server defaults when returning from a remote provider", async () => {
+    const user = await reachStorage();
+    await user.click(screen.getByRole("button", { name: "S3-compatible object storage" }));
+    await user.click(screen.getByRole("button", { name: "On this server (recommended)" }));
+    expect(screen.getByLabelText("Data directory")).toHaveValue("/data/files");
+    expect(screen.getByLabelText("Thumbnail directory")).toHaveValue("/data/thumbs");
+  });
+
+  it("keeps an edited destination when reselecting its category", async () => {
+    const user = await reachStorage();
+    await user.clear(screen.getByLabelText("Data directory"));
+    await user.type(screen.getByLabelText("Data directory"), "/custom/files");
+    await user.click(screen.getByRole("button", { name: "On this server (recommended)" }));
+    expect(screen.getByLabelText("Data directory")).toHaveValue("/custom/files");
+  });
+
+  it("selects an available provider when a category has several choices", async () => {
+    const s3 = providers.find((provider) => provider.id === "s3")!;
+    vi.mocked(deps.getStorageProviders).mockResolvedValue([
+      ...providers.map((provider) =>
+        provider.id === "s3" ? { ...provider, selectable: false } : provider,
+      ),
+      { ...s3, id: "cloudflare_r2", label: "Cloudflare R2" },
+    ]);
+    const user = await reachStorage();
+    await user.click(screen.getByRole("button", { name: "S3-compatible object storage" }));
+    expect(screen.getByLabelText("Provider")).toHaveValue("cloudflare_r2");
+    expect(screen.getByRole("option", { name: "Amazon S3" })).toBeDisabled();
+    expect(screen.getByLabelText("Bucket")).toBeVisible();
+  });
+
+  it("shows unavailable provider reasons during setup", async () => {
+    vi.mocked(deps.getStorageProviders).mockResolvedValue(
+      providers.map((provider) =>
+        provider.id === "s3"
+          ? {
+              ...provider,
+              selectable: false,
+              disabled_reason: "storage_dependency_missing",
+            }
+          : provider,
+      ),
+    );
+    const user = await reachStorage();
+    await user.click(screen.getByRole("button", { name: "S3-compatible object storage" }));
+    expect(
+      screen.getByText(/Amazon S3.*This connection requires the full API image/),
+    ).toBeVisible();
+  });
+
+  it("recovers a failed storage check", async () => {
+    vi.mocked(deps.checkSetupStorage).mockRejectedValueOnce(new Error("data_dir_not_writable"));
+    const user = await reachStorage();
+    await user.click(screen.getByRole("button", { name: "Check storage" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Check the locations above");
+    await user.clear(screen.getByLabelText("Data directory"));
+    await user.type(screen.getByLabelText("Data directory"), "/new/files");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check storage" }));
+    expect(await screen.findByText("Storage ready")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create my account and continue" })).toBeEnabled();
+  });
   it("preserves storage locations when the language changes", async () => {
     const user = await reachStorage();
-    await user.click(screen.getByText("View location and advanced options"));
     await user.clear(screen.getByLabelText("Data directory"));
     await user.type(screen.getByLabelText("Data directory"), "/custom/files");
     await user.click(screen.getByRole("button", { name: /Language: English/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Español" }));
     expect(screen.getByDisplayValue("/custom/files")).toBeInTheDocument();
   });
 
@@ -369,7 +476,6 @@ describe("Storage form recovery", () => {
     );
     const user = await reachStorage();
     await user.click(screen.getByRole("button", { name: "Check storage" }));
-    await user.click(screen.getByText("View location and advanced options"));
     await user.clear(screen.getByLabelText("Data directory"));
     await user.type(screen.getByLabelText("Data directory"), "/different/files");
     completeCheck({ ready: true, storage_provider: "local", checks: [] });
@@ -398,5 +504,7 @@ describe("Storage form recovery", () => {
     await user.click(screen.getByRole("button", { name: "Create my account and continue" }));
     expect(await screen.findByText("Creating your account…")).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
+    expect(screen.getByLabelText("Data directory")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "S3-compatible object storage" })).toBeDisabled();
   });
 });

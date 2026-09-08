@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 import tempfile
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 
@@ -193,11 +195,29 @@ def _require_backup_archive_owned(
 # ---------------------------------------------------------------------------
 
 
+def _download_capacity(meta: _contracts_module.BackupMeta, *, capacity_claimed: bool):
+    if capacity_claimed:
+        return nullcontext()
+    from app.modules.storage.capacity import CapacityManager, CapacityResource
+
+    return CapacityManager(get_session_factory()).hold(
+        f"backup-download:{secrets.token_hex(12)}",
+        [
+            CapacityResource.for_path(
+                settings.backup_dir,
+                meta.size_bytes * 2,
+                role="backup download and cache publication",
+            )
+        ],
+    )
+
+
 def _download_backup_to_local(
     meta: _contracts_module.BackupMeta,
     *,
     progress: Callable[[int], None] | None = None,
     fresh_remote: bool = False,
+    capacity_claimed: bool = False,
 ) -> Path:
     """Ensure a local copy of the backup exists, downloading from S3 if needed."""
     local_path = Path(meta.path) if meta.location == "local" else None
@@ -251,31 +271,32 @@ def _download_backup_to_local(
                 )
             return local_path
 
-        fd, raw_temp = tempfile.mkstemp(
-            prefix=".printstash-backup-download-", dir=settings.backup_dir
-        )
-        os.close(fd)
-        download_temp = Path(raw_temp)
-        download_temp.unlink()
-        try:
-            if progress is None:
-                destination.download_owned(owned, download_temp)
-            else:
-                destination.download_owned(owned, download_temp, progress=progress)
-            with get_session_factory().session() as publish_session:
-                publish_file(
-                    publish_session,
-                    LocalStorageBackend(),
-                    str(local_path),
-                    download_temp,
-                    object_kind="backup-cloud-cache",
-                    sha256=owned.sha256,
-                    move=True,
-                )
-                publish_session.commit()
-        except Exception:
-            download_temp.unlink(missing_ok=True)
-            raise
+        with _download_capacity(meta, capacity_claimed=capacity_claimed):
+            fd, raw_temp = tempfile.mkstemp(
+                prefix=".printstash-backup-download-", dir=settings.backup_dir
+            )
+            os.close(fd)
+            download_temp = Path(raw_temp)
+            download_temp.unlink()
+            try:
+                if progress is None:
+                    destination.download_owned(owned, download_temp)
+                else:
+                    destination.download_owned(owned, download_temp, progress=progress)
+                with get_session_factory().session() as publish_session:
+                    publish_file(
+                        publish_session,
+                        LocalStorageBackend(),
+                        str(local_path),
+                        download_temp,
+                        object_kind="backup-cloud-cache",
+                        sha256=owned.sha256,
+                        move=True,
+                    )
+                    publish_session.commit()
+            except Exception:
+                download_temp.unlink(missing_ok=True)
+                raise
         return local_path
 
     if meta.location == "s3":
@@ -345,63 +366,65 @@ def _download_backup_to_local(
                 )
             return local_path
 
-        fd, raw_temp = tempfile.mkstemp(
-            prefix=".printstash-backup-download-", dir=settings.backup_dir
-        )
-        os.close(fd)
-        download_temp = Path(raw_temp)
-        try:
-            response = _targets_module._s3_get_owned(target, owned)
-            body = response["Body"]
+        with _download_capacity(meta, capacity_claimed=capacity_claimed):
+            fd, raw_temp = tempfile.mkstemp(
+                prefix=".printstash-backup-download-", dir=settings.backup_dir
+            )
+            os.close(fd)
+            download_temp = Path(raw_temp)
             try:
-                with download_temp.open("wb") as destination:
-                    while True:
-                        if progress is not None:
-                            progress(0)
-                        chunk = body.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        if progress is not None:
-                            progress(len(chunk))
-                        destination.write(chunk)
-            finally:
-                body.close()
-            _targets_module._assert_s3_identity(
-                response,
-                size_bytes=owned.size_bytes,
-                etag=owned.etag,
-                version_id=owned.version_id,
-            )
-            if download_temp.stat().st_size != owned.size_bytes:
-                raise RuntimeError("backup_download_size_mismatch")
-            if (
-                owned.sha256
-                and _archive_format_module._sha256_path(download_temp) != owned.sha256
-            ):
-                raise RuntimeError("backup_download_digest_mismatch")
-            # Re-HEAD through the same immutable version/ETag proof after the
-            # body is consumed.  An unversioned object may have been replaced
-            # between the initial check and GET; never publish that body.
-            confirmed = _targets_module._s3_head_owned(target, owned)
-            _targets_module._assert_s3_identity(
-                confirmed,
-                size_bytes=owned.size_bytes,
-                etag=owned.etag,
-                version_id=owned.version_id,
-            )
-            with get_session_factory().session() as publish_session:
-                publish_file(
-                    publish_session,
-                    LocalStorageBackend(),
-                    str(local_path),
-                    download_temp,
-                    object_kind="backup-cloud-cache",
-                    move=True,
+                response = _targets_module._s3_get_owned(target, owned)
+                body = response["Body"]
+                try:
+                    with download_temp.open("wb") as destination:
+                        while True:
+                            if progress is not None:
+                                progress(0)
+                            chunk = body.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            if progress is not None:
+                                progress(len(chunk))
+                            destination.write(chunk)
+                finally:
+                    body.close()
+                _targets_module._assert_s3_identity(
+                    response,
+                    size_bytes=owned.size_bytes,
+                    etag=owned.etag,
+                    version_id=owned.version_id,
                 )
-                publish_session.commit()
-        except Exception:
-            download_temp.unlink(missing_ok=True)
-            raise
+                if download_temp.stat().st_size != owned.size_bytes:
+                    raise RuntimeError("backup_download_size_mismatch")
+                if (
+                    owned.sha256
+                    and _archive_format_module._sha256_path(download_temp)
+                    != owned.sha256
+                ):
+                    raise RuntimeError("backup_download_digest_mismatch")
+                # Re-HEAD through the same immutable version/ETag proof after the
+                # body is consumed. An unversioned object may have been replaced
+                # between the initial check and GET; never publish that body.
+                confirmed = _targets_module._s3_head_owned(target, owned)
+                _targets_module._assert_s3_identity(
+                    confirmed,
+                    size_bytes=owned.size_bytes,
+                    etag=owned.etag,
+                    version_id=owned.version_id,
+                )
+                with get_session_factory().session() as publish_session:
+                    publish_file(
+                        publish_session,
+                        LocalStorageBackend(),
+                        str(local_path),
+                        download_temp,
+                        object_kind="backup-cloud-cache",
+                        move=True,
+                    )
+                    publish_session.commit()
+            except Exception:
+                download_temp.unlink(missing_ok=True)
+                raise
         logger.info("backup %s downloaded from S3 to %s", meta.id, local_path)
         return local_path
 

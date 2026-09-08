@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 import shutil
 import tarfile
 import tempfile
@@ -28,6 +29,7 @@ from app.db.models import (
 from app.db.session import get_session_factory
 from app.modules.administration import audit
 from app.modules.storage import storage
+from app.modules.storage.capacity import CapacityManager, CapacityResource
 from app.modules.storage.storage_backend.contracts import CreationReceipt
 from app.modules.storage.storage_backend.local import LocalStorageBackend
 from app.modules.storage.storage_ownership import (
@@ -121,13 +123,28 @@ def _download_s3_archive(
                 "backup_remote_identity_unavailable"
             )
         response = target.client.get_object(**kwargs)
-    fd, raw = tempfile.mkstemp(prefix=".printstash-s3-adopt-", dir=settings.backup_dir)
-    os.close(fd)
-    path = Path(raw)
     body = response["Body"]
     try:
-        with path.open("wb") as output:
-            shutil.copyfileobj(body, output)
+        estimate = int(response.get("ContentLength") or settings.max_upload_bytes)
+        with CapacityManager(get_session_factory()).hold(
+            f"backup-adoption:{secrets.token_hex(12)}",
+            [
+                CapacityResource.for_path(
+                    settings.backup_dir, estimate, role="backup adoption validation"
+                )
+            ],
+        ):
+            fd, raw = tempfile.mkstemp(
+                prefix=".printstash-s3-adopt-", dir=settings.backup_dir
+            )
+            os.close(fd)
+            path = Path(raw)
+            try:
+                with path.open("wb") as output:
+                    shutil.copyfileobj(body, output)
+            except Exception:
+                path.unlink(missing_ok=True)
+                raise
     finally:
         body.close()
     return path, response
@@ -261,49 +278,59 @@ def _download_opendal_candidate(
     before = destination.backend.object_info(key)
     if before is None:
         raise FileNotFoundError(key)
-    settings.backup_dir.mkdir(parents=True, exist_ok=True)
-    fd, raw = tempfile.mkstemp(
-        prefix=".printstash-opendal-adopt-", dir=settings.backup_dir
-    )
-    os.close(fd)
-    path = Path(raw)
-    digest = hashlib.sha256()
-    written = 0
-    try:
-        with (
-            path.open("wb") as output,
-            destination.backend.open_reader(key, expected=before) as reader,
-        ):
-            while chunk := reader.read(1024 * 1024):
-                output.write(chunk)
-                digest.update(chunk)
-                written += len(chunk)
-        after = destination.backend.object_info(key)
-        if (
-            after is None
-            or written != before.size
-            or after.size != before.size
-            or (before.etag and after.etag != before.etag)
-            or (before.version_id and after.version_id != before.version_id)
-        ):
-            raise RuntimeError("backup_remote_changed")
-        return (
-            path,
-            digest.hexdigest(),
-            CreationReceipt(
-                key=key,
-                size=written,
-                token=digest.hexdigest(),
-                backend=destination.backend.backend_name,
-                namespace=destination.namespace,
-                etag=after.etag,
-                version_id=after.version_id,
-                provider_ref=destination.provider_ref,
-            ),
+    with CapacityManager(get_session_factory()).hold(
+        f"backup-adoption:{secrets.token_hex(12)}",
+        [
+            CapacityResource.for_path(
+                settings.backup_dir,
+                before.size,
+                role="backup adoption validation",
+            )
+        ],
+    ):
+        settings.backup_dir.mkdir(parents=True, exist_ok=True)
+        fd, raw = tempfile.mkstemp(
+            prefix=".printstash-opendal-adopt-", dir=settings.backup_dir
         )
-    except Exception:
-        path.unlink(missing_ok=True)
-        raise
+        os.close(fd)
+        path = Path(raw)
+        digest = hashlib.sha256()
+        written = 0
+        try:
+            with (
+                path.open("wb") as output,
+                destination.backend.open_reader(key, expected=before) as reader,
+            ):
+                while chunk := reader.read(1024 * 1024):
+                    output.write(chunk)
+                    digest.update(chunk)
+                    written += len(chunk)
+            after = destination.backend.object_info(key)
+            if (
+                after is None
+                or written != before.size
+                or after.size != before.size
+                or (before.etag and after.etag != before.etag)
+                or (before.version_id and after.version_id != before.version_id)
+            ):
+                raise RuntimeError("backup_remote_changed")
+            return (
+                path,
+                digest.hexdigest(),
+                CreationReceipt(
+                    key=key,
+                    size=written,
+                    token=digest.hexdigest(),
+                    backend=destination.backend.backend_name,
+                    namespace=destination.namespace,
+                    etag=after.etag,
+                    version_id=after.version_id,
+                    provider_ref=destination.provider_ref,
+                ),
+            )
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
 
 
 def discover_unowned_opendal_backups() -> list[dict[str, object]]:
@@ -657,9 +684,26 @@ def adopt_local_backup(filename: str) -> _contracts_module.BackupMeta:
 
 @exclusive_backup_operation
 def upload_backup_archive(
-    filename: str, source: BinaryIO
+    filename: str, source: BinaryIO, *, expected_size: int | None = None
 ) -> _contracts_module.BackupMeta:
     """Validate and register a backup archive uploaded by an administrator."""
+    estimate = (
+        expected_size
+        if expected_size is not None and 0 <= expected_size <= settings.max_upload_bytes
+        else settings.max_upload_bytes
+    )
+    with CapacityManager(get_session_factory()).hold(
+        f"backup-upload:{secrets.token_hex(12)}",
+        [
+            CapacityResource.for_path(
+                settings.backup_dir, estimate, role="backup upload staging"
+            )
+        ],
+    ):
+        return _upload_backup_archive(filename, source)
+
+
+def _upload_backup_archive(filename: str, source: BinaryIO) -> _contracts_module.BackupMeta:
     if not filename or "\\" in filename or Path(filename).name != filename:
         raise ValueError("backup_filename_invalid")
     if not filename.startswith(

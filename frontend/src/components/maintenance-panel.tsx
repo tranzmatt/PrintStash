@@ -1,3 +1,6 @@
+import { currentLocale } from "@/lib/locale";
+import { uiText } from "@/lib/locale";
+import { useUiLocale } from "@/lib/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -67,11 +70,11 @@ function sourceKey(item: BackupMeta): string {
 }
 
 function shortOpaque(value: string | null | undefined): string {
-  return value ? `${value.slice(0, 16)}…` : "unavailable";
+  return value ? `${value.slice(0, 16)}…` : uiText("unavailable");
 }
 
 function formatAuditDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(currentLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
@@ -86,6 +89,7 @@ function storageFileType(identifier: string): string {
 }
 
 export function MaintenancePanel() {
+  useUiLocale();
   const { t } = useI18n();
   const [run, setRun] = useState<VaultAuditRun | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,7 +158,9 @@ export function MaintenancePanel() {
       if (action === "repair") await repairAuditFinding(finding.id);
       else await ignoreAuditFinding(finding.id);
       if (run) setRun(await getVaultAudit(run.id));
-      toast.success(action === "repair" ? "Repair completed" : t("settings.auditMarkedReviewed"));
+      toast.success(
+        action === "repair" ? uiText("Repair completed") : t("settings.auditMarkedReviewed"),
+      );
     } catch (error) {
       toast.error(error);
     }
@@ -195,11 +201,13 @@ export function MaintenancePanel() {
         <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4" /> Vault Audit
+              <ShieldCheck className="h-4 w-4" />
+              {uiText(" Vault Audit")}
             </CardTitle>
             <CardDescription>
-              Read-only checks for owned Artifacts, thumbnails, Metadata, external links, and
-              storage ownership.
+              {uiText(
+                "Read-only checks for owned Artifacts, thumbnails, Metadata, external links, and storage ownership.",
+              )}
             </CardDescription>
           </div>
           <div className="flex gap-2">
@@ -209,7 +217,7 @@ export function MaintenancePanel() {
               loading={busy}
               disabled={isActive(run)}
             >
-              Quick Audit
+              {uiText("Quick Audit")}
             </Button>
             <Button
               size="xs"
@@ -218,13 +226,13 @@ export function MaintenancePanel() {
               loading={busy}
               disabled={isActive(run)}
             >
-              Full Audit
+              {uiText("Full Audit")}
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {!run ? (
-            <p className="text-sm text-muted-foreground">No audit has run yet.</p>
+            <p className="text-sm text-muted-foreground">{uiText("No audit has run yet.")}</p>
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -240,7 +248,7 @@ export function MaintenancePanel() {
                   {run.state}
                 </Badge>
                 <span className="text-muted-foreground">
-                  {run.mode} · {run.current_phase ?? "waiting"}
+                  {run.mode} · {run.current_phase ?? uiText("waiting")}
                 </span>
                 <span className="ml-auto font-mono text-xs">{Math.round(run.progress)}%</span>
                 {isActive(run) && (
@@ -249,13 +257,15 @@ export function MaintenancePanel() {
                     variant="outline"
                     onClick={() => void cancelVaultAudit(run.id).then(setRun)}
                   >
-                    Cancel
+                    {uiText("Cancel")}
                   </Button>
                 )}
               </div>
               <div
                 className="h-2 overflow-hidden rounded-full bg-muted"
-                aria-label={`${Math.round(run.progress)} percent complete`}
+                aria-label={uiText("{value1} percent complete", {
+                  value1: String(Math.round(run.progress)),
+                })}
               >
                 <div
                   className="h-full origin-left bg-primary transition-transform duration-fast ease-out"
@@ -320,7 +330,8 @@ export function MaintenancePanel() {
               <div className="space-y-2">
                 {findings.length === 0 ? (
                   <div className="flex items-center gap-2 rounded-md border border-border p-3 text-sm text-muted-foreground">
-                    <CheckCircle2 className="h-4 w-4 text-success" /> No findings in this category.
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                    {uiText(" No findings in this category.")}
                   </div>
                 ) : (
                   findings.map((finding) => {
@@ -373,7 +384,8 @@ export function MaintenancePanel() {
                           <div className="flex gap-2">
                             {finding.repair_action && (
                               <Button size="xs" onClick={() => setRepairTarget(finding)}>
-                                <Wrench className="h-3.5 w-3.5" /> Repair
+                                <Wrench className="h-3.5 w-3.5" />
+                                {uiText(" Repair")}
                               </Button>
                             )}
                             <Button
@@ -400,16 +412,18 @@ export function MaintenancePanel() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Database className="h-4 w-4" /> Backup Verification
+            <Database className="h-4 w-4" />
+            {uiText(" Backup Verification")}
           </CardTitle>
           <CardDescription>
-            Streams each archive and checks safe paths, manifest, database member, member counts,
-            and sizes.
+            {uiText(
+              "Streams each archive and checks safe paths, manifest, database member, member counts, and sizes.",
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {backups.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No backups available.</p>
+            <p className="text-sm text-muted-foreground">{uiText("No backups available.")}</p>
           ) : (
             backups.map((item) => {
               const sourceRef = sourceKey(item);
@@ -456,9 +470,13 @@ export function MaintenancePanel() {
                     <p className="text-xs text-muted-foreground">
                       {result
                         ? result.valid
-                          ? `${result.checked_members} members verified`
-                          : `${result.findings.length} verification findings`
-                        : "Not verified this session"}
+                          ? uiText("{value1} members verified", {
+                              value1: String(result.checked_members),
+                            })
+                          : uiText("{value1} verification findings", {
+                              value1: String(result.findings.length),
+                            })
+                        : uiText("Not verified this session")}
                     </p>
                   </div>
                   <Button
@@ -469,7 +487,8 @@ export function MaintenancePanel() {
                     title={!item.source_ref ? t("settings.backupSourceUnavailable") : undefined}
                     onClick={() => void checkBackup(item)}
                   >
-                    <RefreshCw className="h-3.5 w-3.5" /> Verify
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {uiText(" Verify")}
                   </Button>
                 </div>
               );
@@ -481,9 +500,11 @@ export function MaintenancePanel() {
         open={repairTarget !== null}
         onClose={() => setRepairTarget(null)}
         onConfirm={() => void confirmRepair()}
-        title="Repair this finding?"
-        description="PrintStash will apply the targeted repair and record the action in the audit log. Original Artifact bytes are never replaced by thumbnail or metadata repairs."
-        confirmLabel="Repair"
+        title={uiText("Repair this finding?")}
+        description={uiText(
+          "PrintStash will apply the targeted repair and record the action in the audit log. Original Artifact bytes are never replaced by thumbnail or metadata repairs.",
+        )}
+        confirmLabel={uiText("Repair")}
         busy={repairing}
       />
     </div>

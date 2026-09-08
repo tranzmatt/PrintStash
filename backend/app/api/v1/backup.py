@@ -148,7 +148,9 @@ def retry_backup_destination(result_id: str) -> dict:
 )
 def upload_backup(file: UploadFile = File(...)) -> dict:
     try:
-        meta = backup_adoption.upload_backup_archive(file.filename or "", file.file)
+        meta = backup_adoption.upload_backup_archive(
+            file.filename or "", file.file, expected_size=file.size
+        )
     except UploadTooLarge as exc:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,

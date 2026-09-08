@@ -27,6 +27,23 @@ class CapacityReservation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class CapacityAdmissionEvent(SQLModel, table=True):
+    """Privacy-safe recent admission outcome; operation identifiers are omitted."""
+
+    __tablename__ = "capacity_admission_events"
+    id: int | None = Field(default=None, primary_key=True)
+    occurred_at: datetime = Field(default_factory=utcnow, index=True)
+    operation_kind: str = Field(max_length=64, index=True)
+    decision: str = Field(max_length=16, index=True)
+    reason: str = Field(max_length=64)
+    required_bytes: int = Field(sa_column=Column(BigInteger, nullable=False))
+    available_bytes: int | None = Field(
+        default=None, sa_column=Column(BigInteger, nullable=True)
+    )
+    reserved_bytes: int = Field(sa_column=Column(BigInteger, nullable=False))
+    headroom_bytes: int = Field(sa_column=Column(BigInteger, nullable=False))
+
+
 class StorageInventorySample(SQLModel, table=True):
     __tablename__ = "storage_inventory_samples"
     __table_args__ = (

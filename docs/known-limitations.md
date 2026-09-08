@@ -22,8 +22,9 @@ manufacturing platform.
   Members that are trashed or inaccessible remain visible as unavailable in the
   grouping until they are restored or replaced.
 - PrusaLink local FDM support is beta. Digest and legacy API-key authentication,
-  status, streamed plain-text G-code and validated `.bgcode` upload/start, file
-  inventory/deletion, and pause/resume/cancel are implemented. BGCODE v1 toolpaths can be previewed within the
+  Raspberry Pi and Buddy/Core One storage discovery, status, streamed plain-text
+  G-code and validated `.bgcode` upload/start, file inventory/deletion, and
+  pause/resume/cancel are implemented. BGCODE v1 toolpaths can be previewed within the
   [conversion limits](bgcode-preview.md). Prusa Connect cloud, SLA printers, raw G-code controls, and measured filament
   consumption are not.
 - Elegoo Neptune 4, 4 Pro, 4 Plus, and 4 Max use Moonraker. Centauri Carbon and
@@ -291,3 +292,14 @@ manufacturing platform.
   material, or account for consumption across multiple spools in one print.
 - Multi-material G-code without a complete tool-to-feed mapping remains
   `unknown` rather than being declared compatible or mismatched.
+
+## Storage preset evidence
+
+Named [storage presets](./storage-providers.md) configure existing transports;
+they do not imply appliance certification. Mount SMB/NFS on the host before
+using NAS folder presets. A real transport test against Nextcloud, OpenSSH or
+SeaweedFS is not a hosted-account or hardware validation. Check the configured
+endpoint and permissions for every intended role. Google Drive remains beta for
+read-only Library sources and backup replicas; managed Vault use is unavailable.
+Signed browser downloads depend on endpoint and CORS proof independently of the
+active deletion safety tier.

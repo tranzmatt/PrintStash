@@ -254,3 +254,44 @@ describe("RemoteStorageConnections", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("RemoteStorageConnections preset selection", () => {
+  it("excludes mounted NAS presets from remote profiles", async () => {
+    renderApp(<RemoteStorageConnections />, {
+      routes: {
+        "GET /api/v1/storage-connections": json([]),
+        "GET /api/v1/storage/providers": json(storageProviderCatalogue),
+      },
+    });
+    await screen.findByRole("option", { name: "Koofr — WebDAV" });
+    expect(screen.queryByRole("option", { name: "TrueNAS — mounted folder" })).toBeNull();
+    expect(screen.getByRole("option", { name: "Google Drive" })).toBeEnabled();
+  });
+  it("saves the Storage Box preset with its SFTP transport", async () => {
+    const user = userEvent.setup();
+    const view = renderApp(<RemoteStorageConnections />, {
+      routes: {
+        "GET /api/v1/storage-connections": json([]),
+        "GET /api/v1/storage/providers": json(storageProviderCatalogue),
+        "POST /api/v1/storage-connections": json(
+          aStorageConnection({ name: "Offsite box", kind: "sftp" }),
+          201,
+        ),
+      },
+    });
+    await screen.findByRole("option", { name: "Hetzner Storage Box — SFTP" });
+    await user.selectOptions(screen.getByLabelText("Provider"), "hetzner_storage_box");
+    await user.type(screen.getByLabelText("Connection name"), "Offsite box");
+    await user.type(screen.getByLabelText("Host"), "box.example.test");
+    await user.type(screen.getByLabelText("Username"), "owner");
+    await user.type(screen.getByLabelText("Host key"), "/run/known_hosts");
+    await user.type(screen.getByLabelText(/^Password/), "test-password");
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+    await waitFor(() => expect(view.requestsWithMethod("POST")).toHaveLength(1));
+    expect(JSON.parse(view.requestsWithMethod("POST")[0].body)).toMatchObject({
+      kind: "sftp",
+      configuration: { provider: "hetzner_storage_box", port: 23 },
+      secrets: { password: "test-password" },
+    });
+  });
+});

@@ -15,16 +15,19 @@ from typing import BinaryIO, Iterator
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.time import utcnow
 from app.modules.storage.filesystem import detect_fs_kind
 from app.modules.storage.storage_identity import StorageTargetIdentity
 
 from .contracts import (
     _DIRECT_ADAPTER_IDENTITY,
+    CapacityReliability,
     CreationReceipt,
     LocalRootProbe,
     ObjectIdentity,
     StorageBackend,
     StorageCapabilities,
+    StorageCapacity,
     StorageCollisionError,
     StorageConfigurationError,
     StorageObjectInfo,
@@ -1187,8 +1190,27 @@ class LocalStorageBackend(StorageBackend):
             "total_size_bytes": total_size,
         }
 
-    def presigned_download_url(self, key: str, filename: str) -> str | None:
-        return None
+    def capacity(self) -> StorageCapacity:
+        """Measure the filesystem that actually contains managed Vault bytes."""
+        root = Path(settings.data_dir).expanduser().resolve(strict=False)
+        candidate = root
+        while not candidate.exists() and candidate != candidate.parent:
+            candidate = candidate.parent
+        stats = os.statvfs(candidate)
+        total = stats.f_blocks * stats.f_frsize
+        available = stats.f_bavail * stats.f_frsize
+        return StorageCapacity(
+            total_bytes=total,
+            used_bytes=max(0, total - available),
+            available_bytes=available,
+            quota_bytes=None,
+            measured_at=utcnow(),
+            method="filesystem_statvfs",
+            reliability=CapacityReliability.EXACT,
+        )
+
+    def delivery_diagnostics(self) -> dict:
+        return {"mode": "local", "native_candidate": False, "ranges": True}
 
     def health_probe(self) -> dict:
         # Re-read both sentinels so a mount disappearing after startup is

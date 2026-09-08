@@ -88,12 +88,11 @@ test.describe("storage provider setup", () => {
     await page.goto("/setup");
     await page.getByLabel("Username").fill("storage-admin");
     await page.getByLabel("Password", { exact: true }).fill("playwright-password");
-    await page.getByLabel("Confirm password").fill("playwright-password");
+    await page.getByLabel("Confirm password", { exact: true }).fill("playwright-password");
     await page.getByRole("button", { name: "Continue" }).click();
 
-    await page.getByText("View location and advanced options").click();
     await page.getByRole("button", { name: /Nextcloud and WebDAV/ }).click();
-    await page.getByRole("button", { name: /^WebDAV/ }).click();
+    await page.getByLabel("Provider").selectOption("webdav");
     await expect(page.getByText("Support: Beta")).toBeVisible();
     await expect(page.getByText("Expected: Guarded")).toBeVisible();
     await page.getByLabel("Server URL").fill(`http://127.0.0.1:${webdavPort}`);

@@ -5,9 +5,11 @@
  */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StorageProviderPicker } from "@/components/storage-provider-picker";
+import { I18nProvider } from "@/lib/i18n";
+import { setLocale } from "@/lib/locale";
 import type { ProviderCategory, StorageProvider } from "@/types";
 
 function provider(
@@ -65,7 +67,7 @@ const providers = [
   provider("sftp", "SFTP", "nas_sftp", {
     available: false,
     selectable: false,
-    disabled_reason: "Requires the full image",
+    disabled_reason: "storage_dependency_missing",
     fields: [
       {
         name: "host",
@@ -87,7 +89,29 @@ const providers = [
   }),
 ];
 
+afterEach(() => setLocale("en"));
+
 describe("StorageProviderPicker", () => {
+  it("keeps multi-provider onboarding categories compact", async () => {
+    const onProviderChange = vi.fn<(provider: StorageProvider) => void>();
+    const mounted = provider("synology", "Synology — mounted folder", "this_machine");
+    render(
+      <StorageProviderPicker
+        providers={[providers[0], mounted]}
+        providerId="local"
+        values={{ data_dir: "/data/files" }}
+        onProviderChange={onProviderChange}
+        onValueChange={vi.fn<(name: string, value: string | number) => void>()}
+        onboarding
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "synology");
+
+    expect(onProviderChange).toHaveBeenCalledWith(mounted);
+    expect(screen.queryByRole("button", { name: /Synology/ })).not.toBeInTheDocument();
+  });
+
   it("filters providers by the selected category", async () => {
     const onProviderChange = vi.fn<(provider: StorageProvider) => void>();
     render(
@@ -168,7 +192,49 @@ describe("StorageProviderPicker", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "NAS over SFTP" }));
-    const unavailable = screen.getByRole("button", { name: /SFTP.*Requires the full image/ });
+    const unavailable = screen.getByRole("button", {
+      name: /SFTP.*This connection requires the full API image\./,
+    });
+    expect(unavailable).toBeDisabled();
+  });
+
+  it("localizes coded unavailable-provider reasons", async () => {
+    setLocale("es");
+    const unavailableProviders = providers.map((item) =>
+      item.id === "sftp"
+        ? {
+            ...item,
+            uses: {
+              vault: {
+                dependency_installed: false,
+                service_compiled: false,
+                supported: true,
+                available: false,
+                endpoint_proven: false,
+                reason: "storage_dependency_missing",
+              },
+            },
+          }
+        : item,
+    );
+
+    render(
+      <I18nProvider>
+        <StorageProviderPicker
+          providers={unavailableProviders}
+          providerId="local"
+          values={{}}
+          onProviderChange={vi.fn<(provider: StorageProvider) => void>()}
+          onValueChange={vi.fn<(name: string, value: string | number) => void>()}
+        />
+      </I18nProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "NAS mediante SFTP" }));
+
+    const unavailable = screen.getByRole("button", {
+      name: /SFTP.*Esta conexión requiere la imagen completa de la API\./,
+    });
     expect(unavailable).toBeDisabled();
   });
 

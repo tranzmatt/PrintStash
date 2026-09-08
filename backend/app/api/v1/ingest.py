@@ -111,7 +111,8 @@ def _stage_upload(upload: UploadFile, suffix: str) -> tuple[Path, int, str]:
     digest = hashlib.sha256()
     from app.modules.storage.capacity import CapacityManager, CapacityResource
 
-    estimate = upload.size if upload.size is not None else settings.max_upload_bytes
+    declared_size = getattr(upload, "size", None)
+    estimate = declared_size if declared_size is not None else settings.max_upload_bytes
     try:
         with CapacityManager(get_session_factory()).hold(
             f"upload:{staged.name}",

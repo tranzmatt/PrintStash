@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from sqlmodel import select
 
+from app.core.config import _overlay
+from app.core.errors import OperationError
 from app.db.models import OwnedStorageObject
 from app.modules.backups.backup import contracts, downloads, targets
 from app.modules.storage.storage_backend.local import LocalStorageBackend
@@ -82,6 +84,18 @@ class TestArchiveOwnership:
 
 
 class TestVerifiedDownload:
+    def test_capacity_denial_precedes_remote_body_download(
+        self, remote_archive, monkeypatch
+    ):
+        proof = remote_archive()
+        proof.head()
+        monkeypatch.setitem(_overlay, "storage_min_free_bytes", 10**18)
+
+        with pytest.raises(OperationError, match="storage_capacity_exceeded"):
+            downloads._download_backup_to_local(proof.meta)
+
+        assert list(proof.env.backup_dir.glob(".printstash-backup-download-*")) == []
+
     @pytest.mark.parametrize(
         "corruption", ["truncated", "changed-digest", "changed-after-read"]
     )
