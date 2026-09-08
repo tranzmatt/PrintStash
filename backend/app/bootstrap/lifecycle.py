@@ -343,6 +343,14 @@ async def _gc_loop(*, storage_maintenance_enabled: bool = True) -> None:
             except Exception:
                 logger.exception("scheduled GC failed")
             try:
+                from app.modules.storage.storage_inventory import (
+                    refresh_inventory_sample,
+                )
+
+                await asyncio.to_thread(refresh_inventory_sample, get_session_factory())
+            except Exception:
+                logger.exception("storage inventory sampling failed")
+            try:
                 from app.modules.notifications.notifications import prune_deliveries
 
                 await asyncio.to_thread(prune_deliveries)

@@ -20,7 +20,10 @@ from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.db.session import get_session_factory
 from app.modules.administration import audit
+from app.modules.storage import capacity_estimates
+from app.modules.storage.capacity import CapacityManager
 from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_inventory import inventory
 from app.runtime.maintenance import exclusive_backup_operation
 
 logger = get_logger(__name__)
@@ -55,13 +58,27 @@ def create_backup(
         )
         raise backup_runs.BackupRunError("backup_destination_required", selected.run_id)
     try:
-        meta = _create_selected_backup(
-            selected,
-            backup_id=backup_id,
-            timestamp=timestamp,
-            archive_name=archive_name,
-            trigger=trigger,
-        )
+        with get_session_factory().scoped_session() as capacity_session:
+            estimate = inventory(capacity_session).unique_owned_bytes
+        # The database file and WAL overlap the archive while snapshotting.
+        db_path = _snapshot_module._db_path()
+        if db_path is not None:
+            estimate += db_path.stat().st_size
+            wal = Path(str(db_path) + "-wal")
+            if wal.exists():
+                estimate += wal.stat().st_size
+        with CapacityManager(get_session_factory()).hold(
+            f"backup:{backup_id}",
+            capacity_estimates.backup_create(estimate, Path(selected.local_directory)),
+        ) as capacity_claim:
+            meta = _create_selected_backup(
+                selected,
+                backup_id=backup_id,
+                timestamp=timestamp,
+                archive_name=archive_name,
+                trigger=trigger,
+                capacity_claim=capacity_claim,
+            )
     except BaseException as exc:
         reason = (
             "backup_all_destinations_failed"
@@ -78,7 +95,9 @@ def create_backup(
     return meta
 
 
-def _create_selected_backup(selected, *, backup_id, timestamp, archive_name, trigger):
+def _create_selected_backup(
+    selected, *, backup_id, timestamp, archive_name, trigger, capacity_claim=None
+):
     from app.modules.backups.backup_replication import prepare_destinations
 
     target, remote_destinations = prepare_destinations(selected)
@@ -98,6 +117,12 @@ def _create_selected_backup(selected, *, backup_id, timestamp, archive_name, tri
         total_size = db_snapshot.stat().st_size + sum(
             int(entry["size"]) for entry in file_entries
         )
+        if capacity_claim is not None:
+            capacity_claim.renew(
+                capacity_estimates.backup_create(
+                    total_size, Path(selected.local_directory)
+                )
+            )
         manifest_namespaces = sorted(
             {str(entry["namespace"]) for entry in file_entries}
         )

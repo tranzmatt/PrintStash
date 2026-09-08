@@ -2,7 +2,43 @@
 
 ## Unreleased
 
+### Fixed
+
+- The Model detail back arrow returns to its containing collection instead of
+  always returning to the library root, including nested collection paths.
+
+- Mounted Library source enrollment now rolls back known marker failures instead
+  of leaving a conflicted source behind, reports read-only marker failures
+  explicitly, and documents the one-time writable mount required for enrollment.
+
+- PrusaLink now discovers the printer's advertised storage root, using `/usb`
+  on Buddy/Core One firmware while retaining `/local` compatibility, so file
+  inventory, upload, start and deletion no longer surface a false authentication
+  failure.
+
 ### Changed
+
+- The getting-started reminder can be dismissed with Don't show again. The choice
+  is remembered per user in the current browser across Settings and the empty library.
+
+- First-run setup uses a centered, responsive form with inline password visibility
+  controls. Storage choices and server folders are visible immediately, with a
+  clear access-check step before account creation and guidance in English and Spanish.
+  A compact branded frame, slim progress steps, and a prominent server-storage
+  choice bring the guide closer to the app's forms and reduce mobile scrolling.
+  The first-model guide now offers a focused file upload or a two-field folder
+  connection that starts scanning immediately. Upload progress, recoverable scan
+  errors, and verified Model links stay visible in the guide; backup and printer
+  shortcuts follow the first Model.
+
+- Artifact downloads use the canonical `/files/{id}/download` endpoint. The
+  separate `download-url` and `download-direct` endpoints have been removed.
+
+- Interface text, accessible labels, errors, plural counts and offline screens
+  use shared language catalogs. Dates and numbers follow the selected language;
+  the language menu supports adding further locales without a two-language toggle.
+  Catalogs are static, typo-friendly sources with guarded imperative feedback and
+  a safe scaffold command for adding complete language drafts.
 
 - Backend code is organized by capability, with separate startup, storage,
   backup recovery and library query modules. G-code Revision deletion uses a
@@ -16,6 +52,25 @@
 ### Added
 
 - **Storage presets:** Synology, TrueNAS, QNAP and Unraid mounted-folder guidance; explicit Synology/QNAP WebDAV, MinIO, Garage, SeaweedFS, Hetzner Object Storage, Storage Box SFTP/WebDAV, and Koofr connections. Presets reuse existing transports and encrypted credentials, with endpoint validation and separate delivery/safety facts.
+
+- Capacity admission supports percentage headroom and retains durable upload, migration and restore budgets across process failure.
+
+- Storage insights with logical and unique-object inventory, shared-volume capacity reservations, dated growth evidence, and explicit audited cleanup for expired staging and receipt-verified derived STL cache. Heavy operations now preserve configurable disk headroom before allocation.
+
+- Download strategy and proxied-byte diagnostics use bounded labels; signed query credentials are redacted from application and access logs.
+
+- Authorized Artifact downloads can offload managed S3 bodies through short-lived
+  HTTPS redirects when browser CORS is supported. Local files retain range
+  delivery; originals, previews and thumbnails now revalidate privately, and
+  shares/slicer downloads remain noncacheable.
+
+- Grype scans every AMD64 and ARM64 container image in CI and scans immutable
+  publishing digests before promotion. Each run retains readable, JSON and SARIF
+  vulnerability reports for 90 days and sends trusted-run results to GitHub code
+  scanning when it is available.
+
+- An optional unified Docker image runs the full API and web UI in one container,
+  with a single-service Compose file and tested AMD64/ARM64 publishing to GHCR.
 
 - Successful browser-extension CI jobs provide the validated Chrome Web Store
   ZIP as a direct download, retained for 30 days.
@@ -414,6 +469,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
   disable runtime environment synchronization. This prevents the unprivileged
   API process from crash-looping on the root-owned build cache
   ([#77](https://github.com/xiao-villamor/PrintStash/issues/77)).
+
 ## 0.12.0
 
 **Back up before upgrading. This release includes additive database migrations and deployment/dependency changes; PostgreSQL, MinIO, and lite-image users should review [UPGRADE.md](./UPGRADE.md).**
@@ -1078,13 +1134,13 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
   entrypoint runs `alembic upgrade head` before the server launches, so migrations
   happen however the container is started (Compose, Portainer, Unraid, bare
   `docker run`) — editing or removing the Compose `command:` can no longer skip
-  them (issue #29). A failed migration aborts startup *before* the app serves a
+  them (issue #29). A failed migration aborts startup _before_ the app serves a
   request. The previous explicit `docker compose run … alembic upgrade head` step
   is now optional.
 
 ### Fixed
 
-- **Fresh installs and upgrades come up cleanly on SQLite *and* PostgreSQL.** The
+- **Fresh installs and upgrades come up cleanly on SQLite _and_ PostgreSQL.** The
   migration runner now bootstraps a brand-new database directly from the models
   (then stamps it at head) instead of replaying the historical migration chain,
   whose SQLite-authored baseline failed outright on a fresh Postgres. Existing
@@ -1099,14 +1155,16 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
 - **The PrintStash logo returns you to the collection you were browsing** instead
   of always resetting to "All Models" — the last-viewed folder is remembered. (#30)
 
-## 0.7.1b1 - Upload methods improvement & Docker Compose light 
+## 0.7.1b1 - Upload methods improvement & Docker Compose light
 
 ### Added
+
 - **Drag file(s) or folder directly** in the viewport (or over a specific folder) to open a prefilled upload wizard (@JrVolt)
 - **Added docker-compose.light.yml** since env only JWT secret and all the other service aren't used in basic config.
   so i made a light compose that requires no env with JWT in compose and removed optional services. (@JrVolt)
 
 ### Changed
+
 - **Drag is now available in every tab** of the upload wizard (@JrVolt)
 
 ## 0.7.1
@@ -1138,7 +1196,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
   climbing. (#29)
 - **Face-chunked thumbnail rendering — peak memory is now O(chunk), not O(mesh).**
   The software rasteriser built every per-face array (screen-space triangles,
-  smoothed corner normals, per-vertex colours, …) for the *whole* mesh at once,
+  smoothed corner normals, per-vertex colours, …) for the _whole_ mesh at once,
   so peak RAM scaled with total triangle count. It now processes faces in chunks
   of `VAULT_MESH_RENDER_FACE_CHUNK_SIZE` (default 200k), building and freeing each
   chunk's arrays before the next, so a million-triangle mesh no longer materialises
@@ -1210,13 +1268,13 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
   HTTP 400; arbitrary printer/model/file names are now always safe.
 - **ntfy notifications no longer fail on Unicode titles.** Notification titles
   carry an em-dash (`—`) and printer names can contain any Unicode, which broke
-  *every* ntfy send because HTTP headers must be latin-1. Non-latin-1 header
+  _every_ ntfy send because HTTP headers must be latin-1. Non-latin-1 header
   values are now RFC 2047-encoded (and decoded by ntfy for display).
 - **Library scans no longer get OOM-killed by a dense mesh ([#24]).** A
   high-polygon model (a gyroid/lattice "infill core" 3MF or STL — tens of
   millions of triangles from a small file) made `trimesh.load` + the thumbnail
   rasteriser allocate **~700 MB of RAM per million triangles**, peaking at
-  multiple GB *inside the load itself*. On a NAS scan that quietly drove the
+  multiple GB _inside the load itself_. On a NAS scan that quietly drove the
   process to ~7 GB RSS and the kernel OOM-killed it; Docker misreported the death
   as a clean exit and restarted it, so it looped. The mesh's triangle count is
   now estimated **before** loading (exact for binary STL, from the uncompressed
@@ -1228,7 +1286,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
 - **Dense-mesh OOM guard closed in three more spots ([#24]).** Hardening the
   pre-load triangle estimate after the initial fix:
   - **Binary STL with trailing bytes** (some exporters append metadata) failed
-    the exact `84 + 50·N` size check and fell back to the *ASCII* density of
+    the exact `84 + 50·N` size check and fell back to the _ASCII_ density of
     ~250 B/triangle — a 5x underestimate for a binary file that could let an
     over-cap mesh slip through to the very OOM load the cap exists to stop. The
     estimator now distinguishes ASCII from binary STL and uses the binary
@@ -1281,9 +1339,9 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
   separate process with no login session — so it fetched the URL unauthenticated,
   got a 401, and showed a "load cancelled" error (or silently no-op'd if already
   running). The button now mints a short-lived, file-scoped download token and
-  embeds it in a URL that *ends* in the original filename
+  embeds it in a URL that _ends_ in the original filename
   (`…/slicer/<token>/part.3mf`), so OrcaSlicer/Bambu Studio can fetch the file
-  *and* detect its format. (Slicers take the URL tail as the download name, so a
+  _and_ detect its format. (Slicers take the URL tail as the download name, so a
   trailing `?token=…` query made them save e.g. `part.3mf?token=…` and never
   open it — the token has to come before the filename.)
   Each slicer is also gated by file type: Bambu Studio only opens 3MF via URL
@@ -1322,7 +1380,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
 ### Added
 
 - **Import a whole collection from a URL.** Pasting a Printables or MakerWorld
-  *collection* URL into Upload → From URL now fans the collection out into a new
+  _collection_ URL into Upload → From URL now fans the collection out into a new
   PrintStash collection (named after the source), importing every member model.
   Each model records its own member page as `source_url`, and a member that
   itself ships multiple files expands into multiple models. Multi-file members
@@ -1333,7 +1391,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
   to keep (mirroring the existing ZIP entry-selection flow).
 - **Per-file selection for multi-file model pages.** A Printables model page with
   several files (e.g. a model with 11 STLs) now lists those files from the source
-  *without downloading*, so you can choose exactly which ones to import; only the
+  _without downloading_, so you can choose exactly which ones to import; only the
   selected files are fetched. Single-file pages still import directly.
 
 ### Notes
@@ -1376,7 +1434,7 @@ be provisioned before startup; review [UPGRADE.md](./UPGRADE.md).**
 - **The UI is interactive immediately after first-run setup.** Completing the
   setup wizard logged you in by writing the token to local storage and firing an
   in-tab auth event, but the auth provider only subscribed to that event when a
-  token already existed *at mount* — which is never the case on a brand-new
+  token already existed _at mount_ — which is never the case on a brand-new
   install. So the freshly created admin session wasn't observed: the app showed
   the vault but treated you as signed out, leaving Upload, New collection, and
   the admin/settings menu unresponsive until the JWT was picked up on the next
@@ -1458,7 +1516,7 @@ automated test suite (backend 351 → 547 tests; frontend 85 → 93).
 ## 0.6.2 - Shared volumes: scheduling + real-time watching
 
 External Libraries grow up: the feature is now **Shared volumes** (a folder on
-the server *or* a NAS), with proper scheduling and optional real-time syncing.
+the server _or_ a NAS), with proper scheduling and optional real-time syncing.
 
 ### Highlights
 
@@ -1539,13 +1597,13 @@ where they live and stores only thumbnails and metadata.
   (superuser only).
 - **Two-way sync.** A scan reconciles the index with the folder — new files
   indexed, removed files trashed, edited files re-hashed and refreshed — while
-  web uploads/revisions *write back* into the folder so it stays complete.
+  web uploads/revisions _write back_ into the folder so it stays complete.
   Revisions follow their model's library automatically; new uploads pick a
   destination in the upload modal.
 - **Folder hierarchy → collections.** In MIRROR mode a file's subfolder chain
   becomes its collection path; SINGLE mode routes everything into one chosen
   collection.
-- **Your bytes are never touched.** PrintStash only ever *adds* files to the
+- **Your bytes are never touched.** PrintStash only ever _adds_ files to the
   folder (collision-safe naming), never overwrites. Trash hard-delete and the
   orphan-blob GC skip external files entirely — removing a model or a library
   drops the index rows but leaves the originals on the NAS.
@@ -1592,7 +1650,7 @@ print-tracking loop that sets PrintStash apart.
 - **Measured filament + duration.** When a print finishes, real filament used
   and actual duration are captured from Moonraker and shown in print history,
   with real per-print cost (Bambu leaves filament null — no live data).
-- **Auto known-good revisions.** A revision is promoted to *known-good* after its
+- **Auto known-good revisions.** A revision is promoted to _known-good_ after its
   first successful print (never overriding a manual failed/archived verdict).
   Toggle in Settings → Design.
 - **Delete G-code revisions.** The Revisions tab gains a delete action per

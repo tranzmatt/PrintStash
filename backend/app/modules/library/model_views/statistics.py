@@ -25,7 +25,6 @@ from app.db.models import (
     User,
 )
 from app.db.scopes import live
-from app.modules.storage.storage_backend.runtime import get_backend
 from app.schemas.models import (
     CollectionStatRead,
     FilamentStatRead,
@@ -51,7 +50,7 @@ _USAGE_TTL_S = 60.0
 _usage_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 
 
-def _cached_storage_usage() -> dict:
+def _cached_storage_usage(session: Session) -> dict:
     """Storage usage, recomputed at most once per minute per configured backend.
 
     Keyed on the effective backend + data dir so a runtime reconfiguration (and
@@ -63,7 +62,9 @@ def _cached_storage_usage() -> dict:
     hit = _usage_cache.get(key)
     if hit is not None and now - hit[0] < _USAGE_TTL_S:
         return hit[1]
-    usage = get_backend().usage()
+    from app.modules.storage.storage_inventory import legacy_usage
+
+    usage = legacy_usage(session)
     _usage_cache[key] = (now, usage)
     return usage
 
@@ -114,7 +115,7 @@ def vault_stats(session: Session, user: User) -> VaultStatsRead:
     ) = counts
 
     try:
-        storage_usage = StorageUsageRead(**_cached_storage_usage())
+        storage_usage = StorageUsageRead(**_cached_storage_usage(session))
     except Exception as exc:
         storage_usage = StorageUsageRead(
             backend=settings.storage_backend,

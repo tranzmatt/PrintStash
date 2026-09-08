@@ -75,13 +75,18 @@ and changelog instead of reconstructing their contents.
    - Browser extension: use [references/capture.md](references/capture.md).
    PostgreSQL-affecting changes also run the supported-server contract suite.
    Report only checks actually run and preserve failure output.
-4. Update the changelog and repository docs the change invalidates. Public site
+4. For every production-code implementation, run
+   `codex-security:security-diff-scan` over the exact branch diff before marking
+   the PR ready or merging it. Resolve and reverify validated findings. When the
+   user explicitly opts out, record the gate as omitted by request; never report
+   it as passed.
+5. Update the changelog and repository docs the change invalidates. Public site
    docs that live in `printstash-landing` are a separate repository change;
    identify it without editing another repository unless that scope was assigned.
-5. When the task includes commit or PR preparation, use one PR per bug/feature,
+6. When the task includes commit or PR preparation, use one PR per bug/feature,
    conventional commits, and the repository's configured git identity. Do not
    reuse a historical release branch as precedent for combining unrelated work.
-6. When explicitly asked to cut a release, first confirm that each completed PR
+7. When explicitly asked to cut a release, first confirm that each completed PR
    is independently merged to `main` and CI is green, then follow
    [references/release.md](references/release.md). Never collect feature work on
    a version-number branch.

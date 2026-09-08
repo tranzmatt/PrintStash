@@ -266,10 +266,32 @@ class TestUsage:
         }
 
 
+class TestCapacity:
+    def test_measures_the_configured_vault_volume(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.core.config import _overlay
+
+        root = tmp_path / "vault"
+        root.mkdir()
+        monkeypatch.setitem(_overlay, "data_dir", root)
+
+        result = LocalStorageBackend().capacity()
+
+        assert result.method == "filesystem_statvfs"
+        assert result.reliability.value == "exact"
+        assert result.total_bytes is not None
+        assert result.available_bytes is not None
+        assert result.used_bytes == result.total_bytes - result.available_bytes
+
+
 class TestPresignedDownloadUrl:
-    def test_presigned_download_url_is_unsupported_locally(self) -> None:
+    def test_browser_download_is_unsupported_locally(self) -> None:
         assert (
-            LocalStorageBackend().presigned_download_url("any-key", "file.stl") is None
+            LocalStorageBackend().browser_download(
+                "any-key", "file.stl", "application/sla"
+            )
+            is None
         )
 
 

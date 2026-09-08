@@ -53,8 +53,9 @@ from app.core.url_safety import (
     resolve_public_target,
 )
 from app.db.models import SUFFIX_TO_FILE_TYPE
-from app.db.session import SessionFactory
+from app.db.session import SessionFactory, get_session_factory
 from app.modules.ingestion.ingestion import ingest_mesh, ingest_orca_gcode
+from app.modules.storage.capacity import CapacityManager, CapacityResource
 from app.runtime.jobs import registry
 
 if TYPE_CHECKING:
@@ -133,29 +134,39 @@ async def download_to_staging(url: str) -> tuple[Path, str]:
                 ) or _filename_from_url(current)
                 suffix = Path(original_filename).suffix.lower() or ".bin"
                 staged = settings.incoming_dir / f"{uuid.uuid4().hex}{suffix}"
-                staged.parent.mkdir(parents=True, exist_ok=True)
-                fd, temp_name = tempfile.mkstemp(
-                    prefix=".printstash-url-", dir=staged.parent
-                )
-                temp = Path(temp_name)
-                written = 0
-                limit = settings.max_upload_bytes
-                try:
-                    with os.fdopen(fd, "wb") as out:
-                        async for chunk in resp.aiter_bytes(1024 * 1024):
-                            written += len(chunk)
-                            if written > limit:
-                                raise ImportError_("download_too_large")
-                            out.write(chunk)
-                        out.flush()
-                        os.fsync(out.fileno())
-                    os.link(temp, staged, follow_symlinks=False)
-                    return staged, original_filename
-                finally:
+                with CapacityManager(get_session_factory()).hold(
+                    f"url-download:{staged.name}",
+                    [
+                        CapacityResource.for_path(
+                            staged.parent,
+                            settings.max_upload_bytes,
+                            role="URL import staging",
+                        )
+                    ],
+                ):
+                    staged.parent.mkdir(parents=True, exist_ok=True)
+                    fd, temp_name = tempfile.mkstemp(
+                        prefix=".printstash-url-", dir=staged.parent
+                    )
+                    temp = Path(temp_name)
+                    written = 0
+                    limit = settings.max_upload_bytes
                     try:
-                        temp.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+                        with os.fdopen(fd, "wb") as out:
+                            async for chunk in resp.aiter_bytes(1024 * 1024):
+                                written += len(chunk)
+                                if written > limit:
+                                    raise ImportError_("download_too_large")
+                                out.write(chunk)
+                            out.flush()
+                            os.fsync(out.fileno())
+                        os.link(temp, staged, follow_symlinks=False)
+                        return staged, original_filename
+                    finally:
+                        try:
+                            temp.unlink(missing_ok=True)
+                        except OSError:
+                            pass
     raise ImportError_("url_too_many_redirects")
 
 
@@ -219,14 +230,28 @@ def extract_selected(path: Path, names: list[str]) -> list[tuple[Path, str]]:
     exactly as a bare filename did before.
     """
     max_entry = settings.max_archive_entry_mb * 1024 * 1024
+    selected_names = set(names)
+    peak_bytes = sum(
+        entry.size_bytes
+        for entry in inspect_archive(path)
+        if entry.name in selected_names or entry.entry_id in selected_names
+    )
     try:
-        return extract_selected_archive_entries(
-            path,
-            names,
-            staging_dir=settings.incoming_dir,
-            max_entry_bytes=max_entry,
-            importable_suffixes=_IMPORTABLE_SUFFIXES,
-        )
+        with CapacityManager(get_session_factory()).hold(
+            f"archive-extract:{uuid.uuid4().hex}",
+            [
+                CapacityResource.for_path(
+                    settings.incoming_dir, peak_bytes, role="archive extraction"
+                )
+            ],
+        ):
+            return extract_selected_archive_entries(
+                path,
+                names,
+                staging_dir=settings.incoming_dir,
+                max_entry_bytes=max_entry,
+                importable_suffixes=_IMPORTABLE_SUFFIXES,
+            )
     except ArchivePolicyError as exc:
         raise ImportError_(exc.code) from exc
 

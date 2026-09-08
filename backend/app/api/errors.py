@@ -11,6 +11,7 @@ _STATUS = {
     ErrorKind.NOT_FOUND: 404,
     ErrorKind.CONFLICT: 409,
     ErrorKind.GONE: 410,
+    ErrorKind.CAPACITY: 507,
     ErrorKind.TOO_LARGE: 413,
     ErrorKind.UNPROCESSABLE: 422,
     ErrorKind.BUSY: 429,
@@ -29,5 +30,10 @@ async def operation_error_response(
         else None
     )
     return JSONResponse(
-        status_code=_STATUS[exc.kind], content={"detail": exc.detail}, headers=headers
+        status_code=_STATUS[exc.kind],
+        content={
+            "detail": exc.detail,
+            **({"capacity": exc.capacity} if exc.capacity is not None else {}),
+        },
+        headers=headers,
     )

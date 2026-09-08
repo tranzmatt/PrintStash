@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Iterator
 
 from app.core.logging import get_logger
+from app.modules.storage.delivery_contracts import BrowserDownload
 from app.modules.storage.filesystem import FsKind
 from app.modules.storage.storage_identity import StorageTargetIdentity
 
@@ -38,6 +39,42 @@ class StorageTier(StrEnum):
     VERIFIED = "verified"
     GUARDED = "guarded"
     UNGUARDED = "unguarded"
+
+
+class CapacityReliability(StrEnum):
+    """How strongly an adapter can stand behind one capacity observation."""
+
+    EXACT = "exact"
+    ESTIMATED = "estimated"
+
+
+@dataclass(frozen=True)
+class StorageCapacity:
+    """Optional, credential-free capacity evidence for one configured namespace.
+
+    ``None`` from :meth:`StorageBackend.capacity` means unsupported/unknown. It
+    must never be translated into zero bytes of capacity.
+    """
+
+    total_bytes: int | None
+    used_bytes: int | None
+    available_bytes: int | None
+    quota_bytes: int | None
+    measured_at: datetime
+    method: str
+    reliability: CapacityReliability
+
+    def __post_init__(self) -> None:
+        values = (
+            self.total_bytes,
+            self.used_bytes,
+            self.available_bytes,
+            self.quota_bytes,
+        )
+        if any(value is not None and value < 0 for value in values):
+            raise ValueError("capacity bytes must be nonnegative")
+        if not self.method:
+            raise ValueError("capacity method is required")
 
 
 @dataclass(frozen=True)
@@ -396,8 +433,39 @@ class StorageBackend(ABC):
     @abstractmethod
     def usage(self, prefix: str = "") -> dict: ...
 
-    @abstractmethod
-    def presigned_download_url(self, key: str, filename: str) -> str | None: ...
+    def capacity(self) -> StorageCapacity | None:
+        """Return bounded provider capacity evidence, or ``None`` if unknown.
+
+        Implementations must not emulate capacity by walking an unbounded
+        namespace. Enumeration belongs to explicit background inventory/audit.
+        """
+        return None
+
+    def delivery_diagnostics(self) -> dict:
+        return {
+            "mode": "proxy",
+            "native_candidate": False,
+            "ranges": self.supports_ranges,
+        }
+
+    def browser_download(
+        self,
+        key: str,
+        filename: str,
+        media_type: str,
+        *,
+        origin: str | None = None,
+        inline: bool = False,
+    ) -> BrowserDownload | None:
+        """Return a short-lived, header-free object capability when supported."""
+        return None
+
+    @property
+    def supports_ranges(self) -> bool:
+        return False
+
+    def stream_range(self, key: str, start: int, end: int) -> Iterator[bytes]:
+        raise NotImplementedError("storage_range_unavailable")
 
     @abstractmethod
     def health_probe(self) -> dict: ...
@@ -573,8 +641,15 @@ class UnavailableStorageBackend(StorageBackend):
         del prefix
         return self._fail()
 
-    def presigned_download_url(self, key: str, filename: str) -> str | None:
-        del key, filename
+    def browser_download(
+        self,
+        key: str,
+        filename: str,
+        media_type: str,
+        *,
+        origin: str | None = None,
+        inline: bool = False,
+    ) -> BrowserDownload | None:
         return self._fail()
 
     def health_probe(self) -> dict:
