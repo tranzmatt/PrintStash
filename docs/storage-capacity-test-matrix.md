@@ -69,7 +69,7 @@ The focused owner run covers these behaviors. Aggregate backend/frontend coverag
 | 59 | explains allocation blockers | Error | Blocked volume | Allocation blocker visible | UI unit | ✅ `frontend/src/components/__tests__/storage-inventory-panel.test.tsx::explains allocation blockers` |
 | 60 | plots persisted history | Happy | Two dated samples | Accessible storage history chart | UI unit | ✅ `frontend/src/components/__tests__/storage-inventory-panel.test.tsx::plots persisted history` |
 | 61 | requires confirmation for staging cleanup | Edge | Cleanup button then cancel | Confirmation shown; cancellation closes it | UI unit | ✅ `frontend/src/components/__tests__/storage-inventory-panel.test.tsx::requires confirmation for staging cleanup` |
-| 62 | storage insights require explicit cleanup | Happy | Real backend Settings Storage tab | Refresh, confirmation and cleanup success visible | Browser E2E | ✅ `frontend/tests/e2e-real/settings.spec.ts::storage insights explain headroom and require explicit cleanup` |
+| 62 | requires explicit cleanup from storage insights | Happy | Real backend Settings Storage tab | Refresh, confirmation and cleanup success visible | Browser E2E | ✅ `frontend/tests/e2e-real/settings.spec.ts::requires explicit cleanup from storage insights` |
 | 63 | reserves remote backup source volume | Edge | Remote Vault; separate backup directory | Materialization peak charged to actual process temporary filesystem | Integration | ✅ `backend/tests/integration/modules/storage/test_capacity_operations.py::TestOperationAdmission::test_reserves_remote_backup_source_volume` |
 
 ## Attached-plan admission additions

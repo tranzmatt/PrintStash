@@ -476,19 +476,19 @@ test.describe("settings", () => {
     await page.getByRole("spinbutton").fill("30");
     await page.getByRole("button", { name: "Save retention" }).click();
   });
-});
 
-test("storage insights explain headroom and require explicit cleanup", async ({ page }) => {
-  await page.goto("/settings");
-  await page.getByRole("button", { name: "Storage", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Storage insights" })).toBeVisible();
-  await page.getByRole("button", { name: "Refresh measurement" }).click();
-  await expect(page.getByText(/daily measurements retained/)).toBeVisible();
-  await page.getByRole("button", { name: "Clean up expired staging" }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("Uncertain files are retained");
-  await dialog.getByRole("button", { name: "Clean up", exact: true }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "expired leases cleared" }),
-  ).toBeVisible();
+  test("requires explicit cleanup from storage insights", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Storage", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Storage insights" })).toBeVisible();
+    await page.getByRole("button", { name: "Refresh measurement" }).click();
+    await expect(page.getByText(/daily measurements retained/)).toBeVisible();
+    await page.getByRole("button", { name: "Clean up expired staging" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Uncertain files are retained");
+    await dialog.getByRole("button", { name: "Clean up", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "expired leases cleared" }),
+    ).toBeVisible();
+  });
 });

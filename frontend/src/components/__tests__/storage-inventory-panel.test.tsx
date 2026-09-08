@@ -1,3 +1,9 @@
+/*
+ * Storage insights must distinguish unknown capacity from a hard block, expose
+ * persisted history accessibly, and require confirmation before removing any
+ * expired staging. The tests exercise those operator-visible safety contracts.
+ */
+
 import "@testing-library/jest-dom/vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
