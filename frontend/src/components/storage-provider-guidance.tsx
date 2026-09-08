@@ -1,4 +1,5 @@
 import { useOptionalI18n, type MessageKey } from "@/lib/i18n";
+import { uiText } from "@/lib/locale";
 import type { StorageProvider } from "@/types";
 
 const GUIDANCE_KEYS = {
@@ -24,15 +25,9 @@ export function StorageProviderGuidance({ provider }: { provider: StorageProvide
   return (
     <div className="space-y-2 text-xs text-muted-foreground sm:col-span-2">
       <p>{i18n && key ? i18n.t(key) : provider.setup_guidance}</p>
-      <p>
-        {i18n?.t("storage.preset.evidence") ??
-          "Transport tested. Validate your endpoint; appliance hardware and hosted accounts are not certified."}
-      </p>
+      <p>{i18n?.t("storage.preset.evidence") ?? uiText("storage.preset.evidence")}</p>
       {provider.delivery?.signed_get && (
-        <p>
-          {i18n?.t("storage.preset.delivery") ??
-            "Direct downloads require endpoint and browser CORS checks. Same-origin downloads remain available. Download support does not grant deletion permission."}
-        </p>
+        <p>{i18n?.t("storage.preset.delivery") ?? uiText("storage.preset.delivery")}</p>
       )}
       {provider.provider_documentation_url && (
         <a
@@ -41,7 +36,7 @@ export function StorageProviderGuidance({ provider }: { provider: StorageProvide
           target="_blank"
           rel="noreferrer"
         >
-          {i18n?.t("storage.preset.instructions") ?? "Provider setup instructions"}
+          {i18n?.t("storage.preset.instructions") ?? uiText("storage.preset.instructions")}
         </a>
       )}
     </div>

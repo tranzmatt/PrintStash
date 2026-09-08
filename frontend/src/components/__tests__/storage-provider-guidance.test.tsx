@@ -1,3 +1,4 @@
+/** Provider preset guidance stays localized and keeps delivery separate from deletion. */
 import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { StorageProviderGuidance } from "@/components/storage-provider-guidance";
