@@ -620,9 +620,13 @@ jobs:
           retention-days: 7
 
   docker-build:
-    name: Docker build (${{ matrix.image }}, ${{ matrix.arch }})
+    name: Docker build and Grype scan (${{ matrix.image }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.image == 'printstash' && 45 || 30 }}
+    timeout-minutes: ${{ matrix.image == 'printstash' && 45 || 40 }}
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     # Build each platform on its native architecture. Besides avoiding slow
     # QEMU emulation, this lets the full ARM image be loaded and STEP-smoked in
     # the same job instead of building that image twice.
@@ -681,7 +685,7 @@ jobs:
             arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
-            load: false
+            load: true
             step-smoke: false
           - image: printstash-frontend
             context: ./frontend
@@ -690,7 +694,7 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-            load: false
+            load: true
             step-smoke: false
           - image: printstash
             arch: amd64
@@ -736,6 +740,13 @@ jobs:
             unified.tags=printstash:${{ matrix.arch }}-ci
             *.cache-from=type=gha,scope=printstash-${{ matrix.arch }}
             unified.cache-to=type=gha,scope=printstash-${{ matrix.arch }},mode=max,ignore-error=true
+
+      - name: Scan image with Grype
+        uses: ./.github/actions/grype-scan
+        with:
+          image: ${{ matrix.image }}:${{ matrix.arch }}-ci
+          report-name: ci-${{ matrix.image }}-${{ matrix.arch }}
+          upload-sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Smoke-test unified container
         if: matrix.image == 'printstash'

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+
 import pytest
 import yaml
 
@@ -215,3 +218,129 @@ class TestUnifiedImageWorkflow:
 
         assert smoke["if"] == "matrix.image == 'printstash'"
         assert "test-unified-image.sh" in smoke["run"]
+
+
+class TestContainerVulnerabilityScanning:
+    def test_ci_scans_every_local_architecture(self) -> None:
+        job = _ci_workflow()["jobs"]["docker-build"]
+        rows = job["strategy"]["matrix"]["include"]
+        scan = next(
+            step
+            for step in job["steps"]
+            if step.get("uses") == "./.github/actions/grype-scan"
+        )
+
+        assert len(rows) == 8
+        assert all(row.get("load", True) is True for row in rows)
+        assert scan["with"]["image"] == (
+            "${{ matrix.image }}:${{ matrix.arch }}-ci"
+        )
+        assert scan["with"]["report-name"] == (
+            "ci-${{ matrix.image }}-${{ matrix.arch }}"
+        )
+
+    def test_publish_scans_each_digest_before_promotion(self) -> None:
+        workflow = _workflow("container-publish.yml")
+        scan_job = workflow["jobs"]["scan"]
+        merge_job = workflow["jobs"]["merge"]
+        resolve = next(
+            step for step in scan_job["steps"] if step.get("id") == "target"
+        )
+        scan = next(
+            step
+            for step in scan_job["steps"]
+            if step.get("uses") == "./.github/actions/grype-scan"
+        )
+
+        assert scan_job["needs"] == "build"
+        assert len(scan_job["strategy"]["matrix"]["include"]) == 8
+        assert "@sha256:${digest}" in resolve["run"]
+        assert scan["with"]["image"] == "${{ steps.target.outputs.image }}"
+        assert set(merge_job["needs"]) == {"build", "scan"}
+
+    def test_reports_include_each_supported_format(self) -> None:
+        action = yaml.safe_load(
+            (REPO_ROOT / ".github/actions/grype-scan/action.yml").read_text()
+        )
+        steps = action["runs"]["steps"]
+        scan = next(step for step in steps if step["name"] == "Scan image")
+        upload = next(
+            step
+            for step in steps
+            if step["name"] == "Upload vulnerability report bundle"
+        )
+
+        assert "--output table=/reports/report.txt" in scan["run"]
+        assert "--output json=/reports/report.json" in scan["run"]
+        assert "--output sarif=/reports/report.sarif" in scan["run"]
+        assert "ghcr.io/anchore/grype:v0.118.0@sha256:" in scan["env"][
+            "GRYPE_IMAGE"
+        ]
+        assert upload["with"]["retention-days"] == 90
+        assert upload["with"]["if-no-files-found"] == "warn"
+
+    def test_summary_reports_severity_totals(self) -> None:
+        summary_program = REPO_ROOT / ".github/actions/grype-scan/summary.jq"
+        report = {
+            "matches": [
+                {
+                    "vulnerability": {
+                        "severity": "Critical",
+                        "fix": {"versions": ["2.0"]},
+                    }
+                },
+                {
+                    "vulnerability": {
+                        "severity": "High",
+                        "fix": {"versions": []},
+                    }
+                },
+            ]
+        }
+
+        result = subprocess.run(
+            [
+                "jq",
+                "-r",
+                "--arg",
+                "image",
+                "printstash-api:amd64-ci",
+                "-f",
+                str(summary_program),
+            ],
+            input=json.dumps(report),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert "**Image:** `printstash-api:amd64-ci`" in result.stdout
+        assert "**Matches:** 2 (1 with a known fix)" in result.stdout
+        assert "| Critical | 1 |" in result.stdout
+        assert "| High | 1 |" in result.stdout
+
+    def test_vulnerability_matches_remain_report_only(self) -> None:
+        action = yaml.safe_load(
+            (REPO_ROOT / ".github/actions/grype-scan/action.yml").read_text()
+        )
+        scan = next(
+            step for step in action["runs"]["steps"] if step["name"] == "Scan image"
+        )
+
+        assert "--fail-on" not in scan["run"]
+        assert scan.get("continue-on-error", False) is False
+
+    def test_trusted_runs_upload_sarif(self) -> None:
+        workflow_job = _ci_workflow()["jobs"]["docker-build"]
+        action = yaml.safe_load(
+            (REPO_ROOT / ".github/actions/grype-scan/action.yml").read_text()
+        )
+        upload = next(
+            step for step in action["runs"]["steps"] if step["name"] == "Upload SARIF report"
+        )
+
+        assert workflow_job["permissions"]["security-events"] == "write"
+        assert upload["uses"].startswith("github/codeql-action/upload-sarif@")
+        assert upload["uses"] != "github/codeql-action/upload-sarif@v4"
+        assert upload["continue-on-error"] is True
+        assert upload["with"]["sarif_file"].endswith("/report.sarif")

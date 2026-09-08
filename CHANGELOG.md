@@ -19,6 +19,11 @@
 
 ### Added
 
+- Grype scans every AMD64 and ARM64 container image in CI and scans immutable
+  publishing digests before promotion. Each run retains readable, JSON and SARIF
+  vulnerability reports for 90 days and sends trusted-run results to GitHub code
+  scanning when it is available.
+
 - An optional unified Docker image runs the full API and web UI in one container,
   with a single-service Compose file and tested AMD64/ARM64 publishing to GHCR.
 
