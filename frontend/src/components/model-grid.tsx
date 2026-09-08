@@ -1,10 +1,9 @@
 "use client";
 
-import { knownUiText } from "@/lib/locale";
+import { knownUiText, uiText, type MessageKey } from "@/lib/locale";
 import { getErrorMessage } from "@/lib/errors";
 import { filterValueText } from "@/lib/filter-labels";
 
-import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -967,11 +966,11 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         tag: [...selectedTags].sort(),
       });
 
-  async function manageSavedView(action: () => Promise<SavedViewRead | void>, success: string) {
+  async function manageSavedView(action: () => Promise<SavedViewRead | void>, success: MessageKey) {
     try {
       await action();
       setLoadedSavedViews(await listSavedViews());
-      toast.success(success);
+      toast.success(uiText(success));
     } catch (error) {
       toast.error(error);
       throw error;
@@ -1240,7 +1239,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   }, [auth.isAuthenticated, clearSelection, selectionCount]);
 
   async function runCollectionBatch(
-    verb: string,
+    success: MessageKey,
     operation: (collection: CollectionRead) => Promise<CollectionRead>,
   ) {
     setBatchBusy(true);
@@ -1256,7 +1255,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         failedFolders.push(collection.path);
       }
     }
-    if (succeeded) toast.success(`${verb} ${succeeded}`);
+    if (succeeded) toast.success(uiText(success, { count: succeeded }));
     if (failed)
       toast.warning(
         uiText("{value1} skipped", { value1: String(failed) }),
@@ -2041,26 +2040,26 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                           onUpdate={(view) =>
                             manageSavedView(
                               () => updateSavedView(view.id, { filters: currentViewFilters() }),
-                              "Saved view updated",
+                              "savedView.updateSuccess",
                             )
                           }
                           onRename={(view, name) =>
                             manageSavedView(
                               () => updateSavedView(view.id, { name }),
-                              "Saved view renamed",
+                              "savedView.renameSuccess",
                             )
                           }
                           onDuplicate={(view) =>
                             manageSavedView(
                               () => createSavedView(duplicateViewName(view.name), view.filters),
-                              "Saved view duplicated",
+                              "savedView.duplicateSuccess",
                             )
                           }
                           onDelete={(view) =>
                             manageSavedView(async () => {
                               await deleteSavedView(view.id);
                               if (activeSavedViewId === view.id) setActiveSavedViewId(null);
-                            }, "Saved view deleted")
+                            }, "savedView.deleteSuccess")
                           }
                           triggerClassName="max-w-none w-full justify-start px-2.5 py-2 text-sm"
                           triggerRole="menuitem"
@@ -2183,26 +2182,26 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                       onUpdate={(view) =>
                         manageSavedView(
                           () => updateSavedView(view.id, { filters: currentViewFilters() }),
-                          "Saved view updated",
+                          "savedView.updateSuccess",
                         )
                       }
                       onRename={(view, name) =>
                         manageSavedView(
                           () => updateSavedView(view.id, { name }),
-                          "Saved view renamed",
+                          "savedView.renameSuccess",
                         )
                       }
                       onDuplicate={(view) =>
                         manageSavedView(
                           () => createSavedView(duplicateViewName(view.name), view.filters),
-                          "Saved view duplicated",
+                          "savedView.duplicateSuccess",
                         )
                       }
                       onDelete={(view) =>
                         manageSavedView(async () => {
                           await deleteSavedView(view.id);
                           if (activeSavedViewId === view.id) setActiveSavedViewId(null);
-                        }, "Saved view deleted")
+                        }, "savedView.deleteSuccess")
                       }
                       triggerClassName="h-10 sm:h-8"
                     />
@@ -2573,7 +2572,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
             canMoveToRoot={!!user?.is_superuser}
             onMoveSelection={moveSelection}
             onRenameCollections={(names) =>
-              runCollectionBatch("Renamed", (collection) =>
+              runCollectionBatch("collection.renameSuccess", (collection) =>
                 renameCollection(collection.id, names[collection.id]),
               )
             }

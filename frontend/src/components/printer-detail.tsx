@@ -1,9 +1,13 @@
 "use client";
 
-import { knownUiText } from "@/lib/locale";
+import {
+  currentLocale,
+  knownUiText,
+  uiMessage,
+  uiText,
+  type MessageDescriptor,
+} from "@/lib/locale";
 import { formatNumber } from "@/lib/format";
-import { currentLocale } from "@/lib/locale";
-import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
 
 import { useEffect, useRef, useState } from "react";
@@ -288,7 +292,7 @@ export function PrinterDetailPage({
     }
   }
 
-  async function machineAction<T>(key: string, fn: () => Promise<T>, successMsg: string) {
+  async function machineAction<T>(key: string, fn: () => Promise<T>, success: MessageDescriptor) {
     if (!auth.isAuthenticated) {
       auth.showAuthRequiredToast();
       return;
@@ -296,7 +300,7 @@ export function PrinterDetailPage({
     setMachineBusy(key);
     try {
       await fn();
-      toast.success(successMsg);
+      toast.success(uiText(success.key, success.values));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -313,7 +317,7 @@ export function PrinterDetailPage({
     void machineAction(
       `set-${heater}`,
       () => setPrinterTemperature(printerId, heater, t).then(clear),
-      uiText("{value1} set to {value2}°C", {
+      uiMessage("{value1} set to {value2}°C", {
         value1: String(heater === "extruder" ? "Hotend" : "Bed"),
         value2: String(t),
       }),
@@ -327,7 +331,7 @@ export function PrinterDetailPage({
         await setPrinterTemperature(printerId, "extruder", p.hotend);
         await setPrinterTemperature(printerId, "bed", p.bed);
       },
-      uiText("Preheating for {value1}", { value1: String(p.name) }),
+      uiMessage("Preheating for {value1}", { value1: String(p.name) }),
     );
   }
 
@@ -338,7 +342,7 @@ export function PrinterDetailPage({
         await setPrinterTemperature(printerId, "extruder", 0);
         await setPrinterTemperature(printerId, "bed", 0);
       },
-      "Cooling down",
+      uiMessage("printer.cooldownSuccess"),
     );
   }
 
@@ -351,7 +355,11 @@ export function PrinterDetailPage({
   }
 
   async function confirmEmergencyStopAction() {
-    await machineAction("estop", () => emergencyStopPrinter(printerId), "Emergency stop sent");
+    await machineAction(
+      "estop",
+      () => emergencyStopPrinter(printerId),
+      uiMessage("printer.emergencyStopSuccess"),
+    );
     setConfirmEmergencyStop(false);
   }
 
@@ -842,7 +850,7 @@ export function PrinterDetailPage({
                             void machineAction(
                               "home",
                               () => homePrinter(printerId),
-                              "Homing all axes",
+                              uiMessage("printer.homeSuccess"),
                             )
                           }
                           disabled={!printer.access.can_control || machineBusy !== null}

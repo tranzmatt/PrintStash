@@ -858,7 +858,7 @@
   "Tags updated": "Etiquetas actualizadas",
   "Could not update tags": "No se pudieron actualizar las etiquetas",
   "Create tag": "Crear etiqueta",
-  "Create tag &quot;": "Crear etiqueta &quot;",
+  "Create tag &quot;": "Crear etiqueta \"",
   "Choose an existing tag or create a new one to group and find this Model.": "Elige una etiqueta existente o crea una nueva para agrupar y encontrar este modelo.",
   "Remove tags": "Quitar etiquetas",
   "No spool": "Sin carrete",
@@ -2873,5 +2873,19 @@
   "printer_busy": "La impresora está ocupada.",
   "path_not_allowed": "La ruta no está permitida.",
   "backup_blob_missing": "Falta un archivo necesario para la copia de seguridad. Comprueba el almacenamiento y vuelve a intentarlo.",
-  "export_too_large": "La exportación es demasiado grande. Selecciona menos modelos y vuelve a intentarlo."
+  "export_too_large": "La exportación es demasiado grande. Selecciona menos modelos y vuelve a intentarlo.",
+  "revision.updateSuccess": "Revisión actualizada",
+  "revision.deleteSuccess": "Revisión eliminada",
+  "savedView.updateSuccess": "Vista guardada actualizada",
+  "savedView.renameSuccess": "Vista guardada renombrada",
+  "savedView.duplicateSuccess": "Vista guardada duplicada",
+  "savedView.deleteSuccess": "Vista guardada eliminada",
+  "collection.renameSuccess": {
+    "one": "Se cambió el nombre de {count} carpeta",
+    "other": "Se cambió el nombre de {count} carpetas"
+  },
+  "printer.cooldownSuccess": "Enfriando",
+  "printer.emergencyStopSuccess": "Parada de emergencia enviada",
+  "printer.homeSuccess": "Referenciando todos los ejes",
+  "notifications.signingSecretPlaceholder": "se usa para firmar la carga útil con HMAC"
 }

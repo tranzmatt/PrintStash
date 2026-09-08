@@ -32,6 +32,13 @@ const TECHNICAL = new Set([
   "http://printer.local:7125",
   "/api/v1/auth/login",
   "http://spoolman.local:7912",
+  "https://example.com/hook",
+  "https://discord.com/api/webhooks/…",
+  "123456:ABC-DEF…",
+  "-1001234567890",
+  "https://ntfy.sh",
+  "my-printer-alerts",
+  "tk_…",
 ]);
 const ATTRIBUTES = new Set([
   "title",
@@ -100,14 +107,47 @@ function unlocalizedCopy(source: string): string[] {
       )
         expression(node.value.expression);
     },
+    CallExpression(node) {
+      if (node.callee.type !== "MemberExpression" || node.callee.property.type !== "Identifier")
+        return;
+      if (!new Set(["success", "warning", "info", "error"]).has(node.callee.property.name)) return;
+      const object = node.callee.object;
+      const isToast =
+        (object.type === "Identifier" && object.name === "toast") ||
+        (object.type === "MemberExpression" &&
+          object.property.type === "Identifier" &&
+          object.property.name === "toast");
+      if (!isToast) return;
+      const first = node.arguments[0];
+      if (first?.type !== "SpreadElement") expression(first);
+    },
+    Property(node) {
+      const key = node.key;
+      const name =
+        key.type === "Identifier" ? key.name : key.type === "Literal" ? String(key.value) : null;
+      if (!node.computed && name !== null && ATTRIBUTES.has(name)) {
+        if (node.value.type === "Literal") {
+          if (node.value.value === null) return;
+          const value = String(node.value.value);
+          const semanticKey = /^[a-z][\w]*(?:\.[\w]+)+$/.test(value) && isMessageKey(value);
+          if (!semanticKey) add(value);
+        }
+        if (node.value.type === "TemplateLiteral")
+          node.value.quasis.forEach((part) => add(part.value.cooked ?? part.value.raw));
+        if (node.value.type === "ConditionalExpression") expression(node.value);
+      }
+    },
   }).visit(parsed.program);
   return values;
 }
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === "__tests__" ? [] : sourceFiles(path);
-    return entry.name.endsWith(".tsx") ? [path] : [];
+    if (entry.isDirectory())
+      return new Set(["__tests__", "generated", "test-support"]).has(entry.name)
+        ? []
+        : sourceFiles(path);
+    return /\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts") ? [path] : [];
   });
 }
 function parameters(value: string): string[] {
@@ -127,10 +167,36 @@ describe("translationCoverage", () => {
       ),
     ).toEqual([]);
   });
+  it("rejects hardcoded imperative presentation copy", () => {
+    expect(
+      unlocalizedCopy(
+        'toast.success("Saved"); deps.toast.warning(`Skipped ${count}`); const field = { placeholder: "Helpful copy" };',
+      ),
+    ).toEqual(expect.arrayContaining(["Saved", "Skipped", "Helpful copy"]));
+    expect(
+      unlocalizedCopy(
+        'toast.success(uiText("save.success")); const field = { placeholder: uiText("form.help") };',
+      ),
+    ).toEqual([]);
+  });
   it("has no unwrapped authored JSX copy", () => {
     expect(
       sourceFiles("src").flatMap((file) =>
         unlocalizedCopy(readFileSync(file, "utf8")).map((text) => `${file}: ${text}`),
+      ),
+    ).toEqual([]);
+  });
+  it("has no hardcoded imperative presentation copy", () => {
+    expect(
+      sourceFiles("src").flatMap((file) =>
+        unlocalizedCopy(readFileSync(file, "utf8")).map((text) => `${file}: ${text}`),
+      ),
+    ).toEqual([]);
+  });
+  it("keeps catalog text out of ignored component fallbacks", () => {
+    expect(
+      sourceFiles("src").flatMap((file) =>
+        /\b_fallback\b/.test(readFileSync(file, "utf8")) ? [file] : [],
       ),
     ).toEqual([]);
   });
@@ -168,6 +234,16 @@ describe("translationCoverage", () => {
           locale,
           key,
           parameters: expected,
+        });
+        expect({ locale, key, encodedEntity: /&(?:amp|quot|apos|lt|gt);/i.test(form) }).toEqual({
+          locale,
+          key,
+          encodedEntity: false,
+        });
+        expect({ locale, key, draft: /TODO\([^)]+\):/.test(form) }).toEqual({
+          locale,
+          key,
+          draft: false,
         });
       }
     }

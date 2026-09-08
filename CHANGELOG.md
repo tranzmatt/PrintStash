@@ -7,6 +7,8 @@
 - Interface text, accessible labels, errors, plural counts and offline screens
   use shared language catalogs. Dates and numbers follow the selected language;
   the language menu supports adding further locales without a two-language toggle.
+  Catalogs are static, typo-friendly sources with guarded imperative feedback and
+  a safe scaffold command for adding complete language drafts.
 
 - Backend code is organized by capability, with separate startup, storage,
   backup recovery and library query modules. G-code Revision deletion uses a
