@@ -59,7 +59,6 @@ PINNED_BELOW_FLOOR = {
     "app/modules/identity/ws_tickets.py": 87.0,
     "app/modules/sources/library_watcher.py": 87.5,
     "app/schemas/provenance.py": 89.0,
-    "app/modules/ingestion/importer.py": 89.5,
 }
 
 # How far a pinned module may rise above its pin before the pin has to move. Wide
@@ -69,7 +68,7 @@ PIN_SLACK = 3.0
 
 # Two-sided, the same shape as the other ratchets in this directory: the list may
 # not grow, and when it shrinks this has to come down with it.
-MAX_PINNED = 11
+MAX_PINNED = 10
 
 
 def _report() -> dict:
