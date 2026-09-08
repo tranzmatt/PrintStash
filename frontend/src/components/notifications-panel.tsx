@@ -124,7 +124,9 @@ const TARGET_FIELDS = {
       get label() {
         return uiText("Signing secret (optional)");
       },
-      placeholder: "used to HMAC-sign the payload",
+      get placeholder() {
+        return uiText("notifications.signingSecretPlaceholder");
+      },
       secret: true,
       optional: true,
     },

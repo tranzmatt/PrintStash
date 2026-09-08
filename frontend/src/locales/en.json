@@ -69,7 +69,7 @@
   "Import supported AMS or active-Spoolman state. Turn off to use manual state exclusively.": "Import supported AMS or active-Spoolman state. Turn off to use manual state exclusively.",
   "Require operator release": "Require operator release",
   "After a managed print completes, block scheduling until an operator releases or holds the printer.": "After a managed print completes, block scheduling until an operator releases or holds the printer.",
-  "Materials &amp; tools": "Materials &amp; tools",
+  "Materials &amp; tools": "Materials & tools",
   "Loaded filament truth is kept here, independently from printer groups.": "Loaded filament truth is kept here, independently from printer groups.",
   "Save state": "Save state",
   "Tool 0 nozzle diameter (mm)": "Tool 0 nozzle diameter (mm)",
@@ -330,7 +330,7 @@
   "Track filament inventory and per-print consumption with a self-hosted Spoolman instance. Off by default.": "Track filament inventory and per-print consumption with a self-hosted Spoolman instance. Off by default.",
   "Only an administrator can configure Spoolman.": "Only an administrator can configure Spoolman.",
   "Decrements the selected spool by measured filament when a print completes (Moonraker-measured prints only).": "Decrements the selected spool by measured filament when a print completes (Moonraker-measured prints only).",
-  "Connect a MakerWorld (Bambu) account so model &amp; collection imports can download files": "Connect a MakerWorld (Bambu) account so model &amp; collection imports can download files",
+  "Connect a MakerWorld (Bambu) account so model &amp; collection imports can download files": "Connect a MakerWorld (Bambu) account so model & collection imports can download files",
   "Only an administrator can connect MakerWorld.": "Only an administrator can connect MakerWorld.",
   "Your password is sent once to Bambu to obtain a session token and is never stored. MakerWorld usually emails a verification code next.": "Your password is sent once to Bambu to obtain a session token and is never stored. MakerWorld usually emails a verification code next.",
   "Sessions expire periodically — if imports start failing with a login error, disconnect and connect again.": "Sessions expire periodically — if imports start failing with a login error, disconnect and connect again.",
@@ -858,7 +858,7 @@
   "Tags updated": "Tags updated",
   "Could not update tags": "Could not update tags",
   "Create tag": "Create tag",
-  "Create tag &quot;": "Create tag &quot;",
+  "Create tag &quot;": "Create tag \"",
   "Choose an existing tag or create a new one to group and find this Model.": "Choose an existing tag or create a new one to group and find this Model.",
   "Remove tags": "Remove tags",
   "No spool": "No spool",
@@ -2873,5 +2873,19 @@
   "printer_busy": "Printer busy.",
   "path_not_allowed": "Path not allowed.",
   "backup_blob_missing": "A file needed for the backup is missing. Check the storage and try again.",
-  "export_too_large": "The export is too large. Select fewer models and try again."
+  "export_too_large": "The export is too large. Select fewer models and try again.",
+  "revision.updateSuccess": "Revision updated",
+  "revision.deleteSuccess": "Revision deleted",
+  "savedView.updateSuccess": "Saved view updated",
+  "savedView.renameSuccess": "Saved view renamed",
+  "savedView.duplicateSuccess": "Saved view duplicated",
+  "savedView.deleteSuccess": "Saved view deleted",
+  "collection.renameSuccess": {
+    "one": "Renamed {count} folder",
+    "other": "Renamed {count} folders"
+  },
+  "printer.cooldownSuccess": "Cooling down",
+  "printer.emergencyStopSuccess": "Emergency stop sent",
+  "printer.homeSuccess": "Homing all axes",
+  "notifications.signingSecretPlaceholder": "used to HMAC-sign the payload"
 }
