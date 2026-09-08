@@ -1,3 +1,5 @@
+import { uiText } from "@/lib/locale";
+import { useUiLocale } from "@/lib/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 
@@ -74,8 +76,8 @@ function provenanceOriginLabel(
   origin: ProvenanceOrigin,
   i18n: ReturnType<typeof useOptionalI18n>,
 ): string {
-  const [key, fallback] = ORIGIN_LABELS[provenanceOriginKey(origin)];
-  return i18n?.t(key) ?? fallback;
+  const [key] = ORIGIN_LABELS[provenanceOriginKey(origin)];
+  return i18n?.t(key) ?? uiText(key);
 }
 
 function SourceField({
@@ -97,9 +99,10 @@ function SourceField({
   onSaved: (next: ModelProvenanceRead) => void;
   last?: boolean;
 }) {
+  useUiLocale();
   const i18n = useOptionalI18n();
-  const t = (key: MessageKey, fallback: string, values?: Record<string, string>) =>
-    i18n?.t(key, values) ?? fallback;
+  const t = (key: MessageKey, _fallback: string, values?: Record<string, string>) =>
+    i18n?.t(key, values) ?? uiText(key, values);
   const [labelKey, labelFallback] = LABELS[field.field_name];
   const label = t(labelKey, labelFallback);
   const [editing, setEditing] = useState(false);
@@ -200,8 +203,8 @@ function SourceField({
               {(field.field_name === "title" || field.field_name === "description") && (
                 <Button size="xs" variant="outline" onClick={applyToModel}>
                   {field.field_name === "title"
-                    ? (i18n?.t("source.useTitle") ?? "Use source title")
-                    : (i18n?.t("source.useDescription") ?? "Use source description")}
+                    ? (i18n?.t("source.useTitle") ?? uiText("Use source title"))
+                    : (i18n?.t("source.useDescription") ?? uiText("Use source description"))}
                 </Button>
               )}
               {/* Every field renders one of these, so the visible word alone leaves a
@@ -222,7 +225,9 @@ function SourceField({
       {field.field_name === "license_text" && (
         <p className="col-span-full mt-1 text-xs text-muted-foreground @xl/source:col-start-2">
           {i18n?.t("source.licenseDisclaimer") ??
-            "PrintStash preserves published license text and does not grant, interpret, or expand rights."}
+            uiText(
+              "PrintStash preserves published license text and does not grant, interpret, or expand rights.",
+            )}
         </p>
       )}
       <ConfirmModal
@@ -241,15 +246,16 @@ function SourceField({
 }
 
 function SourceTags({ tags, last = false }: { tags: string[]; last?: boolean }) {
+  useUiLocale();
   const i18n = useOptionalI18n();
   if (tags.length === 0) return null;
   return (
     <div
       className={`flex flex-col gap-2 px-3 py-3 @xl/source:grid @xl/source:grid-cols-[minmax(8rem,0.32fr)_minmax(0,1fr)] @xl/source:items-start ${last ? "" : "border-b border-surface-container-high"}`}
-      aria-label={i18n?.t("source.tags") ?? "Source tags"}
+      aria-label={i18n?.t("source.tags") ?? uiText("Source tags")}
     >
       <span className="font-mono text-2xs uppercase tracking-wider text-on-surface-variant">
-        {i18n?.t("source.tags") ?? "Source tags"}
+        {i18n?.t("source.tags") ?? uiText("Source tags")}
       </span>
       <div className="flex flex-wrap gap-1.5">
         {tags.map((tag) => (
@@ -276,6 +282,7 @@ function SourceCover({
   canEdit: boolean;
   api: SourceTabApi;
 }) {
+  useUiLocale();
   const i18n = useOptionalI18n();
   const t = (
     key:
@@ -292,25 +299,7 @@ function SourceCover({
       | "source.coverAvailable"
       | "source.coverEmpty"
       | "source.coverUnavailable",
-  ) =>
-    i18n?.t(key) ??
-    {
-      "source.cover": "Private representative cover",
-      "source.coverUpload": "Upload cover",
-      "source.coverReplace": "Replace cover",
-      "source.coverDelete": "Delete cover",
-      "source.coverReplaceTitle": "Replace private cover?",
-      "source.coverReplaceDescription":
-        "The existing private representative cover will be replaced.",
-      "source.coverDeleteTitle": "Delete private cover?",
-      "source.coverDeleteDescription":
-        "This removes the private representative cover from this source.",
-      "source.coverInvalid": "Choose a JPEG, PNG, or WebP image.",
-      "source.coverTooLarge": "Cover images must be 15 MiB or smaller.",
-      "source.coverAvailable": "A private representative cover is available.",
-      "source.coverEmpty": "No private representative cover uploaded.",
-      "source.coverUnavailable": "Private representative cover preview is unavailable.",
-    }[key];
+  ) => i18n?.t(key) ?? uiText(key);
   const [cover, setCover] = useState<ModelSourceCoverRead | null>(null);
   const [busy, setBusy] = useState<"upload" | "delete" | null>(null);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -483,6 +472,7 @@ function SourceIdentityRow({
   children: ReactNode;
   last?: boolean;
 }) {
+  useUiLocale();
   return (
     <div
       className={`flex flex-col gap-1 px-3 py-2.5 @lg/source:flex-row @lg/source:items-center @lg/source:justify-between ${last ? "" : "border-b border-surface-container-high"}`}
@@ -504,9 +494,10 @@ export function SourceTab({
   canEdit: boolean;
   api?: SourceTabApi;
 }) {
+  useUiLocale();
   const i18n = useOptionalI18n();
-  const t = (key: MessageKey, fallback: string, values?: Record<string, string>) =>
-    i18n?.t(key, values) ?? fallback;
+  const t = (key: MessageKey, _fallback: string, values?: Record<string, string>) =>
+    i18n?.t(key, values) ?? uiText(key, values);
   const [data, setData] = useState<ModelProvenanceRead | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {

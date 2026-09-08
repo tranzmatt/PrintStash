@@ -1,3 +1,5 @@
+import { uiText } from "@/lib/locale";
+import { formatNumber } from "@/lib/format";
 import { ApiError } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 
@@ -168,14 +170,10 @@ class GcodeErrorBoundary extends React.Component<
 function viewerCopy(
   i18n: ReturnType<typeof useOptionalI18n>,
   key: MessageKey,
-  fallback: string,
+  _fallback: string,
   values?: Record<string, string>,
 ): string {
-  const template = i18n?.t(key) ?? fallback;
-  return Object.entries(values ?? {}).reduce(
-    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
-    template,
-  );
+  return i18n?.t(key, values) ?? uiText(key, values);
 }
 
 // ---- Public Component ----
@@ -365,7 +363,10 @@ export function GcodeViewer({
                 <>
                   {" · "}
                   {viewerCopy(i18n, "viewer.z", "Z {value} mm", {
-                    value: data.layerRanges[currentLayer].z.toFixed(2),
+                    value: formatNumber(data.layerRanges[currentLayer].z, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }),
                   })}
                 </>
               )}

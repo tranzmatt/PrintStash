@@ -4,6 +4,10 @@
 
 ### Changed
 
+- Interface text, accessible labels, errors, plural counts and offline screens
+  use shared language catalogs. Dates and numbers follow the selected language;
+  the language menu supports adding further locales without a two-language toggle.
+
 - Backend code is organized by capability, with separate startup, storage,
   backup recovery and library query modules. G-code Revision deletion uses a
   shared business operation with product-specific authorization and persistence.
