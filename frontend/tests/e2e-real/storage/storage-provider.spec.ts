@@ -92,7 +92,7 @@ test.describe("storage provider setup", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     await page.getByRole("button", { name: /Nextcloud and WebDAV/ }).click();
-    await page.getByRole("button", { name: /^WebDAV/ }).click();
+    await page.getByLabel("Provider").selectOption("webdav");
     await expect(page.getByText("Support: Beta")).toBeVisible();
     await expect(page.getByText("Expected: Guarded")).toBeVisible();
     await page.getByLabel("Server URL").fill(`http://127.0.0.1:${webdavPort}`);
