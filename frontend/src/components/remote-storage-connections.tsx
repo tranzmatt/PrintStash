@@ -437,7 +437,7 @@ export function RemoteStorageConnections({ disabled = false }: { disabled?: bool
                 }}
               >
                 {providers
-                  .filter((provider) => provider.id !== "local")
+                  .filter((provider) => isRemoteKind(provider.transport ?? provider.id))
                   .map((provider) => (
                     <option
                       key={provider.id}

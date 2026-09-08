@@ -242,7 +242,7 @@ Administrator-facing reason codes include `storage_dependency_missing`,
 `storage_independent_backup_required`. The UI translates these into the action
 available and the bytes that remain.
 
-There are two storage roles:
+There are three storage roles:
 
 - **Managed Vault storage** contains bytes PrintStash owns and may eventually
   delete through capability and ownership checks.
@@ -365,3 +365,26 @@ moves, replacement races, lost-client-response recovery and lock expiry.
 WsgiDAV's filesystem ETag can collide across equal-size rapid replacements, and
 Nextcloud's tested configuration does not implement LOCK. Physical deletion and
 automatic retention remain disabled; see the [measured cleanup evidence](webdav-cleanup-evidence.md).
+
+## Storage product presets
+
+The [storage catalogue](./storage-providers.md) includes beta presets for
+Synology, TrueNAS, QNAP and Unraid mounted folders; Synology and QNAP WebDAV;
+MinIO, Garage, SeaweedFS and Hetzner Object Storage S3; Hetzner Storage Box
+SFTP/WebDAV; and Koofr WebDAV. The selected transport and credentials are explicit.
+Mounted NAS paths are mounted by the host and bound into the PrintStash container.
+Existing files use the mounted Library source workflow, while mounted backup
+folders use the existing mounted destination workflow.
+
+Evidence is transport-specific: local filesystem, pinned SeaweedFS, Nextcloud and
+OpenSSH contract tests exercise the adapters. These tests do not certify NAS
+hardware, each object-store implementation, or a hosted account. Probe each
+configured endpoint and intended role. The runtime image must include the chosen
+transport dependency. Delivery support never promotes a deletion safety tier.
+
+Google Drive retains its beta read-only Library source and backup replica roles;
+managed Drive Vault storage remains unavailable. This catalogue and preset scope
+closes the current provider-expansion issue. Direct SMB, Azure Blob, GCS, new
+consumer OAuth onboarding and new consumer-drive roles remain demand-gated future
+features that require separate issues and provider-specific evidence before they
+can enter the catalogue.

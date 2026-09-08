@@ -92,6 +92,26 @@ const providers = [
 afterEach(() => setLocale("en"));
 
 describe("StorageProviderPicker", () => {
+  it("keeps multi-provider onboarding categories compact", async () => {
+    const onProviderChange = vi.fn<(provider: StorageProvider) => void>();
+    const mounted = provider("synology", "Synology — mounted folder", "this_machine");
+    render(
+      <StorageProviderPicker
+        providers={[providers[0], mounted]}
+        providerId="local"
+        values={{ data_dir: "/data/files" }}
+        onProviderChange={onProviderChange}
+        onValueChange={vi.fn<(name: string, value: string | number) => void>()}
+        onboarding
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "synology");
+
+    expect(onProviderChange).toHaveBeenCalledWith(mounted);
+    expect(screen.queryByRole("button", { name: /Synology/ })).not.toBeInTheDocument();
+  });
+
   it("filters providers by the selected category", async () => {
     const onProviderChange = vi.fn<(provider: StorageProvider) => void>();
     render(

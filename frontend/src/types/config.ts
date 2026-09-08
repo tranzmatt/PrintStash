@@ -228,6 +228,15 @@ export interface StorageProvider {
   fields: StorageProviderField[];
   fields_by_use?: Record<string, StorageProviderField[]>;
   transport?: string;
+  setup_guidance?: string;
+  provider_documentation_url?: string;
+  evidence?: "transport_tested" | "endpoint_required";
+  delivery?: {
+    signed_get: boolean;
+    requires_endpoint_proof: boolean;
+    requires_cors_proof: boolean;
+    same_origin_fallback: boolean;
+  };
   requirements?: Array<{ kind: string; fields: string[]; value?: string; message: string }>;
   uses?: Record<string, StorageUseAvailability>;
 }

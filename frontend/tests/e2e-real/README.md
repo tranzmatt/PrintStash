@@ -103,6 +103,15 @@ model name so the backend's content-hash dedupe doesn't collapse separate
 uploads. `helpers.ts` also exposes `authBundleFor`/`authedContext` to drive a
 second browser as a non-admin user.
 
+### Named storage presets
+
+`playwright.storage-presets.config.ts` reuses the real WebDAV setup harness in an
+isolated database. `storage-presets/storage-presets.spec.ts` saves a Koofr preset,
+reloads its provider identity, probes the source, scans existing G-code and
+downloads identical bytes through the linked Artifact. This is transport evidence,
+not hosted-account certification. Run `pnpm exec playwright test -c
+playwright.storage-presets.config.ts`.
+
 Storage insights: reads real capacity evidence, persists a measurement, and confirms receipt-verified expired staging cleanup.
 
 Native S3 browser delivery has a dedicated fixture and config:

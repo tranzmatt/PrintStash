@@ -14,6 +14,7 @@ from app.api.v1 import storage_connections as storage_connections_api
 from app.db.models import StorageConnection
 from app.modules.identity.auth import create_access_token
 from app.modules.sources.library_source import LibrarySourceError
+from app.modules.storage.storage_providers import PRESETS
 from tests.factories import build_user
 from tests.integration.modules.sources.external_library._helpers import enable_feature
 
@@ -880,3 +881,106 @@ class TestDefaultS3Connection:
         assert removed.status_code == 204
         db_session.expire_all()
         assert db_session.get(StorageConnection, identifier) is None
+
+
+class TestPresetConnections:
+    @pytest.fixture(
+        params=[
+            provider
+            for provider, preset in PRESETS.items()
+            if preset["transport"] != "local"
+        ]
+    )
+    def preset_profile(self, request, client, db_session):
+        from app.modules.storage.storage_providers import (
+            parse_provider_config,
+            split_provider_config,
+        )
+        from tests.fixtures.storage_presets import preset_configuration
+
+        admin = build_user(db_session, superuser=True)
+        headers = _headers(admin)
+        configuration, secrets = split_provider_config(
+            parse_provider_config(preset_configuration(request.param))
+        )
+        response = client.post(
+            "/api/v1/storage-connections",
+            headers=headers,
+            json={
+                "name": request.param,
+                "kind": PRESETS[request.param]["transport"],
+                "configuration": configuration,
+                "secrets": secrets,
+            },
+        )
+        assert response.status_code == 201, response.text
+        return response.json(), headers, secrets
+
+    def test_preserves_omitted_preset_credentials(
+        self, client, db_session, preset_profile
+    ):
+        import json
+
+        profile, headers, secrets = preset_profile
+
+        response = client.patch(
+            f"/api/v1/storage-connections/{profile['id']}",
+            headers=headers,
+            json={"name": "Renamed preset", "configuration": {"root": "edited-root"}},
+        )
+
+        assert response.status_code == 200, response.text
+        db_session.expire_all()
+        row = db_session.get(StorageConnection, profile["id"])
+        assert json.loads(row.secret_json) == secrets
+        assert (
+            response.json()["configuration"]["provider"]
+            == profile["configuration"]["provider"]
+        )
+        assert all(value not in response.text for value in secrets.values())
+
+    def test_rejects_linked_preset_redirection(
+        self, client, db_session, preset_profile
+    ):
+        from app.db.models import LibrarySourceKind
+        from tests.factories import build_external_library
+
+        profile, headers, _ = preset_profile
+        build_external_library(
+            db_session,
+            source_kind=LibrarySourceKind(profile["kind"]),
+            connection_id=profile["id"],
+            root="source://preset",
+        )
+
+        response = client.patch(
+            f"/api/v1/storage-connections/{profile['id']}",
+            headers=headers,
+            json={"configuration": {"root": "different-target"}},
+        )
+
+        assert response.status_code == 409, response.text
+        retained = client.get("/api/v1/storage-connections", headers=headers)
+        assert retained.json()[0]["configuration"] == profile["configuration"]
+
+    def test_rejects_owned_backup_redirection(self, client, db_session, preset_profile):
+        from tests.factories import build_backup_destination_result, build_backup_run
+
+        profile, headers, _ = preset_profile
+        run = build_backup_run(db_session)
+        build_backup_destination_result(
+            db_session,
+            run,
+            connection_id=profile["id"],
+            kind="connection",
+            outcome="completed",
+        )
+
+        response = client.patch(
+            f"/api/v1/storage-connections/{profile['id']}",
+            headers=headers,
+            json={"configuration": {"root": "different-target"}},
+        )
+
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "storage_connection_target_in_use"

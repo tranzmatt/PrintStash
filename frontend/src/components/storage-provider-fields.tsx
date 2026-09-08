@@ -1,9 +1,9 @@
-import { uiText } from "@/lib/locale";
-import { knownUiText } from "@/lib/locale";
-import { useUiLocale } from "@/lib/i18n";
 import { useId } from "react";
+import { StorageProviderGuidance } from "@/components/storage-provider-guidance";
 import { Input, inputClasses } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useUiLocale } from "@/lib/i18n";
+import { knownUiText, uiText } from "@/lib/locale";
 import { providerFields } from "@/lib/storage-provider-form";
 import type { StorageProvider, StorageProviderConfigValues } from "@/types";
 
@@ -32,6 +32,7 @@ export function StorageProviderFields({
   const prefix = useId();
   return (
     <div className="grid gap-4 sm:grid-cols-2">
+      <StorageProviderGuidance provider={provider} />
       {providerFields(provider, use)
         .filter((field) => !omitFields.includes(field.name))
         .map((field) => {

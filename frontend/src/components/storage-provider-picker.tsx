@@ -7,6 +7,7 @@ import { Cloud, HardDrive, Network, Server } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { inputClasses } from "@/components/ui/input";
 import { StorageProviderFields } from "@/components/storage-provider-fields";
 import { providerDefaults } from "@/lib/storage-provider-form";
 import { cn } from "@/lib/utils";
@@ -171,51 +172,91 @@ export function StorageProviderPicker(props: {
         props.onboarding &&
         categoryProviders.length === 1 &&
         categoryProviders[0].id === selected?.id
-      ) && (
-        <fieldset className="space-y-2">
-          <legend className="text-xs font-mono uppercase tracking-wider text-on-surface-variant">
-            {uiText("Provider")}
-          </legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {categoryProviders.map((provider) => (
-              <Button
-                key={provider.id}
-                type="button"
-                variant="outline"
-                disabled={props.disabled || !provider.selectable}
-                aria-pressed={provider.id === props.providerId}
-                title={
-                  provider.uses?.vault && !provider.uses.vault.available
-                    ? storageOperationMessage(provider.uses.vault.reason, i18n?.t)
-                    : provider.disabled_reason
-                      ? storageOperationMessage(provider.disabled_reason, i18n?.t)
-                      : undefined
-                }
-                onClick={() => {
-                  setCategoryOverride(null);
-                  props.onProviderChange(provider);
-                }}
+      ) &&
+        (props.onboarding ? (
+          <div className="space-y-2">
+            <label className="block space-y-2 text-xs font-mono uppercase tracking-wider text-on-surface-variant">
+              {uiText("Provider")}
+              <select
                 className={cn(
-                  "h-auto min-h-16 justify-start whitespace-normal px-3 py-3 text-left",
-                  provider.id === props.providerId &&
-                    "border-transparent bg-accent text-accent-foreground hover:bg-accent",
+                  inputClasses,
+                  "bg-surface-container-lowest font-sans normal-case tracking-normal text-on-surface focus-visible:ring-ring",
                 )}
+                value={props.providerId}
+                disabled={props.disabled}
+                onChange={(event) => {
+                  const provider = categoryProviders.find(
+                    (candidate) => candidate.id === event.target.value,
+                  );
+                  if (provider?.selectable) {
+                    setCategoryOverride(null);
+                    props.onProviderChange(provider);
+                  }
+                }}
               >
-                <span>
-                  <span className="block text-sm font-medium">{knownUiText(provider.label)}</span>
-                  <span className="block text-xs font-normal opacity-70">
-                    {provider.uses?.vault && !provider.uses.vault.available
+                {categoryProviders.map((provider) => (
+                  <option key={provider.id} value={provider.id} disabled={!provider.selectable}>
+                    {knownUiText(provider.label)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {categoryProviders
+              .filter((provider) => !provider.selectable)
+              .map((provider) => {
+                const reason = provider.uses?.vault?.reason ?? provider.disabled_reason;
+                return reason ? (
+                  <p key={provider.id} className="text-xs text-muted-foreground">
+                    {knownUiText(provider.label)}: {storageOperationMessage(reason, i18n?.t)}
+                  </p>
+                ) : null;
+              })}
+          </div>
+        ) : (
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-mono uppercase tracking-wider text-on-surface-variant">
+              {uiText("Provider")}
+            </legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {categoryProviders.map((provider) => (
+                <Button
+                  key={provider.id}
+                  type="button"
+                  variant="outline"
+                  disabled={props.disabled || !provider.selectable}
+                  aria-pressed={provider.id === props.providerId}
+                  title={
+                    provider.uses?.vault && !provider.uses.vault.available
                       ? storageOperationMessage(provider.uses.vault.reason, i18n?.t)
                       : provider.disabled_reason
                         ? storageOperationMessage(provider.disabled_reason, i18n?.t)
-                        : knownUiText(provider.description)}
+                        : undefined
+                  }
+                  onClick={() => {
+                    setCategoryOverride(null);
+                    props.onProviderChange(provider);
+                  }}
+                  className={cn(
+                    "h-auto min-h-16 justify-start whitespace-normal px-3 py-3 text-left",
+                    provider.id === props.providerId &&
+                      "border-transparent bg-accent text-accent-foreground hover:bg-accent",
+                  )}
+                >
+                  <span>
+                    <span className="block text-sm font-medium">{knownUiText(provider.label)}</span>
+                    <span className="block text-xs font-normal opacity-70">
+                      {provider.uses?.vault && !provider.uses.vault.available
+                        ? storageOperationMessage(provider.uses.vault.reason, i18n?.t)
+                        : provider.disabled_reason
+                          ? storageOperationMessage(provider.disabled_reason, i18n?.t)
+                          : knownUiText(provider.description)}
+                    </span>
                   </span>
-                </span>
-              </Button>
-            ))}
-          </div>
-        </fieldset>
-      )}
+                </Button>
+              ))}
+            </div>
+          </fieldset>
+        ))}
 
       {selected && (!props.onboarding || selected.category === selectedCategory) && (
         <section
