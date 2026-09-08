@@ -219,6 +219,7 @@ class TestReserveNextVersion:
 
         start = threading.Barrier(3)
         errors: list[BaseException] = []
+        session_factory = SQLiteSessionFactory(engine)
 
         def persist(path: Path, content: bytes) -> None:
             try:
@@ -236,6 +237,7 @@ class TestReserveNextVersion:
                         meta={},
                         thumb_bytes=None,
                         overwrite_thumbnail=False,
+                        session_factory=session_factory,
                     )
             except BaseException as exc:  # pragma: no cover - asserted below
                 errors.append(exc)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -11,7 +12,10 @@ from sqlmodel import select
 
 from app.core.config import settings
 from app.core.security import require_superuser
+from app.core.time import ensure_utc, utcnow
 from app.db.models import (
+    CapacityAdmissionEvent,
+    CapacityReservation,
     ExternalLibrary,
     ExternalLibraryScanStatus,
     File,
@@ -19,6 +23,7 @@ from app.db.models import (
     Printer,
     PrinterProvider,
     PrintJob,
+    StorageInventorySample,
 )
 from app.db.scopes import live
 from app.db.session import get_session_factory
@@ -115,6 +120,79 @@ def _storage_probe() -> dict:
             "backend": settings.storage_backend,
             "error": exc.__class__.__name__,
         }
+
+
+def _capacity_probe() -> dict:
+    """Detailed bounded evidence only; never performs a provider namespace walk."""
+    try:
+        from app.modules.storage.storage_inventory import (
+            StorageInventory,
+            growth_forecast,
+            history,
+        )
+
+        with get_session_factory().session() as session:
+            latest = session.exec(
+                select(StorageInventorySample)
+                .order_by(StorageInventorySample.sampled_at.desc())  # type: ignore[attr-defined]
+                .limit(1)
+            ).first()
+            active = int(session.exec(select(func.count(CapacityReservation.operation_id))).one())
+            recent_denials = int(
+                session.exec(
+                    select(func.count(CapacityAdmissionEvent.id)).where(
+                        CapacityAdmissionEvent.occurred_at
+                        >= utcnow() - timedelta(days=1)
+                    )
+                ).one()
+            )
+            if latest is None:
+                return {
+                    "ok": True,
+                    "capacity_known": False,
+                    "capacity_stale": False,
+                    "inventory_age_seconds": None,
+                    "headroom_threshold_bytes": None,
+                    "forecast_available": False,
+                    "active_reservations": active,
+                    "recent_admission_failures": recent_denials,
+                }
+            current = StorageInventory.model_validate_json(latest.evidence_json)
+            samples = history(session, current.target_ref)
+        available = current.provider_capacity.available_bytes
+        vault_volumes = [v for v in current.volumes if "vault" in v.roles]
+        if available is None:
+            available = next(
+                (
+                    max(0, v.free_bytes - v.reserved_bytes - v.headroom_bytes)
+                    for v in vault_volumes
+                    if v.free_bytes is not None
+                ),
+                None,
+            )
+        forecast = growth_forecast(
+            [
+                (datetime.fromisoformat(row["sampled_at"]), row["owned_bytes"])
+                for row in samples
+            ],
+            available,
+        )
+        return {
+            "ok": True,
+            "capacity_known": available is not None,
+            "capacity_stale": current.provider_capacity.status in {"stale", "degraded"},
+            "inventory_age_seconds": max(
+                0, (utcnow() - ensure_utc(latest.sampled_at)).total_seconds()
+            ),
+            "headroom_threshold_bytes": max(
+                (v.headroom_bytes for v in vault_volumes), default=None
+            ),
+            "forecast_available": forecast["status"] == "estimated",
+            "active_reservations": active,
+            "recent_admission_failures": recent_denials,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": exc.__class__.__name__}
 
 
 def _provider_probe() -> dict:
@@ -283,6 +361,7 @@ def health_details() -> dict:
     components = {
         "database": _database_probe(),
         "storage": _storage_probe(),
+        "capacity": _capacity_probe(),
         "backup": _backup_probe(),
         "printer_providers": _provider_probe(),
         "jobs": _jobs_probe(),

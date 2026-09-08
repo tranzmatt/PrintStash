@@ -363,6 +363,9 @@ class TestExecuteRun:
             "actual_size": 2048,
             "modified_at": "2026-01-01T00:00:00+00:00",
         }
+        db_session.refresh(run)
+        assert run.unclaimed_bytes == 2048
+        assert run.unclaimed_unknown_size_count == 0
 
     def test_unowned_finding_survives_unavailable_storage_metadata(
         self, db_session: Session, monkeypatch: pytest.MonkeyPatch
@@ -399,6 +402,8 @@ class TestExecuteRun:
         )
         assert result.state == VaultAuditRunState.COMPLETED
         assert finding.details == {}
+        assert run.unclaimed_bytes == 0
+        assert run.unclaimed_unknown_size_count == 1
 
     def test_execute_run_full_mode_runs_backup_check(
         self, db_session: Session, monkeypatch: pytest.MonkeyPatch

@@ -1153,15 +1153,32 @@ class PrinterHub:
             )
             return
         try:
-            with tempfile.TemporaryDirectory(prefix="printstash-bambu-") as tmp:
-                leaf = Path(unquote(urlparse(remote_path).path)).name or "external.3mf"
-                staged = Path(tmp) / leaf
-                await client.download_artifact(
-                    remote_path, staged, max_bytes=max_mb * 1024 * 1024
-                )
-                await asyncio.to_thread(
-                    self._persist_external_artifact, job_id, staged, leaf
-                )
+            from app.modules.storage.capacity import CapacityManager, CapacityResource
+            from app.modules.storage.capacity_estimates import vault_allocation
+
+            maximum = max_mb * 1024 * 1024
+            resources = [
+                CapacityResource.for_path(
+                    Path(tempfile.gettempdir()),
+                    maximum,
+                    role="printer capture staging",
+                ),
+                vault_allocation(maximum, role="printer capture publication"),
+            ]
+            with CapacityManager(self._session_factory).hold(
+                f"printer-capture:{job_id}", resources
+            ):
+                with tempfile.TemporaryDirectory(prefix="printstash-bambu-") as tmp:
+                    leaf = (
+                        Path(unquote(urlparse(remote_path).path)).name or "external.3mf"
+                    )
+                    staged = Path(tmp) / leaf
+                    await client.download_artifact(
+                        remote_path, staged, max_bytes=maximum
+                    )
+                    await asyncio.to_thread(
+                        self._persist_external_artifact, job_id, staged, leaf
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - metadata-only is a valid outcome
@@ -1208,6 +1225,7 @@ class PrinterHub:
                 thumb_bytes=thumb_bytes,
                 overwrite_thumbnail=False,
                 ingestion_key=f"bambu-job-{job_id}",
+                session_factory=self._session_factory,
             )
             job = session.get(PrintJob, job_id)
             if job is None:

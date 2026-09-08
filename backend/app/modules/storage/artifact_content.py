@@ -8,7 +8,9 @@ that backend, especially when the vault itself is S3/OpenDAL.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import os
+import secrets
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from pathlib import Path
 from typing import Iterator
 
 from app.db.models import File
+from app.db.session import get_session_factory
 from app.modules.sources.library_source import (
     LibrarySourceError,
     SourceEntry,
@@ -45,6 +48,20 @@ class ArtifactHandle:
 
     file: File
     backend: StorageBackend | None
+
+    def _temporary_capacity_claim(self, operation: str):
+        from app.modules.storage.capacity import CapacityManager, CapacityResource
+
+        return CapacityManager(get_session_factory()).reserve(
+            f"artifact-{operation}:{secrets.token_hex(12)}",
+            [
+                CapacityResource.for_path(
+                    Path(tempfile.gettempdir()),
+                    self.file.size_bytes,
+                    role=f"Artifact {operation}",
+                )
+            ],
+        )
 
     def _verified_remote_copy(self) -> Path:
         try:
@@ -146,7 +163,12 @@ class ArtifactHandle:
         so an error is reported before an HTTP response starts sending data.
         """
         if self.file.is_external:
-            temp = self._verified_external_content()
+            claim = self._temporary_capacity_claim("stream")
+            try:
+                temp = self._verified_external_content()
+            except BaseException:
+                claim.release()
+                raise
 
             def external_chunks() -> Iterator[bytes]:
                 try:
@@ -155,6 +177,7 @@ class ArtifactHandle:
                             yield chunk
                 finally:
                     temp.unlink(missing_ok=True)
+                    claim.release()
 
             return external_chunks()
 
@@ -180,20 +203,38 @@ class ArtifactHandle:
         return managed_chunks()
 
     @contextmanager
-    def materialize(self) -> Iterator[Path]:
+    def materialize(self, *, capacity_claimed: bool = False) -> Iterator[Path]:
         """Yield a stable local file for consumers that require a path."""
-        if self.file.is_external:
-            temp = self._verified_external_content()
-            try:
-                yield temp
-            finally:
-                temp.unlink(missing_ok=True)
-            return
+        direct_path = getattr(self.backend, "direct_path", lambda _key: None)
+        direct = (
+            None
+            if inspect.iscoroutinefunction(direct_path)
+            else direct_path(self.file.path)
+        )
+        needs_copy = self.file.is_external or (
+            self.backend is not None and direct is None
+        )
+        claim = (
+            self._temporary_capacity_claim("materialization")
+            if needs_copy and not capacity_claimed
+            else None
+        )
+        try:
+            if self.file.is_external:
+                temp = self._verified_external_content()
+                try:
+                    yield temp
+                finally:
+                    temp.unlink(missing_ok=True)
+                return
 
-        if self.backend is None or not self.backend.exists(self.file.path):
-            raise ArtifactContentMissingError(self.file.path)
-        with self.backend.local_path(self.file.path) as path:
-            yield path
+            if self.backend is None or not self.backend.exists(self.file.path):
+                raise ArtifactContentMissingError(self.file.path)
+            with self.backend.local_path(self.file.path) as path:
+                yield path
+        finally:
+            if claim is not None:
+                claim.release()
 
 
 def resolve(file: File, *, backend: StorageBackend | None = None) -> ArtifactHandle:

@@ -723,6 +723,12 @@ def execute_run(run_id: int) -> None:
                         identifier=Path(normalized).name,
                     )
                     continue
+                details = _unowned_storage_details(key)
+                actual_size = details.get("actual_size")
+                if isinstance(actual_size, int):
+                    run.unclaimed_bytes += actual_size
+                else:
+                    run.unclaimed_unknown_size_count += 1
                 _add(
                     session,
                     run,
@@ -730,7 +736,7 @@ def execute_run(run_id: int) -> None:
                     severity=VaultAuditSeverity.INFO,
                     resource_type="storage_object",
                     identifier=Path(key.replace("\\", "/")).name,
-                    details=_unowned_storage_details(key),
+                    details=details,
                 )
             _check_background_jobs(session, run)
             if run.mode == VaultAuditMode.FULL:

@@ -103,6 +103,8 @@ model name so the backend's content-hash dedupe doesn't collapse separate
 uploads. `helpers.ts` also exposes `authBundleFor`/`authedContext` to drive a
 second browser as a non-admin user.
 
+Storage insights: reads real capacity evidence, persists a measurement, and confirms receipt-verified expired staging cleanup.
+
 Native S3 browser delivery has a dedicated fixture and config:
 `pnpm exec playwright test --config playwright.delivery.config.ts` (also included
 in `pnpm test:e2e:storage`). It starts real SeaweedFS with test-owned TLS, a real

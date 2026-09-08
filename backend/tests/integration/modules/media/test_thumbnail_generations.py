@@ -20,6 +20,7 @@ from app.db.models import (
     ThumbnailGenerationState,
     ThumbnailRenderSlot,
 )
+from app.db.session import get_session_factory
 from app.modules.media.thumbnail_engine import ThumbnailResult, ThumbnailStrategy
 from app.modules.media.thumbnail_generations import (
     ThumbnailEnsureOutcome,
@@ -289,6 +290,7 @@ class TestThumbnailGenerations:
         backend = get_backend()
         backend.write_bytes(b"mesh", file_row.path)
         bind = db_session.get_bind()
+        session_factory = get_session_factory()
         barrier = threading.Barrier(4)
         lock = threading.Lock()
         outcomes: list[ThumbnailEnsureOutcome] = []
@@ -313,6 +315,7 @@ class TestThumbnailGenerations:
                         row,
                         backend=backend,
                         engine=engine,
+                        session_factory=session_factory,
                     )
                     with lock:
                         outcomes.append(result.outcome)

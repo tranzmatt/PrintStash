@@ -325,6 +325,51 @@
         "title": "ArtifactRequirementRead",
         "type": "object"
       },
+      "AuditObservation": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "method": {
+            "default": "vault_audit_findings",
+            "title": "Method",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          },
+          "unclaimed_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unclaimed Bytes"
+          },
+          "unclaimed_object_count": {
+            "title": "Unclaimed Object Count",
+            "type": "integer"
+          },
+          "unknown_size_count": {
+            "default": 0,
+            "title": "Unknown Size Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "completed_at",
+          "unclaimed_object_count"
+        ],
+        "title": "AuditObservation",
+        "type": "object"
+      },
       "AuthProvidersRead": {
         "properties": {
           "oidc_display_name": {
@@ -4491,6 +4536,66 @@
           "state"
         ],
         "title": "IngestResponse",
+        "type": "object"
+      },
+      "InventoryBucket": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "external_bytes": {
+            "default": 0,
+            "title": "External Bytes",
+            "type": "integer"
+          },
+          "lifecycle": {
+            "title": "Lifecycle",
+            "type": "string"
+          },
+          "logical_bytes": {
+            "title": "Logical Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "lifecycle",
+          "count",
+          "logical_bytes"
+        ],
+        "title": "InventoryBucket",
+        "type": "object"
+      },
+      "InventoryReport": {
+        "properties": {
+          "forecast": {
+            "additionalProperties": true,
+            "title": "Forecast",
+            "type": "object"
+          },
+          "history": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "inventory": {
+            "$ref": "#/components/schemas/StorageInventory"
+          }
+        },
+        "required": [
+          "inventory",
+          "history",
+          "forecast"
+        ],
+        "title": "InventoryReport",
         "type": "object"
       },
       "JobPriority": {
@@ -10870,6 +10975,94 @@
         "title": "ProvenanceSourceRead",
         "type": "object"
       },
+      "ProviderCapacityEvidence": {
+        "properties": {
+          "available_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Bytes"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "method": {
+            "default": "unsupported",
+            "title": "Method",
+            "type": "string"
+          },
+          "quota_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Bytes"
+          },
+          "reliability": {
+            "default": "unknown",
+            "title": "Reliability",
+            "type": "string"
+          },
+          "status": {
+            "default": "unknown",
+            "title": "Status",
+            "type": "string"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Bytes"
+          }
+        },
+        "title": "ProviderCapacityEvidence",
+        "type": "object"
+      },
       "ProviderCategory": {
         "enum": [
           "this_machine",
@@ -13019,6 +13212,121 @@
         "title": "StorageFieldDescriptor",
         "type": "object"
       },
+      "StorageInventory": {
+        "properties": {
+          "backup_bytes": {
+            "title": "Backup Bytes",
+            "type": "integer"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/InventoryBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "confidence": {
+            "default": "known sizes only",
+            "title": "Confidence",
+            "type": "string"
+          },
+          "external_referenced_bytes": {
+            "title": "External Referenced Bytes",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "latest_audit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuditObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logical_bytes": {
+            "title": "Logical Bytes",
+            "type": "integer"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "measured_provider_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Provider Bytes"
+          },
+          "method": {
+            "default": "database ownership census",
+            "title": "Method",
+            "type": "string"
+          },
+          "provider_capacity": {
+            "$ref": "#/components/schemas/ProviderCapacityEvidence"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "target_ref": {
+            "title": "Target Ref",
+            "type": "string"
+          },
+          "temporary_bytes": {
+            "title": "Temporary Bytes",
+            "type": "integer"
+          },
+          "unique_owned_bytes": {
+            "title": "Unique Owned Bytes",
+            "type": "integer"
+          },
+          "unknown_object_count": {
+            "title": "Unknown Object Count",
+            "type": "integer"
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/VolumeEvidence"
+            },
+            "title": "Volumes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "target_ref",
+          "buckets",
+          "logical_bytes",
+          "external_referenced_bytes",
+          "unique_owned_bytes",
+          "unknown_object_count",
+          "temporary_bytes",
+          "backup_bytes"
+        ],
+        "title": "StorageInventory",
+        "type": "object"
+      },
       "StorageProvider": {
         "properties": {
           "available": {
@@ -14228,6 +14536,11 @@
             "title": "Storage Capabilities",
             "type": "object"
           },
+          "storage_min_free_bytes": {
+            "default": 1073741824,
+            "title": "Storage Min Free Bytes",
+            "type": "integer"
+          },
           "storage_operations": {
             "additionalProperties": true,
             "title": "Storage Operations",
@@ -14652,6 +14965,18 @@
             ],
             "title": "Storage Backend"
           },
+          "storage_min_free_bytes": {
+            "anyOf": [
+              {
+                "minimum": -1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Min Free Bytes"
+          },
           "storage_provider": {
             "anyOf": [
               {
@@ -14753,6 +15078,69 @@
           "storage"
         ],
         "title": "VaultStatsRead",
+        "type": "object"
+      },
+      "VolumeEvidence": {
+        "properties": {
+          "domain_id": {
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "headroom_bytes": {
+            "default": 0,
+            "title": "Headroom Bytes",
+            "type": "integer"
+          },
+          "method": {
+            "default": "statvfs",
+            "title": "Method",
+            "type": "string"
+          },
+          "reserved_bytes": {
+            "default": 0,
+            "title": "Reserved Bytes",
+            "type": "integer"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "status": {
+            "default": "unknown",
+            "title": "Status",
+            "type": "string"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          }
+        },
+        "required": [
+          "domain_id",
+          "roles"
+        ],
+        "title": "VolumeEvidence",
         "type": "object"
       }
     },
@@ -29834,6 +30222,289 @@
         "summary": "Probe Connection",
         "tags": [
           "storage-connections"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory": {
+      "get": {
+        "operationId": "storage_inventory_api_v1_storage_inventory_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Inventory",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/activity": {
+      "get": {
+        "operationId": "storage_capacity_activity_api_v1_storage_inventory_activity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Capacity Activity",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/cleanup-cache": {
+      "post": {
+        "operationId": "cleanup_storage_derived_cache_api_v1_storage_inventory_cleanup_cache_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cleanup Storage Derived Cache",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/cleanup-opportunities": {
+      "get": {
+        "operationId": "storage_cleanup_opportunities_api_v1_storage_inventory_cleanup_opportunities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Cleanup Opportunities",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/cleanup-staging": {
+      "post": {
+        "operationId": "cleanup_storage_staging_api_v1_storage_inventory_cleanup_staging_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cleanup Storage Staging",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/collections": {
+      "get": {
+        "operationId": "storage_logical_collections_api_v1_storage_inventory_collections_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Logical Collections",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/models": {
+      "get": {
+        "operationId": "storage_logical_models_api_v1_storage_inventory_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "collection_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Collection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Logical Models",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/sample": {
+      "post": {
+        "operationId": "sample_storage_inventory_api_v1_storage_inventory_sample_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageInventory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Sample Storage Inventory",
+        "tags": [
+          "storage"
         ]
       }
     },
