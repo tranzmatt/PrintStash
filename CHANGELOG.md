@@ -8,6 +8,11 @@
   of leaving a conflicted source behind, reports read-only marker failures
   explicitly, and documents the one-time writable mount required for enrollment.
 
+- PrusaLink now discovers the printer's advertised storage root, using `/usb`
+  on Buddy/Core One firmware while retaining `/local` compatibility, so file
+  inventory, upload, start and deletion no longer surface a false authentication
+  failure.
+
 ### Changed
 
 - Interface text, accessible labels, errors, plural counts and offline screens
