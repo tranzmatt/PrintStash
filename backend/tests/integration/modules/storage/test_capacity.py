@@ -306,15 +306,16 @@ class TestDurableCapacityLifetime:
         handle.release()
 
 
-def test_reuses_legacy_reservation_without_total_evidence(
-    db_session, make_capacity_reservation
-):
-    row = make_capacity_reservation(operation_id="legacy")
-    manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+class TestLegacyCapacityReservation:
+    def test_reuses_without_total_evidence(
+        self, db_session, make_capacity_reservation
+    ):
+        row = make_capacity_reservation(operation_id="legacy")
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
 
-    handle = manager.reserve(
-        "legacy", [CapacityResource.for_quota("test", 10, 100, role="test")]
-    )
+        handle = manager.reserve(
+            "legacy", [CapacityResource.for_quota("test", 10, 100, role="test")]
+        )
 
-    assert manager.reserved_bytes() == {"quota:test": 10}
-    assert handle.operation_id == row.operation_id
+        assert manager.reserved_bytes() == {"quota:test": 10}
+        assert handle.operation_id == row.operation_id

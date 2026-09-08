@@ -8,6 +8,7 @@ that backend, especially when the vault itself is S3/OpenDAL.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import os
 import secrets
 import tempfile
@@ -205,8 +206,13 @@ class ArtifactHandle:
     def materialize(self, *, capacity_claimed: bool = False) -> Iterator[Path]:
         """Yield a stable local file for consumers that require a path."""
         direct_path = getattr(self.backend, "direct_path", lambda _key: None)
+        direct = (
+            None
+            if inspect.iscoroutinefunction(direct_path)
+            else direct_path(self.file.path)
+        )
         needs_copy = self.file.is_external or (
-            self.backend is not None and direct_path(self.file.path) is None
+            self.backend is not None and direct is None
         )
         claim = (
             self._temporary_capacity_claim("materialization")

@@ -1225,6 +1225,7 @@ class PrinterHub:
                 thumb_bytes=thumb_bytes,
                 overwrite_thumbnail=False,
                 ingestion_key=f"bambu-job-{job_id}",
+                session_factory=self._session_factory,
             )
             job = session.get(PrintJob, job_id)
             if job is None:

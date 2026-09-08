@@ -387,6 +387,7 @@ def persist_artifact(
     source_mtime: float | None = None,
     ingestion_key: str | None = None,
     provenance_context: ProvenanceContext | None = None,
+    session_factory: SessionFactory | None = None,
 ) -> File:
     """Persist a parsed, staged artifact onto *model* — the deep core shared
     by background ingestion and synchronous revision attachment.
@@ -468,7 +469,9 @@ def persist_artifact(
             if is_external
             else vault_allocation(staged_path.stat().st_size)
         )
-        reservation = CapacityManager(get_session_factory()).reserve(
+        reservation = CapacityManager(
+            session_factory or get_session_factory()
+        ).reserve(
             f"artifact:{model_id}:{version}", [allocation]
         )
     blob_receipt = None
@@ -1018,6 +1021,7 @@ def run_ingestion_pipeline(
                 source_mtime=dest.source_mtime,
                 ingestion_key=job_id,
                 provenance_context=provenance_context,
+                session_factory=session_factory,
             )
             assert file_row.id is not None
             durable_ids = (model.id, file_row.id)

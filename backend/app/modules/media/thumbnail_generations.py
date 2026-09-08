@@ -28,7 +28,7 @@ from app.db.models import (
     ThumbnailGenerationState,
     ThumbnailRenderSlot,
 )
-from app.db.session import get_session_factory
+from app.db.session import SessionFactory, get_session_factory
 from app.modules.media import thumbnail
 from app.modules.media.thumbnail_engine import (
     ThumbnailEngine,
@@ -447,6 +447,7 @@ def ensure_thumbnail(
     promote: bool = True,
     backend: StorageBackend | None = None,
     engine: ThumbnailRenderer | None = None,
+    session_factory: SessionFactory | None = None,
 ) -> ThumbnailEnsureResult:
     backend = backend or get_backend()
     generation = _get_or_create_generation(session, file_row)
@@ -499,7 +500,9 @@ def ensure_thumbnail(
         return ThumbnailEnsureResult(ThumbnailEnsureOutcome.COALESCED, generation.id)
 
     try:
-        capacity_claim = CapacityManager(get_session_factory()).reserve(
+        capacity_claim = CapacityManager(
+            session_factory or get_session_factory()
+        ).reserve(
             f"thumbnail:{generation.id}:{token}",
             [
                 CapacityResource.for_path(

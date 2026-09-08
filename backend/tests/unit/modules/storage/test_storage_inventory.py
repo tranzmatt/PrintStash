@@ -73,34 +73,35 @@ class TestGrowthForecast:
         assert growth_forecast(samples, 1000)["status"] == "unstable_growth"
 
 
-def test_provider_capacity_refresh_is_single_flight():
-    class Backend:
-        calls = 0
+class TestProviderCapacityRefresh:
+    def test_is_single_flight(self):
+        class Backend:
+            calls = 0
 
-        def capacity(self):
-            self.calls += 1
-            time.sleep(0.05)
-            return StorageCapacity(
-                total_bytes=100,
-                used_bytes=40,
-                available_bytes=60,
-                quota_bytes=None,
-                measured_at=BASE,
-                method="contract_fake",
-                reliability=CapacityReliability.EXACT,
+            def capacity(self):
+                self.calls += 1
+                time.sleep(0.05)
+                return StorageCapacity(
+                    total_bytes=100,
+                    used_bytes=40,
+                    available_bytes=60,
+                    quota_bytes=None,
+                    measured_at=BASE,
+                    method="contract_fake",
+                    reliability=CapacityReliability.EXACT,
+                )
+
+        backend = Backend()
+        barrier = Barrier(2)
+
+        def refresh():
+            barrier.wait()
+            return _measure_provider_capacity(
+                backend, "single-flight-unit-target", ProviderCapacityEvidence()
             )
 
-    backend = Backend()
-    barrier = Barrier(2)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: refresh(), range(2)))
 
-    def refresh():
-        barrier.wait()
-        return _measure_provider_capacity(
-            backend, "single-flight-unit-target", ProviderCapacityEvidence()
-        )
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(executor.map(lambda _: refresh(), range(2)))
-
-    assert backend.calls == 1
-    assert [result.available_bytes for result in results] == [60, 60]
+        assert backend.calls == 1
+        assert [result.available_bytes for result in results] == [60, 60]
