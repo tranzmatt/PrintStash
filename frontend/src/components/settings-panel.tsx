@@ -1,5 +1,11 @@
 "use client";
 
+import { knownUiText } from "@/lib/locale";
+import { formatNumber } from "@/lib/format";
+import { currentLocale } from "@/lib/locale";
+import { uiText } from "@/lib/locale";
+import { useUiLocale } from "@/lib/i18n";
+
 import { useCallback, useEffect, useState } from "react";
 import { BackupRunHistory } from "@/components/backup-run-history";
 import {
@@ -45,7 +51,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { TabBar } from "@/components/ui/tabs";
 import { inputClasses } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Localized, translateUiText } from "@/components/ui/localized";
+import { Localized } from "@/components/ui/localized";
+import { translateUiText } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "@/lib/navigation";
 import { CURRENCY_OPTIONS } from "@/lib/currency";
@@ -275,12 +282,12 @@ function formatBytes(bytes: number | null | undefined): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / 1024 ** exponent;
-  return `${value >= 10 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
+  return `${formatNumber(value, { maximumFractionDigits: value >= 10 || exponent === 0 ? 0 : 1 })} ${units[exponent]}`;
 }
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) return "Never";
-  return new Intl.DateTimeFormat(undefined, {
+  if (!value) return uiText("Never");
+  return new Intl.DateTimeFormat(currentLocale(), {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -288,7 +295,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(currentLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
@@ -309,7 +316,9 @@ function parseBackupRetentionDays(value: string): number | null {
 
 function backupSourceDescription(backup: BackupMeta, t: ReturnType<typeof useI18n>["t"]): string {
   const source = backup.source_ref ?? "legacy source identity";
-  const namespace = backup.namespace ? ` · namespace ${backup.namespace}` : "";
+  const namespace = backup.namespace
+    ? uiText(" · namespace {value1}", { value1: String(backup.namespace) })
+    : "";
   const hash = backup.archive_sha256 ? ` · SHA-256 ${backup.archive_sha256.slice(0, 16)}…` : "";
   return t("settings.backupExactSource", {
     source: `${backup.location} · ${source}${namespace}${hash}`,
@@ -321,7 +330,7 @@ function restoreSourceDescription(backup: BackupMeta, t: ReturnType<typeof useI1
 }
 
 function shortOpaque(value: string | null | undefined): string {
-  return value ? `${value.slice(0, 16)}…` : "unavailable";
+  return value ? `${value.slice(0, 16)}…` : uiText("unavailable");
 }
 
 function shellQuote(value: string): string {
@@ -386,6 +395,7 @@ function SettingsCard({
   className?: string;
   stackActionOnMobile?: boolean;
 }) {
+  useUiLocale();
   return (
     <div
       role="group"
@@ -424,6 +434,7 @@ function SettingsCard({
 }
 
 export function SettingsPanel() {
+  useUiLocale();
   const { user } = useAuth();
   const { locale, t } = useI18n();
   const router = useRouter();
@@ -822,7 +833,9 @@ export function SettingsPanel() {
     setAutoMarkBusy(true);
     try {
       await updateVaultConfig({ auto_mark_known_good: next });
-      toast.success(next ? "Auto-mark known good enabled." : "Auto-mark known good disabled.");
+      toast.success(
+        next ? uiText("Auto-mark known good enabled.") : uiText("Auto-mark known good disabled."),
+      );
     } catch (e) {
       setAutoMarkKnownGood(!next);
       toast.error(e);
@@ -837,7 +850,7 @@ export function SettingsPanel() {
     setCurrencyBusy(true);
     try {
       await updateVaultConfig({ currency: next });
-      toast.success(`Currency set to ${next}.`);
+      toast.success(uiText("Currency set to {value1}.", { value1: String(next) }));
     } catch (e) {
       setCurrency(prev);
       toast.error(e);
@@ -850,7 +863,7 @@ export function SettingsPanel() {
     const next = { ...previewPreferences, ...patch };
     setPreviewPreferences(next);
     writePreviewPreferences(next);
-    toast.success("Preview settings saved for this browser.");
+    toast.success(uiText("Preview settings saved for this browser."));
   }
 
   async function saveModelThumbnailWidth(next: ModelThumbnailWidth) {
@@ -859,7 +872,7 @@ export function SettingsPanel() {
     setPreviewBusy("quality");
     try {
       await updateVaultConfig({ model_thumbnail_width: next });
-      toast.success("Model image quality updated for new previews.");
+      toast.success(uiText("Model image quality updated for new previews."));
     } catch (e) {
       setModelThumbnailWidth(previous);
       toast.error(e);
@@ -873,7 +886,7 @@ export function SettingsPanel() {
     try {
       const response = await rebuildModelThumbnails();
       trackImportJob(response.job_id, "Recreate Model preview images");
-      toast.success("Model preview recreation queued. Follow it in Tasks.");
+      toast.success(uiText("Model preview recreation queued. Follow it in Tasks."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -885,12 +898,20 @@ export function SettingsPanel() {
     setBackingUp(true);
     try {
       const meta = await createBackup();
-      const mb = (meta.size_bytes / 1024 / 1024).toFixed(1);
+      const mb = formatNumber(meta.size_bytes / 1024 / 1024, {
+        maximumFractionDigits: 1,
+        minimumFractionDigits: 1,
+      });
       await loadBackups(meta);
       if (meta.outcome === "partial") {
         toast.warning(t("settings.backupPartialNotice"));
       } else {
-        toast.success(`Backup created — ${meta.file_count} files, ${mb} MB`);
+        toast.success(
+          uiText("Backup created — {value1} files, {value2} MB", {
+            value1: String(meta.file_count),
+            value2: String(mb),
+          }),
+        );
       }
     } catch (e) {
       toast.error(e);
@@ -908,7 +929,9 @@ export function SettingsPanel() {
         meta,
         ...current.filter((item) => backupSourceKey(item) !== backupSourceKey(meta)),
       ]);
-      toast.success(`Backup uploaded — ${meta.file_count} files`);
+      toast.success(
+        uiText("Backup uploaded — {value1} files", { value1: String(meta.file_count) }),
+      );
     } catch (e) {
       toast.error(e);
     } finally {
@@ -995,7 +1018,9 @@ export function SettingsPanel() {
     setRestoringBackup(true);
     try {
       const result = await restoreBackup(target.backup_id, target.source_ref);
-      toast.success(`Backup restored — ${result.restored_files} files`);
+      toast.success(
+        uiText("Backup restored — {value1} files", { value1: String(result.restored_files) }),
+      );
       setRestoreTarget(null);
       window.setTimeout(() => window.location.reload(), 800);
     } catch (e) {
@@ -1010,7 +1035,7 @@ export function SettingsPanel() {
     setDownloadingBackup(sourceRef);
     try {
       await downloadBackup(backup.backup_id, backup.source_ref);
-      toast.success("Backup download started.");
+      toast.success(uiText("Backup download started."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1070,7 +1095,11 @@ export function SettingsPanel() {
     setArchiveBusy("import");
     try {
       const result = await importLibraryArchive(file);
-      toast.success(`Library import queued (${result.job_id.slice(0, 8)}). Follow it in activity.`);
+      toast.success(
+        uiText("Library import queued ({value1}). Follow it in activity.", {
+          value1: String(result.job_id.slice(0, 8)),
+        }),
+      );
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1084,7 +1113,7 @@ export function SettingsPanel() {
       const created = await createApiKey(keyName.trim() || "Programmatic access");
       setNewApiKey(created.api_key);
       setApiKeys((current) => [created, ...current]);
-      toast.success("API key created. Copy it now; it will not be shown again.");
+      toast.success(uiText("API key created. Copy it now; it will not be shown again."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1101,7 +1130,7 @@ export function SettingsPanel() {
       setApiKeys((current) => [created, ...current]);
       prepareBrowserExtensionSetup(window.location.origin, user.username, created.api_key);
       setExtensionSetupReady(true);
-      toast.success("Extension setup prepared. Open the browser extension on this tab.");
+      toast.success(uiText("Extension setup prepared. Open the browser extension on this tab."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1114,7 +1143,7 @@ export function SettingsPanel() {
     try {
       await revokeApiKey(id);
       setApiKeys((current) => current.filter((key) => key.id !== id));
-      toast.success("API key revoked.");
+      toast.success(uiText("API key revoked."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1125,7 +1154,7 @@ export function SettingsPanel() {
   async function copyApiKey() {
     if (!newApiKey) return;
     await navigator.clipboard.writeText(newApiKey);
-    toast.success("API key copied.");
+    toast.success(uiText("API key copied."));
   }
 
   async function copyOrcaCommand() {
@@ -1142,7 +1171,7 @@ export function SettingsPanel() {
       shellQuote(newApiKey),
     ].join(" ");
     await navigator.clipboard.writeText(command);
-    toast.success("OrcaSlicer command copied.");
+    toast.success(uiText("OrcaSlicer command copied."));
   }
 
   async function saveCollectionAccess() {
@@ -1153,7 +1182,7 @@ export function SettingsPanel() {
         role: accessRole,
       });
       await refreshCollectionAccess();
-      toast.success("Collection access saved.");
+      toast.success(uiText("Collection access saved."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1168,7 +1197,7 @@ export function SettingsPanel() {
       setCollectionPermissions((current) =>
         current.filter((row) => row.collection_id !== collectionId || row.user_id !== userId),
       );
-      toast.success("Collection access removed.");
+      toast.success(uiText("Collection access removed."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1186,7 +1215,7 @@ export function SettingsPanel() {
         printerAccessRole,
       );
       await refreshPrinterAccess();
-      toast.success("Printer access saved.");
+      toast.success(uiText("Printer access saved."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1201,7 +1230,7 @@ export function SettingsPanel() {
       setPrinterPermissions((current) =>
         current.filter((row) => row.printer_id !== printerId || row.user_id !== userId),
       );
-      toast.success("Printer access removed.");
+      toast.success(uiText("Printer access removed."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1224,7 +1253,7 @@ export function SettingsPanel() {
       setNewUserEmail("");
       setNewUserPassword("");
       await refreshUsers();
-      toast.success("User created.");
+      toast.success(uiText("User created."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1241,7 +1270,7 @@ export function SettingsPanel() {
         is_superuser: payload.is_superuser,
       });
       await refreshUsers();
-      toast.success("User updated.");
+      toast.success(uiText("User updated."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1256,7 +1285,7 @@ export function SettingsPanel() {
     try {
       await resetAdminUserPassword(id, { password });
       setPasswordDrafts((current) => ({ ...current, [id]: "" }));
-      toast.success("Password reset.");
+      toast.success(uiText("Password reset."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1269,7 +1298,7 @@ export function SettingsPanel() {
     try {
       await deactivateAdminUser(id);
       await refreshUsers();
-      toast.success("User deactivated.");
+      toast.success(uiText("User deactivated."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1299,7 +1328,7 @@ export function SettingsPanel() {
   function resetMetadataPreferences() {
     setMetadataPrefs(DEFAULT_METADATA_PREFERENCES);
     writeMetadataPreferences(DEFAULT_METADATA_PREFERENCES);
-    toast.success("Metadata display reset.");
+    toast.success(uiText("Metadata display reset."));
   }
 
   function setAllMetadataPreferences(visible: boolean) {
@@ -1334,19 +1363,21 @@ export function SettingsPanel() {
         newValue: JSON.stringify(DEFAULT_CARD_METRICS),
       }),
     );
-    toast.success("Card metrics reset.");
+    toast.success(uiText("Card metrics reset."));
   }
 
   function updatePrinterCardImagePreference(next: boolean) {
     writePrinterCardImagePreference(next);
-    toast.success(next ? "Printer card images enabled." : "Printer card images hidden.");
+    toast.success(
+      next ? uiText("Printer card images enabled.") : uiText("Printer card images hidden."),
+    );
   }
 
   async function saveTrashRetention() {
     setTrashBusy("settings");
     try {
       await updateVaultConfig({ trash_retention_days: Math.max(-1, trashRetentionDays) });
-      toast.success("Trash retention updated.");
+      toast.success(uiText("Trash retention updated."));
       await loadTrash();
     } catch (e) {
       toast.error(e);
@@ -1360,7 +1391,7 @@ export function SettingsPanel() {
     try {
       await restoreModel(id);
       setTrashItems((current) => current.filter((item) => item.id !== id));
-      toast.success("Model restored.");
+      toast.success(uiText("Model restored."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1404,7 +1435,10 @@ export function SettingsPanel() {
       setGcPlan(plan);
       setGcDigestConfirmation("");
       toast.success(
-        `Preview created for ${plan.resource_count} expired resource${plan.resource_count === 1 ? "" : "s"}. Nothing was deleted.`,
+        uiText("gc.previewCreated", {
+          value1: String(plan.resource_count),
+          count: Number(plan.resource_count),
+        }),
       );
     } catch (e) {
       toast.error(e);
@@ -1420,7 +1454,7 @@ export function SettingsPanel() {
       const approved = await approveGcPlan(gcPlan.id, gcDigestConfirmation);
       setGcPlan(approved);
       setGcDigestConfirmation("");
-      toast.success("Backup verified. The plan is now in its recovery quarantine.");
+      toast.success(uiText("Backup verified. The plan is now in its recovery quarantine."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1435,7 +1469,7 @@ export function SettingsPanel() {
       const aborted = await abortGcPlan(gcPlan.id);
       setGcPlan(aborted);
       setGcDigestConfirmation("");
-      toast.success("GC plan aborted. Every candidate remains in the trash.");
+      toast.success(uiText("GC plan aborted. Every candidate remains in the trash."));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -1449,7 +1483,7 @@ export function SettingsPanel() {
     try {
       const finalized = await finalizeGcPlan(gcPlan.id);
       setGcPlan(finalized);
-      toast.success("GC plan finalized after all safety evidence was reverified.");
+      toast.success(uiText("GC plan finalized after all safety evidence was reverified."));
       await loadTrash();
     } catch (e) {
       toast.error(e);
@@ -1461,25 +1495,38 @@ export function SettingsPanel() {
   // KPI tiles — the headline numbers, no overlap with the system list below.
   const kpiItems = [
     {
-      label: "Models",
+      get label() {
+        return uiText("Models");
+      },
       value: stats ? `${stats.model_count}` : "...",
       desc: "Live library entries",
       icon: Boxes,
     },
     {
-      label: "Files",
+      get label() {
+        return uiText("Files");
+      },
       value: stats ? `${stats.file_count}` : "...",
-      desc: `${stats?.source_file_count ?? 0} source · ${stats?.gcode_file_count ?? 0} G-code`,
+      desc: uiText("{value1} source · {value2} G-code", {
+        value1: String(stats?.source_file_count ?? 0),
+        value2: String(stats?.gcode_file_count ?? 0),
+      }),
       icon: Files,
     },
     {
-      label: "Storage used",
+      get label() {
+        return uiText("Storage used");
+      },
       value: stats ? formatBytes(stats.storage.total_size_bytes) : "...",
-      desc: stats ? `${stats.storage.object_count} stored objects` : "Backend usage",
+      desc: stats
+        ? uiText("{value1} stored objects", { value1: String(stats.storage.object_count) })
+        : "Backend usage",
       icon: HardDrive,
     },
     {
-      label: "Printers",
+      get label() {
+        return uiText("Printers");
+      },
       value: stats ? `${stats.printer_count}` : "...",
       desc: "Configured devices",
       icon: Printer,
@@ -1489,43 +1536,55 @@ export function SettingsPanel() {
   // System detail rows — configuration facts, distinct from the KPI tiles.
   const systemItems = [
     {
-      label: "Vault version",
-      value: health ? `${health.name} v${health.version}` : "Loading...",
-      desc: "API server status and version",
+      get label() {
+        return uiText("Vault version");
+      },
+      value: health ? `${health.name} v${health.version}` : uiText("Loading..."),
+      desc: uiText("API server status and version"),
       icon: Server,
     },
     {
-      label: "Database",
+      get label() {
+        return uiText("Database");
+      },
       value: health?.components?.database
         ? health.components.database.ok
-          ? "Connected"
-          : "Unavailable"
+          ? uiText("Connected")
+          : uiText("Unavailable")
         : health?.status === "ok"
-          ? "Connected"
-          : "Unknown",
-      desc: "SQLite by default, Postgres optional",
+          ? uiText("Connected")
+          : uiText("Unknown"),
+      desc: uiText("SQLite by default, Postgres optional"),
       icon: Database,
     },
     {
-      label: "Storage backend",
+      get label() {
+        return uiText("Storage backend");
+      },
       value: stats ? stats.storage.backend.toUpperCase() : "...",
-      desc: stats?.storage.bucket ?? stats?.storage.prefix ?? "Configured vault storage",
+      desc: stats?.storage.bucket ?? stats?.storage.prefix ?? uiText("Configured vault storage"),
       icon: HardDrive,
     },
     {
-      label: "Indexed files",
+      get label() {
+        return uiText("Indexed files");
+      },
       value: stats ? formatBytes(stats.indexed_size_bytes) : "...",
       desc: "Tracked in the database",
       icon: Files,
     },
     {
-      label: "Collections",
+      get label() {
+        return uiText("Collections");
+      },
       value: stats ? `${stats.collection_count}` : "...",
       desc: "Hierarchical tree entries",
       icon: FolderTree,
     },
     {
-      label: "Tags",
+      get label() {
+        return uiText("Tags");
+      },
       value: stats ? `${stats.tag_count}` : "...",
       desc: "Flat tag vocabulary size",
       icon: Tag,
@@ -1580,17 +1639,19 @@ export function SettingsPanel() {
           busy={isModelPurge(trashBusy)}
           title={
             (trashOperations?.physical_delete.allowed ?? trashStorageTier === "verified")
-              ? "Permanently delete?"
+              ? uiText("Permanently delete?")
               : t("storage.catalogConfirmation")
           }
           description={
             (trashOperations?.physical_delete.allowed ?? trashStorageTier === "verified")
-              ? "This will delete the model and all its files immediately. This cannot be undone."
+              ? uiText(
+                  "This will delete the model and all its files immediately. This cannot be undone.",
+                )
               : t("storage.catalogOnly")
           }
           confirmLabel={
             (trashOperations?.physical_delete.allowed ?? trashStorageTier === "verified")
-              ? "Delete forever"
+              ? uiText("Delete forever")
               : t("storage.catalogConfirmAction")
           }
         />
@@ -1599,22 +1660,24 @@ export function SettingsPanel() {
           onClose={() => setPurgeExpiredOpen(false)}
           onConfirm={createExpiredGcPreview}
           busy={trashBusy === "gc"}
-          title="Create a safe GC preview?"
-          description="This only records a bounded candidate plan. It does not delete catalog rows or storage bytes. Approval later requires the exact digest, verified storage, and a recent independent backup."
-          confirmLabel="Create preview"
+          title={uiText("Create a safe GC preview?")}
+          description={uiText(
+            "This only records a bounded candidate plan. It does not delete catalog rows or storage bytes. Approval later requires the exact digest, verified storage, and a recent independent backup.",
+          )}
+          confirmLabel={uiText("Create preview")}
         />
         <ConfirmModal
           open={restoreTarget !== null}
           onClose={() => setRestoreTarget(null)}
           onConfirm={confirmRestoreBackup}
           busy={restoringBackup}
-          title="Restore backup?"
+          title={uiText("Restore backup?")}
           description={
             restoreTarget
               ? restoreSourceDescription(restoreTarget, t)
               : t("settings.backupRestoreWarning")
           }
-          confirmLabel="Restore"
+          confirmLabel={uiText("Restore")}
         />
         <ConfirmModal
           open={deleteBackupTarget !== null}
@@ -1664,8 +1727,8 @@ export function SettingsPanel() {
             adoptS3Target
               ? t("settings.backupS3ConfirmDescription", {
                   key: adoptS3Target.key,
-                  namespace: adoptS3Target.namespace ?? "unavailable",
-                  hash: adoptS3Target.archive_sha256?.slice(0, 16) ?? "unavailable",
+                  namespace: adoptS3Target.namespace ?? uiText("unavailable"),
+                  hash: adoptS3Target.archive_sha256?.slice(0, 16) ?? uiText("unavailable"),
                 })
               : ""
           }
@@ -1684,7 +1747,7 @@ export function SettingsPanel() {
               ? t("settings.backupRemoteConfirmDescription", {
                   key: adoptRemoteTarget.key,
                   connection: adoptRemoteTarget.connection_name,
-                  hash: adoptRemoteTarget.archive_sha256?.slice(0, 16) ?? "unavailable",
+                  hash: adoptRemoteTarget.archive_sha256?.slice(0, 16) ?? uiText("unavailable"),
                 })
               : ""
           }
@@ -1697,9 +1760,11 @@ export function SettingsPanel() {
             updatePrinterCardImagePreference(true);
             setPrinterImageWarningOpen(false);
           }}
-          title="Download third-party printer images?"
-          description="Printer artwork will load from OrcaSlicer's GitHub repository. Images may be copyrighted or trademarked by their creators or printer manufacturers and remain subject to their original licenses. PrintStash does not own or redistribute them. Continue only if this use is permitted where you live."
-          confirmLabel="Download & enable"
+          title={uiText("Download third-party printer images?")}
+          description={uiText(
+            "Printer artwork will load from OrcaSlicer's GitHub repository. Images may be copyrighted or trademarked by their creators or printer manufacturers and remain subject to their original licenses. PrintStash does not own or redistribute them. Continue only if this use is permitted where you live.",
+          )}
+          confirmLabel={uiText("Download & enable")}
         />
 
         <PageHeader title={t("settings.title")} description={t("settings.description")} />
@@ -1729,7 +1794,7 @@ export function SettingsPanel() {
 
         <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-6">
           <nav
-            aria-label="Settings sections"
+            aria-label={uiText("Settings sections")}
             className="sticky top-0 hidden rounded-lg border border-border bg-card p-2 shadow-sm lg:block"
           >
             {visibleSettingsSections.map((section) => {
@@ -1766,11 +1831,15 @@ export function SettingsPanel() {
                   <CircleArrowUp className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
                   <div>
                     <p className="text-sm font-semibold text-foreground">
-                      PrintStash v{releaseStatus.latest_version} is available
+                      {uiText("PrintStash v{value1} is available", {
+                        value1: String(releaseStatus.latest_version ?? ""),
+                      })}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      This vault is running v{releaseStatus.current_version}. Review release notes
-                      before updating your self-hosted installation.
+                      {uiText(
+                        "This vault is running v{value1}. Review release notes before updating your self-hosted installation.",
+                        { value1: String(releaseStatus.current_version ?? "") },
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1782,7 +1851,7 @@ export function SettingsPanel() {
                   rel="noreferrer noopener"
                   className={BTN_SECONDARY}
                 >
-                  View release
+                  {uiText("View release")}
                 </a>
               </div>
             )}
@@ -1833,8 +1902,8 @@ export function SettingsPanel() {
                   {/* System information */}
                   <SettingsCard
                     icon={Server}
-                    title="System"
-                    description="Server status and vault configuration"
+                    title={uiText("System")}
+                    description={uiText("Server status and vault configuration")}
                     action={
                       user?.is_superuser && health?.capabilities?.restart ? (
                         <Button
@@ -1872,13 +1941,16 @@ export function SettingsPanel() {
 
                   <SettingsCard
                     icon={Download}
-                    title="Library migration"
-                    description="Portable archive with models, metadata, print history, and original artifacts"
+                    title={uiText("Library migration")}
+                    description={uiText(
+                      "Portable archive with models, metadata, print history, and original artifacts",
+                    )}
                   >
                     <div className="p-4 sm:p-5 space-y-4">
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Export a versioned archive for migration to another PrintStash installation.
-                        Accounts, credentials, settings, and trash are excluded.
+                        {uiText(
+                          "Export a versioned archive for migration to another PrintStash installation. Accounts, credentials, settings, and trash are excluded.",
+                        )}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -1888,14 +1960,18 @@ export function SettingsPanel() {
                           className={BTN_SECONDARY}
                         >
                           <Download className="h-3.5 w-3.5" />{" "}
-                          {archiveBusy === "export" ? "Exporting" : "Export full library"}
+                          {archiveBusy === "export"
+                            ? uiText("Exporting")
+                            : uiText("Export full library")}
                         </button>
                         {user?.is_superuser && (
                           <label
                             className={`${BTN_SECONDARY} ${archiveBusy !== null ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
                           >
                             <Download className="h-3.5 w-3.5 rotate-180" />{" "}
-                            {archiveBusy === "import" ? "Importing" : "Import archive"}
+                            {archiveBusy === "import"
+                              ? uiText("Importing")
+                              : uiText("Import archive")}
                             <input
                               type="file"
                               accept=".zip,application/zip"
@@ -1916,13 +1992,14 @@ export function SettingsPanel() {
                   {/* Data export */}
                   <SettingsCard
                     icon={Download}
-                    title="Data export"
-                    description="Metadata only — no raw STL/3MF/G-code files"
+                    title={uiText("Data export")}
+                    description={uiText("Metadata only — no raw STL/3MF/G-code files")}
                   >
                     <div className="p-4 sm:p-5 space-y-4">
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Download your searchable library context for spreadsheets, audits,
-                        migrations, or local AI prompts.
+                        {uiText(
+                          "Download your searchable library context for spreadsheets, audits, migrations, or local AI prompts.",
+                        )}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -1932,7 +2009,7 @@ export function SettingsPanel() {
                           className={BTN_SECONDARY}
                         >
                           <Download className="h-3.5 w-3.5" />
-                          {exporting === "json" ? "Exporting" : "JSON"}
+                          {exporting === "json" ? uiText("Exporting") : "JSON"}
                         </button>
                         <button
                           type="button"
@@ -1941,7 +2018,7 @@ export function SettingsPanel() {
                           className={BTN_SECONDARY}
                         >
                           <Download className="h-3.5 w-3.5" />
-                          {exporting === "csv" ? "Exporting" : "CSV"}
+                          {exporting === "csv" ? uiText("Exporting") : uiText("CSV")}
                         </button>
                       </div>
                     </div>
@@ -1955,14 +2032,16 @@ export function SettingsPanel() {
                 {user?.is_superuser && (
                   <SettingsCard
                     icon={Users}
-                    title="Users"
-                    description="Create users, assign vault admins, disable accounts, and reset passwords."
+                    title={uiText("Users")}
+                    description={uiText(
+                      "Create users, assign vault admins, disable accounts, and reset passwords.",
+                    )}
                   >
                     <div className="p-4 sm:p-5 space-y-4">
                       <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1fr_auto]">
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            Username
+                            {uiText("Username")}
                           </span>
                           <input
                             id="new-user-username"
@@ -1975,7 +2054,7 @@ export function SettingsPanel() {
                         </label>
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            Email
+                            {uiText("Email")}
                           </span>
                           <input
                             id="new-user-email"
@@ -1989,7 +2068,7 @@ export function SettingsPanel() {
                         </label>
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            Initial password
+                            {uiText("Initial password")}
                           </span>
                           <input
                             id="new-user-password"
@@ -2014,16 +2093,16 @@ export function SettingsPanel() {
                           className={`${BTN_PRIMARY} self-end`}
                         >
                           <UserPlus className="h-3.5 w-3.5" />
-                          Create
+                          {uiText("Create")}
                         </button>
                       </div>
                       <p id="new-user-password-help" className="text-xs text-muted-foreground">
-                        Initial password: at least 8 characters.
+                        {uiText("Initial password: at least 8 characters.")}
                       </p>
 
                       <div className="space-y-2">
                         {users.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">No users.</p>
+                          <p className="text-sm text-muted-foreground">{uiText("No users.")}</p>
                         ) : (
                           users.map((row) => (
                             <div
@@ -2039,17 +2118,19 @@ export function SettingsPanel() {
                                     {row.is_superuser && (
                                       <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-mono text-3xs uppercase text-muted-foreground">
                                         <ShieldCheck className="h-3 w-3" />
-                                        Admin
+                                        {uiText("Admin")}
                                       </span>
                                     )}
                                     {!row.is_active && (
                                       <span className="rounded bg-red-500/10 px-2 py-0.5 font-mono text-3xs uppercase text-red-600">
-                                        Disabled
+                                        {uiText("Disabled")}
                                       </span>
                                     )}
                                   </div>
                                   <p className="text-xs text-muted-foreground">
-                                    {row.email || "No email"} · Created {formatDate(row.created_at)}
+                                    {row.email || uiText("No email")}
+                                    {uiText(" · Created ")}
+                                    {formatDate(row.created_at)}
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -2061,7 +2142,9 @@ export function SettingsPanel() {
                                     }
                                     className={BTN_SECONDARY}
                                   >
-                                    {row.is_superuser ? "Remove admin" : "Make admin"}
+                                    {row.is_superuser
+                                      ? uiText("Remove admin")
+                                      : uiText("Make admin")}
                                   </button>
                                   <button
                                     type="button"
@@ -2073,7 +2156,7 @@ export function SettingsPanel() {
                                     }
                                     className={BTN_SECONDARY}
                                   >
-                                    {row.is_active ? "Disable" : "Enable"}
+                                    {row.is_active ? uiText("Disable") : uiText("Enable")}
                                   </button>
                                 </div>
                               </div>
@@ -2088,7 +2171,7 @@ export function SettingsPanel() {
                                   }
                                   className={INPUT}
                                   type="password"
-                                  placeholder="New password"
+                                  placeholder={uiText("New password")}
                                 />
                                 <button
                                   type="button"
@@ -2099,7 +2182,7 @@ export function SettingsPanel() {
                                   }
                                   className={BTN_SECONDARY}
                                 >
-                                  Reset password
+                                  {uiText("Reset password")}
                                 </button>
                               </div>
                             </div>
@@ -2113,15 +2196,17 @@ export function SettingsPanel() {
                 {user?.is_superuser && (
                   <SettingsCard
                     icon={FolderTree}
-                    title="Collection access"
-                    description="Assign view, edit, or admin access per user. Child collections inherit parent grants."
+                    title={uiText("Collection access")}
+                    description={uiText(
+                      "Assign view, edit, or admin access per user. Child collections inherit parent grants.",
+                    )}
                     action={
                       <button
                         type="button"
                         onClick={refreshCollectionAccess}
                         disabled={accessBusy === "load"}
                         className={BTN_ICON}
-                        title="Refresh collection access"
+                        title={uiText("Refresh collection access")}
                       >
                         <RefreshCw
                           className={`h-4 w-4 ${accessBusy === "load" ? "animate-spin" : ""}`}
@@ -2133,7 +2218,7 @@ export function SettingsPanel() {
                       <div className="grid gap-2 lg:grid-cols-[1fr_1.4fr_auto_auto]">
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            User
+                            {uiText("User")}
                           </span>
                           <select
                             value={accessUserId}
@@ -2144,7 +2229,7 @@ export function SettingsPanel() {
                             className={INPUT}
                             disabled={accessBusy === "load"}
                           >
-                            <option value="">Select user</option>
+                            <option value="">{uiText("Select user")}</option>
                             {nonSuperUsers.map((row) => (
                               <option key={row.id} value={row.id}>
                                 {row.username}
@@ -2154,7 +2239,7 @@ export function SettingsPanel() {
                         </label>
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            Collection
+                            {uiText("Collection")}
                           </span>
                           <select
                             value={accessCollectionId}
@@ -2166,7 +2251,7 @@ export function SettingsPanel() {
                             className={INPUT}
                             disabled={!accessUserId || accessBusy === "load"}
                           >
-                            <option value="">Select collection</option>
+                            <option value="">{uiText("Select collection")}</option>
                             {grantableCollections.map((row) => (
                               <option key={row.id} value={row.id}>
                                 {row.path}
@@ -2176,7 +2261,7 @@ export function SettingsPanel() {
                         </label>
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            Role
+                            {uiText("Role")}
                           </span>
                           <select
                             value={accessRole}
@@ -2186,9 +2271,9 @@ export function SettingsPanel() {
                             className={INPUT}
                             disabled={!accessUserId || !accessCollectionId || accessBusy === "load"}
                           >
-                            <option value="view">View</option>
-                            <option value="edit">Edit</option>
-                            <option value="admin">Admin</option>
+                            <option value="view">{uiText("View")}</option>
+                            <option value="edit">{uiText("Edit")}</option>
+                            <option value="admin">{uiText("Admin")}</option>
                           </select>
                         </label>
                         <button
@@ -2202,23 +2287,24 @@ export function SettingsPanel() {
                           ) : (
                             <ShieldCheck className="h-3.5 w-3.5" />
                           )}
-                          Grant
+                          {uiText("Grant")}
                         </button>
                       </div>
 
                       <div className="rounded border border-border overflow-hidden">
                         <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-border bg-muted/40 px-3 py-2 font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                          <span>Collection</span>
-                          <span>Role</span>
-                          <span>Remove</span>
+                          <span>{uiText("Collection")}</span>
+                          <span>{uiText("Role")}</span>
+                          <span>{uiText("Remove")}</span>
                         </div>
                         {!accessUserId ? (
                           <p className="px-3 py-4 text-sm text-muted-foreground">
-                            Select a user to review collection grants.
+                            {uiText("Select a user to review collection grants.")}
                           </p>
                         ) : selectedUserPermissions.length === 0 ? (
                           <p className="px-3 py-4 text-sm text-muted-foreground">
-                            {activeAccessUser?.username ?? "User"} has no direct collection access.
+                            {activeAccessUser?.username ?? uiText("User")}
+                            {uiText(" has no direct collection access.")}
                           </p>
                         ) : (
                           selectedUserPermissions.map((row) => {
@@ -2231,10 +2317,14 @@ export function SettingsPanel() {
                               >
                                 <div className="min-w-0">
                                   <p className="truncate text-sm text-foreground">
-                                    {collection?.path ?? `Collection #${row.collection_id}`}
+                                    {collection?.path ??
+                                      uiText("Collection #{value1}", {
+                                        value1: String(row.collection_id),
+                                      })}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    {collection?.model_count ?? 0} models
+                                    {collection?.model_count ?? 0}
+                                    {uiText(" models")}
                                   </p>
                                 </div>
                                 <span className="rounded bg-muted px-2 py-1 font-mono text-3xs uppercase text-muted-foreground">
@@ -2247,7 +2337,7 @@ export function SettingsPanel() {
                                   }
                                   disabled={accessBusy === busyKey}
                                   className="rounded p-1 text-red-600 hover:bg-red-500/10 disabled:opacity-50"
-                                  title="Remove collection access"
+                                  title={uiText("Remove collection access")}
                                 >
                                   {accessBusy === busyKey ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -2267,15 +2357,17 @@ export function SettingsPanel() {
                 {user?.is_superuser && (
                   <SettingsCard
                     icon={Printer}
-                    title="Printer access"
-                    description="Grant access per printer. Roles build from view to print, machine control, and administration."
+                    title={uiText("Printer access")}
+                    description={uiText(
+                      "Grant access per printer. Roles build from view to print, machine control, and administration.",
+                    )}
                     action={
                       <button
                         type="button"
                         onClick={refreshPrinterAccess}
                         disabled={printerAccessBusy === "load"}
                         className={BTN_ICON}
-                        title="Refresh printer access"
+                        title={uiText("Refresh printer access")}
                       >
                         <RefreshCw
                           className={`h-4 w-4 ${printerAccessBusy === "load" ? "animate-spin" : ""}`}
@@ -2287,7 +2379,7 @@ export function SettingsPanel() {
                       <div className="grid gap-2 lg:grid-cols-[1fr_1.4fr_auto_auto]">
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            User
+                            {uiText("User")}
                           </span>
                           <select
                             value={printerAccessUserId}
@@ -2300,7 +2392,7 @@ export function SettingsPanel() {
                             className={INPUT}
                             disabled={printerAccessBusy === "load"}
                           >
-                            <option value="">Choose printer user</option>
+                            <option value="">{uiText("Choose printer user")}</option>
                             {nonSuperUsers.map((row) => (
                               <option key={row.id} value={row.id}>
                                 {row.username}
@@ -2310,7 +2402,7 @@ export function SettingsPanel() {
                         </label>
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            Printer
+                            {uiText("Printer")}
                           </span>
                           <select
                             value={accessPrinterId}
@@ -2329,7 +2421,7 @@ export function SettingsPanel() {
                             className={INPUT}
                             disabled={!printerAccessUserId || printerAccessBusy === "load"}
                           >
-                            <option value="">Select printer</option>
+                            <option value="">{uiText("Select printer")}</option>
                             {accessPrinters.map((row) => (
                               <option key={row.id} value={row.id}>
                                 {row.name}
@@ -2339,7 +2431,7 @@ export function SettingsPanel() {
                         </label>
                         <label className="block space-y-1">
                           <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                            Role
+                            {uiText("Role")}
                           </span>
                           <select
                             value={printerAccessRole}
@@ -2355,10 +2447,10 @@ export function SettingsPanel() {
                               printerAccessBusy === "load"
                             }
                           >
-                            <option value="view">View</option>
-                            <option value="print">Print</option>
-                            <option value="control">Control</option>
-                            <option value="admin">Admin</option>
+                            <option value="view">{uiText("View")}</option>
+                            <option value="print">{uiText("Print")}</option>
+                            <option value="control">{uiText("Control")}</option>
+                            <option value="admin">{uiText("Admin")}</option>
                           </select>
                         </label>
                         <button
@@ -2374,30 +2466,30 @@ export function SettingsPanel() {
                           ) : (
                             <ShieldCheck className="h-3.5 w-3.5" />
                           )}
-                          Save
+                          {uiText("Save")}
                         </button>
                       </div>
 
                       <p className="text-xs text-muted-foreground">
-                        View: status and history · Print: send and start jobs · Control: pause,
-                        cancel, temperatures, homing, emergency stop · Admin: settings, files,
-                        routing, and maintenance
+                        {uiText(
+                          "View: status and history · Print: send and start jobs · Control: pause, cancel, temperatures, homing, emergency stop · Admin: settings, files, routing, and maintenance",
+                        )}
                       </p>
 
                       <div className="overflow-hidden rounded border border-border">
                         <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-border bg-muted/40 px-3 py-2 font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                          <span>Printer</span>
-                          <span>Role</span>
-                          <span>Remove</span>
+                          <span>{uiText("Printer")}</span>
+                          <span>{uiText("Role")}</span>
+                          <span>{uiText("Remove")}</span>
                         </div>
                         {!printerAccessUserId ? (
                           <p className="px-3 py-4 text-sm text-muted-foreground">
-                            Select a user to review printer grants.
+                            {uiText("Select a user to review printer grants.")}
                           </p>
                         ) : selectedPrinterPermissions.length === 0 ? (
                           <p className="px-3 py-4 text-sm text-muted-foreground">
-                            {activePrinterAccessUser?.username ?? "User"} has no direct printer
-                            access.
+                            {activePrinterAccessUser?.username ?? uiText("User")}
+                            {uiText(" has no direct printer access.")}
                           </p>
                         ) : (
                           selectedPrinterPermissions.map((row) => {
@@ -2410,10 +2502,13 @@ export function SettingsPanel() {
                               >
                                 <div className="min-w-0">
                                   <p className="truncate text-sm text-foreground">
-                                    {printer?.name ?? `Printer #${row.printer_id}`}
+                                    {printer?.name ??
+                                      uiText("Printer #{value1}", {
+                                        value1: String(row.printer_id),
+                                      })}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    {printer?.group || "Ungrouped"}
+                                    {printer?.group || uiText("Ungrouped")}
                                   </p>
                                 </div>
                                 <span className="rounded bg-muted px-2 py-1 font-mono text-3xs uppercase text-muted-foreground">
@@ -2424,7 +2519,7 @@ export function SettingsPanel() {
                                   onClick={() => removePrinterAccess(row.printer_id, row.user_id)}
                                   disabled={printerAccessBusy === busyKey}
                                   className="rounded p-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                                  title="Remove printer access"
+                                  title={uiText("Remove printer access")}
                                 >
                                   {printerAccessBusy === busyKey ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -2443,23 +2538,28 @@ export function SettingsPanel() {
 
                 <SettingsCard
                   icon={KeyRound}
-                  title="API keys"
-                  description="Create credentials for scripts and integrations, then exchange them for a JWT at login."
+                  title={uiText("API keys")}
+                  description={uiText(
+                    "Create credentials for scripts and integrations, then exchange them for a JWT at login.",
+                  )}
                 >
                   <div className="p-4 sm:p-5 space-y-4">
                     {!user ? (
-                      <p className="text-sm text-muted-foreground">Sign in to create API keys.</p>
+                      <p className="text-sm text-muted-foreground">
+                        {uiText("Sign in to create API keys.")}
+                      </p>
                     ) : (
                       <>
                         <div className="rounded border border-border bg-muted/40 p-3">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="min-w-0">
                               <p className="text-sm font-medium text-foreground">
-                                Browser importer
+                                {uiText("Browser importer")}
                               </p>
                               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                                Create a dedicated key and prepare this vault in the browser
-                                extension.
+                                {uiText(
+                                  "Create a dedicated key and prepare this vault in the browser extension.",
+                                )}
                               </p>
                             </div>
                             {extensionSetupReady ? (
@@ -2469,7 +2569,7 @@ export function SettingsPanel() {
                                 role="status"
                               >
                                 <Check className="h-3.5 w-3.5" aria-hidden />
-                                Setup prepared
+                                {uiText("Setup prepared")}
                               </Badge>
                             ) : (
                               <Button
@@ -2480,14 +2580,15 @@ export function SettingsPanel() {
                                 className="font-mono uppercase tracking-wider"
                               >
                                 <Puzzle className="h-3.5 w-3.5" />
-                                Set up extension
+                                {uiText("Set up extension")}
                               </Button>
                             )}
                           </div>
                           {extensionSetupReady && (
                             <p className="mt-3 text-xs font-medium text-muted-foreground">
-                              Open the PrintStash extension on this tab to finish the verified
-                              connection.
+                              {uiText(
+                                "Open the PrintStash extension on this tab to finish the verified connection.",
+                              )}
                             </p>
                           )}
                         </div>
@@ -2495,7 +2596,7 @@ export function SettingsPanel() {
                         <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                           <label className="block space-y-1">
                             <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                              Key name
+                              {uiText("Key name")}
                             </span>
                             <input
                               id="api-key-name"
@@ -2512,14 +2613,14 @@ export function SettingsPanel() {
                             className={BTN_PRIMARY}
                           >
                             <KeyRound className="h-3.5 w-3.5" />
-                            Generate
+                            {uiText("Generate")}
                           </button>
                         </div>
 
                         {newApiKey && (
                           <div className="border border-primary/40 bg-primary/10 rounded p-3 space-y-2">
                             <p className="text-xs text-muted-foreground">
-                              Copy this key now. It will only be shown once.
+                              {uiText("Copy this key now. It will only be shown once.")}
                             </p>
                             <div className="flex items-center gap-2">
                               <code className="flex-1 min-w-0 overflow-x-auto whitespace-nowrap rounded bg-muted px-3 py-2 text-xs text-foreground">
@@ -2529,7 +2630,7 @@ export function SettingsPanel() {
                                 type="button"
                                 onClick={copyApiKey}
                                 className={BTN_ICON}
-                                title="Copy API key"
+                                title={uiText("Copy API key")}
                               >
                                 <Copy className="h-4 w-4" />
                               </button>
@@ -2537,10 +2638,10 @@ export function SettingsPanel() {
                                 type="button"
                                 onClick={copyOrcaCommand}
                                 className={BTN_SECONDARY}
-                                title="Copy OrcaSlicer post-processing command"
+                                title={uiText("Copy OrcaSlicer post-processing command")}
                               >
                                 <Copy className="h-3.5 w-3.5" />
-                                Orca command
+                                {uiText("Orca command")}
                               </button>
                             </div>
                           </div>
@@ -2548,7 +2649,9 @@ export function SettingsPanel() {
 
                         <div className="space-y-2">
                           {apiKeys.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">No active API keys.</p>
+                            <p className="text-sm text-muted-foreground">
+                              {uiText("No active API keys.")}
+                            </p>
                           ) : (
                             apiKeys.map((key) => (
                               <div
@@ -2558,7 +2661,8 @@ export function SettingsPanel() {
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm text-foreground">{key.name}</p>
                                   <p className="font-mono text-2xs text-muted-foreground">
-                                    {key.prefix}... · {key.last_used_at ? "Used" : "Never used"}
+                                    {key.prefix}... ·{" "}
+                                    {key.last_used_at ? uiText("Used") : uiText("Never used")}
                                   </p>
                                 </div>
                                 <button
@@ -2566,7 +2670,7 @@ export function SettingsPanel() {
                                   onClick={() => deleteApiKey(key.id)}
                                   disabled={keyBusy}
                                   className="inline-flex h-9 w-9 items-center justify-center rounded border border-border text-red-500 hover:bg-red-500/10 disabled:opacity-50"
-                                  title="Revoke API key"
+                                  title={uiText("Revoke API key")}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </button>
@@ -2577,10 +2681,13 @@ export function SettingsPanel() {
 
                         <div className="rounded border border-border bg-muted/40 p-3">
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Use your username with this API key on{" "}
-                            <code className="font-mono">/api/v1/auth/login</code>. The hook
-                            exchanges it for a JWT Bearer token, then uploads with the normal{" "}
-                            <code className="font-mono">Authorization</code> header.
+                            {uiText("Use your username with this API key on")}{" "}
+                            <code className="font-mono">/api/v1/auth/login</code>
+                            {uiText(
+                              ". The hook exchanges it for a JWT Bearer token, then uploads with the normal",
+                            )}{" "}
+                            <code className="font-mono">{uiText("Authorization")}</code>
+                            {uiText(" header.")}
                           </p>
                         </div>
                       </>
@@ -2801,7 +2908,7 @@ export function SettingsPanel() {
                 </SettingsCard>
                 <SettingsCard
                   icon={HardDrive}
-                  title="Manual backup"
+                  title={uiText("Manual backup")}
                   description={t("settings.backupManualDescription")}
                   action={
                     <button
@@ -2812,11 +2919,13 @@ export function SettingsPanel() {
                     >
                       {backingUp ? (
                         <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Backing up…
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          {uiText(" Backing up…")}
                         </>
                       ) : (
                         <>
-                          <HardDrive className="h-3.5 w-3.5" /> Backup now
+                          <HardDrive className="h-3.5 w-3.5" />
+                          {uiText(" Backup now")}
                         </>
                       )}
                     </button>
@@ -2869,15 +2978,17 @@ export function SettingsPanel() {
                 )}
                 <SettingsCard
                   icon={RotateCcw}
-                  title="Restore backup"
-                  description="Recover the vault database and stored files from a previous backup."
+                  title={uiText("Restore backup")}
+                  description={uiText(
+                    "Recover the vault database and stored files from a previous backup.",
+                  )}
                   action={
                     <button
                       type="button"
                       onClick={() => void loadBackups()}
                       disabled={!user?.is_superuser || backupsLoading}
                       className={BTN_ICON}
-                      title="Refresh backups"
+                      title={uiText("Refresh backups")}
                     >
                       <RefreshCw className={`h-4 w-4 ${backupsLoading ? "animate-spin" : ""}`} />
                     </button>
@@ -2886,15 +2997,19 @@ export function SettingsPanel() {
                   <div className="divide-y divide-border">
                     {!user?.is_superuser ? (
                       <p className="p-4 sm:p-5 text-sm text-muted-foreground">
-                        Superuser access is required.
+                        {uiText("Superuser access is required.")}
                       </p>
                     ) : backupsLoading ? (
-                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">Loading...</p>
+                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">
+                        {uiText("Loading...")}
+                      </p>
                     ) : backups.length === 0 &&
                       unownedBackups.length === 0 &&
                       unownedS3Backups.length === 0 &&
                       unownedRemoteBackups.length === 0 ? (
-                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">No backups found.</p>
+                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">
+                        {uiText("No backups found.")}
+                      </p>
                     ) : (
                       <>
                         {unownedBackups.length > 0 && (
@@ -2917,9 +3032,12 @@ export function SettingsPanel() {
                                     {candidate.filename}
                                   </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    {candidate.file_count} files ·{" "}
-                                    {formatBytes(candidate.size_bytes)} · v{candidate.app_version} ·{" "}
-                                    {formatDate(candidate.created_at)}
+                                    {uiText("{value1} files · {value2} · v{value3} · {value4}", {
+                                      value1: String(candidate.file_count ?? ""),
+                                      value2: String(formatBytes(candidate.size_bytes) ?? ""),
+                                      value3: String(candidate.app_version ?? ""),
+                                      value4: String(formatDate(candidate.created_at) ?? ""),
+                                    })}
                                   </p>
                                 </div>
                                 <button
@@ -2955,7 +3073,7 @@ export function SettingsPanel() {
                                   </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
                                     {t("settings.backupS3Namespace", {
-                                      namespace: candidate.namespace ?? "unavailable",
+                                      namespace: candidate.namespace ?? uiText("unavailable"),
                                     })}
                                   </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
@@ -2964,9 +3082,15 @@ export function SettingsPanel() {
                                     })}
                                   </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    {t("settings.backupPrefix", { prefix: candidate.prefix })} ·{" "}
-                                    {candidate.file_count} files ·{" "}
-                                    {formatBytes(candidate.size_bytes)} · v{candidate.app_version}
+                                    {uiText("{value1} · {value2} files · {value3} · v{value4}", {
+                                      value1: String(
+                                        t("settings.backupPrefix", { prefix: candidate.prefix }) ??
+                                          "",
+                                      ),
+                                      value2: String(candidate.file_count ?? ""),
+                                      value3: String(formatBytes(candidate.size_bytes) ?? ""),
+                                      value4: String(candidate.app_version ?? ""),
+                                    })}
                                   </p>
                                   {candidate.candidate_kind && (
                                     <p className="mt-1 text-xs text-muted-foreground">
@@ -2977,7 +3101,7 @@ export function SettingsPanel() {
                                   )}
                                   <p className="mt-1 truncate font-mono text-2xs text-muted-foreground">
                                     {t("settings.backupSha256", {
-                                      digest: `${candidate.archive_sha256?.slice(0, 16) ?? "unavailable"}…`,
+                                      digest: `${candidate.archive_sha256?.slice(0, 16) ?? uiText("unavailable")}…`,
                                     })}
                                   </p>
                                 </div>
@@ -3020,12 +3144,16 @@ export function SettingsPanel() {
                                     {candidate.key}
                                   </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    {candidate.connection_name} · {candidate.provider.toUpperCase()}{" "}
-                                    · {formatBytes(candidate.size_bytes)} · v{candidate.app_version}
+                                    {uiText("{value1} · {value2} · {value3} · v{value4}", {
+                                      value1: String(candidate.connection_name ?? ""),
+                                      value2: String(candidate.provider.toUpperCase() ?? ""),
+                                      value3: String(formatBytes(candidate.size_bytes) ?? ""),
+                                      value4: String(candidate.app_version ?? ""),
+                                    })}
                                   </p>
                                   <p className="mt-1 truncate font-mono text-2xs text-muted-foreground">
                                     {t("settings.backupSha256", {
-                                      digest: `${candidate.archive_sha256?.slice(0, 16) ?? "unavailable"}…`,
+                                      digest: `${candidate.archive_sha256?.slice(0, 16) ?? uiText("unavailable")}…`,
                                     })}
                                   </p>
                                 </div>
@@ -3062,7 +3190,9 @@ export function SettingsPanel() {
                                   {backup.location}
                                 </span>
                                 <span className="font-mono text-3xs uppercase tracking-wider px-2 py-0.5 rounded border border-border text-muted-foreground">
-                                  v{backup.app_version}
+                                  {uiText("v{value1}", {
+                                    value1: String(backup.app_version ?? ""),
+                                  })}
                                 </span>
                               </div>
                               <p className="mt-1 truncate font-mono text-2xs text-muted-foreground">
@@ -3105,8 +3235,11 @@ export function SettingsPanel() {
                                 </p>
                               )}
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {backup.file_count} files · {formatBytes(backup.size_bytes)} ·{" "}
-                                {backup.location}
+                                {uiText("{value1} files · {value2} · {value3}", {
+                                  value1: String(backup.file_count ?? ""),
+                                  value2: String(formatBytes(backup.size_bytes) ?? ""),
+                                  value3: String(backup.location ?? ""),
+                                })}
                               </p>
                               {backup.operations &&
                                 !backup.operations.automatic_retention.allowed && (
@@ -3153,7 +3286,7 @@ export function SettingsPanel() {
                                 ) : (
                                   <Download className="h-3.5 w-3.5" />
                                 )}
-                                Download
+                                {uiText("Download")}
                               </button>
                               <button
                                 type="button"
@@ -3172,7 +3305,7 @@ export function SettingsPanel() {
                                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <RotateCcw className="h-3.5 w-3.5" />
-                                Restore
+                                {uiText("Restore")}
                               </button>
                               <Button
                                 type="button"
@@ -3251,8 +3384,10 @@ export function SettingsPanel() {
               <div className="space-y-6 animate-panel-in">
                 <SettingsCard
                   icon={Printer}
-                  title="Printer cards"
-                  description="Choose whether printer cards include a visual. Plain cards remain more compact and information-dense."
+                  title={uiText("Printer cards")}
+                  description={uiText(
+                    "Choose whether printer cards include a visual. Plain cards remain more compact and information-dense.",
+                  )}
                 >
                   <div className="flex items-center justify-between gap-4 p-4 sm:p-5">
                     <div className="flex min-w-0 items-center gap-3">
@@ -3265,17 +3400,17 @@ export function SettingsPanel() {
                       </div>
                       <div>
                         <p className="text-[13px] font-medium text-foreground">
-                          Show printer image
+                          {uiText("Show printer image")}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          Adds a brand-neutral printer visual above each card.
+                          {uiText("Adds a brand-neutral printer visual above each card.")}
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
                       role="switch"
-                      aria-label="Show printer image on printer cards"
+                      aria-label={uiText("Show printer image on printer cards")}
                       aria-checked={showPrinterCardImage}
                       onClick={() => {
                         if (showPrinterCardImage) updatePrinterCardImagePreference(false);
@@ -3297,17 +3432,19 @@ export function SettingsPanel() {
                 {/* Print tracking behaviour */}
                 <SettingsCard
                   icon={Printer}
-                  title="Print tracking"
-                  description="Automatically promote a revision to known-good after its first successful print. A manual failed/archived verdict is never overridden."
+                  title={uiText("Print tracking")}
+                  description={uiText(
+                    "Automatically promote a revision to known-good after its first successful print. A manual failed/archived verdict is never overridden.",
+                  )}
                 >
                   <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
                     <span className="text-[13px] text-foreground">
-                      Auto-mark known good on successful print
+                      {uiText("Auto-mark known good on successful print")}
                     </span>
                     <button
                       type="button"
                       role="switch"
-                      aria-label="Auto-mark known good on successful print"
+                      aria-label={uiText("Auto-mark known good on successful print")}
                       aria-checked={autoMarkKnownGood}
                       disabled={!user || autoMarkBusy}
                       onClick={() => saveAutoMarkKnownGood(!autoMarkKnownGood)}
@@ -3327,12 +3464,14 @@ export function SettingsPanel() {
                 {/* Currency for cost tracking */}
                 <SettingsCard
                   icon={Coins}
-                  title="Currency"
-                  description="Currency used to display cost figures in statistics and filament pricing."
+                  title={uiText("Currency")}
+                  description={uiText(
+                    "Currency used to display cost figures in statistics and filament pricing.",
+                  )}
                 >
                   <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
                     <label htmlFor="display-currency" className="text-[13px] text-foreground">
-                      Display currency
+                      {uiText("Display currency")}
                     </label>
                     <select
                       id="display-currency"
@@ -3353,12 +3492,14 @@ export function SettingsPanel() {
                 {/* Card metrics picker */}
                 <SettingsCard
                   icon={Palette}
-                  title="Model card metrics"
-                  description="Choose which 3 stats appear on each model card in the grid."
+                  title={uiText("Model card metrics")}
+                  description={uiText(
+                    "Choose which 3 stats appear on each model card in the grid.",
+                  )}
                   action={
                     <button type="button" onClick={resetCardMetrics} className={BTN_SECONDARY}>
                       <RotateCcw className="h-3.5 w-3.5" />
-                      Reset
+                      {uiText("Reset")}
                     </button>
                   }
                 >
@@ -3366,7 +3507,8 @@ export function SettingsPanel() {
                     {([0, 1, 2] as const).map((slot) => (
                       <div key={slot} className="space-y-2">
                         <p className="text-2xs font-mono uppercase tracking-wider text-primary">
-                          Slot {slot + 1}
+                          {uiText("Slot ")}
+                          {slot + 1}
                         </p>
                         <div className="grid grid-cols-1 gap-1">
                           {CARD_METRIC_OPTIONS.map((opt) => {
@@ -3402,7 +3544,8 @@ export function SettingsPanel() {
                                 <span className="flex-1 text-left">{opt.label}</span>
                                 {usedInOther ? (
                                   <span className="font-mono text-3xs uppercase tracking-wider text-muted-foreground/60">
-                                    Slot {otherSlot + 1}
+                                    {uiText("Slot ")}
+                                    {otherSlot + 1}
                                   </span>
                                 ) : (
                                   <span
@@ -3426,8 +3569,8 @@ export function SettingsPanel() {
 
                 <SettingsCard
                   icon={Info}
-                  title="Model metadata"
-                  description="Choose which metadata fields appear on model detail pages."
+                  title={uiText("Model metadata")}
+                  description={uiText("Choose which metadata fields appear on model detail pages.")}
                   action={
                     <button
                       type="button"
@@ -3435,15 +3578,19 @@ export function SettingsPanel() {
                       className={BTN_SECONDARY}
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
-                      Reset
+                      {uiText("Reset")}
                     </button>
                   }
                 >
                   <div className="p-4 sm:p-5 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-2xs font-mono uppercase tracking-wider text-muted-foreground">
-                        {METADATA_FIELDS.filter((f) => metadataPrefs[f.id]).length} of{" "}
-                        {METADATA_FIELDS.length} shown
+                        {uiText("{value1} of {value2} shown", {
+                          value1: String(
+                            METADATA_FIELDS.filter((f) => metadataPrefs[f.id]).length ?? "",
+                          ),
+                          value2: String(METADATA_FIELDS.length ?? ""),
+                        })}
                       </p>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -3451,7 +3598,7 @@ export function SettingsPanel() {
                           onClick={() => setAllMetadataPreferences(true)}
                           className="font-mono text-3xs uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors"
                         >
-                          Show all
+                          {uiText("Show all")}
                         </button>
                         <span className="text-muted-foreground/40">·</span>
                         <button
@@ -3459,7 +3606,7 @@ export function SettingsPanel() {
                           onClick={() => setAllMetadataPreferences(false)}
                           className="font-mono text-3xs uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors"
                         >
-                          Hide all
+                          {uiText("Hide all")}
                         </button>
                       </div>
                     </div>
@@ -3497,16 +3644,18 @@ export function SettingsPanel() {
               <div className="space-y-6 animate-panel-in">
                 <SettingsCard
                   icon={Eye}
-                  title="Interactive previews"
-                  description="Balance sharpness against GPU use in the 3D Model and G-code viewers. This preference is saved in this browser."
+                  title={uiText("Interactive previews")}
+                  description={uiText(
+                    "Balance sharpness against GPU use in the 3D Model and G-code viewers. This preference is saved in this browser.",
+                  )}
                 >
                   <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
                     <label className="block space-y-1">
                       <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                        Preview quality
+                        {uiText("Preview quality")}
                       </span>
                       <select
-                        aria-label="Preview quality"
+                        aria-label={uiText("Preview quality")}
                         value={previewPreferences.previewQuality}
                         onChange={(event) =>
                           savePreviewPreference({
@@ -3515,17 +3664,17 @@ export function SettingsPanel() {
                         }
                         className={INPUT}
                       >
-                        <option value="performance">Performance · 1×</option>
-                        <option value="balanced">Balanced · 1.5×</option>
-                        <option value="detail">High detail · 2×</option>
+                        <option value="performance">{uiText("Performance · 1×")}</option>
+                        <option value="balanced">{uiText("Balanced · 1.5×")}</option>
+                        <option value="detail">{uiText("High detail · 2×")}</option>
                       </select>
                     </label>
                     <label className="block space-y-1">
                       <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                        Screenshot resolution
+                        {uiText("Screenshot resolution")}
                       </span>
                       <select
-                        aria-label="Screenshot resolution"
+                        aria-label={uiText("Screenshot resolution")}
                         value={previewPreferences.screenshotScale}
                         onChange={(event) =>
                           savePreviewPreference({
@@ -3537,9 +3686,9 @@ export function SettingsPanel() {
                         }
                         className={INPUT}
                       >
-                        <option value={1}>Standard · 1×</option>
-                        <option value={2}>Sharp · 2×</option>
-                        <option value={3}>Print-ready · 3×</option>
+                        <option value={1}>{uiText("Standard · 1×")}</option>
+                        <option value={2}>{uiText("Sharp · 2×")}</option>
+                        <option value={3}>{uiText("Print-ready · 3×")}</option>
                       </select>
                     </label>
                   </div>
@@ -3547,16 +3696,18 @@ export function SettingsPanel() {
 
                 <SettingsCard
                   icon={Images}
-                  title="Model preview images"
-                  description="Choose the resolution of generated Model card images. Higher settings take longer to render and use more memory and storage."
+                  title={uiText("Model preview images")}
+                  description={uiText(
+                    "Choose the resolution of generated Model card images. Higher settings take longer to render and use more memory and storage.",
+                  )}
                 >
                   <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:p-5">
                     <label className="block space-y-1">
                       <span className="block font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                        Model image quality
+                        {uiText("Model image quality")}
                       </span>
                       <select
-                        aria-label="Model image quality"
+                        aria-label={uiText("Model image quality")}
                         value={modelThumbnailWidth}
                         onChange={(event) =>
                           saveModelThumbnailWidth(
@@ -3574,9 +3725,9 @@ export function SettingsPanel() {
                               {Math.round((modelThumbnailWidth * 3) / 4)}
                             </option>
                           )}
-                        <option value={320}>Compact · 320 × 240</option>
-                        <option value={640}>Standard · 640 × 480</option>
-                        <option value={1280}>High · 1280 × 960</option>
+                        <option value={320}>{uiText("Compact · 320 × 240")}</option>
+                        <option value={640}>{uiText("Standard · 640 × 480")}</option>
+                        <option value={1280}>{uiText("High · 1280 × 960")}</option>
                       </select>
                     </label>
                     <button
@@ -3590,13 +3741,14 @@ export function SettingsPanel() {
                       ) : (
                         <RefreshCw className="h-3.5 w-3.5" />
                       )}
-                      Recreate all images
+                      {uiText("Recreate all images")}
                     </button>
                   </div>
                   <div className="border-t border-border px-4 py-3 sm:px-5">
                     <p className="text-xs text-muted-foreground">
-                      Quality changes apply to new images. Recreate all images to update existing
-                      Models in the background.
+                      {uiText(
+                        "Quality changes apply to new images. Recreate all images to update existing Models in the background.",
+                      )}
                     </p>
                   </div>
                 </SettingsCard>
@@ -3607,15 +3759,17 @@ export function SettingsPanel() {
               <div className="space-y-6 animate-panel-in">
                 <SettingsCard
                   icon={Trash2}
-                  title="Trash retention"
-                  description="Soft-deleted models stay restorable until the retention window expires."
+                  title={uiText("Trash retention")}
+                  description={uiText(
+                    "Soft-deleted models stay restorable until the retention window expires.",
+                  )}
                   action={
                     <button
                       type="button"
                       onClick={loadTrash}
                       disabled={trashLoading}
                       className={BTN_ICON}
-                      title="Refresh trash"
+                      title={uiText("Refresh trash")}
                     >
                       <RefreshCw className={`h-4 w-4 ${trashLoading ? "animate-spin" : ""}`} />
                     </button>
@@ -3623,7 +3777,9 @@ export function SettingsPanel() {
                 >
                   <div className="p-4 sm:p-5 grid gap-3 sm:grid-cols-[160px_auto_auto] sm:items-end">
                     <label className="block">
-                      <span className="block text-2xs text-muted-foreground mb-1">Days</span>
+                      <span className="block text-2xs text-muted-foreground mb-1">
+                        {uiText("Days")}
+                      </span>
                       <input
                         type="number"
                         min={-1}
@@ -3640,7 +3796,7 @@ export function SettingsPanel() {
                       className={BTN_PRIMARY}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      {trashBusy === "settings" ? "Saving" : "Save retention"}
+                      {trashBusy === "settings" ? uiText("Saving") : uiText("Save retention")}
                     </button>
                     <button
                       type="button"
@@ -3655,7 +3811,7 @@ export function SettingsPanel() {
                       className={BTN_SECONDARY}
                     >
                       <Eraser className="h-3.5 w-3.5" />
-                      {trashBusy === "gc" ? "Preparing" : "Review expired"}
+                      {trashBusy === "gc" ? uiText("Preparing") : uiText("Review expired")}
                     </button>
                   </div>
                   {trashPurgeResult && (
@@ -3677,33 +3833,44 @@ export function SettingsPanel() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold text-foreground">
-                            GC plan #{gcPlan.id} · {gcPlan.state}
+                            {uiText("GC plan #{value1} · {value2}", {
+                              value1: String(gcPlan.id ?? ""),
+                              value2: String(gcPlan.state ?? ""),
+                            })}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {gcPlan.resource_count} of {gcPlan.candidate_pool_count} expired
-                            resources · {gcPlan.key_count} storage keys ·{" "}
-                            {formatBytes(gcPlan.size_bytes)}
+                            {uiText(
+                              "{value1} of {value2} expired resources · {value3} storage keys · {value4}",
+                              {
+                                value1: String(gcPlan.resource_count ?? ""),
+                                value2: String(gcPlan.candidate_pool_count ?? ""),
+                                value3: String(gcPlan.key_count ?? ""),
+                                value4: String(formatBytes(gcPlan.size_bytes) ?? ""),
+                              },
+                            )}
                           </p>
                         </div>
                         <span className="rounded border border-border px-2 py-1 font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-                          {gcPlan.backup_id ? "backup verified" : "no backup bound"}
+                          {gcPlan.backup_id ? uiText("backup verified") : uiText("no backup bound")}
                         </span>
                       </div>
-                      <p className="mt-3 text-2xs text-muted-foreground">Exact plan digest</p>
+                      <p className="mt-3 text-2xs text-muted-foreground">
+                        {uiText("Exact plan digest")}
+                      </p>
                       <code className="mt-1 block break-all rounded border border-border bg-background px-2 py-2 text-3xs text-foreground">
                         {gcPlan.digest}
                       </code>
                       {gcPlan.state === "preview" && (
                         <div className="mt-3 space-y-3">
                           <p className="text-xs text-muted-foreground">
-                            Approval is fail-closed: paste the exact digest below. The server will
-                            also require verified storage and a recent backup on an independent S3
-                            provider before starting the quarantine.
+                            {uiText(
+                              "Approval is fail-closed: paste the exact digest below. The server will also require verified storage and a recent backup on an independent S3 provider before starting the quarantine.",
+                            )}
                           </p>
                           <input
                             className={INPUT}
-                            aria-label="Confirm GC plan digest"
-                            placeholder="Paste the 64-character digest"
+                            aria-label={uiText("Confirm GC plan digest")}
+                            placeholder={uiText("Paste the 64-character digest")}
                             value={gcDigestConfirmation}
                             disabled={trashBusy === "gc"}
                             onChange={(event) => setGcDigestConfirmation(event.target.value.trim())}
@@ -3712,8 +3879,10 @@ export function SettingsPanel() {
                       )}
                       {gcPlan.state === "quarantined" && gcPlan.quarantine_until && (
                         <p className="mt-3 text-xs text-muted-foreground">
-                          Recovery quarantine ends {formatDateTime(gcPlan.quarantine_until)}. The
-                          plan and backup are reverified before final deletion.
+                          {uiText(
+                            "Recovery quarantine ends {value1}. The plan and backup are reverified before final deletion.",
+                            { value1: String(formatDateTime(gcPlan.quarantine_until) ?? "") },
+                          )}
                         </p>
                       )}
                       {gcPlan.last_error && (
@@ -3728,7 +3897,7 @@ export function SettingsPanel() {
                             onClick={approveExpiredGcPlan}
                           >
                             <ShieldCheck className="h-3.5 w-3.5" />
-                            Verify backup and quarantine
+                            {uiText("Verify backup and quarantine")}
                           </button>
                         )}
                         {gcPlan.state === "quarantined" && (
@@ -3741,7 +3910,7 @@ export function SettingsPanel() {
                             onClick={finalizeExpiredGcPlan}
                           >
                             <Eraser className="h-3.5 w-3.5" />
-                            Reverify and finalize
+                            {uiText("Reverify and finalize")}
                           </button>
                         )}
                         {["preview", "quarantined"].includes(gcPlan.state) && (
@@ -3751,7 +3920,7 @@ export function SettingsPanel() {
                             disabled={trashBusy === "gc"}
                             onClick={abortExpiredGcPlan}
                           >
-                            Abort plan
+                            {uiText("Abort plan")}
                           </button>
                         )}
                       </div>
@@ -3761,29 +3930,41 @@ export function SettingsPanel() {
 
                 <SettingsCard
                   icon={Boxes}
-                  title="Deleted models"
-                  description="Restore models or remove them permanently from storage."
+                  title={uiText("Deleted models")}
+                  description={uiText("Restore models or remove them permanently from storage.")}
                 >
                   {trashItems.length > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground sm:px-5">
-                      <span>{`${trashItems.length} deleted model${trashItems.length === 1 ? "" : "s"}`}</span>
-                      <span className="font-mono tabular-nums" aria-label="Trash size">
-                        {formatBytes(
-                          trashItems.reduce((total, item) => total + item.size_bytes, 0),
-                        )}{" "}
-                        reclaimable
+                      <span>
+                        {uiText("models.deletedCount", {
+                          value1: String(trashItems.length),
+                          count: Number(trashItems.length),
+                        })}
+                      </span>
+                      <span className="font-mono tabular-nums" aria-label={uiText("Trash size")}>
+                        {uiText("{value1} reclaimable", {
+                          value1: String(
+                            formatBytes(
+                              trashItems.reduce((total, item) => total + item.size_bytes, 0),
+                            ) ?? "",
+                          ),
+                        })}
                       </span>
                     </div>
                   )}
                   <div className="divide-y divide-border">
                     {!user ? (
                       <p className="p-4 sm:p-5 text-sm text-muted-foreground">
-                        Sign in to manage the trash.
+                        {uiText("Sign in to manage the trash.")}
                       </p>
                     ) : trashLoading ? (
-                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">Loading...</p>
+                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">
+                        {uiText("Loading...")}
+                      </p>
                     ) : trashItems.length === 0 ? (
-                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">Trash is empty.</p>
+                      <p className="p-4 sm:p-5 text-sm text-muted-foreground">
+                        {uiText("Trash is empty.")}
+                      </p>
                     ) : (
                       trashItems.map((item) => (
                         <div
@@ -3796,15 +3977,19 @@ export function SettingsPanel() {
                                 {item.name}
                               </p>
                               <span className="font-mono text-3xs uppercase tracking-wider px-2 py-0.5 rounded border border-border text-muted-foreground">
-                                {item.file_count} files
+                                {uiText("{value1} files", {
+                                  value1: String(item.file_count ?? ""),
+                                })}
                               </span>
                               <span className="font-mono text-3xs uppercase tracking-wider px-2 py-0.5 rounded border border-border text-muted-foreground">
                                 {formatBytes(item.size_bytes)}
                               </span>
                             </div>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              Deleted {formatDate(item.deleted_at)} · Expires{" "}
-                              {formatDate(item.expires_at)}
+                              {uiText("Deleted {value1} · Expires {value2}", {
+                                value1: String(formatDate(item.deleted_at) ?? ""),
+                                value2: String(formatDate(item.expires_at) ?? ""),
+                              })}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -3815,7 +4000,7 @@ export function SettingsPanel() {
                               className={BTN_SECONDARY}
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
-                              Restore
+                              {uiText("Restore")}
                             </button>
                             <button
                               type="button"
@@ -3824,7 +4009,7 @@ export function SettingsPanel() {
                               className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
-                              Delete
+                              {uiText("Delete")}
                             </button>
                           </div>
                         </div>
@@ -3849,11 +4034,12 @@ export function SettingsPanel() {
                           PrintStash
                         </h3>
                         <span className="rounded-full bg-muted px-2 py-0.5 text-3xs font-semibold text-muted-foreground">
-                          v{health?.version ?? "0.2.0"}
+                          {uiText("v")}
+                          {health?.version ?? "0.2.0"}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Self-hosted asset management for 3D printing workflows.
+                        {uiText("Self-hosted asset management for 3D printing workflows.")}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -3866,7 +4052,7 @@ export function SettingsPanel() {
                         <RefreshCw
                           className={cn("h-3.5 w-3.5", releaseChecking && "animate-spin")}
                         />
-                        {releaseChecking ? "Checking" : "Check for updates"}
+                        {releaseChecking ? uiText("Checking") : uiText("Check for updates")}
                       </button>
                       <a
                         href={`https://github.com/${GITHUB_REPO}`}
@@ -3889,13 +4075,16 @@ export function SettingsPanel() {
                   {releaseStatus && (
                     <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-6">
                       {releaseStatus.status === "up_to_date" &&
-                        "Latest published release installed."}
+                        uiText("Latest published release installed.")}
                       {releaseStatus.status === "update_available" &&
                         releaseStatus.latest_version && (
-                          <>Update available: v{releaseStatus.latest_version}.</>
+                          <>
+                            {uiText("Update available: v")}
+                            {releaseStatus.latest_version}.
+                          </>
                         )}
                       {releaseStatus.status === "unavailable" &&
-                        "Release check unavailable. Try again later."}
+                        uiText("Release check unavailable. Try again later.")}
                     </div>
                   )}
                 </div>
@@ -3903,25 +4092,25 @@ export function SettingsPanel() {
                 {/* Changelog */}
                 <SettingsCard
                   icon={Info}
-                  title="Latest changes"
-                  description="What changed in the current release"
+                  title={uiText("Latest changes")}
+                  description={uiText("What changed in the current release")}
                 >
                   <div className="divide-y divide-border">
                     {latestRelease && (
                       <div className="px-4 sm:px-6 py-5 grid grid-cols-1 sm:grid-cols-[8rem_1fr] gap-3">
                         <div className="flex items-start gap-2">
                           <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                            v{latestRelease.version}
+                            {uiText("v{value1}", { value1: String(latestRelease.version ?? "") })}
                           </span>
                           <span className="text-2xs text-muted-foreground pt-0.5">
-                            {latestRelease.date}
+                            {knownUiText(latestRelease.date)}
                           </span>
                         </div>
                         <ul className="space-y-1.5">
                           {latestRelease.changes.map((change, i) => (
                             <li key={i} className="flex gap-2 text-xs text-muted-foreground">
                               <span className="mt-1.5 h-1 w-1 flex-shrink-0 rounded-full bg-primary" />
-                              <span>{change}</span>
+                              <span>{knownUiText(change)}</span>
                             </li>
                           ))}
                         </ul>
