@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Mounted Library source enrollment now rolls back known marker failures instead
+  of leaving a conflicted source behind, reports read-only marker failures
+  explicitly, and documents the one-time writable mount required for enrollment.
+
 ### Changed
 
 - Interface text, accessible labels, errors, plural counts and offline screens
