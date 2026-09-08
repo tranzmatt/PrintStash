@@ -31,6 +31,7 @@ from app.db.models import (
     OwnedStorageObject,
     StagingLease,
     StorageInventorySample,
+    StorageObjectState,
     User,
     VaultAuditFinding,
     VaultAuditRun,
@@ -255,6 +256,9 @@ def capacity_activity(session: Session) -> CapacityActivity:
 def cleanup_opportunities(session: Session) -> list[dict]:
     """Preview bounded candidates; execution remains with each safe owner."""
     now = utcnow()
+    backend = get_backend()
+    cache_namespace = backend.namespace_for(backend.stl_cache_key("0" * 64))
+    cache_provider_ref = provider_ref_for_backend(backend, namespace=cache_namespace)
     staging_count, staging_bytes = session.exec(
         select(
             func.count(col(StagingLease.id)),
@@ -271,7 +275,10 @@ def cleanup_opportunities(session: Session) -> list[dict]:
                 func.coalesce(func.sum(col(File.size_bytes)), 0),
             )
             .join(File, col(File.model_id) == col(Model.id))
-            .where(col(Model.deleted_at).is_not(None), Model.deleted_at <= trash_cutoff)
+            .where(
+                col(Model.deleted_at).is_not(None),
+                Model.deleted_at <= trash_cutoff,  # pyright: ignore[reportOptionalOperand]
+            )
         ).one()
     backup_cutoff = now - timedelta(days=max(0, settings.backup_retention_days))
     backup_count, backup_bytes = session.exec(
@@ -281,6 +288,18 @@ def cleanup_opportunities(session: Session) -> list[dict]:
         ).where(
             col(OwnedStorageObject.object_kind).startswith("backup"),
             OwnedStorageObject.created_at <= backup_cutoff,
+        )
+    ).one()
+    cache_count, cache_bytes = session.exec(
+        select(
+            func.count(col(OwnedStorageObject.id)),
+            func.coalesce(func.sum(col(OwnedStorageObject.size_bytes)), 0),
+        ).where(
+            col(OwnedStorageObject.object_kind).in_(["derived_stl_cache", "stl_cache"]),
+            OwnedStorageObject.state == StorageObjectState.COMMITTED,
+            OwnedStorageObject.backend == backend.backend_name,
+            OwnedStorageObject.namespace == cache_namespace,
+            OwnedStorageObject.provider_ref == cache_provider_ref,
         )
     ).one()
     return [
@@ -301,16 +320,16 @@ def cleanup_opportunities(session: Session) -> list[dict]:
         {
             "owner": "backups",
             "candidate_count": int(backup_count),
-            "candidate_bytes": int(backup_bytes),
+            "candidate_bytes": int(backup_bytes or 0),
             "action": "review_backup_retention",
             "available": True,
         },
         {
             "owner": "cache",
-            "candidate_count": 0,
-            "candidate_bytes": 0,
-            "action": "cache_owner_unavailable",
-            "available": False,
+            "candidate_count": int(cache_count),
+            "candidate_bytes": int(cache_bytes or 0),
+            "action": "cleanup_derived_cache",
+            "available": True,
         },
     ]
 
@@ -713,8 +732,8 @@ def logical_drilldown(
             if collection_id == 0
             else col(Model.collection_id) == collection_id
         )
-    rows = session.exec(
-        select(
+    rows = session.execute(
+        sa_select(
             col(Model.id),
             col(Model.name),
             func.coalesce(func.sum(col(File.size_bytes)), 0),
@@ -755,6 +774,72 @@ def cleanup_expired_staging(session: Session, actor: User) -> dict:
     record_sample(session, current)
     record_cleanup("staging", "success")
     return {"leases_removed": removed, "files_removed": unlinked, "inventory": current}
+
+
+def cleanup_derived_cache(session: Session, actor: User) -> dict:
+    """Queue deletion only for exact, receipt-verified rebuildable STL caches."""
+    from app.modules.administration import audit
+    from app.modules.storage.capacity_observability import record_cleanup
+    from app.modules.storage.storage_deletion import (
+        enqueue_owned_key,
+        process_storage_delete_intents,
+    )
+
+    backend = get_backend()
+    cache_namespace = backend.namespace_for(backend.stl_cache_key("0" * 64))
+    cache_provider_ref = provider_ref_for_backend(backend, namespace=cache_namespace)
+    candidates = list(
+        session.exec(
+            select(OwnedStorageObject)
+            .where(
+                col(OwnedStorageObject.object_kind).in_(["derived_stl_cache", "stl_cache"]),
+                OwnedStorageObject.state == StorageObjectState.COMMITTED,
+                OwnedStorageObject.backend == backend.backend_name,
+                OwnedStorageObject.namespace == cache_namespace,
+                OwnedStorageObject.provider_ref == cache_provider_ref,
+            )
+            .order_by(col(OwnedStorageObject.id))
+            .limit(10_000)
+        )
+    )
+    enqueued = 0
+    for candidate in candidates:
+        if enqueue_owned_key(
+            session,
+            backend,
+            candidate.key,
+            resource_kind="derived_stl_cache",
+            resource_id=candidate.id,
+        ):
+            enqueued += 1
+    session.commit()
+    result = process_storage_delete_intents(limit=max(100, enqueued))
+    audit.record(
+        session,
+        action="storage.cleanup_derived_cache",
+        resource_type="storage",
+        actor_id=actor.id,
+        diff={
+            "candidates": len(candidates),
+            "enqueued": enqueued,
+            "completed": result.completed,
+            "pending": result.pending,
+            "blocked": result.blocked,
+        },
+    )
+    current = inventory(session)
+    record_sample(session, current)
+    record_cleanup(
+        "cache", "success" if result.pending == 0 and result.blocked == 0 else "error"
+    )
+    return {
+        "candidates": len(candidates),
+        "enqueued": enqueued,
+        "completed": result.completed,
+        "pending": result.pending,
+        "blocked": result.blocked,
+        "inventory": current,
+    }
 
 
 def legacy_usage(session: Session) -> dict:
@@ -844,8 +929,8 @@ def collection_drilldown(
 ) -> list[dict]:
     """Attribute logical references only within the caller's live Model scope."""
     visible = accessible_live_model_ids_stmt(session, user)
-    rows = session.exec(
-        select(
+    rows = session.execute(
+        sa_select(
             col(Model.collection_id),
             col(Collection.name),
             func.coalesce(func.sum(col(File.size_bytes)), 0),

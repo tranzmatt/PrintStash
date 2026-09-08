@@ -172,4 +172,38 @@ describe("Storage insights", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
+  it("clears only verified rebuildable cache after confirmation", async () => {
+    const view = renderApp(<StorageInventoryPanel />, {
+      auth: adminSession(),
+      routes: {
+        "GET /api/v1/storage/inventory": () => json(report),
+        "GET /api/v1/storage/inventory/cleanup-opportunities": () =>
+          json([
+            {
+              owner: "cache",
+              candidate_count: 2,
+              candidate_bytes: 4096,
+              action: "cleanup_derived_cache",
+              available: true,
+            },
+          ]),
+        "POST /api/v1/storage/inventory/cleanup-cache": json({
+          candidates: 2,
+          enqueued: 2,
+          completed: 2,
+          pending: 0,
+          blocked: 0,
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(await view.findByRole("button", { name: "Clear derived cache" }));
+    expect(await view.findByRole("dialog")).toHaveTextContent(
+      "Thumbnails and original Artifacts are retained",
+    );
+    await user.click(view.getByRole("button", { name: "Clean up" }));
+    expect(await view.findByRole("status")).toHaveTextContent(
+      "2 derived cache objects cleared; 0 pending.",
+    );
+  });
 });

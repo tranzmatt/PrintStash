@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  cleanupStorageCache,
   cleanupStorageStaging,
   getCollectionStorage,
   getModelStorage,
@@ -48,13 +49,15 @@ describe("storage inventory API", () => {
     }
   });
 
-  it("posts explicit measurement plus receipt-safe staging cleanup", async () => {
+  it("posts explicit measurement plus receipt-safe cleanup actions", async () => {
     await sampleStorageInventory();
     await cleanupStorageStaging();
+    await cleanupStorageCache();
 
     expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
       ["/api/v1/storage/inventory/sample", "POST"],
       ["/api/v1/storage/inventory/cleanup-staging", "POST"],
+      ["/api/v1/storage/inventory/cleanup-cache", "POST"],
     ]);
   });
 

@@ -127,6 +127,14 @@ export const cleanupStorageStaging = () =>
     "POST",
     {},
   );
+export const cleanupStorageCache = () =>
+  sendJson<{
+    candidates: number;
+    enqueued: number;
+    completed: number;
+    pending: number;
+    blocked: number;
+  }>("/api/v1/storage/inventory/cleanup-cache", "POST", {});
 export const getStorageCapacityActivity = () =>
   getJson<StorageCapacityActivity>("/api/v1/storage/inventory/activity", { fresh: true });
 export const getStorageCleanupOpportunities = () =>

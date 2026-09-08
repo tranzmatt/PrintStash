@@ -62,11 +62,14 @@ it never grants additional local staging space.
 
 ## Cleanup
 
-The **Clean up expired staging** action requires explicit confirmation and is audited.
-It calls the existing staging owner: only expired files whose device/inode/ctime/size
-still match their receipts can be removed. Replaced or uncertain files stay in place
-and remain charged. Cleanup refreshes the saved inventory. Library artifacts, trash,
-backups and other authoritative data are never automatically deleted by this policy.
+The **Clean up expired staging** and **Clear derived cache** actions require explicit
+confirmation and are audited. Staging cleanup calls the existing staging owner: only
+expired files whose device/inode/ctime/size still match their receipts can be removed.
+Derived-cache cleanup queues exact, receipt-verified `stl_cache` objects through the
+durable deletion outbox. Replaced or uncertain files stay in place and remain charged.
+Both actions refresh the saved inventory. Thumbnails, Library artifacts, trash,
+backups and other authoritative data are never automatically deleted by this policy;
+their existing owner-specific Settings actions remain the only route.
 
 The [behavior matrix](storage-capacity-test-matrix.md) records the feature verification.
 

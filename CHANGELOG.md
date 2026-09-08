@@ -53,7 +53,7 @@
 
 - Capacity admission supports percentage headroom and retains durable upload, migration and restore budgets across process failure.
 
-- Storage insights with logical and unique-object inventory, shared-volume capacity reservations, dated growth evidence, and explicit audited expired-staging cleanup. Heavy operations now preserve configurable disk headroom before allocation.
+- Storage insights with logical and unique-object inventory, shared-volume capacity reservations, dated growth evidence, and explicit audited cleanup for expired staging and receipt-verified derived STL cache. Heavy operations now preserve configurable disk headroom before allocation.
 
 - Download strategy and proxied-byte diagnostics use bounded labels; signed query credentials are redacted from application and access logs.
 

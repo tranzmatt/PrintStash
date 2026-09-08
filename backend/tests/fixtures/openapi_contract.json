@@ -30275,6 +30275,30 @@
         ]
       }
     },
+    "/api/v1/storage/inventory/cleanup-cache": {
+      "post": {
+        "operationId": "cleanup_storage_derived_cache_api_v1_storage_inventory_cleanup_cache_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cleanup Storage Derived Cache",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
     "/api/v1/storage/inventory/cleanup-opportunities": {
       "get": {
         "operationId": "storage_cleanup_opportunities_api_v1_storage_inventory_cleanup_opportunities_get",

@@ -1,9 +1,12 @@
 """Administrative inventory is safe to read; cleanup is explicit and audited."""
 
+import pytest
 from sqlmodel import select
 
 from app.core.config import _overlay
 from app.db.models import AuditLog
+from app.modules.storage.storage_backend.runtime import get_backend
+from tests.factories import store_owned_bytes
 
 
 class TestStorageInventory:
@@ -48,11 +51,16 @@ class TestStorageInventory:
             is not None
         )
 
-    def test_denies_non_admin_cleanup(self, client, user_headers):
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "/api/v1/storage/inventory/cleanup-staging",
+            "/api/v1/storage/inventory/cleanup-cache",
+        ],
+    )
+    def test_denies_non_admin_cleanup(self, client, user_headers, endpoint):
         assert (
-            client.post(
-                "/api/v1/storage/inventory/cleanup-staging", headers=user_headers()
-            ).status_code
+            client.post(endpoint, headers=user_headers()).status_code
             == 403
         )
 
@@ -90,6 +98,56 @@ class TestStorageInventory:
             "cache",
         ]
         assert all("key" not in item and "path" not in item for item in response.json())
+
+    def test_clears_only_receipt_verified_derived_cache(
+        self, client, auth_headers, db_session
+    ):
+        backend = get_backend()
+        cache_key = backend.stl_cache_key("a" * 64)
+        thumbnail_key = backend.thumbnail_key(987654)
+        store_owned_bytes(
+            db_session,
+            backend,
+            cache_key,
+            b"cache",
+            object_kind="derived_stl_cache",
+        )
+        store_owned_bytes(
+            db_session,
+            backend,
+            thumbnail_key,
+            b"thumbnail",
+            object_kind="thumbnail",
+        )
+
+        preview = client.get(
+            "/api/v1/storage/inventory/cleanup-opportunities", headers=auth_headers
+        )
+        cache = next(item for item in preview.json() if item["owner"] == "cache")
+        assert cache == {
+            "owner": "cache",
+            "candidate_count": 1,
+            "candidate_bytes": 5,
+            "action": "cleanup_derived_cache",
+            "available": True,
+        }
+        assert backend.exists(cache_key)
+
+        response = client.post(
+            "/api/v1/storage/inventory/cleanup-cache", headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["enqueued"] == 1
+        assert response.json()["completed"] == 1
+        assert not backend.exists(cache_key)
+        assert backend.exists(thumbnail_key)
+        assert (
+            db_session.exec(
+                select(AuditLog).where(AuditLog.action == "storage.cleanup_derived_cache")
+            ).first()
+            is not None
+        )
 
     def test_denies_upload_when_headroom_unavailable(
         self, client, auth_headers, monkeypatch

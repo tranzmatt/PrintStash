@@ -163,6 +163,16 @@ def cleanup_storage_staging(
     return cleanup_expired_staging(session, actor)
 
 
+@router.post("/inventory/cleanup-cache")
+def cleanup_storage_derived_cache(
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_superuser),
+):
+    from app.modules.storage.storage_inventory import cleanup_derived_cache
+
+    return cleanup_derived_cache(session, actor)
+
+
 @router.get("/inventory/collections")
 def storage_logical_collections(
     offset: int = Query(default=0, ge=0),

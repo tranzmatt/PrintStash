@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import {
+  cleanupStorageCache,
   cleanupStorageStaging,
   getCollectionStorage,
   getModelStorage,
@@ -46,7 +47,7 @@ export function StorageInventoryPanel() {
   const [selectedCollection, setSelectedCollection] = useState<CollectionStorageRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [confirm, setConfirm] = useState(false);
+  const [cleanupTarget, setCleanupTarget] = useState<"staging" | "cache" | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
   const loadCollectionPage = useCallback(async (offset: number) => {
@@ -104,14 +105,24 @@ export function StorageInventoryPanel() {
   async function cleanup() {
     setBusy(true);
     try {
-      const cleaned = await cleanupStorageStaging();
-      setResult(
-        t("{files} files removed; {leases} expired leases cleared.", {
-          files: cleaned.files_removed,
-          leases: cleaned.leases_removed,
-        }),
-      );
-      setConfirm(false);
+      if (cleanupTarget === "cache") {
+        const cleaned = await cleanupStorageCache();
+        setResult(
+          t("{completed} derived cache objects cleared; {pending} pending.", {
+            completed: cleaned.completed,
+            pending: cleaned.pending + cleaned.blocked,
+          }),
+        );
+      } else {
+        const cleaned = await cleanupStorageStaging();
+        setResult(
+          t("{files} files removed; {leases} expired leases cleared.", {
+            files: cleaned.files_removed,
+            leases: cleaned.leases_removed,
+          }),
+        );
+      }
+      setCleanupTarget(null);
       await load();
     } catch {
       setError(true);
@@ -459,8 +470,26 @@ export function StorageInventoryPanel() {
               </dl>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setConfirm(true)} disabled={busy}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCleanupTarget("staging")}
+                disabled={busy}
+              >
                 {t("Clean up expired staging")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCleanupTarget("cache")}
+                disabled={
+                  busy ||
+                  !cleanupPreviews.some(
+                    (preview) => preview.owner === "cache" && preview.candidate_count > 0,
+                  )
+                }
+              >
+                {t("Clear derived cache")}
               </Button>
               <Button asChild variant="outline" size="sm">
                 <Link to="/settings?section=trash">{t("Review eligible trash")}</Link>
@@ -478,13 +507,21 @@ export function StorageInventoryPanel() {
         </>
       )}
       <ConfirmModal
-        open={confirm}
-        onClose={() => setConfirm(false)}
+        open={cleanupTarget !== null}
+        onClose={() => setCleanupTarget(null)}
         onConfirm={() => void cleanup()}
-        title={t("Clean up expired staging?")}
-        description={t(
-          "Only expired staging with verified ownership is eligible. Uncertain files are retained. This action is recorded in the audit log.",
-        )}
+        title={
+          cleanupTarget === "cache" ? t("Clear derived cache?") : t("Clean up expired staging?")
+        }
+        description={
+          cleanupTarget === "cache"
+            ? t(
+                "Only rebuildable derived STL cache objects with verified ownership receipts are eligible. Thumbnails and original Artifacts are retained. This action is recorded in the audit log.",
+              )
+            : t(
+                "Only expired staging with verified ownership is eligible. Uncertain files are retained. This action is recorded in the audit log.",
+              )
+        }
         confirmLabel={t("Clean up")}
         busy={busy}
       />
