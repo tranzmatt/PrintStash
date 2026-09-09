@@ -34,6 +34,11 @@
   listing. Its connection settings and extension identity are unchanged.
 
 ### Added
+
+- Multipart model selection now browses thumbnail cards and nested collections,
+  pages through large libraries, and keeps multiple selections across searches
+  and pages. Add selected Models as separate parts or as variants of one part.
+
 - Download strategy and proxied-byte diagnostics use bounded labels; signed query credentials are redacted from application and access logs.
 
 - Authorized Artifact downloads can offload managed S3 bodies through short-lived

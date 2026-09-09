@@ -117,6 +117,22 @@ describe("multipart model wire contract", () => {
     expectRequest("/api/v1/multipart-models/4/candidates?q=handle&limit=50");
   });
 
+  it("browses a page of direct collection members", async () => {
+    respondWith([]);
+
+    await listMultipartModelCandidates(4, {
+      q: "base",
+      limit: 49,
+      offset: 48,
+      collection: "miniatures/bases",
+      direct: true,
+    });
+
+    expectRequest(
+      "/api/v1/multipart-models/4/candidates?q=base&limit=49&offset=48&collection=miniatures%2Fbases&direct=true",
+    );
+  });
+
   it("lists reusable candidates without filters", async () => {
     respondWith([]);
     await listMultipartModelCandidates(4);

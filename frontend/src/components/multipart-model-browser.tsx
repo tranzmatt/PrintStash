@@ -6,6 +6,10 @@ import { useUiLocale } from "@/lib/i18n";
 import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronRight,
+  Folder,
+  CheckSquare,
+  Square,
   ArrowLeft,
   ArrowDown,
   ArrowUp,
@@ -41,7 +45,11 @@ import {
   uploadDocument,
   uploadMultipartModelCover,
 } from "@/lib/api";
-import { useMultipartModel, useMultipartModelCandidates } from "@/lib/queries";
+import {
+  MULTIPART_CANDIDATE_PAGE_SIZE,
+  useMultipartModel,
+  useMultipartModelCandidates,
+} from "@/lib/queries";
 import { useAuthenticatedAssetUrl } from "@/lib/use-authenticated-asset-url";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter, useSearchParams } from "@/lib/navigation";
@@ -590,91 +598,266 @@ function ModelPicker({
   onClose,
   aggregateId,
   usedIds,
+  variants,
   onSelect,
 }: {
   open: boolean;
   onClose: () => void;
   aggregateId: number;
   usedIds: Set<number>;
-  onSelect: (model: MultipartModelCandidate) => void;
+  variants: boolean;
+  onSelect: (models: MultipartModelCandidate[]) => void;
 }) {
-  useUiLocale();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
-  const { data: candidates = [], isLoading } = useMultipartModelCandidates(aggregateId, query, {
+  const [collection, setCollection] = useState<CollectionRead | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [selected, setSelected] = useState<Map<number, MultipartModelCandidate>>(new Map());
+  const {
+    data: collections = [],
+    isError: collectionsError,
+    refetch: retryCollections,
+  } = useCollections();
+  const {
+    data: candidates = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useMultipartModelCandidates(aggregateId, query, {
     enabled: open,
+    collection: collection?.path,
+    direct: collection !== null,
+    offset,
   });
+  const ancestors = collections
+    .filter(
+      (item) => collection?.path === item.path || collection?.path.startsWith(`${item.path}/`),
+    )
+    .sort((a, b) => a.path.length - b.path.length);
+  const collectionIds = new Set(collections.map((item) => item.id));
+  const folders = collections
+    .filter((item) =>
+      collection
+        ? item.parent_id === collection.id
+        : item.parent_id === null || !collectionIds.has(item.parent_id),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+  function navigate(next: CollectionRead | null) {
+    setCollection(next);
+    setOffset(0);
+  }
   return (
-    <Modal open={open} onClose={onClose} title={t("multipart.modelPicker")} className="max-w-xl">
-      <div className="space-y-4">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t("multipart.modelPicker")}
+      className="flex max-h-[90dvh] max-w-5xl flex-col"
+    >
+      <div className="flex min-h-0 flex-col gap-4">
+        <p className="text-sm text-muted-foreground">
+          {t(variants ? "multipart.pickVariantsHelp" : "multipart.pickPartsHelp")}
+        </p>
         <div className="flex items-center gap-2">
-          <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
           <Input
             autoFocus
             aria-label={t("multipart.searchModels")}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            maxLength={128}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setOffset(0);
+            }}
             placeholder={t("multipart.searchModels")}
           />
         </div>
-        <ul
-          className="max-h-80 overflow-y-auto rounded-md border border-border"
-          role="list"
-          aria-label={t("multipart.modelPicker")}
+        <nav
+          aria-label={t("multipart.browseCollections")}
+          className="flex flex-wrap items-center gap-1 text-sm"
         >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(null)}
+            aria-current={collection === null ? "page" : undefined}
+          >
+            {t("multipart.allModels")}
+          </Button>
+          {ancestors.map((item) => (
+            <span key={item.id} className="flex min-w-0 items-center gap-1">
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-auto whitespace-normal break-words text-left"
+                onClick={() => navigate(item)}
+                aria-current={item.id === collection?.id ? "page" : undefined}
+              >
+                {item.name}
+              </Button>
+            </span>
+          ))}
+        </nav>
+        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+          {collectionsError && (
+            <div role="alert" className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+              <span>{t("multipart.collectionsError")}</span>
+              <Button variant="outline" size="sm" onClick={() => void retryCollections()}>
+                {t("multipart.retry")}
+              </Button>
+            </div>
+          )}
+          {folders.length > 0 && (
+            <ul
+              aria-label={t("multipart.browseCollections")}
+              className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3"
+            >
+              {folders.map((folder) => (
+                <li key={folder.id}>
+                  <Button
+                    variant="outline"
+                    className="h-auto min-h-11 w-full justify-start whitespace-normal break-words text-left"
+                    onClick={() => navigate(folder)}
+                  >
+                    <Folder className="mr-2 h-4 w-4 shrink-0" aria-hidden />
+                    {folder.name}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
           {isLoading && (
-            <li className="p-4 text-sm text-muted-foreground">{t("multipart.loadingModels")}</li>
+            <p role="status" className="py-8 text-sm text-muted-foreground">
+              {t("multipart.loadingModels")}
+            </p>
           )}
-          {!isLoading && candidates.length === 0 && (
-            <li className="p-4 text-sm text-muted-foreground">{t("multipart.noCandidates")}</li>
+          {isError && (
+            <div role="alert" className="flex flex-wrap items-center gap-3 py-8 text-sm">
+              <span>{t("multipart.candidatesError")}</span>
+              <Button variant="outline" onClick={() => void refetch()}>
+                {t("multipart.retry")}
+              </Button>
+            </div>
           )}
-          {candidates.map((candidate) => {
-            const alreadyAdded = usedIds.has(candidate.id);
-            const unavailable = !candidate.available;
-            return (
-              <li key={candidate.id} role="listitem" className="last:border-b-0">
-                <button
-                  key={candidate.id}
-                  type="button"
-                  disabled={alreadyAdded || unavailable}
-                  aria-disabled={alreadyAdded || unavailable}
-                  onClick={() => {
-                    onSelect(candidate);
-                    onClose();
-                  }}
-                  className="flex w-full items-center gap-3 border-b border-border p-3 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <span className="h-12 w-12 shrink-0 overflow-hidden rounded border border-border bg-muted/40">
-                    <Cover src={candidate.thumbnail_url} alt="" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
-                      {modelLabel(candidate, t("multipart.unavailable"))}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      <Count
-                        count={candidate.source_file_count}
-                        one={t("multipart.sourceFile")}
-                        many={t("multipart.sourceFiles")}
-                      />{" "}
-                      ·{" "}
-                      <Count
-                        count={candidate.gcode_revision_count}
-                        one={t("multipart.gcodeRevision")}
-                        many={t("multipart.gcodeRevisions")}
-                      />
-                    </span>
-                    {alreadyAdded && (
-                      <span className="block text-xs text-muted-foreground">
-                        {t("multipart.alreadyAdded")}
+          {!isLoading && !isError && candidates.length === 0 && (
+            <p className="py-8 text-sm text-muted-foreground">{t("multipart.noCandidates")}</p>
+          )}
+          <ul
+            aria-label={t("multipart.modelPicker")}
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+          >
+            {!isError &&
+              candidates.slice(0, MULTIPART_CANDIDATE_PAGE_SIZE).map((candidate) => {
+                const alreadyAdded = usedIds.has(candidate.id);
+                const checked = selected.has(candidate.id);
+                return (
+                  <li key={candidate.id} className="min-w-0">
+                    <button
+                      type="button"
+                      disabled={alreadyAdded || !candidate.available}
+                      aria-pressed={checked}
+                      aria-label={modelLabel(candidate, t("multipart.unavailable"))}
+                      onClick={() =>
+                        setSelected((current) => {
+                          const next = new Map(current);
+                          if (next.has(candidate.id)) next.delete(candidate.id);
+                          else next.set(candidate.id, candidate);
+                          return next;
+                        })
+                      }
+                      className={cn(
+                        "relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-border text-left transition-transform duration-press active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+                        checked
+                          ? "bg-accent text-accent-foreground"
+                          : "bg-card text-card-foreground hover:bg-muted",
+                      )}
+                    >
+                      <span className="aspect-[4/3] w-full overflow-hidden bg-muted">
+                        <Cover src={candidate.thumbnail_url} alt="" />
                       </span>
-                    )}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                      <span
+                        className="absolute right-2 top-2 rounded bg-background p-1 text-foreground"
+                        aria-hidden
+                      >
+                        {checked ? (
+                          <CheckSquare className="h-5 w-5" />
+                        ) : (
+                          <Square className="h-5 w-5" />
+                        )}
+                      </span>
+                      <span className="flex w-full flex-1 flex-col gap-1 p-3">
+                        <span className="break-words text-sm font-medium">
+                          {modelLabel(candidate, t("multipart.unavailable"))}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          <Count
+                            count={candidate.source_file_count}
+                            one={t("multipart.sourceFile")}
+                            many={t("multipart.sourceFiles")}
+                          />{" "}
+                          ·{" "}
+                          <Count
+                            count={candidate.gcode_revision_count}
+                            one={t("multipart.gcodeRevision")}
+                            many={t("multipart.gcodeRevisions")}
+                          />
+                        </span>
+                        {alreadyAdded && (
+                          <span className="text-xs text-muted-foreground">
+                            {t("multipart.alreadyAdded")}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+          <p role="status" className="text-sm text-muted-foreground">
+            {t("multipart.selectedCount", { count: String(selected.size) })}
+          </p>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={offset === 0 || isLoading}
+              onClick={() => setOffset(offset - MULTIPART_CANDIDATE_PAGE_SIZE)}
+            >
+              {t("multipart.previousPage")}
+            </Button>
+            <span className="text-sm tabular-nums">
+              {t("multipart.pageNumber", {
+                number: String(offset / MULTIPART_CANDIDATE_PAGE_SIZE + 1),
+              })}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={candidates.length <= MULTIPART_CANDIDATE_PAGE_SIZE || isLoading || isError}
+              onClick={() => setOffset(offset + MULTIPART_CANDIDATE_PAGE_SIZE)}
+            >
+              {t("multipart.nextPage")}
+            </Button>
+          </div>
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+            <Button variant="ghost" onClick={onClose}>
+              {t("multipart.cancel")}
+            </Button>
+            <Button
+              disabled={!open || selected.size === 0}
+              onClick={() => {
+                onSelect([...selected.values()]);
+                onClose();
+              }}
+            >
+              {t(variants ? "multipart.addSelectedVariants" : "multipart.addSelectedParts", {
+                count: String(selected.size),
+              })}
+            </Button>
+          </div>
+        </div>
       </div>
     </Modal>
   );
@@ -1115,7 +1298,13 @@ export function MultipartModelDetailPage() {
   const [persistedModel, setPersistedModel] = useState<MultipartModelRead | null>(null);
   const [draft, setDraft] = useState<MultipartModelRead | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [pickerPart, setPickerPart] = useState<number | null>(null);
+  const [picker, setPicker] = useState({ open: false, part: -1, session: 0 });
+  function openPicker(part: number) {
+    setPicker((current) => ({ open: true, part, session: current.session + 1 }));
+  }
+  function closePicker() {
+    setPicker((current) => ({ ...current, open: false }));
+  }
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -1152,12 +1341,12 @@ export function MultipartModelDetailPage() {
     setDraft(savedModel);
     setSaveError(null);
     setIsEditing(true);
-    setPickerPart(-1);
+    openPicker(-1);
   }
   function cancelEditing() {
     setDraft(null);
     setSaveError(null);
-    setPickerPart(null);
+    closePicker();
     setIsEditing(false);
   }
   function updatePart(index: number, update: (part: MultipartPartRead) => MultipartPartRead) {
@@ -1170,28 +1359,30 @@ export function MultipartModelDetailPage() {
       };
     });
   }
-  function addPart(candidate: MultipartModelCandidate) {
+  function addPart(candidates: MultipartModelCandidate[]) {
     setDraft((current) => {
       const base = current ?? savedModel;
       if (!base) return current;
+      const firstDraftId =
+        base.parts.reduce((smallest, part) => Math.min(smallest, part.id), 0) - 1;
       return {
         ...base,
         parts: [
           ...base.parts,
-          {
-            id: -Date.now(),
+          ...candidates.map((candidate, index) => ({
+            id: firstDraftId - index,
             quantity: 1,
-            name: t("multipart.partNumber", { number: String(base.parts.length + 1) }),
-            sort_order: base.parts.length,
+            name: t("multipart.partNumber", { number: String(base.parts.length + index + 1) }),
+            sort_order: base.parts.length + index,
             models: [candidate],
-          },
+          })),
         ],
       };
     });
   }
-  function addAlternative(candidate: MultipartModelCandidate) {
-    if (pickerPart === null) return;
-    updatePart(pickerPart, (part) => ({ ...part, models: [...part.models, candidate] }));
+  function addAlternative(candidates: MultipartModelCandidate[]) {
+    if (!picker.open) return;
+    updatePart(picker.part, (part) => ({ ...part, models: [...part.models, ...candidates] }));
   }
   function movePart(index: number, direction: -1 | 1) {
     const target = index + direction;
@@ -1472,7 +1663,7 @@ export function MultipartModelDetailPage() {
                 </div>
                 <Button
                   type="button"
-                  onClick={() => setPickerPart(-1)}
+                  onClick={() => openPicker(-1)}
                   disabled={!canEdit}
                   className="h-11 sm:h-10"
                 >
@@ -1486,7 +1677,7 @@ export function MultipartModelDetailPage() {
                   description={t("multipart.noPartsHelp")}
                   action={
                     canEdit ? (
-                      <Button onClick={() => setPickerPart(-1)}>{t("multipart.addFirst")}</Button>
+                      <Button onClick={() => openPicker(-1)}>{t("multipart.addFirst")}</Button>
                     ) : undefined
                   }
                 />
@@ -1529,7 +1720,7 @@ export function MultipartModelDetailPage() {
                             ),
                     })
                   }
-                  onOpenPicker={() => setPickerPart(index)}
+                  onOpenPicker={() => openPicker(index)}
                 />
               ))}
             </section>
@@ -1775,12 +1966,14 @@ export function MultipartModelDetailPage() {
             </Button>
           </div>
           <ModelPicker
-            open={pickerPart !== null}
-            onClose={() => setPickerPart(null)}
+            key={picker.session}
+            open={picker.open}
+            variants={picker.part !== -1}
+            onClose={() => closePicker()}
             aggregateId={model.id}
             usedIds={usedIds}
             onSelect={(candidate) => {
-              if (pickerPart === -1) addPart(candidate);
+              if (picker.part === -1) addPart(candidate);
               else addAlternative(candidate);
             }}
           />

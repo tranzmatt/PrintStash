@@ -228,20 +228,33 @@ export function useMultipartModel(id: number | null) {
   });
 }
 
+export const MULTIPART_CANDIDATE_PAGE_SIZE = 48;
+
 export function useMultipartModelCandidates(
   id: number | null,
   query: string,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; collection?: string; offset?: number; direct?: boolean },
 ) {
   const api = useQueryApi();
   return useQuery<MultipartModelCandidate[]>({
     queryKey:
       id === null
         ? [...queryKeys.multipartModels, "candidates", "empty"]
-        : queryKeys.multipartCandidates(id, query),
+        : [
+            ...queryKeys.multipartCandidates(id, query),
+            options?.collection,
+            options?.offset ?? 0,
+            options?.direct ?? false,
+          ],
     queryFn: () => {
       if (id === null) return Promise.reject(new Error("Multipart model id is required"));
-      return api.listMultipartModelCandidates(id, { q: query, limit: 50 });
+      return api.listMultipartModelCandidates(id, {
+        q: query,
+        limit: MULTIPART_CANDIDATE_PAGE_SIZE + 1,
+        offset: options?.offset ?? 0,
+        collection: options?.collection,
+        direct: options?.direct,
+      });
     },
     enabled: id !== null && (options?.enabled ?? true),
   });

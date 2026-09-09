@@ -147,7 +147,7 @@ export async function uploadModel(page: Page, name: string, opts: UploadOpts = {
   const view = collection ? `/?c=${encodeURIComponent(collection)}` : "/";
   await expect(async () => {
     await page.goto(view);
-    await expect(modelCard(page, name)).toBeVisible({ timeout: 2_000 });
+    await expect(modelCard(page, name)).toBeVisible();
   }).toPass({ timeout: 60_000 });
 }
 

@@ -1,6 +1,6 @@
 /** Multipart groupings link existing Models without taking ownership of their files. */
 import { test, expect } from "./helpers";
-import { modelCard, uploadModel } from "./util";
+import { createCollectionViaVault, modelCard, uploadModel } from "./util";
 
 test.describe("multipart models", () => {
   test("preserves Models plus G-code after grouping deletion", async ({ page }) => {
@@ -21,10 +21,13 @@ test.describe("multipart models", () => {
 
     await page.getByRole("button", { name: "Add a part" }).click();
     await page.getByRole("button", { name: new RegExp(base) }).click();
+    await page.getByRole("button", { name: "Add parts (1)" }).click();
     await page.getByRole("button", { name: "Add another part" }).click();
     await page.getByRole("button", { name: new RegExp(short) }).click();
+    await page.getByRole("button", { name: "Add parts (1)" }).click();
     await page.locator("fieldset").nth(1).getByRole("button", { name: "Add variant" }).click();
     await page.getByRole("button", { name: new RegExp(long) }).click();
+    await page.getByRole("button", { name: "Add variants (1)" }).click();
     await page
       .locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]')
       .setInputFiles({
@@ -93,5 +96,44 @@ test.describe("multipart models", () => {
     await expect(modelCard(page, base)).toBeVisible();
     await expect(modelCard(page, short)).toBeVisible();
     await expect(modelCard(page, long)).toBeVisible();
+  });
+  test("builds multiple parts while browsing collections", async ({ page }) => {
+    const stamp = Date.now();
+    const folder = `picker-${stamp}`;
+    const first = `base-${stamp}`;
+    const second = `body-${stamp}`;
+    const group = `kit-${stamp}`;
+
+    await createCollectionViaVault(page, folder);
+    await uploadModel(page, first, { collection: folder });
+    await uploadModel(page, second, { collection: folder });
+    await page.goto("/");
+    await page.getByRole("button", { name: "New multipart set" }).first().click();
+    await page.getByLabel("Name", { exact: true }).fill(group);
+    await page.getByRole("button", { name: "Create multipart set" }).click();
+    await page.getByRole("button", { name: "Add a part" }).click();
+    const picker = page.getByRole("dialog", { name: "Choose existing models" });
+    await picker.getByRole("button", { name: folder, exact: true }).click();
+    await picker.getByRole("button", { name: new RegExp(first) }).click();
+    await picker.getByRole("textbox", { name: "Search existing models" }).fill(second);
+    await picker.getByRole("button", { name: new RegExp(second) }).click();
+    await picker.getByRole("button", { name: "Add parts (2)" }).click();
+    await expect(page.getByLabel("Part name", { exact: true })).toHaveCount(2);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Changes saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("link", { name: new RegExp(first) })).toBeVisible();
+    await expect(page.getByRole("link", { name: new RegExp(second) })).toBeVisible();
+
+    await page.getByRole("button", { name: "Edit multipart set" }).click();
+    await page.getByRole("button", { name: "Delete multipart set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Delete set" }).click();
+    await page.goto(`/?c=${folder}`);
+    const sidebar = page.locator("aside");
+    const label = sidebar.getByRole("button", { name: folder, exact: true });
+    await label.hover();
+    await label.locator("xpath=following-sibling::button[@title='Delete collection']").click();
+    await sidebar.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(label).toHaveCount(0);
   });
 });
