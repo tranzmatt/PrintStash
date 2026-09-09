@@ -94,6 +94,7 @@ describe("ArtifactCacheCard", () => {
     renderApp(
       <ArtifactCacheCard
         api={{
+          // SAFETY: This test deliberately violates the wire contract to verify containment.
           read: async () => ({}) as ArtifactCacheRead,
           save: async () => INITIAL,
           reset: async () => INITIAL,
