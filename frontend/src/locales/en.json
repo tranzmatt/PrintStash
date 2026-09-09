@@ -3111,5 +3111,10 @@
   "Save cache settings": "Save cache settings",
   "Reset to environment defaults": "Reset to environment defaults",
   "Clear cached files": "Clear cached files",
-  "Files in use stay available until their active reads finish. Clearing does not remove your Artifacts.": "Files in use stay available until their active reads finish. Clearing does not remove your Artifacts."
+  "Files in use stay available until their active reads finish. Clearing does not remove your Artifacts.": "Files in use stay available until their active reads finish. Clearing does not remove your Artifacts.",
+  "Resolve stale job": "Resolve stale job",
+  "Resolve": "Resolve",
+  "Mark cancelled": "Mark cancelled",
+  "Mark failed": "Mark failed",
+  "Use this only when the printer is no longer running {value1}. This updates PrintStash history; it does not send a command to the printer.": "Use this only when the printer is no longer running {value1}. This updates PrintStash history; it does not send a command to the printer."
 }

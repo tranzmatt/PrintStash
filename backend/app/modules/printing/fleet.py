@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import datetime
+from typing import Literal
 
 from printstash_core.gcode import declared_print_artifact_format
 from printstash_core.printers import PrintArtifactFormat
@@ -63,6 +64,8 @@ _ACTIVE_STATES = {
     PrintJobState.PRINTING,
     PrintJobState.PAUSED,
 }
+_RESOLVABLE_STATES = _ACTIVE_STATES - {PrintJobState.QUEUED}
+_PRINTER_EXECUTING_STATES = {PrinterStatus.PRINTING, PrinterStatus.PAUSED}
 
 
 @dataclass(frozen=True)
@@ -874,6 +877,39 @@ def delete_queue_job(session: Session, job_id: int, current_user: User) -> Print
             row.queue_position = position
             row.updated_at = now
             session.add(row)
+    session.commit()
+    session.refresh(job)
+    return job
+
+
+def resolve_active_job(
+    session: Session,
+    job_id: int,
+    resolution: Literal["cancelled", "failed"],
+    current_user: User,
+) -> PrintJob:
+    """Close stale PrintStash history without sending a printer command."""
+    job = session.get(PrintJob, job_id)
+    if job is None or job.deleted_at is not None or job.dedupe_absorbed_at is not None:
+        raise FleetError("queue_job_not_found")
+    if job.state not in _RESOLVABLE_STATES:
+        raise FleetError("queue_job_not_resolvable")
+    printer = (
+        session.get(Printer, job.printer_id) if job.printer_id is not None else None
+    )
+    if printer is not None and printer.status in _PRINTER_EXECUTING_STATES:
+        raise FleetError("printer_still_active")
+
+    now = utcnow()
+    job.state = (
+        PrintJobState.CANCELLED if resolution == "cancelled" else PrintJobState.FAILED
+    )
+    job.error = "operator_marked_failed" if resolution == "failed" else None
+    job.finished_at = now
+    job.blocked_reason = None
+    job.updated_by = current_user.id
+    job.updated_at = now
+    session.add(job)
     session.commit()
     session.refresh(job)
     return job

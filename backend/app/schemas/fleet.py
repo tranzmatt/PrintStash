@@ -41,6 +41,12 @@ class QueueJobUpdate(BaseModel):
     compatibility_policy: Optional[CompatibilityPolicy] = None
 
 
+class ActiveJobResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resolution: Literal["cancelled", "failed"]
+
+
 class BatchRouting(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

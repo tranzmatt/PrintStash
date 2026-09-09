@@ -83,6 +83,13 @@ class PrintSim:
             self._started = None
             self.state = CANCELLED
 
+    def emergency_stop(self) -> None:
+        """Drop the current print as firmware would after an emergency stop."""
+        self._accumulated = self.elapsed()
+        self._started = None
+        self.state = STANDBY
+        self.filename = ""
+
     def fail(self, message: str = "simulated failure") -> None:
         self._accumulated = self.elapsed()
         self._started = None

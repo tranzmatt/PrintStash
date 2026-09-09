@@ -212,6 +212,37 @@ class TestPause:
             running.stop()
 
 
+class TestExternalInterruption:
+    def test_emergency_stop_fails_the_paused_job(self, db_session: Session) -> None:
+        app, _state = create_app(total_mm=1000.0, total_seconds=10.0, print_seconds=5.0)
+        running = start_server(app)
+        try:
+            printer_id, job_id = _seed(db_session, running.base_url)
+
+            async def _drive() -> None:
+                async with httpx.AsyncClient(base_url=running.base_url) as http:
+                    await http.post("/printer/print/start", params={"filename": REMOTE})
+
+                    async def body() -> None:
+                        await _wait_job_state(job_id, PrintJobState.PRINTING)
+                        await http.post("/printer/print/pause")
+                        await _wait_job_state(job_id, PrintJobState.PAUSED)
+                        await http.post("/printer/emergency_stop")
+                        await _wait_job_state(job_id, PrintJobState.FAILED)
+
+                    await _run_hub(printer_id, body)
+
+            asyncio.run(_drive())
+
+            with get_session_factory().session() as s:
+                job = s.exec(select(PrintJob).where(PrintJob.id == job_id)).one()
+                assert job.state == PrintJobState.FAILED
+                assert job.error == "provider_job_disappeared"
+                assert job.finished_at is not None
+        finally:
+            running.stop()
+
+
 class TestCancel:
     def test_a_cancelled_print_leaves_the_spool_untouched(
         self, db_session: Session

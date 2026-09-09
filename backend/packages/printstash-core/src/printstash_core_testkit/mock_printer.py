@@ -97,6 +97,9 @@ class MockState:
     def cancel(self) -> None:
         self.sim.cancel()
 
+    def emergency_stop(self) -> None:
+        self.sim.emergency_stop()
+
     def _record_history(self) -> None:
         self._job_id += 1
         self.history.insert(
@@ -253,6 +256,11 @@ def create_app(
     @app.post("/printer/print/cancel")
     async def print_cancel() -> JSONResponse:
         state.cancel()
+        return ok("ok")
+
+    @app.post("/printer/emergency_stop")
+    async def emergency_stop() -> JSONResponse:
+        state.emergency_stop()
         return ok("ok")
 
     @app.get("/server/history/list")

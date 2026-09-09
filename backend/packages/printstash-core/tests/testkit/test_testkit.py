@@ -90,6 +90,19 @@ class TestPrintSim:
 
         assert sim.progress() == 1.0
 
+    def test_emergency_stop_drops_the_active_filename(self) -> None:
+        now = [10.0]
+        sim = _sim(now)
+        sim.start("part.gcode")
+        now[0] = 12.5
+        sim.pause()
+
+        sim.emergency_stop()
+
+        assert sim.state == "standby"
+        assert sim.filename == ""
+        assert sim.progress() == 0.25
+
     def test_reports_full_progress_once_the_print_time_has_elapsed(self) -> None:
         now = [10.0]
         sim = _sim(now)

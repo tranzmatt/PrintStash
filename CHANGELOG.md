@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Active print jobs no longer remain paused indefinitely after an out-of-band
+  emergency stop. Authoritative idle printer updates now close interrupted jobs,
+  with an operator recovery action for stale history when no update arrives.
+
 - The Model detail back arrow returns to its containing collection instead of
   always returning to the library root, including nested collection paths.
 

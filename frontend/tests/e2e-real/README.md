@@ -98,6 +98,10 @@ About (running version + changelog) · design customization (metadata visibility
 card-metric slots + reset) · printer add/remove · cross-cutting (theme
 persistence, health version, routes free of uncaught errors).
 
+The mock-API browser suite also exercises operator recovery for an active fleet
+job whose physical print has disappeared; the real printer contract covers the
+automatic emergency-stop reconciliation path.
+
 `util.ts` uploads a model through the real ingest flow; its G-code embeds the
 model name so the backend's content-hash dedupe doesn't collapse separate
 uploads. `helpers.ts` also exposes `authBundleFor`/`authedContext` to drive a
