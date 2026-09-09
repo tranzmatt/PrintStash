@@ -3111,5 +3111,10 @@
   "Save cache settings": "Guardar configuración de caché",
   "Reset to environment defaults": "Restablecer valores del entorno",
   "Clear cached files": "Limpiar archivos en caché",
-  "Files in use stay available until their active reads finish. Clearing does not remove your Artifacts.": "Los archivos en uso permanecen disponibles hasta que terminen sus lecturas activas. La limpieza no elimina tus Artifacts."
+  "Files in use stay available until their active reads finish. Clearing does not remove your Artifacts.": "Los archivos en uso permanecen disponibles hasta que terminen sus lecturas activas. La limpieza no elimina tus Artifacts.",
+  "Resolve stale job": "Resolver trabajo obsoleto",
+  "Resolve": "Resolver",
+  "Mark cancelled": "Marcar como cancelado",
+  "Mark failed": "Marcar como fallido",
+  "Use this only when the printer is no longer running {value1}. This updates PrintStash history; it does not send a command to the printer.": "Úsalo solo cuando la impresora ya no esté ejecutando {value1}. Esto actualiza el historial de PrintStash; no envía ningún comando a la impresora."
 }

@@ -1,6 +1,24 @@
 {
   "components": {
     "schemas": {
+      "ActiveJobResolution": {
+        "additionalProperties": false,
+        "properties": {
+          "resolution": {
+            "enum": [
+              "cancelled",
+              "failed"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution"
+        ],
+        "title": "ActiveJobResolution",
+        "type": "object"
+      },
       "ApiKeyCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -21121,6 +21139,63 @@
           }
         ],
         "summary": "Decide Operator Release",
+        "tags": [
+          "fleet"
+        ]
+      }
+    },
+    "/api/v1/fleet/queue/{job_id}/resolve": {
+      "post": {
+        "operationId": "resolve_active_job_api_v1_fleet_queue__job_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveJobResolution"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintJobRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Resolve Active Job",
         "tags": [
           "fleet"
         ]

@@ -199,6 +199,7 @@ const modelList = [
 
 // Mutable server state a test can flip before navigating (workers: 1, serial).
 let inboxCollectionId: number | null = null;
+let fleetJobState: "paused" | "failed" = "paused";
 const state = {
   externalLibrariesEnabled: false,
   ingestJobQueued: false,
@@ -228,6 +229,7 @@ export function resetMockApiState(): void {
   state.browserDeviceRevoked = false;
   state.s3LegacyCandidate = true;
   state.s3LegacyAdopted = false;
+  fleetJobState = "paused";
   state.gcPlanState = null;
 }
 
@@ -245,6 +247,31 @@ function gcPlan() {
     backup_id: planState === "quarantined" ? "backup-verified" : null,
     last_error: null,
     items: [],
+  };
+}
+
+function fleetJob() {
+  return {
+    id: 156,
+    printer_id: printer.id,
+    file_id: 2,
+    model_id: model.id,
+    remote_filename: "interrupted-part.gcode",
+    state: fleetJobState,
+    progress: 0.42,
+    source: "vault",
+    error: fleetJobState === "failed" ? "operator_marked_failed" : null,
+    routing_strategy: "manual",
+    queue_position: 1,
+    priority: "normal",
+    target_group: null,
+    blocked_reason: null,
+    operator_gate_state: null,
+    retryable: false,
+    batch_id: null,
+    copy_index: null,
+    created_at: now,
+    updated_at: now,
   };
 }
 
@@ -1178,6 +1205,29 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
   }
   if (url.pathname === "/api/v1/printers") {
     sendJson(res, [printer]);
+    return;
+  }
+  if (url.pathname === "/api/v1/fleet/summary") {
+    sendJson(res, {
+      total_printers: 1,
+      queued_jobs: 0,
+      active_jobs: fleetJobState === "paused" ? 1 : 0,
+      draining_printers: 0,
+      maintenance_printers: 0,
+      attention_jobs: 0,
+      printers: [],
+    });
+    return;
+  }
+  if (url.pathname === "/api/v1/fleet/queue") {
+    sendJson(res, [fleetJob()]);
+    return;
+  }
+  if (url.pathname === "/api/v1/fleet/queue/156/resolve" && req.method === "POST") {
+    drainRequest(req, () => {
+      fleetJobState = "failed";
+      sendJson(res, fleetJob());
+    });
     return;
   }
   if (url.pathname === "/api/v1/printers/dashboard") {

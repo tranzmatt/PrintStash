@@ -20,6 +20,7 @@ from app.modules.printing import fleet, materials
 from app.modules.printing.printer_jobs import reproducibility_payload
 from app.runtime.work_wakeup import WorkNotice, WorkWakeup
 from app.schemas.fleet import (
+    ActiveJobResolution,
     BatchCreate,
     FleetSummary,
     MaintenanceLogCreate,
@@ -208,6 +209,8 @@ def _queue_error(exc: fleet.FleetError) -> HTTPException:
         "queue_job_changed",
         "operator_decision_not_pending",
         "material_mismatch_confirmation_required",
+        "printer_still_active",
+        "queue_job_not_resolvable",
     }:
         return HTTPException(status_code=409, detail=exc.code)
     return HTTPException(status_code=400, detail=exc.code)
@@ -260,6 +263,23 @@ def delete_queue_job(
     _require_queue_job_role(session, current_user, job_id, PrinterRole.PRINT)
     try:
         job = fleet.delete_queue_job(session, job_id, current_user)
+    except fleet.FleetError as exc:
+        raise _queue_error(exc) from exc
+    return _print_job_read(session, job)
+
+
+@router.post("/queue/{job_id}/resolve", response_model=PrintJobRead)
+def resolve_active_job(
+    job_id: int,
+    payload: ActiveJobResolution,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> PrintJobRead:
+    _require_queue_job_role(session, current_user, job_id, PrinterRole.CONTROL)
+    try:
+        job = fleet.resolve_active_job(
+            session, job_id, payload.resolution, current_user
+        )
     except fleet.FleetError as exc:
         raise _queue_error(exc) from exc
     return _print_job_read(session, job)

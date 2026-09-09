@@ -61,6 +61,13 @@ export function retryFleetJob(id: number): Promise<PrintJobRead> {
   return sendJson<PrintJobRead>(`/api/v1/fleet/queue/${id}/retry`, "POST", {});
 }
 
+export function resolveFleetJob(
+  id: number,
+  resolution: "cancelled" | "failed",
+): Promise<PrintJobRead> {
+  return sendJson<PrintJobRead>(`/api/v1/fleet/queue/${id}/resolve`, "POST", { resolution });
+}
+
 export function updatePrinterRouting(id: number, payload: PrinterRoutingUpdate) {
   return sendJson(`/api/v1/fleet/printers/${id}/routing`, "PATCH", payload);
 }

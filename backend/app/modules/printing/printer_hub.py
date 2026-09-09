@@ -99,6 +99,12 @@ _TERMINAL_EVENT: Dict[PrintJobState, NotificationEventType] = {
     PrintJobState.CANCELLED: NotificationEventType.PRINT_CANCELLED,
 }
 
+# Provider snapshots that authoritatively say no print is executing.  A job that
+# PrintStash already observed printing or paused has disappeared when one of
+# these arrives, even when the provider cleared its filename during recovery.
+_NO_ACTIVE_JOB_STATES = frozenset({"idle", "ready", "standby"})
+_OBSERVED_ACTIVE_JOB_STATES = (PrintJobState.PRINTING, PrintJobState.PAUSED)
+
 
 def _derive_printer_status(snapshot: Dict[str, Any]) -> tuple[str, PrinterStatus]:
     """Derive coarse printer status from snapshot data.
@@ -715,7 +721,7 @@ class PrinterHub:
         or paused, a placeholder row with source="external" is created so
         externally-initiated jobs are captured in the vault history.
         """
-        if not filename:
+        if not filename and ms_state not in _NO_ACTIVE_JOB_STATES:
             return None
         now = time.monotonic()
         breaker = self._job_sync_breakers.get(printer_id)
@@ -724,7 +730,7 @@ class PrinterHub:
         last = self._last_job_sync_write.get(printer_id)
         if (
             last is not None
-            and last[0] == filename
+            and last[0] == (filename or "")
             and last[1] == ms_state
             and now - last[3] < _JOB_PROGRESS_WRITE_INTERVAL_S
             and not print_stats.get("external_artifact_path")
@@ -743,7 +749,7 @@ class PrinterHub:
             )
             self._job_sync_breakers.pop(printer_id, None)
             self._last_job_sync_write[printer_id] = (
-                filename,
+                filename or "",
                 ms_state,
                 progress,
                 now,
@@ -767,7 +773,7 @@ class PrinterHub:
         self,
         printer_id: int,
         ms_state: str,
-        filename: str,
+        filename: str | None,
         progress: float,
         print_stats: Dict[str, Any],
     ) -> tuple[int, str] | None:
@@ -781,11 +787,38 @@ class PrinterHub:
         self,
         printer_id: int,
         ms_state: str,
-        filename: str,
+        filename: str | None,
         progress: float,
         print_stats: Dict[str, Any],
     ) -> tuple[int, str] | None:
         with self._session_factory.session() as session:
+            if ms_state in _NO_ACTIVE_JOB_STATES:
+                interrupted = session.exec(
+                    select(PrintJob).where(
+                        PrintJob.printer_id == printer_id,
+                        PrintJob.state.in_(_OBSERVED_ACTIVE_JOB_STATES),  # type: ignore[union-attr]
+                        live(PrintJob),
+                    )
+                ).all()
+                if interrupted:
+                    now = utcnow()
+                    for active_job in interrupted:
+                        active_job.state = PrintJobState.FAILED
+                        active_job.error = "provider_job_disappeared"
+                        active_job.finished_at = now
+                        active_job.updated_at = now
+                        session.add(active_job)
+                        notifications.enqueue_for_event(
+                            session,
+                            NotificationEventType.PRINT_FAILED,
+                            printer_id=printer_id,
+                            job=active_job,
+                        )
+                    session.commit()
+                self._active_job_cache.pop(printer_id, None)
+                return None
+            if not filename:
+                return None
             job = None
             printer = session.get(Printer, printer_id)
             bambu_printer = (

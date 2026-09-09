@@ -579,6 +579,73 @@ class TestPrinterHubSyncActiveJob:
 
         asyncio.run(_sync())
 
+    @pytest.mark.parametrize(
+        "active_state", [PrintJobState.PRINTING, PrintJobState.PAUSED]
+    )
+    def test_idle_without_filename_fails_an_observed_active_job(
+        self, hub, db_session, active_state
+    ):
+        pid, job = self._setup_job(db_session)
+        job.state = active_state
+        db_session.add(job)
+        db_session.commit()
+
+        hub._sync_active_job_db(
+            pid,
+            "idle",
+            None,
+            0.0,
+            {"state": "idle", "filename": ""},
+        )
+
+        db_session.refresh(job)
+        assert job.state == PrintJobState.FAILED
+        assert job.error == "provider_job_disappeared"
+        assert job.finished_at is not None
+
+    @pytest.mark.parametrize("idle_state", ["idle", "ready", "standby"])
+    def test_idle_with_filename_fails_a_paused_job(self, hub, db_session, idle_state):
+        pid, job = self._setup_job(db_session)
+        job.state = PrintJobState.PAUSED
+        db_session.add(job)
+        db_session.commit()
+
+        hub._sync_active_job_db(
+            pid,
+            idle_state,
+            "sync.gcode",
+            0.45,
+            {"state": idle_state, "filename": "sync.gcode"},
+        )
+
+        db_session.refresh(job)
+        assert job.state == PrintJobState.FAILED
+
+    def test_idle_preserves_a_started_job(self, hub, db_session):
+        pid, job = self._setup_job(db_session)
+
+        hub._sync_active_job_db(
+            pid,
+            "idle",
+            None,
+            0.0,
+            {"state": "idle", "filename": ""},
+        )
+
+        db_session.refresh(job)
+        assert job.state == PrintJobState.STARTED
+
+    def test_offline_status_preserves_a_paused_job(self, hub, db_session):
+        pid, job = self._setup_job(db_session)
+        job.state = PrintJobState.PAUSED
+        db_session.add(job)
+        db_session.commit()
+
+        hub._mark_status_db(pid, PrinterStatus.OFFLINE, "connection lost")
+
+        db_session.refresh(job)
+        assert job.state == PrintJobState.PAUSED
+
     def test_sync_no_matching_row(self, printer: Printer, hub):
         """With printing state and no matching row, an external job is auto-created."""
         from sqlmodel import select

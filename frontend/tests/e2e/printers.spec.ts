@@ -61,4 +61,21 @@ test.describe("printer routes", () => {
     expect(html).not.toContain('printerId":"$NaN');
     expect(problems).toEqual([]);
   });
+
+  test("an operator can resolve a stale active job from the queue", async ({ page }) => {
+    const problems = await collectPageProblems(page);
+
+    await page.goto("/printers");
+    await page.getByRole("tab", { name: "Queue" }).click();
+    await expect(page.getByText("interrupted-part.gcode")).toBeVisible();
+    await page.getByRole("button", { name: "Resolve" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Resolve stale job" });
+    await expect(dialog).toContainText("does not send a command to the printer");
+    await dialog.getByRole("button", { name: "Mark failed" }).click();
+
+    await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
+    await expect(page.getByText("failed", { exact: true })).toBeVisible();
+    expect(problems).toEqual([]);
+  });
 });

@@ -29,6 +29,7 @@ import {
   listMaintenanceLog,
   listMaintenanceWindows,
   retryFleetJob,
+  resolveFleetJob,
   updateFleetJob,
   updatePrinterRouting,
 } from "@/lib/api/fleet";
@@ -175,6 +176,17 @@ describe("retryFleetJob", () => {
     await retryFleetJob(1);
 
     expectRequest("/api/v1/fleet/queue/1/retry", "POST");
+  });
+});
+
+describe("resolveFleetJob", () => {
+  it("marks a stale active job failed", async () => {
+    respondWith({ id: 1, state: "failed" });
+
+    await resolveFleetJob(1, "failed");
+
+    expectRequest("/api/v1/fleet/queue/1/resolve", "POST");
+    expect(lastBody()).toEqual({ resolution: "failed" });
   });
 });
 

@@ -1477,6 +1477,118 @@ class TestDeleteQueueJob:
         assert resp.json()["detail"] == "queue_job_not_editable"
 
 
+class TestResolveActiveJob:
+    def test_requires_authentication(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/v1/fleet/queue/99999/resolve",
+            json={"resolution": "failed"},
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "not_authenticated"
+
+    def test_returns_not_found_for_a_missing_job(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = client.post(
+            "/api/v1/fleet/queue/99999/resolve",
+            headers=auth_headers,
+            json={"resolution": "failed"},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "queue_job_not_found"
+
+    def test_marks_a_stale_job_failed(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        make_printer,
+        a_gcode_artifact,
+        make_print_job,
+    ) -> None:
+        printer = make_printer("Resolve failed")
+        artifact = a_gcode_artifact("Resolve failed cube")
+        job = make_print_job(artifact, printer=printer, state=PrintJobState.PAUSED)
+
+        response = client.post(
+            f"/api/v1/fleet/queue/{job.id}/resolve",
+            headers=auth_headers,
+            json={"resolution": "failed"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["state"] == "failed"
+        assert response.json()["error"] == "operator_marked_failed"
+
+    def test_requires_control_access(
+        self,
+        client: TestClient,
+        make_user,
+        headers_for,
+        grant_printer_role,
+        make_printer,
+        a_gcode_artifact,
+        make_print_job,
+    ) -> None:
+        printer = make_printer("Resolve permissions")
+        artifact = a_gcode_artifact("Resolve permissions cube")
+        job = make_print_job(artifact, printer=printer, state=PrintJobState.PAUSED)
+        member = make_user("resolve-member")
+        member_headers = headers_for(member)
+        grant_printer_role(member, printer, PrinterRole.PRINT)
+
+        response = client.post(
+            f"/api/v1/fleet/queue/{job.id}/resolve",
+            headers=member_headers,
+            json={"resolution": "failed"},
+        )
+
+        assert response.status_code == 403, response.text
+        assert response.json()["detail"] == "printer_permission_denied"
+
+    def test_rejects_an_unknown_resolution(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        make_printer,
+        a_gcode_artifact,
+        make_print_job,
+    ) -> None:
+        printer = make_printer("Resolve validation")
+        artifact = a_gcode_artifact("Resolve validation cube")
+        job = make_print_job(artifact, printer=printer, state=PrintJobState.PAUSED)
+
+        response = client.post(
+            f"/api/v1/fleet/queue/{job.id}/resolve",
+            headers=auth_headers,
+            json={"resolution": "completed"},
+        )
+
+        assert response.status_code == 422, response.text
+
+    def test_refuses_a_terminal_job(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        make_printer,
+        a_gcode_artifact,
+        make_print_job,
+    ) -> None:
+        printer = make_printer("Resolve terminal")
+        artifact = a_gcode_artifact("Resolve terminal cube")
+        job = make_print_job(artifact, printer=printer, state=PrintJobState.COMPLETED)
+
+        response = client.post(
+            f"/api/v1/fleet/queue/{job.id}/resolve",
+            headers=auth_headers,
+            json={"resolution": "failed"},
+        )
+
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "queue_job_not_resolvable"
+
+
 class TestRetryQueueJob:
     def test_retry_queue_job_404_for_missing_job(
         self, client: TestClient, auth_headers: dict[str, str]

@@ -47,12 +47,14 @@ import type {
 const deleteJob = vi.fn<FleetQueueDeps["deleteJob"]>();
 const updateJob = vi.fn<FleetQueueDeps["updateJob"]>();
 const retryJob = vi.fn<FleetQueueDeps["retryJob"]>();
+const resolveJob = vi.fn<FleetQueueDeps["resolveJob"]>();
 const decideOperatorGate = vi.fn<FleetQueueDeps["decideOperatorGate"]>();
 
 const queueDeps: FleetQueueDeps = {
   deleteJob,
   updateJob,
   retryJob,
+  resolveJob,
   decideOperatorGate,
 };
 
@@ -347,6 +349,66 @@ describe("FleetQueuePanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => expect(retryJob).toHaveBeenCalledWith(9));
+  });
+
+  it("resolves a stale active job as failed after confirmation", async () => {
+    resolveJob.mockResolvedValue(makeJob({ id: 11, state: "failed" }));
+    renderQueuePanel({
+      jobs: [makeJob({ id: 11, state: "paused", remote_filename: "stale.gcode" })],
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    const dialog = screen.getByRole("dialog", { name: "Resolve stale job" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Mark failed" }));
+
+    await waitFor(() => expect(resolveJob).toHaveBeenCalledWith(11, "failed"));
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+  });
+
+  it("can record a stale active job as cancelled", async () => {
+    resolveJob.mockResolvedValue(makeJob({ id: 12, state: "cancelled" }));
+    renderQueuePanel({
+      jobs: [makeJob({ id: 12, state: "paused", remote_filename: "cancelled.gcode" })],
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    const dialog = screen.getByRole("dialog", { name: "Resolve stale job" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Mark cancelled" }));
+
+    await waitFor(() => expect(resolveJob).toHaveBeenCalledWith(12, "cancelled"));
+  });
+
+  it("keeps the recovery choice open when resolution fails", async () => {
+    resolveJob.mockRejectedValue(new Error("printer still active"));
+    renderQueuePanel({
+      jobs: [makeJob({ id: 13, state: "paused", remote_filename: "still-live.gcode" })],
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    const dialog = screen.getByRole("dialog", { name: "Resolve stale job" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Mark failed" }));
+
+    await waitFor(() => expect(resolveJob).toHaveBeenCalledWith(13, "failed"));
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it("hides stale-job recovery without printer control access", () => {
+    renderQueuePanel({
+      printers: [
+        makePrinter({
+          access: {
+            role: "print",
+            can_view: true,
+            can_print: true,
+            can_control: false,
+            can_admin: false,
+          },
+        }),
+      ],
+      jobs: [makeJob({ id: 14, state: "paused", remote_filename: "restricted.gcode" })],
+    });
+
+    expect(screen.queryByRole("button", { name: "Resolve" })).not.toBeInTheDocument();
   });
 });
 

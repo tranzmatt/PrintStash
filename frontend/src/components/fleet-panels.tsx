@@ -25,6 +25,7 @@ import {
   listMaintenanceLog,
   listMaintenanceWindows,
   retryFleetJob,
+  resolveFleetJob,
   updateFleetJob,
   updatePrinterRouting,
 } from "@/lib/api";
@@ -96,6 +97,7 @@ export interface FleetQueueDeps {
   deleteJob: typeof deleteFleetJob;
   updateJob: typeof updateFleetJob;
   retryJob: typeof retryFleetJob;
+  resolveJob: typeof resolveFleetJob;
   decideOperatorGate: typeof decideFleetOperatorGate;
 }
 
@@ -103,6 +105,7 @@ const REAL_FLEET_QUEUE_DEPS: FleetQueueDeps = {
   deleteJob: deleteFleetJob,
   updateJob: updateFleetJob,
   retryJob: retryFleetJob,
+  resolveJob: resolveFleetJob,
   decideOperatorGate: decideFleetOperatorGate,
 };
 
@@ -114,7 +117,7 @@ export function FleetQueuePanel({
   deps?: Partial<FleetQueueDeps>;
 }) {
   useUiLocale();
-  const { deleteJob, updateJob, retryJob, decideOperatorGate } = {
+  const { deleteJob, updateJob, retryJob, resolveJob, decideOperatorGate } = {
     ...REAL_FLEET_QUEUE_DEPS,
     ...deps,
   };
@@ -123,11 +126,16 @@ export function FleetQueuePanel({
   const summaryQuery = useFleetSummary({ refetchInterval: 5_000 });
   const [deleteTarget, setDeleteTarget] = useState<PrintJobRead | null>(null);
   const [editTarget, setEditTarget] = useState<PrintJobRead | null>(null);
+  const [resolveTarget, setResolveTarget] = useState<PrintJobRead | null>(null);
   const [draft, setDraft] = useState<QueueEditDraft | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const jobs = queueQuery.data ?? [];
   const printerNames = useMemo(
     () => new Map(printers.map((printer) => [printer.id, printer.name])),
+    [printers],
+  );
+  const controllablePrinterIds = useMemo(
+    () => new Set(printers.filter((printer) => printer.access.can_control).map(({ id }) => id)),
     [printers],
   );
   const queued = jobs.filter((job) => job.state === "queued");
@@ -181,6 +189,12 @@ export function FleetQueuePanel({
     }
   }
 
+  async function resolveAs(resolution: "cancelled" | "failed") {
+    if (!resolveTarget) return;
+    const resolved = await mutate(resolveTarget.id, () => resolveJob(resolveTarget.id, resolution));
+    if (resolved) setResolveTarget(null);
+  }
+
   if (queueQuery.isLoading) {
     return (
       <Localized>
@@ -225,6 +239,40 @@ export function FleetQueuePanel({
           )}
           confirmLabel={uiText("Delete job")}
         />
+        <Modal
+          open={resolveTarget !== null}
+          onClose={() => {
+            if (busy !== resolveTarget?.id) setResolveTarget(null);
+          }}
+          title={uiText("Resolve stale job")}
+        >
+          {resolveTarget && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {uiText(
+                  "Use this only when the printer is no longer running {value1}. This updates PrintStash history; it does not send a command to the printer.",
+                  { value1: String(resolveTarget.remote_filename) },
+                )}
+              </p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  disabled={busy === resolveTarget.id}
+                  onClick={() => void resolveAs("cancelled")}
+                >
+                  {uiText("Mark cancelled")}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={busy === resolveTarget.id}
+                  onClick={() => void resolveAs("failed")}
+                >
+                  {uiText("Mark failed")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
         <Modal
           open={editTarget !== null && draft !== null}
           onClose={() => {
@@ -503,6 +551,18 @@ export function FleetQueuePanel({
           jobs={active}
           printerNames={printerNames}
           busy={busy}
+          actions={(job) =>
+            job.printer_id != null && controllablePrinterIds.has(job.printer_id) ? (
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={busy === job.id}
+                onClick={() => setResolveTarget(job)}
+              >
+                {uiText("Resolve")}
+              </Button>
+            ) : null
+          }
         />
         <QueueSection
           title={uiText("Recent")}
