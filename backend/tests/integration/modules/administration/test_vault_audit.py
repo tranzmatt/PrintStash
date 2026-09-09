@@ -798,6 +798,40 @@ class TestReconcileInterruptedRuns:
         assert run.active_slot is None
 
 
+class TestBlobIsLive:
+    def test_unknown_owned_resource_remains_auditable(
+        self, db_session: Session
+    ) -> None:
+        blob = OwnedBlob(
+            key="future-kind.bin",
+            resource_type="future_kind",
+            resource_id=1,
+        )
+
+        assert vault_audit._blob_is_live(db_session, blob) is True
+
+
+class TestCancelled:
+    def test_restore_maintenance_cancels_an_active_audit(
+        self, db_session, make_user, make_audit_run
+    ) -> None:
+        from app.runtime.maintenance import (
+            begin_restore_maintenance,
+            end_restore_maintenance,
+        )
+
+        run = make_audit_run(make_user(), state=VaultAuditRunState.RUNNING)
+        begin_restore_maintenance()
+        try:
+            assert vault_audit._cancelled(db_session, run) is True
+        finally:
+            end_restore_maintenance()
+
+        db_session.refresh(run)
+        assert run.state == VaultAuditRunState.CANCELLED
+        assert run.error_code == "audit_maintenance"
+
+
 class TestCheckPrimary:
     def test_check_primary_flags_a_blob_that_does_not_match_its_record(
         self, db_session: Session

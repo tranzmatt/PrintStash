@@ -16,13 +16,14 @@ from app.db.models import (
     VaultAuditRunState,
 )
 from app.modules.administration.vault_audit_results import (
+    record_event,
     record_success,
     repair_safe_findings,
 )
 
 
 class TestVaultAuditResults:
-    def test_deduplicates_events(
+    def test_repeated_success_is_idempotent(
         self, db_session, make_user, make_audit_run, make_audit_finding
     ):
         run = make_audit_run(make_user(), finished_at=utcnow())
@@ -31,6 +32,26 @@ class TestVaultAuditResults:
         db_session.commit()
         record_success(db_session, run)
         db_session.commit()
+        assert len(db_session.exec(select(VaultAuditEvent)).all()) == 1
+
+    def test_event_dedup_key_is_idempotent(self, db_session, make_user, make_audit_run):
+        run = make_audit_run(make_user(), finished_at=utcnow())
+
+        record_event(
+            db_session,
+            run,
+            NotificationEventType.STORAGE_REGRESSION,
+            {"new": 1},
+        )
+        db_session.commit()
+        record_event(
+            db_session,
+            run,
+            NotificationEventType.STORAGE_REGRESSION,
+            {"new": 1},
+        )
+        db_session.commit()
+
         assert len(db_session.exec(select(VaultAuditEvent)).all()) == 1
 
     @pytest.mark.parametrize(
@@ -96,6 +117,82 @@ class TestVaultAuditResults:
         )
         finding = make_audit_finding(run, repair_action="restore_recommended_revision")
         repair_safe_findings(db_session, run)
+        db_session.refresh(finding)
+        assert finding.state == VaultAuditFindingState.OPEN
+
+    def test_cancelled_run_stops_before_repair(
+        self, db_session, make_user, make_audit_run, make_audit_finding
+    ):
+        run = make_audit_run(
+            make_user(),
+            cancel_requested=True,
+            repair_actions_json='["reparse_metadata"]',
+        )
+        finding = make_audit_finding(
+            run,
+            code="metadata_missing",
+            repair_action="reparse_metadata",
+        )
+
+        repair_safe_findings(db_session, run)
+
+        db_session.refresh(finding)
+        assert finding.state == VaultAuditFindingState.OPEN
+
+    def test_finding_outside_the_enabled_allowlist_stays_open(
+        self, db_session, make_user, make_audit_run, make_audit_finding
+    ):
+        run = make_audit_run(make_user(), repair_actions_json='["reparse_metadata"]')
+        finding = make_audit_finding(
+            run,
+            code="thumbnail_missing",
+            repair_action="regenerate_thumbnail",
+        )
+
+        repair_safe_findings(db_session, run)
+
+        db_session.refresh(finding)
+        assert finding.state == VaultAuditFindingState.OPEN
+
+    def test_expired_deadline_stops_before_repair(
+        self, db_session, make_user, make_audit_run, make_audit_finding
+    ):
+        run = make_audit_run(
+            make_user(),
+            deadline_at=utcnow() - timedelta(seconds=1),
+            repair_actions_json='["reparse_metadata"]',
+        )
+        finding = make_audit_finding(
+            run,
+            code="metadata_missing",
+            repair_action="reparse_metadata",
+        )
+
+        repair_safe_findings(db_session, run)
+
+        db_session.refresh(finding)
+        assert finding.state == VaultAuditFindingState.OPEN
+
+    def test_external_source_is_not_automatically_repaired(
+        self,
+        db_session,
+        make_user,
+        make_model,
+        make_file,
+        make_audit_run,
+        make_audit_finding,
+    ):
+        file = make_file(make_model(), external=True)
+        run = make_audit_run(make_user(), repair_actions_json='["reparse_metadata"]')
+        finding = make_audit_finding(
+            run,
+            code="metadata_missing",
+            repair_action="reparse_metadata",
+            details_json=json.dumps({"file_id": file.id}),
+        )
+
+        repair_safe_findings(db_session, run)
+
         db_session.refresh(finding)
         assert finding.state == VaultAuditFindingState.OPEN
 
