@@ -24,3 +24,13 @@ def get_materializer_root() -> Path | None:
 
 def get_materializer() -> ArtifactMaterializer | None:
     return _materializer
+
+
+def cache_health() -> dict[str, bool | str]:
+    from app.core.config import settings
+
+    if not settings.artifact_cache_enabled:
+        return {"ok": True, "state": "disabled"}
+    if _materializer is None:
+        return {"ok": False, "state": "unavailable"}
+    return _materializer.health()

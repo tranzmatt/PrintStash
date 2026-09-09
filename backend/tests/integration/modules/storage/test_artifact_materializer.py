@@ -277,3 +277,271 @@ class TestArtifactMaterializer:
             assert cache.inspect_entries(full=False)["corrupt"] == 1
             assert cache.status()["bytes"] == representation.size
         assert cache.status()["bytes"] == 0
+
+
+class TestCacheCompletionContract:
+    def test_shards_private_representation_files(self, cache, representation):
+        with cache.materialize(
+            representation, lambda: iter([b"verified bytes"])
+        ) as path:
+            assert path.relative_to(cache.root).parts == (
+                "objects",
+                representation.key[:2],
+                f"{representation.key}.blob",
+            )
+            assert path.stat().st_mode & 0o777 == 0o600
+            assert path.parent.stat().st_mode & 0o777 == 0o700
+
+    def test_never_replaces_an_existing_publication(self, cache, representation):
+        destination = (
+            cache.root
+            / "objects"
+            / representation.key[:2]
+            / f"{representation.key}.blob"
+        )
+        destination.parent.mkdir(parents=True)
+        destination.write_bytes(b"existing private object")
+        with cache.materialize(
+            representation, lambda: iter([b"verified bytes"])
+        ) as path:
+            assert path.read_bytes() == b"verified bytes"
+            assert destination.read_bytes() == b"existing private object"
+
+    def test_uses_verified_temp_when_publication_fails(
+        self, cache, representation, monkeypatch
+    ):
+        import os
+
+        def fail_publish(*args, **kwargs):
+            raise OSError("publication unavailable")
+
+        monkeypatch.setattr(os, "link", fail_publish)
+        transferred = []
+
+        def source():
+            transferred.append(1)
+            yield b"verified bytes"
+
+        with cache.materialize(representation, source) as path:
+            assert path.read_bytes() == b"verified bytes"
+            assert path.suffix == ".tmp"
+            assert cache.status()["reserved_bytes"] == representation.size
+        assert transferred == [1]
+        assert not path.exists()
+        assert cache.status()["entries"] == 0
+        assert cache.status()["publication_failures"] == 1
+        assert cache.status()["errors"] == 1
+
+    def test_removes_publication_when_index_commit_fails(
+        self, cache, representation, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        fill = cache.begin_fill(representation)
+        fill.write(b"verified bytes")
+        transaction = cache._transaction
+
+        @contextmanager
+        def fail_commit():
+            with transaction() as db:
+                yield db
+                raise sqlite3.OperationalError("commit unavailable")
+
+        monkeypatch.setattr(cache, "_transaction", fail_commit)
+        with pytest.raises(sqlite3.OperationalError, match="commit unavailable"):
+            fill.complete()
+        assert list((cache.root / "objects").rglob("*.blob")) == []
+        assert fill.path.read_bytes() == b"verified bytes"
+        fill.close()
+
+    def test_batches_last_access_timestamp_updates(
+        self, cache, representation, monkeypatch
+    ):
+        from app.modules.storage import artifact_materializer
+
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        with sqlite3.connect(cache.root / "index.sqlite3") as db:
+            initial = db.execute("SELECT used FROM entries").fetchone()[0]
+
+        monkeypatch.setattr(artifact_materializer.time, "time", lambda: initial + 1)
+        lease = cache.acquire(representation)
+        lease.close()
+        with sqlite3.connect(cache.root / "index.sqlite3") as db:
+            assert db.execute("SELECT used FROM entries").fetchone()[0] == initial
+
+        monkeypatch.setattr(artifact_materializer.time, "time", lambda: initial + 61)
+        lease = cache.acquire(representation)
+        lease.close()
+        with sqlite3.connect(cache.root / "index.sqlite3") as db:
+            assert db.execute("SELECT used FROM entries").fetchone()[0] == initial + 61
+
+    def test_reclaims_idle_files_to_restore_headroom(
+        self, cache, representation, monkeypatch
+    ):
+        import shutil
+        from collections import namedtuple
+
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        usage = namedtuple("Usage", "total used free")
+        monkeypatch.setattr(
+            shutil,
+            "disk_usage",
+            lambda path: (
+                usage(100, 90, 10)
+                if list(cache.root.rglob("*.blob"))
+                else usage(100, 0, 100)
+            ),
+        )
+        cache.policy = lambda: CachePolicy(enabled=True, headroom_bytes=50)
+        cache.trim()
+        assert cache.status()["bytes"] == 0
+        assert cache.health()["ok"] is True
+
+    def test_health_distinguishes_corrupt_index(self, cache):
+        (cache.root / "index.sqlite3").write_bytes(b"invalid index")
+        assert cache.health() == {"ok": False, "state": "corrupt_index"}
+
+    def test_reports_saved_bytes_with_verification_time(self, cache, representation):
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        usage = cache.status()
+        assert usage["bytes_saved"] == representation.size
+        assert usage["hit_ratio_percent"] == 50
+        assert usage["last_verification"] > 0
+
+    def test_fill_stops_when_headroom_is_lost(self, cache, representation, monkeypatch):
+        import shutil
+        from collections import namedtuple
+
+        fill = cache.begin_fill(representation)
+        usage = namedtuple("Usage", "total used free")
+        monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(100, 100, 0))
+        try:
+            with pytest.raises(CacheUnavailable, match="headroom"):
+                fill.write(b"verified bytes")
+        finally:
+            fill.close()
+        assert cache.status()["entries"] == 0
+
+
+class TestPrivateCacheRecovery:
+    def test_wholesale_deletion_degrades_and_clean_start_recovers(
+        self, cache, representation
+    ):
+        import shutil
+
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        shutil.rmtree(cache.root)
+        assert cache.health() == {"ok": False, "state": "unavailable"}
+        fresh = ArtifactMaterializer(cache.root, cache.policy)
+        assert fresh.status()["entries"] == 0
+        with fresh.materialize(
+            representation, lambda: iter([b"verified bytes"])
+        ) as path:
+            assert path.read_bytes() == b"verified bytes"
+
+    def test_replaced_root_cannot_supply_or_delete_another_directory(
+        self, cache, representation
+    ):
+        original = cache.root.with_name("original")
+        cache.root.rename(original)
+        cache.root.mkdir()
+        sentinel = cache.root / "sentinel"
+        sentinel.write_text("user data")
+        with pytest.raises(CacheUnavailable, match="replaced"):
+            cache.clear()
+        assert sentinel.read_text() == "user data"
+        assert cache.health() == {"ok": False, "state": "unavailable"}
+
+    def test_symlink_index_is_never_opened(self, cache, tmp_path):
+        other = tmp_path / "other.sqlite3"
+        other.write_bytes(b"not our database")
+        index = cache.root / "index.sqlite3"
+        index.unlink()
+        index.symlink_to(other)
+        with pytest.raises(CacheUnavailable, match="replaced"):
+            cache.status()
+        assert other.read_bytes() == b"not our database"
+
+    def test_bounded_full_inspection_rotates_verified_entries(
+        self, cache, representation
+    ):
+        for version in (1, 2):
+            with cache.materialize(
+                replace(representation, version=version),
+                lambda: iter([b"verified bytes"]),
+            ):
+                pass
+        with sqlite3.connect(cache.root / "index.sqlite3") as db:
+            db.execute("UPDATE entries SET verified=0")
+        assert cache.inspect_entries(full=True, limit=1) == {"checked": 1, "corrupt": 0}
+        assert cache.inspect_entries(full=True, limit=1) == {"checked": 1, "corrupt": 0}
+        with sqlite3.connect(cache.root / "index.sqlite3") as db:
+            assert (
+                db.execute("SELECT COUNT(*) FROM entries WHERE verified>0").fetchone()[
+                    0
+                ]
+                == 2
+            )
+
+    def test_maintenance_returns_before_unlink_finishes(
+        self, cache, representation, monkeypatch
+    ):
+        from pathlib import Path
+
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        entered, proceed = Event(), Event()
+        original_unlink = Path.unlink
+
+        def slow_unlink(path, *args, **kwargs):
+            if path.suffix == ".blob":
+                entered.set()
+                assert proceed.wait(5)
+            return original_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", slow_unlink)
+        cache.policy = lambda: CachePolicy(enabled=True, max_bytes=0, headroom_bytes=0)
+        try:
+            cache.request_maintenance()
+            assert entered.wait(5)
+            assert cache._maintenance_running
+        finally:
+            proceed.set()
+        assert cache._maintenance_lock.acquire(timeout=5)
+        cache._maintenance_lock.release()
+        assert cache.status()["bytes"] == 0
+
+    def test_new_digest_and_kind_cannot_select_original_entry(
+        self, cache, representation
+    ):
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        assert cache.acquire(replace(representation, kind="derived")) is None
+        assert cache.acquire(replace(representation, sha256="f" * 64)) is None
+
+    def test_restarted_index_reuses_verified_entry(self, cache, representation):
+        with cache.materialize(representation, lambda: iter([b"verified bytes"])):
+            pass
+        restarted = ArtifactMaterializer(cache.root, cache.policy)
+        with restarted.materialize(
+            representation, lambda: pytest.fail("unexpected provider read")
+        ) as path:
+            assert path.read_bytes() == b"verified bytes"
+
+    def test_unlinked_open_file_stays_accounted_until_lease_release(
+        self, cache, representation
+    ):
+        with cache.materialize(
+            representation, lambda: iter([b"verified bytes"])
+        ) as path:
+            with path.open("rb") as opened:
+                path.unlink()
+                assert cache.clear()["bytes"] == representation.size
+                assert opened.read() == b"verified bytes"
+        assert cache.status()["bytes"] == 0

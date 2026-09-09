@@ -46,6 +46,35 @@ to `backend/tests/`.
 | 38 | Falls back from exhausted cache quota | Edge | Cache quota exhausted; temporary volume available | Separately reserved temporary file; exact source bytes | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_cache_capacity_denial_uses_separately_budgeted_temp` |
 | 39 | Preserves other admission failures | Error | Reservation unavailable for noncapacity reason | Original error; zero source bytes | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_noncapacity_admission_error_remains_visible` |
 
+| 40 | Private sharded CAS | Edge | Published entry | 0600 body; 0700 private shard | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_shards_private_representation_files` |
+| 41 | No-replace publication | Error | Existing destination | Existing bytes preserved | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_never_replaces_an_existing_publication` |
+| 42 | Verified temporary fallback | Error | Publication fails | Same verified download; no second source transfer | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_uses_verified_temp_when_publication_fails` |
+| 43 | Restores free-space headroom | Edge | Idle entries consume free bytes | Idle bodies evicted before admission | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_reclaims_idle_files_to_restore_headroom` |
+| 44 | Stops fill under disk pressure | Error | Headroom disappears mid-fill | Write refused | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_fill_stops_when_headroom_is_lost` |
+| 45 | Reports cache metrics | Happy | One fill and hit | Saved bytes, hit ratio and verification timestamp | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_reports_saved_bytes_with_verification_time` |
+| 46 | Reports source mismatch during proxy | Error | Source bytes changed | Stream fails; corruption counted; no publication | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_proxy_reports_integrity_failure_after_streaming` |
+| 47 | Coalesces proxy readers | Edge | Concurrent canonical streams | One provider transfer | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_coalesces_concurrent_proxy_readers` |
+| 48 | Real printer consumer lease | Edge | Clear during upload | Provider reads exact leased bytes; final bytes zero | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_printer_upload_keeps_cache_path_during_clear` |
+| 49 | Real archive consumer reuse | Happy | Warm Artifact exported | Exact ZIP member; no second provider transfer | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_archive_export_reuses_verified_artifact` |
+| 50 | Hot Range and If-Range | Edge | Matching and stale validators | Canonical 206/200 body; zero further provider bytes | Integration | ✅ `integration/api/v1/files/test_cache_delivery.py::TestCacheDelivery::test_hot_range_preserves_canonical_if_range` |
+| 51 | Revoked share cannot use cache | Error | Revoke previously authorized share | 404; no lease or source read | Integration | ✅ `integration/api/v1/files/test_cache_delivery.py::TestCacheDelivery::test_revoked_share_cannot_use_physical_cache` |
+| 52 | Protects authoritative roots | Error | Cache root overlaps managed storage | Settings rejected | Integration | ✅ `integration/api/v1/test_artifact_cache.py::TestArtifactCacheConfig::test_rejects_authoritative_root_overlap` |
+| 53 | Cache-specific health degradation | Error | Broken local index | Cache unhealthy; original storage unchanged | Integration | ✅ `integration/api/v1/test_artifact_cache.py::TestArtifactCacheConfig::test_health_marks_only_disposable_cache_degraded` |
+| 54 | Reclaims after live shrink | Edge | Settings reduce byte budget | Idle entries eventually removed | Integration | ✅ `integration/api/v1/test_artifact_cache.py::TestArtifactCacheConfig::test_shrinking_policy_reclaims_idle_entries` |
+| 55 | Recovers wholesale deletion | Error | Cache directory removed | Unavailable health; clean restart refills | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_wholesale_deletion_degrades_and_clean_start_recovers` |
+| 56 | Rejects replaced root | Error | Root inode replaced | Clear cannot delete foreign directory contents | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_replaced_root_cannot_supply_or_delete_another_directory` |
+| 57 | Rejects symlink index | Error | Index replaced by symlink | Foreign file never opened or modified | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_symlink_index_is_never_opened` |
+| 58 | Rotates bounded verification | Edge | Two entries; inspection limit one | Both eventually hash verified | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_bounded_full_inspection_rotates_verified_entries` |
+| 59 | Nonblocking maintenance | Edge | Filesystem unlink waits | Scheduling returns before unlink completes | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_maintenance_returns_before_unlink_finishes` |
+| 60 | Cancelled ASGI cache response | Error | Cancel response before first body | Lease released; deferred clear completes | Integration | ✅ `integration/api/v1/files/test_cache_delivery.py::TestCacheDelivery::test_cancelled_asgi_send_releases_selected_cache_lease` |
+
+| 61 | Digest and kind isolation | Edge | New database digest or transformed kind | Existing original entry misses | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_new_digest_and_kind_cannot_select_original_entry` |
+| 62 | Restart retains verified files | Happy | Reopen local index | Exact cached bytes; zero provider reads | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_restarted_index_reuses_verified_entry` |
+| 63 | Accounts for POSIX open unlinked bytes | Edge | Body unlinked while lease and descriptor active | Read succeeds; bytes counted through lease | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestPrivateCacheRecovery::test_unlinked_open_file_stays_accounted_until_lease_release` |
+| 64 | Cleans failed index publication | Error | Hard-link succeeds; index commit fails | Unindexed body removed; verified temp remains usable | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_removes_publication_when_index_commit_fails` |
+| 65 | Batches last-access updates | Edge | Repeated hit inside and outside coarsening window | Timestamp stays stable, then advances after window | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_batches_last_access_timestamp_updates` |
+| 66 | Recovers maintenance polling | Error | One poll fails; next succeeds | Stale failure alert clears automatically | Component | ✅ `components/__tests__/artifact-cache-card.test.tsx::ArtifactCacheCard observability::clears a transient polling failure after polling recovers` |
+
 ## Focused execution
 
 The coordinated cache run passed 61 backend tests (two workers), including the
@@ -65,3 +94,16 @@ reserved for the coordinator's final integration gate.
 The final conversion route file passed 10 tests. The exhausted-cache admission
 regression failed with `storage_capacity_exceeded` before the fix, then the
 managed-content group passed all 9 tests with the narrow capacity-only fallback.
+
+The attachment completion pass added sharding, no-replace publication, verified-temp
+fallback, proxy singleflight, pressure eviction, asynchronous live shrink, root
+protection, health and UI observability. Its four focused backend files passed
+77 tests, and component/API tests passed 11. Recovery followups cover ASGI
+cancellation, root replacement, index symlinks and bounded verification rotation.
+Consumer eligibility, deployment/recovery and reproducible performance measurements
+are documented in [the cache design](artifact-cache-design.md).
+
+Frontend observability assertions: ✅ policy source, hit ratio, bytes saved and
+verification; ✅ pending reclamation; ✅ cache corruption distinguished from
+authoritative storage (`ArtifactCacheCard observability` in the component test).
+Full suites and coverage ratchets remain ⏭️ delegated to the integration coordinator.

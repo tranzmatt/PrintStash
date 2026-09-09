@@ -1,8 +1,8 @@
 /** Cache controls preserve active readers and separate policy changes from clearing. */
 import "@testing-library/jest-dom/vitest";
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ArtifactCacheCard } from "@/components/artifact-cache-card";
 import { renderApp } from "@/test-support/render";
 import { anArtifactCache } from "@/test-support/factories";
@@ -87,5 +87,102 @@ describe("ArtifactCacheCard", () => {
     expect(
       await screen.findByRole("checkbox", { name: "Enable remote Artifact cache" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ArtifactCacheCard observability", () => {
+  it("shows cache effectiveness with policy source", async () => {
+    const observed = anArtifactCache({
+      source: "database",
+      usage: {
+        bytes: 100,
+        entries: 1,
+        hit_ratio_percent: 75,
+        bytes_saved: 300,
+        completed_fills: 1,
+        publication_failures: 5,
+        corruptions: 2,
+        bypasses: 3,
+        evictions: 4,
+        last_verification: Date.parse("2026-01-01T00:00:00Z") / 1000,
+      },
+    });
+    renderApp(
+      <ArtifactCacheCard
+        api={{
+          read: async () => observed,
+          save: async () => observed,
+          reset: async () => observed,
+          clear: async () => observed,
+        }}
+      />,
+    );
+    expect(await screen.findByText(/Policy source: Saved settings/)).toBeInTheDocument();
+    expect(screen.getByText("75%")).toBeInTheDocument();
+    expect(screen.getByText("300")).toBeInTheDocument();
+    expect(screen.getByText("Publication failures")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByText(/Last verification:/)).not.toHaveTextContent("No cached files");
+  });
+
+  it("shows safe reclamation progress", async () => {
+    const observed = anArtifactCache({ usage: { pending_eviction_bytes: 100, leases: 1 } });
+    renderApp(
+      <ArtifactCacheCard
+        api={{
+          read: async () => observed,
+          save: async () => observed,
+          reset: async () => observed,
+          clear: async () => observed,
+        }}
+      />,
+    );
+    expect(await screen.findByText(/100 bytes wait for active reads/)).toBeInTheDocument();
+  });
+
+  it("clears a transient polling failure after polling recovers", async () => {
+    vi.useFakeTimers();
+    let reads = 0;
+    const observed = anArtifactCache({ usage: { pending_eviction_bytes: 100 } });
+    try {
+      renderApp(
+        <ArtifactCacheCard
+          api={{
+            read: async () => {
+              reads += 1;
+              if (reads === 2) throw new Error("temporary poll failure");
+              return observed;
+            },
+            save: async () => observed,
+            reset: async () => observed,
+            clear: async () => observed,
+          }}
+        />,
+      );
+      await act(async () => Promise.resolve());
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(screen.getByRole("alert")).toHaveTextContent("could not be loaded");
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("distinguishes cache degradation from original storage", async () => {
+    const observed = anArtifactCache({ health: "corrupt_index" });
+    renderApp(
+      <ArtifactCacheCard
+        api={{
+          read: async () => observed,
+          save: async () => observed,
+          reset: async () => observed,
+          clear: async () => observed,
+        }}
+      />,
+    );
+    expect(await screen.findByText(/Cache needs attention/)).toHaveTextContent(
+      "Original Vault storage remains authoritative",
+    );
   });
 });

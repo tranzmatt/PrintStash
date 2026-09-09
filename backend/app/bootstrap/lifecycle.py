@@ -256,7 +256,10 @@ async def lifespan(app: FastAPI):
         recover_publications=not restore_maintenance,
         recovery_only=restore_maintenance,
     )
-    from app.modules.administration.artifact_cache_config import live_policy
+    from app.modules.administration.artifact_cache_config import (
+        live_policy,
+        validate_cache_root,
+    )
     from app.modules.storage.artifact_materializer import ArtifactMaterializer
     from app.modules.storage.capacity import CapacityManager, CapacityResource
     from app.modules.storage.materializer_runtime import bind_materializer
@@ -265,7 +268,7 @@ async def lifespan(app: FastAPI):
         capacity = CapacityManager(get_session_factory())
         bind_materializer(
             ArtifactMaterializer(
-                Path(settings.artifact_cache_root),
+                validate_cache_root(settings.artifact_cache_root),
                 live_policy,
                 reserve=lambda token, root, size: capacity.hold(
                     f"cache:{token}",
@@ -274,7 +277,7 @@ async def lifespan(app: FastAPI):
                 recover_reservation=lambda token: capacity.release(f"cache:{token}"),
             )
         )
-    except (OSError, RuntimeError, sqlite3.Error):
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
         logger.exception("artifact cache unavailable; source reads remain enabled")
         bind_materializer(None, configured_root=Path(settings.artifact_cache_root))
     from app.runtime.jobs import reconcile_interrupted_jobs
@@ -321,6 +324,7 @@ async def lifespan(app: FastAPI):
     app.state.external_scan_task = asyncio.create_task(_external_scan_loop())
     app.state.automatic_backup_task = asyncio.create_task(_automatic_backup_loop())
     from app.runtime.audit_scheduler import run_audit_scheduler
+
     app.state.audit_scheduler_task = asyncio.create_task(run_audit_scheduler())
     app.state.notification_task = asyncio.create_task(run_dispatcher_loop())
     app.state.fleet_scheduler_task = asyncio.create_task(

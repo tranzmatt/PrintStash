@@ -194,11 +194,7 @@ class ArtifactHandle:
     def stream(
         self, chunk_size: int = _CHUNK_SIZE, *, authoritative: bool = False
     ) -> Iterator[bytes]:
-        """Return a streaming iterator over immutable content.
-
-        External bytes are copied and verified before the iterator is returned,
-        so an error is reported before an HTTP response starts sending data.
-        """
+        """Stream owned bytes, coalescing eligible full reads before provider IO."""
         if self.file.is_external:
             claim = self._temporary_capacity_claim("stream")
             try:
@@ -207,74 +203,96 @@ class ArtifactHandle:
                 claim.release()
                 raise
 
-            def external_chunks() -> Iterator[bytes]:
-                try:
-                    with temp.open("rb") as source:
-                        while chunk := source.read(chunk_size):
-                            yield chunk
-                finally:
-                    temp.unlink(missing_ok=True)
-                    claim.release()
+            def cleanup_external() -> None:
+                temp.unlink(missing_ok=True)
+                claim.release()
 
-            return external_chunks()
+            return _PathChunks(temp, chunk_size, cleanup_external)
 
         lease = None if authoritative else self.cached_path()
         if lease:
             return _PathChunks(lease.path, chunk_size, lease.close)
-
-        if self.backend is None or not self.backend.exists(self.file.path):
+        backend = self.backend
+        if backend is None or not backend.exists(self.file.path):
             raise ArtifactContentMissingError(self.file.path)
-        chunks = iter(self.backend.stream_chunks(self.file.path, chunk_size))
+        cache = get_materializer()
+        representation = None if authoritative else self.cache_representation()
+        fill = None
+        if cache is not None and representation is not None:
+            waiting = ExitStack()
+            try:
+                fill = cache.begin_fill(representation)
+                if fill is None:
+                    # A racing reader waits on the durable same-key claim before
+                    # asking the provider for bytes. Refused admission falls back.
+                    path = waiting.enter_context(
+                        cache.materialize(
+                            representation,
+                            lambda: iter(
+                                backend.stream_chunks(self.file.path, chunk_size)
+                            ),
+                        )
+                    )
+                    return _PathChunks(path, chunk_size, waiting.close)
+            except RepresentationChanged as exc:
+                waiting.close()
+                raise ArtifactContentChangedError(
+                    "artifact_representation_changed"
+                ) from exc
+            except OperationError as exc:
+                waiting.close()
+                if exc.kind is not ErrorKind.CAPACITY:
+                    raise
+            except (CacheUnavailable, OSError, sqlite3.Error):
+                waiting.close()
+
+        chunks = iter(backend.stream_chunks(self.file.path, chunk_size))
         try:
-            first = next(chunks)
-        except StopIteration:
-            return iter(())
-        except (FileNotFoundError, NotADirectoryError) as exc:
-            raise ArtifactContentMissingError(self.file.path) from exc
+            first = next(chunks, b"")
+        except BaseException:
+            if fill is not None:
+                fill.close()
+            close = getattr(chunks, "close", None)
+            if close:
+                close()
+            raise
 
         def managed_chunks() -> Iterator[bytes]:
-            fill = None
-            cache = get_materializer()
-            representation = None if authoritative else self.cache_representation()
+            current_fill = fill
             try:
-                if cache is not None and representation is not None:
-                    try:
-                        fill = cache.begin_fill(representation)
-                    except (CacheUnavailable, OSError, sqlite3.Error, OperationError):
-                        pass
                 for chunk in _prepend(first, chunks):
-                    if fill is not None:
+                    if current_fill is not None:
                         try:
-                            fill.write(chunk)
-                        except (
-                            CacheUnavailable,
-                            RepresentationChanged,
-                            OSError,
-                            sqlite3.Error,
-                        ):
-                            fill.close()
-                            fill = None
+                            current_fill.write(chunk)
+                        except RepresentationChanged as exc:
+                            raise ArtifactContentChangedError(
+                                "artifact_representation_changed"
+                            ) from exc
+                        except (CacheUnavailable, OSError, sqlite3.Error):
+                            current_fill.close()
+                            current_fill = None
                     yield chunk
-                if fill is not None:
+                if current_fill is not None:
                     try:
-                        lease = fill.complete()
-                        if lease:
-                            lease.close()
-                    except (
-                        CacheUnavailable,
-                        RepresentationChanged,
-                        OSError,
-                        sqlite3.Error,
-                    ):
+                        completed = current_fill.complete()
+                        if completed:
+                            completed.close()
+                    except RepresentationChanged as exc:
+                        # Headers may already be sent: abort the body instead of
+                        # silently finishing a transfer known to be corrupt.
+                        raise ArtifactContentChangedError(
+                            "artifact_representation_changed"
+                        ) from exc
+                    except (CacheUnavailable, OSError, sqlite3.Error):
                         pass
             finally:
-                if fill is not None:
-                    fill.close()
+                if current_fill is not None:
+                    current_fill.close()
                 close = getattr(chunks, "close", None)
-                if close is not None:
+                if close:
                     close()
 
-        return _ClosingIterator(managed_chunks(), chunks)
+        return _ClosingIterator(managed_chunks(), chunks, fill.close if fill else None)
 
     @contextmanager
     def materialize(
@@ -319,7 +337,9 @@ class ArtifactHandle:
                         )
                     )
                 except RepresentationChanged as exc:
-                    raise ArtifactContentChangedError(self.file.path) from exc
+                    raise ArtifactContentChangedError(
+                        "artifact_representation_changed"
+                    ) from exc
                 except OperationError as exc:
                     if exc.kind is not ErrorKind.CAPACITY:
                         raise
@@ -351,15 +371,24 @@ def resolve(file: File, *, backend: StorageBackend | None = None) -> ArtifactHan
             else (backend if backend is not None else get_backend())
         ),
     )
+
+
 def _prepend(first: bytes, chunks: Iterator[bytes]) -> Iterator[bytes]:
-    yield first
+    if first:
+        yield first
     yield from chunks
 
 
 class _ClosingIterator:
     """Always close the primed source, including before the first consumer read."""
 
-    def __init__(self, chunks: Iterator[bytes], source: Iterator[bytes]):
+    def __init__(
+        self,
+        chunks: Iterator[bytes],
+        source: Iterator[bytes],
+        cleanup: Callable[[], None] | None = None,
+    ):
+        self.cleanup = cleanup
         self.chunks = chunks
         self.source = source
 
@@ -375,9 +404,14 @@ class _ClosingIterator:
             if close:
                 close()
         finally:
-            close = getattr(self.source, "close", None)
-            if close:
-                close()
+            try:
+                close = getattr(self.source, "close", None)
+                if close:
+                    close()
+            finally:
+                if self.cleanup:
+                    cleanup, self.cleanup = self.cleanup, None
+                    cleanup()
 
 
 class _PathChunks:

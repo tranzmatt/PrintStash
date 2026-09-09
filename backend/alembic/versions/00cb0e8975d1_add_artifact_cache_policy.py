@@ -1,8 +1,8 @@
 """add artifact cache policy
 
 Revision ID: 00cb0e8975d1
-Revises: 9cbee9215a34
-Create Date: 2026-09-07 21:37:10.780654
+Revises: 36872a2fc034
+Create Date: 2026-09-09 03:03:08.116066
 
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "00cb0e8975d1"
-down_revision: Union[str, Sequence[str], None] = "9cbee9215a34"
+down_revision: Union[str, Sequence[str], None] = "36872a2fc034"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

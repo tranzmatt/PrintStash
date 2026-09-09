@@ -24,7 +24,8 @@ The index and files share one local filesystem. Active readers hold durable
 leases before receiving a path. Clearing marks busy entries for removal after
 the last reader closes, so the displayed bytes can remain above zero temporarily.
 Disabling stops new cache use; it does not delete stored files. Shrinking limits
-applies to admission without interrupting current readers. Cache folder changes
+schedules idle eviction without interrupting current readers; Settings displays
+and refreshes pending reclamation. Cache folder changes
 require a process restart. Use a dedicated empty directory; existing unrelated
 contents are never enrolled or cleared.
 
@@ -41,6 +42,7 @@ own capacity admission; cache fallback cannot bypass disk headroom.
 | `VAULT_ARTIFACT_CACHE_MAX_ENTRIES` | `10000` | Published and reserved entry limit |
 | `VAULT_ARTIFACT_CACHE_MAX_FILLS` | `2` | Concurrent fill limit |
 | `VAULT_ARTIFACT_CACHE_HEADROOM_BYTES` | `1073741824` | Additional cache filesystem free-space floor |
+| `VAULT_ARTIFACT_CACHE_FILL_WAIT_SECONDS` | `30` | Maximum wait for another caller's active fill |
 | `VAULT_ARTIFACT_CACHE_VERIFY_EVERY_HITS` | `100` | Rehash sampling interval; zero disables sampling |
 
 Administrator API: `GET`/`PUT /api/v1/config/artifact-cache` reads or replaces the
@@ -50,3 +52,6 @@ restart requirement, policy source, availability, cache bytes, leases, reserved
 bytes, fill count and bounded hit/miss/error/eviction counters. Root changes do not
 move old cache data; after restart the former dedicated cache directory can be
 removed once no process uses it.
+
+[Consumer eligibility, recovery and performance](artifact-cache-design.md) explain
+the storage boundary and measured behavior.

@@ -117,3 +117,65 @@ class TestArtifactCacheConfig:
         )
         assert response.json()["restart_required"] is True
         assert response.json()["effective_root"] == str(cache_settings_env.root)
+
+    def test_rejects_authoritative_root_overlap(
+        self, client, auth_headers, cache_settings_env
+    ):
+        from app.core.config import settings
+
+        response = client.put(
+            "/api/v1/config/artifact-cache",
+            json={
+                **asdict(CachePolicy()),
+                "root": str(settings.data_dir),
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "cache_root_overlaps_managed_storage"
+
+    def test_health_marks_only_disposable_cache_degraded(
+        self, client, auth_headers, cache_settings_env, monkeypatch
+    ):
+        monkeypatch.setitem(_overlay, "artifact_cache_enabled", True)
+        cache_settings_env.policy = lambda: CachePolicy(enabled=True)
+        (cache_settings_env.root / "index.sqlite3").write_bytes(b"invalid index")
+        response = client.get("/api/v1/health/details", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["components"]["artifact_cache"] == {
+            "ok": False,
+            "state": "corrupt_index",
+        }
+        assert response.json()["status"] == "degraded"
+
+    def test_shrinking_policy_reclaims_idle_entries(
+        self, client, auth_headers, cache_settings_env
+    ):
+        import hashlib
+        import time
+
+        from app.modules.administration.artifact_cache_config import live_policy
+        from app.modules.storage.artifact_materializer import Representation
+
+        cache = cache_settings_env
+        cache.policy = live_policy
+        policy = {
+            **asdict(CachePolicy(enabled=True, headroom_bytes=0)),
+            "root": str(cache.root),
+        }
+        client.put("/api/v1/config/artifact-cache", headers=auth_headers, json=policy)
+        representation = Representation(
+            "artifact", 1, hashlib.sha256(b"content").hexdigest(), 7
+        )
+        with cache.materialize(representation, lambda: iter([b"content"])):
+            pass
+        response = client.put(
+            "/api/v1/config/artifact-cache",
+            headers=auth_headers,
+            json={**policy, "max_bytes": 0},
+        )
+        assert response.status_code == 200
+        deadline = time.monotonic() + 5
+        while cache.status()["bytes"] and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert cache.status()["bytes"] == 0

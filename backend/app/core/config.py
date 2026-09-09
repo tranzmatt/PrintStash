@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     artifact_cache_max_fills: int = Field(default=2, ge=1, le=64)
     artifact_cache_headroom_bytes: int = Field(default=1024**3, ge=0)
     artifact_cache_verify_every_hits: int = Field(default=100, ge=0)
+    artifact_cache_fill_wait_seconds: int = Field(default=30, ge=0, le=300)
 
     s3_bucket: str = ""
     s3_endpoint_url: str = ""

@@ -1951,6 +1951,119 @@
         "title": "BuildSelection",
         "type": "object"
       },
+      "CacheSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fill_wait_seconds": {
+            "default": 30,
+            "maximum": 300.0,
+            "minimum": 0.0,
+            "title": "Fill Wait Seconds",
+            "type": "integer"
+          },
+          "headroom_bytes": {
+            "minimum": 0.0,
+            "title": "Headroom Bytes",
+            "type": "integer"
+          },
+          "max_bytes": {
+            "minimum": 0.0,
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_entries": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Max Entries",
+            "type": "integer"
+          },
+          "max_fills": {
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Fills",
+            "type": "integer"
+          },
+          "root": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Root",
+            "type": "string"
+          },
+          "verify_every_hits": {
+            "minimum": 0.0,
+            "title": "Verify Every Hits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "root",
+          "max_bytes",
+          "max_entries",
+          "max_fills",
+          "headroom_bytes",
+          "verify_every_hits"
+        ],
+        "title": "CacheSettings",
+        "type": "object"
+      },
+      "CacheSettingsRead": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "effective_root": {
+            "title": "Effective Root",
+            "type": "string"
+          },
+          "health": {
+            "title": "Health",
+            "type": "string"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "object"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/CacheSettings"
+          },
+          "restart_required": {
+            "title": "Restart Required",
+            "type": "boolean"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Usage",
+            "type": "object"
+          }
+        },
+        "required": [
+          "policy",
+          "effective_root",
+          "restart_required",
+          "source",
+          "available",
+          "health",
+          "labels",
+          "usage"
+        ],
+        "title": "CacheSettingsRead",
+        "type": "object"
+      },
       "CaptureFieldDraft": {
         "additionalProperties": false,
         "properties": {
@@ -18573,6 +18686,126 @@
           }
         ],
         "summary": "Update vault configuration",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/artifact-cache": {
+      "delete": {
+        "operationId": "reset_cache_api_v1_config_artifact_cache_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Reset Cache",
+        "tags": [
+          "config"
+        ]
+      },
+      "get": {
+        "operationId": "read_cache_api_v1_config_artifact_cache_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Cache",
+        "tags": [
+          "config"
+        ]
+      },
+      "put": {
+        "operationId": "update_cache_api_v1_config_artifact_cache_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CacheSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Cache",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/artifact-cache/clear": {
+      "post": {
+        "operationId": "clear_cache_api_v1_config_artifact_cache_clear_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Clear Cache",
         "tags": [
           "config"
         ]

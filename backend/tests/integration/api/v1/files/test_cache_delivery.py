@@ -118,3 +118,82 @@ class TestCacheDelivery:
         response = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)
         assert response.status_code == 200
         assert struct.unpack_from("<I", response.content, 80) == (1,)
+
+    @pytest.mark.parametrize(
+        "if_range,expected_status,expected_body",
+        [("matching", 206, b"G28"), ("stale", 200, b"G28\nG1 X1\n")],
+    )
+    def test_hot_range_preserves_canonical_if_range(
+        self,
+        client,
+        auth_headers,
+        cached_artifact,
+        if_range,
+        expected_status,
+        expected_body,
+    ):
+        row, backend, cache = cached_artifact
+        with resolve(row).materialize():
+            pass
+        response = client.get(
+            f"/api/v1/files/{row.id}/download",
+            headers={
+                **auth_headers,
+                "Range": "bytes=0-2",
+                "If-Range": f'"{row.sha256}"' if if_range == "matching" else '"stale"',
+            },
+        )
+        assert response.status_code == expected_status
+        assert response.content == expected_body
+        assert backend.bytes_read == row.size_bytes
+        assert cache.status()["leases"] == 0
+
+    def test_revoked_share_cannot_use_physical_cache(
+        self, client, auth_headers, cached_artifact
+    ):
+        row, backend, cache = cached_artifact
+        with resolve(row).materialize():
+            pass
+        created = client.post(
+            f"/api/v1/models/{row.model_id}/shares",
+            headers=auth_headers,
+            json={"allow_download": True},
+        ).json()
+        client.delete(f"/api/v1/shares/{created['id']}", headers=auth_headers)
+        response = client.get(
+            f"/api/v1/share/{created['token']}/files/{row.id}/download"
+        )
+        assert response.status_code == 404
+        assert cache.status()["leases"] == 0
+        assert backend.bytes_read == row.size_bytes
+
+    @pytest.mark.anyio
+    async def test_cancelled_asgi_send_releases_selected_cache_lease(
+        self, cached_artifact
+    ):
+        import asyncio
+
+        from app.api.artifact_responses import render_delivery
+
+        row, _, cache = cached_artifact
+        with resolve(row).materialize():
+            pass
+        plan = plan_artifact(row, DeliveryRequest(filename=row.original_filename))
+        response = render_delivery(plan)
+        cache.clear()
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            assert cache.status()["leases"] == 1
+            raise asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
+            await response(
+                {"type": "http", "method": "GET", "headers": [], "extensions": {}},
+                receive,
+                send,
+            )
+        assert cache.status()["leases"] == 0
+        assert cache.status()["bytes"] == 0

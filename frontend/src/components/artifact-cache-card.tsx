@@ -12,6 +12,7 @@ const LIMITS = [
   { name: "headroom_bytes", label: "Minimum free bytes", min: 0 },
   { name: "max_entries", label: "Maximum cached files", min: 0 },
   { name: "max_fills", label: "Concurrent downloads", min: 1 },
+  { name: "fill_wait_seconds", label: "Maximum wait for an active download (seconds)", min: 0 },
   {
     name: "verify_every_hits",
     label: "Recheck digest every N reads (0 disables sampling)",
@@ -37,6 +38,37 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
       active = false;
     };
   }, [api]);
+  const pending = Boolean(value?.usage.maintenance_running || value?.usage.pending_eviction_bytes);
+  useEffect(() => {
+    if (!pending) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void api
+        .read()
+        .then((result) => {
+          if (active) {
+            setValue((current) =>
+              current
+                ? {
+                    ...current,
+                    usage: result.usage,
+                    health: result.health,
+                    available: result.available,
+                  }
+                : result,
+            );
+            setFailed(false);
+          }
+        })
+        .catch(() => {
+          if (active) setFailed(true);
+        });
+    }, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [api, pending]);
 
   async function perform(action: () => Promise<ArtifactCacheRead>) {
     setBusy(true);
@@ -98,6 +130,11 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
                 Disabling stops new cache use. Active reads can finish. Clear cached files
                 separately to reclaim space.
               </p>
+              <p className="text-sm text-muted-foreground">
+                Policy source:{" "}
+                {value.source === "database" ? "Saved settings" : "Environment defaults"}. Limits
+                apply immediately; changing the folder requires a restart.
+              </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {LIMITS.map(({ name, label, min }) => (
                   <label className="space-y-1" key={name}>
@@ -144,6 +181,50 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
                 {value.usage.bytes ?? 0} bytes cached · {value.usage.entries ?? 0} files ·{" "}
                 {value.usage.leases ?? 0} active reads
               </p>
+              <dl className="grid grid-cols-2 gap-3 text-sm tabular-nums sm:grid-cols-3">
+                {[
+                  ["Maximum bytes", value.policy.max_bytes],
+                  ["Hit ratio", `${value.usage.hit_ratio_percent ?? 0}%`],
+                  ["Provider bytes saved", value.usage.bytes_saved ?? 0],
+                  ["Cache hits", value.usage.hits ?? 0],
+                  ["Cache misses", value.usage.misses ?? 0],
+                  ["Completed downloads", value.usage.completed_fills ?? 0],
+                  ["Publication failures", value.usage.publication_failures ?? 0],
+                  ["Corruptions", value.usage.corruptions ?? 0],
+                  ["Cache errors", value.usage.errors ?? 0],
+                  ["Evictions", value.usage.evictions ?? 0],
+                  ["Bypasses", value.usage.bypasses ?? 0],
+                ].map(([label, count]) => (
+                  <div key={label}>
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd>{count}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="text-xs text-muted-foreground">
+                Last verification:{" "}
+                {value.usage.last_verification
+                  ? new Date(value.usage.last_verification * 1000).toLocaleString()
+                  : "No cached files verified yet"}
+                .
+              </p>
+              {value.health !== "ready" && value.health !== "disabled" && (
+                <p role="status" className="text-sm text-warning">
+                  Cache needs attention ({value.health.replaceAll("_", " ")}). Original Vault
+                  storage remains authoritative.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Representation: {value.labels.representation} · Storage provider:{" "}
+                {value.labels.backend}
+              </p>
+              {(Boolean(value.usage.maintenance_running) ||
+                Boolean(value.usage.pending_eviction_bytes)) && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Reclaiming cache space. {value.usage.pending_eviction_bytes ?? 0} bytes wait for
+                  active reads to finish.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={busy}>
                   Save cache settings

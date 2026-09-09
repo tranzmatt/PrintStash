@@ -158,9 +158,6 @@ class TestMountedArtifactContent:
 
 class TestManagedArtifactContent:
     class _Backend:
-        def direct_path(self, key):
-            return self.path
-
         def __init__(self, path: Path, *, exists: bool = True) -> None:
             self.path = path
             self.present = exists
@@ -218,9 +215,7 @@ class TestManagedArtifactContent:
 
 
 class TestBoundedExternalContent:
-    def test_capacity_denial_precedes_external_tempfile(
-        self, tmp_path, monkeypatch
-    ):
+    def test_capacity_denial_precedes_external_tempfile(self, tmp_path, monkeypatch):
         source = tmp_path / "bounded.gcode"
         source.write_bytes(b"bounded")
         row = detached_file(
@@ -348,9 +343,7 @@ class TestManagedCacheContent:
         assert cache.status()["entries"] == 0
         assert manager.reserved_bytes() == {}
 
-    def test_noncapacity_admission_error_remains_visible(
-        self, managed_cache_content
-    ):
+    def test_noncapacity_admission_error_remains_visible(self, managed_cache_content):
         from app.core.errors import ErrorKind, OperationError
 
         handle, cache, _, backend = managed_cache_content
@@ -429,3 +422,93 @@ class TestManagedCacheContent:
             assert path.read_bytes() == source.read_bytes()
         assert cache.status()["entries"] == 0
         assert backend.bytes_read == 0
+
+    def test_proxy_reports_integrity_failure_after_streaming(
+        self, managed_cache_content
+    ):
+        handle, cache, source, _ = managed_cache_content
+        source.write_bytes(b"G28\nG1 X2\n")
+        with pytest.raises(artifact_content.ArtifactContentChangedError):
+            b"".join(handle.stream())
+        assert cache.status()["entries"] == 0
+        assert cache.status()["corruptions"] == 1
+
+    def test_coalesces_concurrent_proxy_readers(self, managed_cache_content):
+        from concurrent.futures import ThreadPoolExecutor
+
+        handle, cache, source, backend = managed_cache_content
+        first = handle.stream()
+        with ThreadPoolExecutor(1) as pool:
+            waiting = pool.submit(lambda: b"".join(handle.stream()))
+            assert b"".join(first) == source.read_bytes()
+            assert waiting.result(timeout=5) == source.read_bytes()
+        assert backend.bytes_read == source.stat().st_size
+        assert cache.status()["leases"] == 0
+
+    def test_printer_upload_keeps_cache_path_during_clear(self, managed_cache_content):
+        import asyncio
+
+        from printstash_core.printers import (
+            Capability,
+            PrintArtifactFormat,
+            ProviderCapabilities,
+        )
+
+        from app.modules.printing.printer_jobs import transfer_artifact
+
+        handle, cache, source, backend = managed_cache_content
+        with handle.materialize():
+            pass
+        uploaded = []
+
+        class Provider:
+            capabilities = ProviderCapabilities(
+                supported=frozenset({Capability.UPLOAD}),
+                accepted_print_formats=frozenset({PrintArtifactFormat.GCODE_TEXT}),
+            )
+
+            async def upload(self, path, remote_filename):
+                cache.clear()
+                uploaded.append(path.read_bytes())
+                assert cache.status()["bytes"] == source.stat().st_size
+
+        asyncio.run(
+            transfer_artifact(
+                backend, Provider(), handle.file, "part.gcode", start_print=False
+            )
+        )
+        assert uploaded == [source.read_bytes()]
+        assert backend.bytes_read == source.stat().st_size
+        assert cache.status()["bytes"] == 0
+
+    def test_archive_export_reuses_verified_artifact(
+        self, managed_cache_content, db_session, make_user
+    ):
+        import zipfile
+
+        from app.modules.ingestion.library_transfer import create_archive
+        from app.modules.storage.storage_backend.runtime import (
+            bind_backend,
+            get_backend,
+        )
+
+        handle, _, source, backend = managed_cache_content
+        previous = get_backend()
+        bind_backend(backend)
+        archive = None
+        try:
+            with handle.materialize():
+                pass
+            archive = create_archive(db_session, make_user(superuser=True))
+            with zipfile.ZipFile(archive) as exported:
+                bodies = [
+                    exported.read(name)
+                    for name in exported.namelist()
+                    if name.endswith(".gcode")
+                ]
+            assert bodies == [source.read_bytes()]
+            assert backend.bytes_read == source.stat().st_size
+        finally:
+            if archive is not None:
+                archive.unlink(missing_ok=True)
+            bind_backend(previous)
