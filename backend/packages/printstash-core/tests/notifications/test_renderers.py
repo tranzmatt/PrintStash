@@ -97,6 +97,12 @@ class TestNotificationEventType:
             "print_failed",
             "print_cancelled",
             "printer_offline",
+            "storage_regression",
+            "storage_recovery",
+            "storage_audit_failed",
+            "storage_audit_cancelled",
+            "storage_audit_overdue",
+            "storage_repair_failed",
         }
 
 
@@ -545,6 +551,9 @@ def test_renders_storage_summary_without_a_print_job(event):
     assert event_label(context).startswith("Vault audit")
     assert summary_lines(context) == [
         "Audit: full #42",
+        "Duration: 0s",
+        "Categories: none",
+        "Maintenance: /settings?section=maintenance",
         "New: 2",
         "Worsened: 1",
         "Resolved: 3",

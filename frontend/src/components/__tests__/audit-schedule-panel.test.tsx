@@ -1,3 +1,7 @@
+/*
+ * Scheduled audit policy controls are durable operational settings. These tests
+ * defend compare-and-set saves, safe deferral copy, and recoverable failures.
+ */
 import "@testing-library/jest-dom/vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -29,7 +33,7 @@ describe("Audit schedules", () => {
     expect(view.requestsWithMethod("PUT")[0]?.body).toContain('"expected_revision":1');
   });
 
-  it("saves frequency, lateness and notification threshold controls", async () => {
+  it("saves the configured policy controls", async () => {
     const user = userEvent.setup();
     const view = renderApp(<AuditSchedulePanel />, {
       routes: {
