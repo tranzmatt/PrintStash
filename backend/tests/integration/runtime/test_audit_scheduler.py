@@ -7,8 +7,9 @@ from app.runtime.maintenance import begin_restore_maintenance, end_restore_maint
 
 
 class TestRunDueAudit:
-    @staticmethod
-    def test_maintenance_defers_due_audit(db_session, make_user, make_audit_policy):
+    def test_maintenance_defers_due_audit(
+        self, db_session, make_user, make_audit_policy
+    ):
         now = utcnow()
         policy = make_audit_policy(
             make_user(), enabled=True, next_due_at=now, start_time=now.strftime("%H:%M")
@@ -21,16 +22,16 @@ class TestRunDueAudit:
         db_session.refresh(policy)
         assert policy.deferred_reason == "maintenance"
 
-    @staticmethod
-    def test_shutdown_requests_cancellation(db_session, make_user, make_audit_run):
+    def test_shutdown_requests_cancellation(
+        self, db_session, make_user, make_audit_run
+    ):
         run = make_audit_run(make_user(), state=VaultAuditRunState.RUNNING)
         _cancel_active_audits()
         db_session.refresh(run)
         assert run.cancel_requested is True
 
-    @staticmethod
     def test_shutdown_defers_unclaimed_work(
-        db_session, make_user, make_audit_policy, local_storage
+        self, db_session, make_user, make_audit_policy, local_storage
     ):
         import threading
 

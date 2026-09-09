@@ -5,9 +5,8 @@ from app.modules.administration.vault_audit_capacity import estimate_resources
 
 
 class TestEstimateResources:
-    @staticmethod
     def test_estimates_sequential_source_peak(
-        db_session, make_user, make_model, make_file, make_audit_run
+        self, db_session, make_user, make_model, make_file, make_audit_run
     ):
         model = make_model()
         make_file(model, size_bytes=100)
@@ -15,9 +14,8 @@ class TestEstimateResources:
         run = make_audit_run(make_user())
         assert estimate_resources(db_session, run)[0].required_bytes == 300
 
-    @staticmethod
     def test_includes_backup_allocation(
-        db_session, make_user, make_audit_run, make_owned_storage_object
+        self, db_session, make_user, make_audit_run, make_owned_storage_object
     ):
         make_owned_storage_object(object_kind="backup", size_bytes=500)
         run = make_audit_run(make_user(), mode=VaultAuditMode.FULL)

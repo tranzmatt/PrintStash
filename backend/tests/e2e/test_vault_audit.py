@@ -124,9 +124,8 @@ class TestScheduledVaultAudit:
             ("regenerate_thumbnail", "thumbnail_missing"),
         ],
     )
-    @staticmethod
     async def test_scheduled_audit_records_verified_recovery(
-        api, tmp_path, e2e_db, fakes, repair_action, code
+        self, api, tmp_path, e2e_db, fakes, repair_action, code
     ):
         from app.core.time import utcnow
         from app.db.models import Metadata, VaultAuditEvent, VaultAuditPolicy
@@ -244,9 +243,8 @@ class TestScheduledVaultAudit:
         )
 
     @pytest.mark.asyncio
-    @staticmethod
     async def test_scheduled_full_audit_finds_authoritative_corruption(
-        api, tmp_path, e2e_db
+        self, api, tmp_path, e2e_db
     ):
         from app.core.time import utcnow
         from app.db.models import File, VaultAuditEvent, VaultAuditPolicy
@@ -295,9 +293,8 @@ class TestScheduledVaultAudit:
         assert Path(artifact.path).read_bytes() == b"X" + original[1:]
 
     @pytest.mark.asyncio
-    @staticmethod
     async def test_scheduled_full_audit_verifies_backup_with_capacity_callbacks(
-        api, tmp_path, e2e_db
+        self, api, tmp_path, e2e_db
     ):
         from app.core.time import utcnow
         from app.db.models import CapacityReservation, VaultAuditPolicy

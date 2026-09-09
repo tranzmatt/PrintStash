@@ -217,8 +217,7 @@ class TestRaises:
 
 class TestStorageEvents:
     @pytest.mark.parametrize("event", ["storage_regression", "storage_recovery"])
-    @staticmethod
-    def test_storage_events_render_without_printer_context(event):
+    def test_storage_events_render_without_printer_context(self, event):
         from app.modules.notifications.notification_renderers import (
             event_label,
             summary_lines,

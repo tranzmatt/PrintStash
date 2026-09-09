@@ -13,9 +13,8 @@ NOW = datetime(2026, 9, 6, 2, 30, tzinfo=UTC)
 
 
 class TestVaultAuditPolicyControls:
-    @staticmethod
     def test_stale_editor_cannot_overwrite_policy(
-        db_session, make_user, make_audit_policy
+        self, db_session, make_user, make_audit_policy
     ):
         user = make_user()
         policy = make_audit_policy(user)
@@ -40,10 +39,7 @@ class TestVaultAuditPolicyControls:
         ).all()
         assert len(logs) == 1
 
-    @staticmethod
-    def test_jitter_stays_within_the_safe_window(
-        make_user, make_audit_policy
-    ):
+    def test_jitter_stays_within_the_safe_window(self, make_user, make_audit_policy):
         from app.modules.administration.vault_audit_policy import slot_jitter
 
         policy = make_audit_policy(
@@ -55,8 +51,8 @@ class TestVaultAuditPolicyControls:
         policy.jitter_seconds = 0
         assert slot_jitter(policy) == 0
 
-    @staticmethod
     def test_overdue_evidence_is_idempotent(
+        self,
         db_session,
         make_user,
         make_audit_policy,
@@ -87,9 +83,8 @@ class TestVaultAuditPolicyControls:
         state = health(db_session, now=NOW + timedelta(minutes=11))["policies"][0]
         assert state["overdue"] and state["enabled"] and state["latest_result"] is None
 
-    @staticmethod
     def test_launch_retries_back_off_without_dropping_slot(
-        db_session, make_user, make_audit_policy
+        self, db_session, make_user, make_audit_policy
     ):
         from app.core.time import ensure_utc
         from app.modules.administration.vault_audit_policy import (
@@ -111,8 +106,8 @@ class TestVaultAuditPolicyControls:
         "state,event",
         [("failed", "storage_audit_failed"), ("cancelled", "storage_audit_cancelled")],
     )
-    @staticmethod
     def test_terminal_notifications_commit_with_result(
+        self,
         db_session,
         make_user,
         make_audit_run,
@@ -152,8 +147,8 @@ class TestVaultAuditPolicyControls:
             in delivery.context_json
         )
 
-    @staticmethod
     def test_notification_policy_filters_regressions(
+        self,
         db_session,
         make_user,
         make_audit_policy,
@@ -218,9 +213,8 @@ class TestVaultAuditPolicyControls:
         ).all()
         assert rows[1].next_retry_at - rows[0].next_retry_at >= timedelta(minutes=60)
 
-    @staticmethod
     def test_retention_keeps_comparison_evidence(
-        db_session, make_user, make_audit_run, make_audit_finding
+        self, db_session, make_user, make_audit_run, make_audit_finding
     ):
         from app.core.metrics import registry
         from app.db.models import VaultAuditFinding, VaultAuditRun
@@ -263,8 +257,8 @@ class TestVaultAuditPolicyControls:
             == 3
         )
 
-    @staticmethod
     def test_failed_repair_is_recorded_safely(
+        self,
         db_session,
         local_storage,
         make_user,
@@ -318,9 +312,8 @@ class TestVaultAuditPolicyControls:
             select(AuditLog).where(AuditLog.action == "audit.auto_repair")
         ).one()
 
-    @staticmethod
     def test_ignored_baseline_does_not_hide_worsening(
-        db_session, make_user, make_audit_run, make_audit_finding
+        self, db_session, make_user, make_audit_run, make_audit_finding
     ):
         import json
 
@@ -338,9 +331,8 @@ class TestVaultAuditPolicyControls:
         record_success(db_session, current)
         assert json.loads(current.regression_json)["summary"]["worsened"] == 1
 
-    @staticmethod
     def test_owned_byte_estimate_uses_only_committed_owned_objects(
-        db_session, make_owned_storage_object
+        self, db_session, make_owned_storage_object
     ):
         from app.db.models import StorageObjectState
         from app.modules.administration.vault_audit_policy import estimated_owned_bytes

@@ -25,14 +25,12 @@ NOW = datetime(2026, 9, 6, 2, 30, tzinfo=UTC)
 
 
 class TestVaultAuditPolicy:
-    @staticmethod
-    def test_defaults_disabled(db_session):
+    def test_defaults_disabled(self, db_session):
         assert [
             (row.mode, row.enabled, row.cadence) for row in list_policies(db_session)
         ] == [("quick", False, "weekly"), ("full", False, "monthly")]
 
-    @staticmethod
-    def test_claims_one_due_audit(db_session, make_user, make_audit_policy):
+    def test_claims_one_due_audit(self, db_session, make_user, make_audit_policy):
         policy = make_audit_policy(
             make_user(), enabled=True, next_due_at=NOW - timedelta(minutes=30)
         )
@@ -44,9 +42,8 @@ class TestVaultAuditPolicy:
         assert run.active_slot == "audit"
         assert ensure_utc(policy.next_due_at) > NOW
 
-    @staticmethod
     def test_prevents_manual_scheduling_overlap(
-        db_session, make_user, make_audit_policy
+        self, db_session, make_user, make_audit_policy
     ):
         user = make_user()
         make_audit_policy(user, enabled=True, next_due_at=NOW)
@@ -57,8 +54,7 @@ class TestVaultAuditPolicy:
             run.id
         ]
 
-    @staticmethod
-    def test_catches_up_once(db_session, make_user, make_audit_policy):
+    def test_catches_up_once(self, db_session, make_user, make_audit_policy):
         policy = make_audit_policy(
             make_user(), enabled=True, next_due_at=NOW - timedelta(days=100)
         )
@@ -74,48 +70,41 @@ class TestVaultAuditPolicy:
     @pytest.mark.parametrize(
         "reason", ["maintenance", "storage_unavailable", "shutdown"]
     )
-    @staticmethod
-    def test_defers_work(db_session, make_user, make_audit_policy, reason):
+    def test_defers_work(self, db_session, make_user, make_audit_policy, reason):
         policy = make_audit_policy(make_user(), enabled=True, next_due_at=NOW)
         assert claim_due(db_session, now=NOW, deferred_reason=reason) is None
         assert policy.deferred_reason == reason
         assert db_session.exec(select(VaultAuditRun)).all() == []
 
-    @staticmethod
-    def test_defers_outside_window(db_session, make_user, make_audit_policy):
+    def test_defers_outside_window(self, db_session, make_user, make_audit_policy):
         policy = make_audit_policy(make_user(), enabled=True, next_due_at=NOW)
         assert claim_due(db_session, now=NOW + timedelta(hours=4)) is None
         assert policy.deferred_reason == "outside_window"
 
-    @staticmethod
-    def test_paused_policy_does_not_run(db_session, make_user, make_audit_policy):
+    def test_paused_policy_does_not_run(self, db_session, make_user, make_audit_policy):
         make_audit_policy(make_user(), enabled=True, paused=True, next_due_at=NOW)
         assert claim_due(db_session, now=NOW) is None
 
-    @staticmethod
-    def test_skip_advances_once(db_session, make_user, make_audit_policy):
+    def test_skip_advances_once(self, db_session, make_user, make_audit_policy):
         from app.db.models import VaultAuditMode
 
         policy = make_audit_policy(make_user(), enabled=True, next_due_at=NOW)
         skip_once(db_session, VaultAuditMode.QUICK, now=NOW)
         assert ensure_utc(policy.next_due_at) == datetime(2026, 9, 13, 2, tzinfo=UTC)
 
-    @staticmethod
-    def test_clamps_month_day(db_session, make_user, make_audit_policy):
+    def test_clamps_month_day(self, db_session, make_user, make_audit_policy):
         policy = make_audit_policy(make_user(), mode="full", month_day=31)
         assert next_slot(policy, datetime(2026, 2, 1, tzinfo=UTC)) == datetime(
             2026, 2, 28, 2, tzinfo=UTC
         )
 
-    @staticmethod
-    def test_reports_overdue_health(db_session, make_user, make_audit_policy):
+    def test_reports_overdue_health(self, db_session, make_user, make_audit_policy):
         make_audit_policy(
             make_user(), enabled=True, next_due_at=NOW - timedelta(days=1)
         )
         assert health(db_session, now=NOW)["ok"] is False
 
-    @staticmethod
-    def test_deadline_cancels_run(db_session, make_user, make_audit_run):
+    def test_deadline_cancels_run(self, db_session, make_user, make_audit_run):
         run = make_audit_run(
             make_user(),
             state=VaultAuditRunState.PENDING,
@@ -139,8 +128,7 @@ class TestVaultAuditPolicy:
             {"window_minutes": 0},
         ],
     )
-    @staticmethod
-    def test_rejects_invalid_policy(client, auth_headers, payload):
+    def test_rejects_invalid_policy(self, client, auth_headers, payload):
         response = client.put(
             "/api/v1/maintenance/audit-policies/quick",
             json=payload,
@@ -148,8 +136,7 @@ class TestVaultAuditPolicy:
         )
         assert response.status_code == 422
 
-    @staticmethod
-    def test_requires_full_cost_acknowledgement(client, auth_headers):
+    def test_requires_full_cost_acknowledgement(self, client, auth_headers):
         response = client.put(
             "/api/v1/maintenance/audit-policies/full",
             json={"enabled": True},
@@ -157,8 +144,7 @@ class TestVaultAuditPolicy:
         )
         assert response.status_code == 400
 
-    @staticmethod
-    def test_saves_policy_through_api(client, auth_headers, db_session):
+    def test_saves_policy_through_api(self, client, auth_headers, db_session):
         response = client.put(
             "/api/v1/maintenance/audit-policies/quick",
             json={"enabled": True},
@@ -168,8 +154,7 @@ class TestVaultAuditPolicy:
         assert response.json()["next_due_at"]
         assert db_session.get(VaultAuditPolicy, "quick").enabled
 
-    @staticmethod
-    def test_denies_anonymous_policy_control(client):
+    def test_denies_anonymous_policy_control(self, client):
         assert (
             client.put(
                 "/api/v1/maintenance/audit-policies/quick", json={"enabled": True}
@@ -177,8 +162,7 @@ class TestVaultAuditPolicy:
             == 401
         )
 
-    @staticmethod
-    def test_pause_preserves_due_slot(db_session, make_user, make_audit_policy):
+    def test_pause_preserves_due_slot(self, db_session, make_user, make_audit_policy):
         from app.modules.administration.vault_audit_policy import update_policy
 
         user = make_user()
@@ -188,9 +172,8 @@ class TestVaultAuditPolicy:
         )
         assert ensure_utc(policy.next_due_at) == NOW
 
-    @staticmethod
     def test_manual_success_satisfies_due_slot(
-        db_session, make_user, make_audit_policy, make_audit_run
+        self, db_session, make_user, make_audit_policy, make_audit_run
     ):
         from app.modules.administration.vault_audit_results import record_success
 
@@ -204,8 +187,7 @@ class TestVaultAuditPolicy:
         assert ensure_utc(policy.next_due_at) > NOW
         assert ensure_utc(policy.last_success_at) == NOW + timedelta(minutes=1)
 
-    @staticmethod
-    def test_denies_nonadmin_policy_control(client, make_user, headers_for):
+    def test_denies_nonadmin_policy_control(self, client, make_user, headers_for):
         user = make_user(superuser=False)
         assert (
             client.put(
@@ -216,16 +198,16 @@ class TestVaultAuditPolicy:
             == 403
         )
 
-    @staticmethod
-    def test_restart_releases_completed_claim(db_session, make_user, make_audit_run):
+    def test_restart_releases_completed_claim(
+        self, db_session, make_user, make_audit_run
+    ):
         run = make_audit_run(make_user(), active_slot="audit")
         vault_audit.reconcile_interrupted_runs()
         db_session.refresh(run)
         assert run.state == VaultAuditRunState.COMPLETED
         assert run.active_slot is None
 
-    @staticmethod
-    def test_estimates_known_remote_bytes(db_session, make_owned_storage_object):
+    def test_estimates_known_remote_bytes(self, db_session, make_owned_storage_object):
         from app.modules.administration.vault_audit_policy import estimated_remote_bytes
 
         make_owned_storage_object(
@@ -245,9 +227,8 @@ class TestVaultAuditPolicy:
         )
         assert estimated_remote_bytes(db_session, VaultAuditMode.FULL) == 120
 
-    @staticmethod
     def test_quick_estimate_excludes_artifact_hash_reads(
-        db_session, make_owned_storage_object
+        self, db_session, make_owned_storage_object
     ):
         from app.modules.administration.vault_audit_policy import estimated_remote_bytes
 
@@ -265,9 +246,8 @@ class TestVaultAuditPolicy:
         )
         assert estimated_remote_bytes(db_session, VaultAuditMode.QUICK) == 20
 
-    @staticmethod
     def test_enforces_stream_bandwidth(
-        db_session, local_storage, make_user, make_audit_run, monkeypatch
+        self, db_session, local_storage, make_user, make_audit_run, monkeypatch
     ):
         import hashlib
         from types import SimpleNamespace
@@ -296,9 +276,8 @@ class TestVaultAuditPolicy:
         )
         assert elapsed[0] == pytest.approx(2.0)
 
-    @staticmethod
     def test_unavailable_storage_preserves_success_baseline(
-        db_session, make_user, make_audit_policy
+        self, db_session, make_user, make_audit_policy
     ):
         policy = make_audit_policy(
             make_user(),
@@ -312,9 +291,8 @@ class TestVaultAuditPolicy:
         )
         assert ensure_utc(policy.last_success_at) == NOW - timedelta(days=8)
 
-    @staticmethod
     def test_throttled_hash_allows_cancellation_from_another_session(
-        tmp_path, local_storage, monkeypatch
+        self, tmp_path, local_storage, monkeypatch
     ):
         from types import SimpleNamespace
 

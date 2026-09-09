@@ -22,9 +22,8 @@ from app.modules.administration.vault_audit_results import (
 
 
 class TestVaultAuditResults:
-    @staticmethod
     def test_deduplicates_events(
-        db_session, make_user, make_audit_run, make_audit_finding
+        self, db_session, make_user, make_audit_run, make_audit_finding
     ):
         run = make_audit_run(make_user(), finished_at=utcnow())
         make_audit_finding(run)
@@ -37,9 +36,8 @@ class TestVaultAuditResults:
     @pytest.mark.parametrize(
         "state", [VaultAuditRunState.FAILED, VaultAuditRunState.CANCELLED]
     )
-    @staticmethod
     def test_preserves_baseline_after_failure(
-        db_session, make_user, make_audit_run, make_audit_finding, state
+        self, db_session, make_user, make_audit_run, make_audit_finding, state
     ):
         user = make_user()
         baseline = make_audit_run(user, finished_at=utcnow() - timedelta(hours=1))
@@ -63,9 +61,8 @@ class TestVaultAuditResults:
             {"storage_generation": "other"},
         ],
     )
-    @staticmethod
     def test_excludes_incomparable_baseline(
-        db_session, make_user, make_audit_run, overrides
+        self, db_session, make_user, make_audit_run, overrides
     ):
         user = make_user()
         baseline = make_audit_run(user, finished_at=utcnow(), **overrides)
@@ -75,9 +72,8 @@ class TestVaultAuditResults:
         record_success(db_session, run)
         assert run.baseline_run_id is None
 
-    @staticmethod
     def test_records_recovery(
-        db_session, make_user, make_audit_run, make_audit_finding
+        self, db_session, make_user, make_audit_run, make_audit_finding
     ):
         user = make_user()
         baseline = make_audit_run(user, finished_at=utcnow() - timedelta(hours=1))
@@ -92,9 +88,8 @@ class TestVaultAuditResults:
         ).all()
         assert [row.event_type for row in events] == ["storage_recovery"]
 
-    @staticmethod
     def test_rejects_unsafe_automatic_repair(
-        db_session, make_user, make_audit_run, make_audit_finding
+        self, db_session, make_user, make_audit_run, make_audit_finding
     ):
         run = make_audit_run(
             make_user(), repair_actions_json='["restore_recommended_revision"]'
@@ -104,8 +99,8 @@ class TestVaultAuditResults:
         db_session.refresh(finding)
         assert finding.state == VaultAuditFindingState.OPEN
 
-    @staticmethod
     def test_does_not_change_source_with_invalid_hash(
+        self,
         db_session,
         local_storage,
         make_user,
@@ -137,8 +132,8 @@ class TestVaultAuditResults:
         "enabled,events",
         [(False, '["storage_regression"]'), (True, '["print_failed"]')],
     )
-    @staticmethod
     def test_respects_notification_preferences(
+        self,
         db_session,
         make_user,
         make_system_config,
@@ -156,8 +151,8 @@ class TestVaultAuditResults:
         db_session.commit()
         assert db_session.exec(select(NotificationDelivery)).all() == []
 
-    @staticmethod
     def test_queues_safe_storage_context(
+        self,
         db_session,
         make_user,
         make_system_config,
@@ -182,8 +177,8 @@ class TestVaultAuditResults:
         assert delivery.print_job_id is None
         assert json.loads(delivery.context_json)["summary"]["new"] == 1
 
-    @staticmethod
     def test_result_rollback_cannot_leave_an_alert(
+        self,
         db_session,
         make_user,
         make_audit_run,

@@ -43,8 +43,7 @@ def admission_engine(request, tmp_path):
 
 
 class TestAuditAdmission:
-    @staticmethod
-    def test_concurrent_admission_has_one_winner(admission_engine):
+    def test_concurrent_admission_has_one_winner(self, admission_engine):
         with Session(admission_engine) as session:
             user_id = build_user(session).id
         barrier = Barrier(2)
@@ -64,8 +63,7 @@ class TestAuditAdmission:
         with Session(admission_engine) as session:
             assert len(session.exec(select(VaultAuditRun)).all()) == 1
 
-    @staticmethod
-    def test_database_refuses_duplicate_active_claim(admission_engine):
+    def test_database_refuses_duplicate_active_claim(self, admission_engine):
         with Session(admission_engine) as session:
             user = build_user(session)
             build_audit_run(
@@ -78,8 +76,7 @@ class TestAuditAdmission:
             session.rollback()
 
     @pytest.mark.parametrize("existing", [False, True])
-    @staticmethod
-    def test_concurrent_policy_edit_has_one_winner(admission_engine, existing):
+    def test_concurrent_policy_edit_has_one_winner(self, admission_engine, existing):
         from app.core.errors import OperationError
         from app.db.models import VaultAuditPolicy
         from app.modules.administration.vault_audit_policy import update_policy

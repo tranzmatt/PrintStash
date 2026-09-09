@@ -16,31 +16,26 @@ class TestVaultAuditPolicy:
             (date(2026, 11, 1), datetime(2026, 11, 1, 7, 30, tzinfo=UTC)),
         ],
     )
-    @staticmethod
-    def test_resolves_dst_wall_clock(day, expected):
+    def test_resolves_dst_wall_clock(self, day, expected):
         assert window_start(day, "02:30", "America/New_York") == expected
 
-    @staticmethod
-    def test_chooses_first_fold_occurrence():
+    def test_chooses_first_fold_occurrence(self):
         assert window_start(date(2026, 11, 1), "01:30", "America/New_York") == datetime(
             2026, 11, 1, 5, 30, tzinfo=UTC
         )
 
-    @staticmethod
-    def test_classifies_regressions():
+    def test_classifies_regressions(self):
         assert compare(
             {"worse": 1, "same": 2, "better": 3, "gone": 2},
             {"worse": 2, "same": 2, "better": 1, "new": 3},
         ) == {"new": 1, "worsened": 1, "unchanged": 1, "improved": 1, "resolved": 1}
 
-    @staticmethod
-    def test_skipped_calendar_date_advances_to_valid_instant():
+    def test_skipped_calendar_date_advances_to_valid_instant(self):
         assert window_start(date(2011, 12, 30), "02:30", "Pacific/Apia") == datetime(
             2011, 12, 30, 10, tzinfo=UTC
         )
 
-    @staticmethod
-    def test_jitter_stays_within_the_window():
+    def test_jitter_stays_within_the_window(self):
         from app.db.models import VaultAuditPolicy
         from app.modules.administration.vault_audit_policy import slot_jitter
 
@@ -52,8 +47,7 @@ class TestVaultAuditPolicy:
         policy.window_minutes = 1
         assert slot_jitter(policy) == 0
 
-    @staticmethod
-    def test_backup_identity_uses_ownership_id_not_display_reference():
+    def test_backup_identity_uses_ownership_id_not_display_reference(self):
         from app.db.models import VaultAuditFinding, VaultAuditSeverity
         from app.modules.administration.vault_audit_results import finding_identity
 
@@ -89,8 +83,9 @@ class TestVaultAuditPolicy:
             ),
         ],
     )
-    @staticmethod
-    def test_notification_link_uses_safe_operator_base(monkeypatch, base, expected):
+    def test_notification_link_uses_safe_operator_base(
+        self, monkeypatch, base, expected
+    ):
         from app.core.config import _overlay
         from app.modules.notifications.notifications import maintenance_link
 

@@ -7,8 +7,7 @@ from app.modules.backups.backup.verification import verify_backup
 
 
 class TestVerifyBackupBudget:
-    @staticmethod
-    def test_verification_obeys_read_cancellation(backup_env):
+    def test_verification_obeys_read_cancellation(self, backup_env):
         meta = create_backup()
 
         def cancel(_size):
@@ -17,8 +16,7 @@ class TestVerifyBackupBudget:
         with pytest.raises(RuntimeError, match="audit_window_expired"):
             verify_backup(meta.id, progress=cancel)
 
-    @staticmethod
-    def test_verification_reserves_database_scratch(backup_env):
+    def test_verification_reserves_database_scratch(self, backup_env):
         meta = create_backup()
         allocations = []
         result = verify_backup(meta.id, allocate=allocations.append)
@@ -26,8 +24,7 @@ class TestVerifyBackupBudget:
         assert len(allocations) == 1
         assert allocations[0] > 0
 
-    @staticmethod
-    def test_verification_preserves_read_progress(backup_env):
+    def test_verification_preserves_read_progress(self, backup_env):
         meta = create_backup()
         reads = []
         result = verify_backup(meta.id, progress=reads.append)

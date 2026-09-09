@@ -9,8 +9,7 @@ from tests.factories.migration_rows import seed_schema_row
 
 
 class TestAuditPolicyMigrations:
-    @staticmethod
-    def test_preserves_populated_audits(tmp_path):
+    def test_preserves_populated_audits(self, tmp_path):
         url = f"sqlite:///{tmp_path / 'upgrade.sqlite'}"
         config = _alembic_config(url)
         command.upgrade(config, "d6e9d78801ef")
@@ -45,8 +44,7 @@ class TestAuditPolicyMigrations:
         engine.dispose()
 
     @pytest.mark.postgres
-    @staticmethod
-    def test_preserves_populated_postgres_audits():
+    def test_preserves_populated_postgres_audits(self):
         from uuid import uuid4
 
         from sqlalchemy.engine import make_url
@@ -206,8 +204,7 @@ class TestAuditPolicyMigrations:
                 connection.exec_driver_sql(f'DROP DATABASE "{database}" WITH (FORCE)')
             admin.dispose()
 
-    @staticmethod
-    def test_preserves_populated_policy_controls(tmp_path):
+    def test_preserves_populated_policy_controls(self, tmp_path):
         url = f"sqlite:///{tmp_path / 'policy-upgrade.sqlite'}"
         config = _alembic_config(url)
         command.upgrade(config, "4b21cbe868b6")

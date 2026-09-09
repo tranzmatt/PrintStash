@@ -545,8 +545,7 @@ class TestStorageSummary:
             NotificationEventType.STORAGE_RECOVERY,
         ],
     )
-    @staticmethod
-    def test_renders_storage_summary_without_a_print_job(event):
+    def test_renders_storage_summary_without_a_print_job(self, event):
         context = {
             "event": event.value,
             "audit_mode": "full",
