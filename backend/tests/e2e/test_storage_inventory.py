@@ -11,6 +11,7 @@ from app.core.config import _overlay
 from app.core.time import utcnow
 from app.db.models import AuditLog, CollectionRole, DocumentKind, FileType, User
 from app.modules.ingestion.staging_leases import create_review_lease
+from app.modules.storage.capacity import CapacityResource
 from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import (
     bearer,
@@ -129,9 +130,22 @@ class TestStorageInventoryCleanup:
         before = await api.get("/api/v1/storage/inventory", headers=superuser_headers)
         assert before.status_code == 200
         assert before.json()["inventory"]["temporary_bytes"] == len(staged_payload)
-        monkeypatch.setitem(
-            _overlay, "storage_min_free_bytes", shutil.disk_usage(staged.parent).free
-        )
+        baseline_free = shutil.disk_usage(staged.parent).free
+        staged_device = staged.stat().st_dev
+        real_measure = CapacityResource.measure
+
+        def measure_after_cleanup(resource: CapacityResource):
+            available, total = real_measure(resource)
+            if resource.domain_id != f"volume:{staged_device}":
+                return available, total
+            # Overlay filesystems can defer free-space accounting after unlink.
+            # Keep the E2E admission boundary deterministic while preserving the
+            # real filesystem probe for every other capacity domain.
+            delta = -1 if staged.exists() else len(staged_payload)
+            return baseline_free + delta, total
+
+        monkeypatch.setattr(CapacityResource, "measure", measure_after_cleanup)
+        monkeypatch.setitem(_overlay, "storage_min_free_bytes", baseline_free)
         upload = {
             "file": ("capacity.stl", ascii_stl(), "application/sla")
         }
