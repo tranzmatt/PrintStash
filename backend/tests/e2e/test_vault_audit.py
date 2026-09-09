@@ -227,7 +227,7 @@ async def test_scheduled_audit_records_verified_recovery(
     }
     for row in received:
         data = row.json["data"]
-        assert data["maintenance_path"] == "/settings?tab=maintenance"
+        assert data["maintenance_path"] == "/settings?section=maintenance"
         assert data["duration_s"] >= 0
         assert "scheduled.stl" not in str(row.json)
     history = await api.get("/api/v1/maintenance/audits", headers=headers)

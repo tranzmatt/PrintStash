@@ -59,7 +59,11 @@ const FINDING_LABELS = new Map([
 ]);
 
 function isActive(run: VaultAuditRun | null): boolean {
-  return run?.state === "pending" || run?.state === "running";
+  return (
+    run?.state === "pending" ||
+    run?.state === "running" ||
+    (run?.state === "completed" && run.current_phase === "auto_repair")
+  );
 }
 
 function sourceKey(item: BackupMeta): string {

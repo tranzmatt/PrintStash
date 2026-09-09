@@ -54,6 +54,14 @@ class AuditWindowExpired(Exception):
     """The scheduled read budget ended; do not classify this as corrupt storage."""
 
 
+def _auto_repair_active(run: VaultAuditRun) -> bool:
+    return (
+        run.state == VaultAuditRunState.COMPLETED
+        and run.current_phase == "auto_repair"
+        and run.active_slot is not None
+    )
+
+
 def _safe_name(blob: OwnedBlob) -> str:
     return (blob.display_name or Path(blob.key.replace("\\", "/")).name)[:255]
 
@@ -198,7 +206,7 @@ def request_cancel(session: Session, run_id: int) -> VaultAuditRun | None:
     row = session.get(VaultAuditRun, run_id)
     if row is None:
         return None
-    if row.state in _ACTIVE_STATES:
+    if row.state in _ACTIVE_STATES or _auto_repair_active(row):
         from app.db.models import AuditLog
 
         session.add(
@@ -238,6 +246,8 @@ def reconcile_interrupted_runs() -> int:
         ).all()  # noqa: E711
         run_ids = [row.id for row in claims]
         for row in claims:
+            if _auto_repair_active(row):
+                row.current_phase = "completed"
             row.active_slot = None
             session.add(row)
         session.commit()
@@ -923,9 +933,11 @@ def _execute_run(
             )
 
             record_success(session, run)
+            run.current_phase = "auto_repair"
             session.add(run)
             session.commit()
             repair_safe_findings(session, run)
+            run.current_phase = "completed"
             run.active_slot = None
             session.add(run)
             session.commit()
@@ -935,6 +947,12 @@ def _execute_run(
             run = session.get(VaultAuditRun, run_id)
             if run is not None:
                 run.active_slot = None
+                if run.result_recorded:
+                    run.state = VaultAuditRunState.COMPLETED
+                    run.current_phase = "completed"
+                    session.add(run)
+                    session.commit()
+                    return
                 run.state = VaultAuditRunState.FAILED
                 run.error_code = "audit_failed"
                 run.finished_at = utcnow()

@@ -23,7 +23,7 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const title = policy.mode === "quick" ? t("auditSchedule.quick") : t("auditSchedule.full");
-  const deferredMessages: Record<string, string> = {
+  const deferredMessages = {
     maintenance: t("auditSchedule.deferMaintenance"),
     storage_unavailable: t("auditSchedule.deferStorage"),
     outside_window: t("auditSchedule.deferWindow"),
@@ -279,7 +279,9 @@ function PolicyForm({ initial, onSaved }: { initial: AuditPolicy; onSaved: () =>
       {policy.deferred_reason && (
         <p role="status" className="text-sm text-warning">
           {t("auditSchedule.deferred")}:{" "}
-          {deferredMessages[policy.deferred_reason] ?? t("auditSchedule.deferred")}
+          {Object.entries(deferredMessages).find(
+            ([reason]) => reason === policy.deferred_reason,
+          )?.[1] ?? t("auditSchedule.deferred")}
         </p>
       )}
       {error && (

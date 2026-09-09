@@ -135,7 +135,9 @@ def test_terminal_notifications_commit_with_result(
     assert len(db_session.exec(select(VaultAuditEvent)).all()) == 1
     delivery = db_session.exec(select(NotificationDelivery)).one()
     assert delivery.event_type.value == event
-    assert '"maintenance_path": "/settings?tab=maintenance"' in delivery.context_json
+    assert (
+        '"maintenance_path": "/settings?section=maintenance"' in delivery.context_json
+    )
 
 
 def test_threshold_applies_to_changed_findings_and_channel_filter(

@@ -109,6 +109,7 @@ Implementation verification maps the issue's phases to focused behavior tests:
 | Comparable successful baseline, regression and ignored state | Immutable finding digests scoped by mode/storage generation | Comparison unit tests; failed/cancelled/incomparable baseline integration tests |
 | Storage events, safe payload, preferences, spacing and retries | Existing transactional notification outbox and dispatcher | Threshold/channel, cooldown, terminal rollback/dedup tests; real notification-fake E2E |
 | Opt-in verified Metadata/thumbnail repairs | Narrow managed-local allowlist with post-verification | Rejected unsafe/hash-mismatch repairs, failed repair evidence, both repair E2Es |
+| Completed result remains cancelable during automatic repair | `auto_repair` phase retains the admission claim without changing baseline eligibility | Lifecycle, API cancellation, restart reconciliation and component polling tests |
 | Settings controls, history and detailed health | Audit schedule card and policy diagnostics | Component controls/save/recovery tests; actual Settings Chromium persistence test |
 | Bounded metrics and retention preserving evidence | Audit observability owner | Retention baseline and persisted metric assertions |
 | Administrative evidence | Policy, skip, run, cancel and repair audit entries | Stale-editor transaction and repair failure log assertions |
@@ -118,3 +119,8 @@ An unchanged recurrence is quiet; a changed resource identity or worse severity
 is evaluated as a new regression. Display-name changes cannot alter a receipt's
 identity. Failed repair attempts leave the finding open and emit a deduplicated
 repair-failed event; they are attempted once per run, with no retry loop.
+
+Set `VAULT_PUBLIC_URL=https://your-printstash.example` to include an absolute
+Maintenance link in notifications. Without an operator-supplied URL, messages
+carry the application-relative `/settings?section=maintenance` path. Credentials,
+query strings and fragments are never accepted in the configured base URL.

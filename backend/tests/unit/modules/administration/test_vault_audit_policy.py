@@ -66,3 +66,23 @@ def test_backup_identity_uses_ownership_id_not_display_reference():
     assert finding_identity(finding) == identity
     finding.details_json = '{"ownership_id":43}'
     assert finding_identity(finding) != identity
+
+
+@pytest.mark.parametrize(
+    "base, expected",
+    [
+        (
+            "https://vault.example.test/",
+            "https://vault.example.test/settings?section=maintenance",
+        ),
+        ("https://secret:token@vault.example.test", "/settings?section=maintenance"),
+        ("javascript:bad", "/settings?section=maintenance"),
+        ("https://vault.example.test?secret=token", "/settings?section=maintenance"),
+    ],
+)
+def test_notification_link_uses_safe_operator_base(monkeypatch, base, expected):
+    from app.core.config import _overlay
+    from app.modules.notifications.notifications import maintenance_link
+
+    monkeypatch.setitem(_overlay, "public_url", base)
+    assert maintenance_link() == expected

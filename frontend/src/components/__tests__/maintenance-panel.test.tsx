@@ -162,6 +162,15 @@ describe("MaintenancePanel", () => {
       expect(await screen.findByRole("button", { name: "Cancel" })).toBeInTheDocument();
     });
 
+    it("keeps cancellation available while a completed audit repairs derived data", async () => {
+      renderPanel({
+        audit: anAudit({ state: "completed", current_phase: "auto_repair", progress: 100 }),
+      });
+
+      expect(await screen.findByRole("button", { name: "Cancel" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Quick Audit" })).toBeDisabled();
+    });
+
     it("reports how far along it is", async () => {
       renderPanel({ audit: anAudit({ state: "running", progress: 40 }) });
 

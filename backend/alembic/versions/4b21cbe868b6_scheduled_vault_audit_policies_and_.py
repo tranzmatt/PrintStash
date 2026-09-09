@@ -84,7 +84,14 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column('deadline_at', sa.DateTime(), nullable=True))
         batch_op.add_column(sa.Column('bytes_per_second', sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column('bytes_read', sa.BigInteger(), server_default='0', nullable=False))
-        batch_op.add_column(sa.Column('storage_generation', sa.String(length=64), server_default='', nullable=False))
+        batch_op.add_column(
+            sa.Column(
+                "storage_generation",
+                sa.String(length=64),
+                server_default=sa.text("''"),
+                nullable=False,
+            )
+        )
         batch_op.add_column(sa.Column('scope', sa.String(length=32), server_default='vault', nullable=False))
         batch_op.add_column(sa.Column('baseline_run_id', sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column('regression_json', sa.Text(), server_default='{}', nullable=False))

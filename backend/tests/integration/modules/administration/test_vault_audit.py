@@ -297,6 +297,52 @@ class TestExecuteRun:
         assert run.state == VaultAuditRunState.FAILED
         assert run.error_code == "audit_failed"
 
+    def test_completed_result_stays_claimed_and_cancellable_during_auto_repair(
+        self, db_session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.modules.administration import vault_audit_results
+
+        user = _make_user(db_session, "auto-repair-cancel")
+        run = _make_run(db_session, user)
+        run.active_slot = "audit"
+        db_session.add(run)
+        db_session.commit()
+        observed: dict[str, object] = {}
+        monkeypatch.setattr(
+            vault_audit,
+            "ownership_snapshot",
+            lambda _session: StorageOwnershipSnapshot(),
+        )
+        monkeypatch.setattr(vault_audit, "_check_primary", lambda *_args: True)
+        monkeypatch.setattr(vault_audit, "_check_external", lambda *_args: None)
+        monkeypatch.setattr(vault_audit, "_check_database", lambda *_args: None)
+        monkeypatch.setattr(vault_audit, "_check_background_jobs", lambda *_args: None)
+
+        def cancel_repair(session: Session, active: VaultAuditRun) -> None:
+            session.refresh(active)
+            observed.update(
+                state=active.state,
+                phase=active.current_phase,
+                active_slot=active.active_slot,
+            )
+            cancelled = vault_audit.request_cancel(session, active.id)
+            observed["cancel_requested"] = cancelled.cancel_requested
+
+        monkeypatch.setattr(vault_audit_results, "repair_safe_findings", cancel_repair)
+
+        vault_audit.execute_run(run.id)
+
+        db_session.refresh(run)
+        assert observed == {
+            "state": VaultAuditRunState.COMPLETED,
+            "phase": "auto_repair",
+            "active_slot": "audit",
+            "cancel_requested": True,
+        }
+        assert run.state == VaultAuditRunState.COMPLETED
+        assert run.current_phase == "completed"
+        assert run.active_slot is None
+
     def test_execute_run_flags_every_ownership_problem_in_the_snapshot(
         self, db_session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -348,9 +394,7 @@ class TestExecuteRun:
 
         vault_audit.execute_run(run.id)
 
-        result = vault_audit.read_run(
-            db_session, db_session.get(VaultAuditRun, run.id)
-        )
+        result = vault_audit.read_run(db_session, db_session.get(VaultAuditRun, run.id))
         finding = next(
             item for item in result.findings if item.code == "unowned_blob_detected"
         )
@@ -433,7 +477,9 @@ class TestExecuteRun:
             ),
         )
         monkeypatch.setattr(
-            backup_catalogue, "list_backup_sources", lambda: pytest.fail("discovery API called")
+            backup_catalogue,
+            "list_backup_sources",
+            lambda: pytest.fail("discovery API called"),
         )
         monkeypatch.setattr(
             backup_catalogue, "list_backups", lambda: pytest.fail("list API called")
@@ -538,7 +584,8 @@ class TestExecuteRun:
             lambda _session: StorageOwnershipSnapshot(),
         )
 
-        def fake_check_backups(session, run_arg):
+        def fake_check_backups(session, run_arg, *, capacity=None):
+            del capacity
             run_arg.state = VaultAuditRunState.CANCELLED
             session.add(run_arg)
             session.commit()
@@ -692,6 +739,22 @@ class TestRequestCancel:
         assert result is not None
         assert result.cancel_requested is False
 
+    def test_request_cancel_flags_completed_run_during_auto_repair(
+        self, db_session: Session
+    ) -> None:
+        user = _make_user(db_session, "cancel-auto-repair")
+        run = _make_run(db_session, user)
+        run.state = VaultAuditRunState.COMPLETED
+        run.current_phase = "auto_repair"
+        run.active_slot = "audit"
+        db_session.add(run)
+        db_session.commit()
+
+        result = vault_audit.request_cancel(db_session, run.id)
+
+        assert result is not None
+        assert result.cancel_requested is True
+
     def test_request_cancel_missing_run_returns_none(self, db_session: Session) -> None:
         assert vault_audit.request_cancel(db_session, 999999) is None
 
@@ -715,6 +778,24 @@ class TestReconcileInterruptedRuns:
         db_session.refresh(result)
         assert result.state == VaultAuditRunState.FAILED
         assert result.error_code == "audit_interrupted"
+
+    def test_reconcile_finalizes_interrupted_auto_repair_claim(
+        self, db_session: Session
+    ) -> None:
+        user = _make_user(db_session, "reconcile-auto-repair")
+        run = _make_run(db_session, user)
+        run.state = VaultAuditRunState.COMPLETED
+        run.current_phase = "auto_repair"
+        run.active_slot = "audit"
+        db_session.add(run)
+        db_session.commit()
+
+        vault_audit.reconcile_interrupted_runs()
+
+        db_session.refresh(run)
+        assert run.state == VaultAuditRunState.COMPLETED
+        assert run.current_phase == "completed"
+        assert run.active_slot is None
 
 
 class TestCheckPrimary:
@@ -1209,7 +1290,9 @@ class TestCheckBackups:
 
         monkeypatch.setattr(backup_verification, "verify_backup_ownership", verify)
         monkeypatch.setattr(
-            backup_catalogue, "list_backup_sources", lambda: pytest.fail("discovery API called")
+            backup_catalogue,
+            "list_backup_sources",
+            lambda: pytest.fail("discovery API called"),
         )
         monkeypatch.setattr(
             backup_catalogue, "list_backups", lambda: pytest.fail("list API called")
@@ -1392,7 +1475,6 @@ class TestReparseMetadata:
             db_session, model, path="reparse-ok.gcode", file_type=FileType.GCODE
         )
         get_backend().write_bytes(b"; filament_type = PLA\nG28\n", file_row.path)
-
 
         result = vault_audit._reparse_metadata(db_session, file_row.id)
 

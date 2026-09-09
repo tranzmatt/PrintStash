@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlmodel import Field
 
@@ -293,7 +294,8 @@ class VaultAuditRun(SQLModel, table=True):
         default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
     )
     storage_generation: str = Field(
-        default="", sa_column=Column(String(64), nullable=False, server_default="")
+        default="",
+        sa_column=Column(String(64), nullable=False, server_default=text("''")),
     )
     scope: str = Field(
         default="vault",

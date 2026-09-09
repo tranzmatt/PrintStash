@@ -30,8 +30,9 @@ from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import or_
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.core.url_safety import (
@@ -863,6 +864,29 @@ def _record_channel_test(channel_id: int, ok: bool, error: Optional[str]) -> Non
         session.commit()
 
 
+def maintenance_link() -> str:
+    """Use only an explicit safe operator URL; never infer a host from requests."""
+    path = "/settings?section=maintenance"
+    base = settings.public_url.strip().rstrip("/")
+    try:
+        parts = urlsplit(base)
+        if (
+            parts.scheme in {"http", "https"}
+            and parts.hostname
+            and not (
+                parts.username
+                or parts.password
+                or parts.query
+                or parts.fragment
+                or any(ord(char) < 32 for char in base)
+            )
+        ):
+            return base + path
+    except ValueError:
+        pass
+    return path
+
+
 def enqueue_storage_event(
     session: Session,
     event_type: NotificationEventType,
@@ -886,7 +910,7 @@ def enqueue_storage_event(
         "timestamp": utcnow().isoformat(),
         "duration_s": max(0, duration_s),
         "categories": categories or [],
-        "maintenance_path": "/settings?tab=maintenance",
+        "maintenance_path": maintenance_link(),
         "summary": {
             key: int(summary.get(key, 0))
             for key in ("new", "worsened", "unchanged", "improved", "resolved")
@@ -895,11 +919,13 @@ def enqueue_storage_event(
     matching = [
         row
         for row in session.exec(
-            select(NotificationChannel).where(NotificationChannel.enabled == True)
+            select(NotificationChannel).where(
+                col(NotificationChannel.enabled).is_(True)
+            )
         ).all()
         if _channel_subscribes(row, event_type, None)
         and (not channel_ids or row.id in channel_ids)
-    ]  # noqa: E712
+    ]
     for channel in matching:
         session.add(
             NotificationDelivery(

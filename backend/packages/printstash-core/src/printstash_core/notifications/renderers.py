@@ -102,7 +102,7 @@ def summary_lines(context: NotificationContext) -> list[str]:
             f"Audit: {context.get('audit_mode', 'vault')} #{context.get('audit_run_id', '')}",
             f"Duration: {_fmt_duration(context.get('duration_s')) or '0s'}",
             f"Categories: {', '.join(context.get('categories', [])) or 'none'}",
-            f"Maintenance: {context.get('maintenance_path', '/settings?tab=maintenance')}",
+            f"Maintenance: {context.get('maintenance_path', '/settings?section=maintenance')}",
             *[
                 f"{key.title()}: {summary.get(key, 0)}"
                 for key in ("new", "worsened", "resolved", "improved")

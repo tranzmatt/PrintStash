@@ -26,6 +26,10 @@ from app.modules.notifications.notifications import enqueue_storage_event
 from app.modules.storage.storage_backend.runtime import get_backend
 
 
+class AutoRepairStopped(Exception):
+    """The operator or policy window stopped repair after the audit result committed."""
+
+
 def finding_identity(row: VaultAuditFinding) -> str:
     details = json.loads(row.details_json)
     identity = next(
@@ -265,7 +269,7 @@ def _authoritative_hash(file: File, run: VaultAuditRun, session: Session) -> str
     for chunk in get_backend().stream_chunks(file.path):
         session.refresh(run)
         if run.cancel_requested:
-            raise ValueError("audit_cancelled")
+            raise AutoRepairStopped
         consumed += len(chunk)
         run.bytes_read += len(chunk)
         session.add(run)
@@ -275,11 +279,11 @@ def _authoritative_hash(file: File, run: VaultAuditRun, session: Session) -> str
             while delay > 0:
                 session.refresh(run)
                 if run.cancel_requested:
-                    raise ValueError("audit_cancelled")
+                    raise AutoRepairStopped
                 if run.deadline_at is not None and utcnow() >= ensure_utc(
                     run.deadline_at
                 ):
-                    raise ValueError("audit_window_expired")
+                    raise AutoRepairStopped
                 time.sleep(min(delay, 0.2))
                 delay = consumed / run.bytes_per_second - (time.monotonic() - started)
         digest.update(chunk)
@@ -387,6 +391,9 @@ def repair_safe_findings(session: Session, run: VaultAuditRun) -> None:
                         image.verify()
                     ok = True
             ok = ok and _authoritative_hash(file, run, session) == file.sha256.lower()
+        except AutoRepairStopped:
+            session.rollback()
+            break
         except Exception:
             session.rollback()
             ok = False
