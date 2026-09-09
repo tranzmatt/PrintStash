@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -131,7 +132,13 @@ class RemoteBackupDestination:
             yield reader
         self.require_owned(row)
 
-    def download_owned(self, row: OwnedStorageObject, destination: Path) -> None:
+    def download_owned(
+        self,
+        row: OwnedStorageObject,
+        destination: Path,
+        *,
+        progress: Callable[[int], None] | None = None,
+    ) -> None:
         self.require_owned(row)
         assert row.size_bytes is not None
         digest = hashlib.sha256()
@@ -144,6 +151,8 @@ class RemoteBackupDestination:
                     while chunk := reader.read(
                         min(1024 * 1024, row.size_bytes - written + 1)
                     ):
+                        if progress is not None:
+                            progress(len(chunk))
                         written += len(chunk)
                         if written > row.size_bytes:
                             raise BackupDestinationError(

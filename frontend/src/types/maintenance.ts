@@ -54,6 +54,9 @@ export interface VaultAuditFinding {
 }
 
 export interface VaultAuditRun {
+  trigger?: "manual" | "scheduled";
+  planned_bytes?: number;
+  bytes_read?: number;
   id: number;
   requested_by: number;
   mode: VaultAuditMode;
@@ -77,4 +80,34 @@ export interface BackupVerification {
   manifest_version: string | null;
   checked_members: number;
   findings: Array<{ code: string; member: string; expected_size?: number; actual_size?: number }>;
+}
+
+export interface AuditPolicy {
+  expected_revision?: number | null;
+  jitter_seconds?: number;
+  max_lateness_minutes?: number;
+  notification_threshold?: "off" | "critical" | "warning" | "info";
+  notification_channels?: number[];
+  notification_cooldown_minutes?: number;
+  estimated_remote_bytes?: number;
+  overdue?: boolean;
+  mode: VaultAuditMode;
+  enabled: boolean;
+  paused: boolean;
+  cadence: "weekly" | "monthly";
+  timezone: string;
+  weekday: number;
+  month_day: number;
+  start_time: string;
+  window_minutes: number;
+  bytes_per_second: number;
+  read_concurrency: number;
+  auto_repair: boolean;
+  repair_actions: ("reparse_metadata" | "regenerate_thumbnail")[];
+  full_cost_acknowledged: boolean;
+  revision: number;
+  next_due_at: string | null;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  deferred_reason: string | null;
 }

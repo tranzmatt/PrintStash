@@ -297,6 +297,8 @@ async def lifespan(app: FastAPI):
     )
     app.state.external_scan_task = asyncio.create_task(_external_scan_loop())
     app.state.automatic_backup_task = asyncio.create_task(_automatic_backup_loop())
+    from app.runtime.audit_scheduler import run_audit_scheduler
+    app.state.audit_scheduler_task = asyncio.create_task(run_audit_scheduler())
     app.state.notification_task = asyncio.create_task(run_dispatcher_loop())
     app.state.fleet_scheduler_task = asyncio.create_task(
         run_fleet_scheduler(work_wakeup, provider_builder)
@@ -313,6 +315,7 @@ async def lifespan(app: FastAPI):
         app.state.gc_task,
         app.state.external_scan_task,
         app.state.automatic_backup_task,
+        app.state.audit_scheduler_task,
         app.state.notification_task,
         app.state.fleet_scheduler_task,
     )

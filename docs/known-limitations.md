@@ -182,8 +182,10 @@ manufacturing platform.
   mismatches, unavailable external roots, and unowned objects require manual
   recovery and are never deleted automatically.
 - Full audit hashes owned primary blobs and can be expensive on remote/S3
-  storage. Cancellation occurs between objects rather than during one object
-  stream.
+  storage. Scheduled audits throttle Artifact and backup reads and check their
+  deadline between chunks; already-started provider calls complete within their
+  transport timeout. See [scheduled audits](scheduled-audits.md) for calendar,
+  notification, and opt-in automatic repair behavior.
 - Backup verification validates archive safety, manifest/database membership,
   declared member sizes, and manifest compatibility. It does not restore an
   individual blob or prove that every application-level database invariant is

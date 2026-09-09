@@ -51,6 +51,8 @@
 
 ### Added
 
+- Optional scheduled Quick and Full Vault audits with maintenance windows, safe regression and recovery alerts, history, and verified opt-in derived-data repair.
+
 - **Storage presets:** Synology, TrueNAS, QNAP and Unraid mounted-folder guidance; explicit Synology/QNAP WebDAV, MinIO, Garage, SeaweedFS, Hetzner Object Storage, Storage Box SFTP/WebDAV, and Koofr connections. Presets reuse existing transports and encrypted credentials, with endpoint validation and separate delivery/safety facts.
 
 - Capacity admission supports percentage headroom and retains durable upload, migration and restore budgets across process failure.

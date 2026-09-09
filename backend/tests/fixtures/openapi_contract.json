@@ -370,6 +370,367 @@
         "title": "AuditObservation",
         "type": "object"
       },
+      "AuditPolicyRead": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_repair": {
+            "default": false,
+            "title": "Auto Repair",
+            "type": "boolean"
+          },
+          "bytes_per_second": {
+            "default": 10485760,
+            "maximum": 1073741824.0,
+            "minimum": 1024.0,
+            "title": "Bytes Per Second",
+            "type": "integer"
+          },
+          "cadence": {
+            "default": "weekly",
+            "enum": [
+              "weekly",
+              "monthly"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "deferred_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deferred Reason"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "estimated_remote_bytes": {
+            "default": 0,
+            "title": "Estimated Remote Bytes",
+            "type": "integer"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "full_cost_acknowledged": {
+            "default": false,
+            "title": "Full Cost Acknowledged",
+            "type": "boolean"
+          },
+          "jitter_seconds": {
+            "default": 0,
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Jitter Seconds",
+            "type": "integer"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "max_lateness_minutes": {
+            "default": 120,
+            "maximum": 44640.0,
+            "minimum": 1.0,
+            "title": "Max Lateness Minutes",
+            "type": "integer"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "month_day": {
+            "default": 1,
+            "maximum": 31.0,
+            "minimum": 1.0,
+            "title": "Month Day",
+            "type": "integer"
+          },
+          "next_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Due At"
+          },
+          "notification_channels": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "title": "Notification Channels",
+            "type": "array"
+          },
+          "notification_cooldown_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Notification Cooldown Minutes",
+            "type": "integer"
+          },
+          "notification_threshold": {
+            "default": "warning",
+            "enum": [
+              "off",
+              "critical",
+              "warning",
+              "info"
+            ],
+            "title": "Notification Threshold",
+            "type": "string"
+          },
+          "overdue": {
+            "default": false,
+            "title": "Overdue",
+            "type": "boolean"
+          },
+          "paused": {
+            "default": false,
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "read_concurrency": {
+            "default": 1,
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Read Concurrency",
+            "type": "integer"
+          },
+          "repair_actions": {
+            "items": {
+              "enum": [
+                "reparse_metadata",
+                "regenerate_thumbnail"
+              ],
+              "type": "string"
+            },
+            "title": "Repair Actions",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "start_time": {
+            "default": "02:00",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weekday": {
+            "default": 6,
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Weekday",
+            "type": "integer"
+          },
+          "window_minutes": {
+            "default": 120,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Window Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "revision",
+          "next_due_at",
+          "last_attempt_at",
+          "last_success_at",
+          "deferred_reason"
+        ],
+        "title": "AuditPolicyRead",
+        "type": "object"
+      },
+      "AuditPolicyUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_repair": {
+            "default": false,
+            "title": "Auto Repair",
+            "type": "boolean"
+          },
+          "bytes_per_second": {
+            "default": 10485760,
+            "maximum": 1073741824.0,
+            "minimum": 1024.0,
+            "title": "Bytes Per Second",
+            "type": "integer"
+          },
+          "cadence": {
+            "default": "weekly",
+            "enum": [
+              "weekly",
+              "monthly"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "full_cost_acknowledged": {
+            "default": false,
+            "title": "Full Cost Acknowledged",
+            "type": "boolean"
+          },
+          "jitter_seconds": {
+            "default": 0,
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Jitter Seconds",
+            "type": "integer"
+          },
+          "max_lateness_minutes": {
+            "default": 120,
+            "maximum": 44640.0,
+            "minimum": 1.0,
+            "title": "Max Lateness Minutes",
+            "type": "integer"
+          },
+          "month_day": {
+            "default": 1,
+            "maximum": 31.0,
+            "minimum": 1.0,
+            "title": "Month Day",
+            "type": "integer"
+          },
+          "notification_channels": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "title": "Notification Channels",
+            "type": "array"
+          },
+          "notification_cooldown_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Notification Cooldown Minutes",
+            "type": "integer"
+          },
+          "notification_threshold": {
+            "default": "warning",
+            "enum": [
+              "off",
+              "critical",
+              "warning",
+              "info"
+            ],
+            "title": "Notification Threshold",
+            "type": "string"
+          },
+          "paused": {
+            "default": false,
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "read_concurrency": {
+            "default": 1,
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Read Concurrency",
+            "type": "integer"
+          },
+          "repair_actions": {
+            "items": {
+              "enum": [
+                "reparse_metadata",
+                "regenerate_thumbnail"
+              ],
+              "type": "string"
+            },
+            "title": "Repair Actions",
+            "type": "array"
+          },
+          "start_time": {
+            "default": "02:00",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weekday": {
+            "default": 6,
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Weekday",
+            "type": "integer"
+          },
+          "window_minutes": {
+            "default": 120,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Window Minutes",
+            "type": "integer"
+          }
+        },
+        "title": "AuditPolicyUpdate",
+        "type": "object"
+      },
       "AuthProvidersRead": {
         "properties": {
           "oidc_display_name": {
@@ -14257,6 +14618,22 @@
       },
       "VaultAuditRunRead": {
         "properties": {
+          "baseline_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Run Id"
+          },
+          "bytes_read": {
+            "default": 0,
+            "title": "Bytes Read",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -14276,6 +14653,18 @@
               }
             ],
             "title": "Current Phase"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
           },
           "error_code": {
             "anyOf": [
@@ -14318,6 +14707,11 @@
           "mode": {
             "$ref": "#/components/schemas/VaultAuditMode"
           },
+          "planned_bytes": {
+            "default": 0,
+            "title": "Planned Bytes",
+            "type": "integer"
+          },
           "progress": {
             "title": "Progress",
             "type": "number"
@@ -14325,6 +14719,23 @@
           "requested_by": {
             "title": "Requested By",
             "type": "integer"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "scope": {
+            "default": "vault",
+            "title": "Scope",
+            "type": "string"
           },
           "started_at": {
             "anyOf": [
@@ -14340,6 +14751,11 @@
           },
           "state": {
             "$ref": "#/components/schemas/VaultAuditRunState"
+          },
+          "trigger": {
+            "default": "manual",
+            "title": "Trigger",
+            "type": "string"
           },
           "warning_count": {
             "title": "Warning Count",
@@ -22228,6 +22644,138 @@
         "summary": "Import one folder under a configured library root",
         "tags": [
           "external-libraries"
+        ]
+      }
+    },
+    "/api/v1/maintenance/audit-policies": {
+      "get": {
+        "operationId": "audit_policies_api_v1_maintenance_audit_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditPolicyRead"
+                  },
+                  "title": "Response Audit Policies Api V1 Maintenance Audit Policies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Audit Policies",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/maintenance/audit-policies/{mode}": {
+      "put": {
+        "operationId": "save_audit_policy_api_v1_maintenance_audit_policies__mode__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mode",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/VaultAuditMode"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Save Audit Policy",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/maintenance/audit-policies/{mode}/skip": {
+      "post": {
+        "operationId": "skip_audit_api_v1_maintenance_audit_policies__mode__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mode",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/VaultAuditMode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Skip Audit",
+        "tags": [
+          "maintenance"
         ]
       }
     },

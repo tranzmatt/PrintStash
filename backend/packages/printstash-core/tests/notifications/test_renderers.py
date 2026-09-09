@@ -97,6 +97,12 @@ class TestNotificationEventType:
             "print_failed",
             "print_cancelled",
             "printer_offline",
+            "storage_regression",
+            "storage_recovery",
+            "storage_audit_failed",
+            "storage_audit_cancelled",
+            "storage_audit_overdue",
+            "storage_repair_failed",
         }
 
 
@@ -529,3 +535,31 @@ class TestRender:
     def test_treats_a_blank_setting_as_missing(self, value: str) -> None:
         with pytest.raises(RenderError):
             render(NotificationTarget.NTFY, _context(), {"topic": value})
+
+
+class TestStorageSummary:
+    @pytest.mark.parametrize(
+        "event",
+        [
+            NotificationEventType.STORAGE_REGRESSION,
+            NotificationEventType.STORAGE_RECOVERY,
+        ],
+    )
+    def test_renders_storage_summary_without_a_print_job(self, event):
+        context = {
+            "event": event.value,
+            "audit_mode": "full",
+            "audit_run_id": 42,
+            "summary": {"new": 2, "worsened": 1, "resolved": 3, "improved": 0},
+        }
+        assert event_label(context).startswith("Vault audit")
+        assert summary_lines(context) == [
+            "Audit: full #42",
+            "Duration: 0s",
+            "Categories: none",
+            "Maintenance: /settings?section=maintenance",
+            "New: 2",
+            "Worsened: 1",
+            "Resolved: 3",
+            "Improved: 0",
+        ]

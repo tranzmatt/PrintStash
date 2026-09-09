@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlmodel import Field
 
@@ -202,6 +203,72 @@ class SystemConfig(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class VaultAuditPolicy(SQLModel, table=True):
+    """One opt-in calendar policy per audit mode; UTC instants, IANA wall clock."""
+
+    __tablename__ = "vault_audit_policies"
+
+    mode: str = Field(primary_key=True, max_length=16)
+    enabled: bool = Field(default=False)
+    paused: bool = Field(default=False)
+    cadence: str = Field(default="weekly", max_length=16)
+    timezone: str = Field(default="UTC", max_length=64)
+    weekday: int = Field(default=6)
+    month_day: int = Field(default=1)
+    start_time: str = Field(default="02:00", max_length=5)
+    window_minutes: int = Field(default=120)
+    jitter_seconds: int = Field(
+        default=0, sa_column=Column(Integer, nullable=False, server_default="0")
+    )
+    max_lateness_minutes: int = Field(
+        default=120, sa_column=Column(Integer, nullable=False, server_default="120")
+    )
+    notification_threshold: str = Field(
+        default="warning",
+        sa_column=Column(String(16), nullable=False, server_default="warning"),
+    )
+    notification_channels_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False, server_default="[]")
+    )
+    notification_cooldown_minutes: int = Field(
+        default=60, sa_column=Column(Integer, nullable=False, server_default="60")
+    )
+    last_notified_at: Optional[datetime] = None
+    retry_after: Optional[datetime] = None
+    launch_failures: int = Field(
+        default=0, sa_column=Column(Integer, nullable=False, server_default="0")
+    )
+    bytes_per_second: int = Field(default=10485760)
+    read_concurrency: int = Field(default=1)
+    auto_repair: bool = Field(default=False)
+    repair_actions_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False)
+    )
+    full_cost_acknowledged: bool = Field(default=False)
+    requested_by: Optional[int] = Field(default=None, foreign_key="users.id")
+    revision: int = Field(default=1)
+    next_due_at: Optional[datetime] = Field(default=None, index=True)
+    last_attempt_at: Optional[datetime] = None
+    last_success_at: Optional[datetime] = None
+    deferred_reason: Optional[str] = Field(default=None, max_length=64)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class VaultAuditEvent(SQLModel, table=True):
+    """Durable storage event; safe aggregate payload, independent of delivery."""
+
+    __tablename__ = "vault_audit_events"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: Optional[int] = Field(
+        default=None, foreign_key="vault_audit_runs.id", index=True
+    )
+    dedup_key: str = Field(max_length=128, unique=True)
+    event_type: str = Field(max_length=32)
+    summary_json: str = Field(default="{}", sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class VaultAuditRun(SQLModel, table=True):
     __tablename__ = "vault_audit_runs"
 
@@ -209,6 +276,41 @@ class VaultAuditRun(SQLModel, table=True):
     requested_by: int = Field(foreign_key="users.id", index=True)
     mode: VaultAuditMode = Field(index=True)
     state: VaultAuditRunState = Field(default=VaultAuditRunState.PENDING, index=True)
+    # A nullable unique claim serializes manual and scheduled admission on both DBs.
+    active_slot: Optional[str] = Field(default=None, max_length=16, unique=True)
+    trigger: str = Field(
+        default="manual",
+        sa_column=Column(String(16), nullable=False, server_default="manual"),
+    )
+    trigger_key: Optional[str] = Field(default=None, max_length=128, unique=True)
+    policy_revision: Optional[int] = None
+    scheduled_for: Optional[datetime] = None
+    deadline_at: Optional[datetime] = None
+    bytes_per_second: Optional[int] = None
+    planned_bytes: int = Field(
+        default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
+    )
+    bytes_read: int = Field(
+        default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
+    )
+    storage_generation: str = Field(
+        default="",
+        sa_column=Column(String(64), nullable=False, server_default=text("''")),
+    )
+    scope: str = Field(
+        default="vault",
+        sa_column=Column(String(32), nullable=False, server_default="vault"),
+    )
+    baseline_run_id: Optional[int] = None
+    regression_json: str = Field(
+        default="{}", sa_column=Column(Text, nullable=False, server_default="{}")
+    )
+    result_recorded: bool = Field(
+        default=False, sa_column=Column(Boolean, nullable=False, server_default="0")
+    )
+    repair_actions_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False, server_default="[]")
+    )
     info_count: int = Field(default=0)
     warning_count: int = Field(default=0)
     critical_count: int = Field(default=0)

@@ -95,6 +95,42 @@ const EVENTS: { value: NotificationEvent; label: string }[] = [
       return uiText("Printer offline");
     },
   },
+  {
+    value: "storage_regression",
+    get label() {
+      return uiText("Vault audit regression");
+    },
+  },
+  {
+    value: "storage_recovery",
+    get label() {
+      return uiText("Vault audit recovery");
+    },
+  },
+  {
+    value: "storage_audit_failed",
+    get label() {
+      return uiText("Scheduled Vault audit failed");
+    },
+  },
+  {
+    value: "storage_audit_cancelled",
+    get label() {
+      return uiText("Scheduled Vault audit cancelled");
+    },
+  },
+  {
+    value: "storage_audit_overdue",
+    get label() {
+      return uiText("Scheduled Vault audit overdue");
+    },
+  },
+  {
+    value: "storage_repair_failed",
+    get label() {
+      return uiText("Vault repair failed");
+    },
+  },
 ];
 
 /** One editable entry of a channel's `config` map. */

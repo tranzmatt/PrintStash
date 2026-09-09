@@ -347,6 +347,13 @@ def _spoolman_probe() -> dict:
     ),
 )
 def health_details() -> dict:
+    from app.modules.administration.vault_audit_policy import health as audit_health
+
+    try:
+        with get_session_factory().scoped_session() as session:
+            audits = audit_health(session)
+    except Exception:
+        audits = {"ok": False, "error": "audit_health_unavailable"}
     out = {
         "status": "ok",
         "name": settings.app_name,
@@ -359,6 +366,7 @@ def health_details() -> dict:
         "capabilities": _runtime_capabilities(),
     }
     components = {
+        "vault_audits": audits,
         "database": _database_probe(),
         "storage": _storage_probe(),
         "capacity": _capacity_probe(),

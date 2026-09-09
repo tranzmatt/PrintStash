@@ -135,6 +135,8 @@ class Settings(BaseSettings):
     # external slicer process can fetch the file without the user's login session.
     slicer_download_token_expire_minutes: int = Field(default=15, gt=0)
     cors_origins: str = ""
+    # Optional operator-supplied base URL for notification navigation links.
+    public_url: str = ""
 
     max_upload_mb: int = Field(default=512, gt=0)
     portable_manifest_max_mb: int = Field(default=128, gt=0)
