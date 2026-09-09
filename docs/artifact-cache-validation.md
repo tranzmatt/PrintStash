@@ -75,6 +75,13 @@ to `backend/tests/`.
 | 65 | Batches last-access updates | Edge | Repeated hit inside and outside coarsening window | Timestamp stays stable, then advances after window | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_batches_last_access_timestamp_updates` |
 | 66 | Recovers maintenance polling | Error | One poll fails; next succeeds | Stale failure alert clears automatically | Component | ✅ `components/__tests__/artifact-cache-card.test.tsx::ArtifactCacheCard observability::clears a transient polling failure after polling recovers` |
 | 67 | Contains malformed cache responses | Error | Settings receives a response without a cache policy | Cache panel reports the failure without crashing Settings | Component | ✅ `components/__tests__/artifact-cache-card.test.tsx::ArtifactCacheCard::reports a malformed cache response without breaking Settings` |
+| 68 | Bypasses failed cache lookup | Error | Cache index raises during lookup | Exact source body still streams | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_cache_lookup_failure_streams_verified_source` |
+| 69 | Falls back from stream cache capacity denial | Edge | Cache fill admission exceeds cache quota | Exact source body still streams | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_stream_cache_capacity_denial_preserves_source_delivery` |
+| 70 | Preserves stream admission failures | Error | Cache admission fails for a noncapacity reason | Original error remains visible; source is unread | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_stream_preserves_noncapacity_admission_failure` |
+| 71 | Survives midstream cache loss | Error | Disposable cache fails while copying a source chunk | Exact source body completes; no cache entry | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_midstream_cache_failure_preserves_source_delivery` |
+| 72 | Survives cache publication loss | Error | Disposable cache fails after the source body completes | Exact source body completes; no cache entry | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_completion_cache_failure_preserves_source_delivery` |
+| 73 | Audits corrupt disposable entries | Error | Full audit observes corrupt cache content | Warning finding includes corruption evidence | Integration | ✅ `integration/modules/administration/test_vault_audit.py::TestCheckArtifactCache::test_records_corrupt_disposable_entries` |
+| 74 | Reports unavailable disposable cache | Error | Quick audit cannot inspect cache index | Informational finding identifies cache unavailability | Integration | ✅ `integration/modules/administration/test_vault_audit.py::TestCheckArtifactCache::test_records_unavailable_disposable_cache` |
 
 ## Focused execution
 
@@ -84,6 +91,11 @@ published-v0.12.1 schema, alongside the SQLite case (2 tests). The backend hygie
 health and headline E2E group passed 2,395 tests, and the exact files that had failed
 earlier passed all 227 tests on rerun. Printer, fleet and content compatibility
 passed 28 tests.
+
+After CI exposed two module-floor gaps, the combined Artifact content and Vault
+audit focused suite passed 102 tests. Its focused branch report measured
+`artifact_content.py` at 90.96%; the added cache-audit cases cover both the corrupt
+and unavailable observations that were missing from the full-suite report.
 
 The backend full non-resource phase passed 9,359 tests apart from two unrelated
 timing/concurrency flakes (a SQLite rollback race and a 2.07-second SFTP deadline);

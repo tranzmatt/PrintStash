@@ -943,6 +943,65 @@ class TestCheckPrimary:
         assert findings == []
 
 
+class TestCheckArtifactCache:
+    def test_records_corrupt_disposable_entries(
+        self, db_session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from sqlmodel import select
+
+        from app.modules.storage import materializer_runtime
+
+        user = _make_user(db_session, "cache-audit-corrupt")
+        run = _make_run(db_session, user, VaultAuditMode.FULL)
+
+        class CorruptCache:
+            def inspect_entries(self, *, full: bool):
+                assert full is True
+                return {"checked": 2, "corrupt": 1}
+
+        monkeypatch.setattr(
+            materializer_runtime, "get_materializer", lambda: CorruptCache()
+        )
+
+        vault_audit._check_artifact_cache(db_session, run)
+
+        findings = db_session.exec(
+            select(VaultAuditFinding).where(VaultAuditFinding.run_id == run.id)
+        ).all()
+        assert [(finding.code, finding.severity) for finding in findings] == [
+            ("artifact_cache_corrupt", VaultAuditSeverity.WARNING)
+        ]
+        assert json.loads(findings[0].details_json) == {"checked": 2, "corrupt": 1}
+
+    def test_records_unavailable_disposable_cache(
+        self, db_session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from sqlmodel import select
+
+        from app.modules.storage import materializer_runtime
+
+        user = _make_user(db_session, "cache-audit-unavailable")
+        run = _make_run(db_session, user)
+
+        class UnavailableCache:
+            def inspect_entries(self, *, full: bool):
+                assert full is False
+                raise OSError("cache index unavailable")
+
+        monkeypatch.setattr(
+            materializer_runtime, "get_materializer", lambda: UnavailableCache()
+        )
+
+        vault_audit._check_artifact_cache(db_session, run)
+
+        findings = db_session.exec(
+            select(VaultAuditFinding).where(VaultAuditFinding.run_id == run.id)
+        ).all()
+        assert [(finding.code, finding.severity) for finding in findings] == [
+            ("artifact_cache_unavailable", VaultAuditSeverity.INFO)
+        ]
+
+
 class TestCheckDatabase:
     def test_check_database_flags_model_without_live_artifact(
         self, db_session: Session

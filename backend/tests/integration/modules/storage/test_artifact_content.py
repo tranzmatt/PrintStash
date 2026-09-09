@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -321,6 +322,103 @@ def managed_cache_content(make_model, make_file, tmp_path):
 
 
 class TestManagedCacheContent:
+    def test_cache_lookup_failure_streams_verified_source(
+        self, managed_cache_content, monkeypatch
+    ):
+        handle, cache, source, backend = managed_cache_content
+        monkeypatch.setattr(
+            cache,
+            "acquire",
+            lambda _representation: (_ for _ in ()).throw(
+                sqlite3.OperationalError("index unavailable")
+            ),
+        )
+
+        assert b"".join(handle.stream()) == source.read_bytes()
+        assert backend.bytes_read == source.stat().st_size
+
+    def test_stream_cache_capacity_denial_preserves_source_delivery(
+        self, managed_cache_content, monkeypatch
+    ):
+        from app.core.errors import ErrorKind
+
+        handle, cache, source, backend = managed_cache_content
+        monkeypatch.setattr(
+            cache,
+            "begin_fill",
+            lambda _representation: (_ for _ in ()).throw(
+                OperationError("cache_capacity", kind=ErrorKind.CAPACITY)
+            ),
+        )
+
+        assert b"".join(handle.stream()) == source.read_bytes()
+        assert backend.bytes_read == source.stat().st_size
+
+    def test_stream_preserves_noncapacity_admission_failure(
+        self, managed_cache_content, monkeypatch
+    ):
+        from app.core.errors import ErrorKind
+
+        handle, cache, _, backend = managed_cache_content
+        monkeypatch.setattr(
+            cache,
+            "begin_fill",
+            lambda _representation: (_ for _ in ()).throw(
+                OperationError("cache_unavailable", kind=ErrorKind.UNAVAILABLE)
+            ),
+        )
+
+        with pytest.raises(OperationError, match="cache_unavailable"):
+            handle.stream()
+        assert backend.bytes_read == 0
+
+    def test_midstream_cache_failure_preserves_source_delivery(
+        self, managed_cache_content, monkeypatch
+    ):
+        from app.modules.storage.artifact_materializer import CacheUnavailable
+
+        handle, cache, source, backend = managed_cache_content
+
+        class UnavailableFill:
+            def write(self, _chunk):
+                raise CacheUnavailable("cache disappeared")
+
+            def close(self):
+                return None
+
+        monkeypatch.setattr(
+            cache, "begin_fill", lambda _representation: UnavailableFill()
+        )
+
+        assert b"".join(handle.stream()) == source.read_bytes()
+        assert backend.bytes_read == source.stat().st_size
+        assert cache.status()["entries"] == 0
+
+    def test_completion_cache_failure_preserves_source_delivery(
+        self, managed_cache_content, monkeypatch
+    ):
+        from app.modules.storage.artifact_materializer import CacheUnavailable
+
+        handle, cache, source, backend = managed_cache_content
+
+        class UnavailableFill:
+            def write(self, _chunk):
+                return None
+
+            def complete(self):
+                raise CacheUnavailable("cache disappeared")
+
+            def close(self):
+                return None
+
+        monkeypatch.setattr(
+            cache, "begin_fill", lambda _representation: UnavailableFill()
+        )
+
+        assert b"".join(handle.stream()) == source.read_bytes()
+        assert backend.bytes_read == source.stat().st_size
+        assert cache.status()["entries"] == 0
+
     def test_cache_capacity_denial_uses_separately_budgeted_temp(
         self, managed_cache_content
     ):
