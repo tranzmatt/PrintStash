@@ -115,7 +115,7 @@ describe("SharePage", () => {
       renderShare();
 
       await screen.findByText("Benchy");
-      expect(document.title).toContain("Benchy");
+      await waitFor(() => expect(document.title).toContain("Benchy"));
     });
   });
 
