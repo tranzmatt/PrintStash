@@ -177,6 +177,7 @@ class TestHealthDetails:
             "fleet_scheduler",
             "external_libraries",
             "spoolman",
+            "vault_audits",
         }
 
     def test_reports_bounded_capacity_health(

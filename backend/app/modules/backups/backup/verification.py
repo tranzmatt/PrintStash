@@ -379,22 +379,25 @@ def verify_backup_ownership(
     )
     cache_path: Path | None = None
     try:
-        archive = (
-            Path(row.key)
-            if location == "local"
-            else _downloads_module._download_backup_to_local(
-                meta, progress=progress, fresh_remote=fresh_remote
+        if location == "local":
+            archive = Path(row.key)
+        else:
+            download_options = {}
+            if progress is not None:
+                download_options["progress"] = progress
+            if fresh_remote:
+                download_options["fresh_remote"] = True
+            archive = _downloads_module._download_backup_to_local(
+                meta, **download_options
             )
-        )
         if location != "local":
             cache_path = archive
-        result = verify_backup(
-            backup_id,
-            archive_path=archive,
-            record_audit=False,
-            progress=progress,
-            allocate=allocate,
-        )
+        verify_options = {"archive_path": archive, "record_audit": False}
+        if progress is not None:
+            verify_options["progress"] = progress
+        if allocate is not None:
+            verify_options["allocate"] = allocate
+        result = verify_backup(backup_id, **verify_options)
     except FileNotFoundError as exc:
         return _contracts_module.BackupOwnershipVerification(
             ownership_id=ownership_id,

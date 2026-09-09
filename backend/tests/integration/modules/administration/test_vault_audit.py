@@ -297,7 +297,7 @@ class TestExecuteRun:
         assert run.state == VaultAuditRunState.FAILED
         assert run.error_code == "audit_failed"
 
-    def test_completed_result_stays_claimed_and_cancellable_during_auto_repair(
+    def test_auto_repair_retains_an_active_completed_result(
         self, db_session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from app.modules.administration import vault_audit_results

@@ -340,7 +340,7 @@ def claim_due(
             or policy.requested_by is None
         ):
             continue
-        from app.modules.administration.vault_audit_observability import record_overdue
+        from app.modules.administration.vault_audit_events import record_overdue
 
         record_overdue(session, policy, now=now)
         if policy.retry_after is not None and ensure_utc(policy.retry_after) > now:
