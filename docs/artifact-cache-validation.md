@@ -82,6 +82,7 @@ to `backend/tests/`.
 | 72 | Survives cache publication loss | Error | Disposable cache fails after the source body completes | Exact source body completes; no cache entry | Integration | ✅ `integration/modules/storage/test_artifact_content.py::TestManagedCacheContent::test_completion_cache_failure_preserves_source_delivery` |
 | 73 | Audits corrupt disposable entries | Error | Full audit observes corrupt cache content | Warning finding includes corruption evidence | Integration | ✅ `integration/modules/administration/test_vault_audit.py::TestCheckArtifactCache::test_records_corrupt_disposable_entries` |
 | 74 | Reports unavailable disposable cache | Error | Quick audit cannot inspect cache index | Informational finding identifies cache unavailability | Integration | ✅ `integration/modules/administration/test_vault_audit.py::TestCheckArtifactCache::test_records_unavailable_disposable_cache` |
+| 75 | Rejects malformed representation identities | Error | Invalid kind, version, digest or size | Construction fails before any cache path or index access | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestRepresentation::test_rejects_malformed_representation_identity` |
 
 ## Focused execution
 

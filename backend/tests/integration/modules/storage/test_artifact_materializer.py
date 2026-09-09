@@ -34,6 +34,21 @@ def representation():
     )
 
 
+class TestRepresentation:
+    @pytest.mark.parametrize(
+        "representation",
+        [
+            pytest.param(("Artifact", 1, "a" * 64, 1), id="uppercase-kind"),
+            pytest.param(("artifact", 0, "a" * 64, 1), id="zero-version"),
+            pytest.param(("artifact", 1, "a" * 63, 1), id="short-digest"),
+            pytest.param(("artifact", 1, "a" * 64, -1), id="negative-size"),
+        ],
+    )
+    def test_rejects_malformed_representation_identity(self, representation):
+        with pytest.raises(ValueError, match="invalid representation"):
+            Representation(*representation)
+
+
 class TestArtifactMaterializer:
     def test_reuses_verified_materialization(self, cache, representation):
         transferred = bytearray()
