@@ -111,11 +111,14 @@ export async function unstarMultipartModel(id: number): Promise<MultipartModelSt
 
 export function listMultipartModelCandidates(
   id: number,
-  params?: { q?: string; limit?: number },
+  params?: { q?: string; limit?: number; offset?: number; collection?: string; direct?: boolean },
 ): Promise<MultipartModelCandidate[]> {
   const search = new URLSearchParams();
   if (params?.q) search.set("q", params.q);
   if (params?.limit != null) search.set("limit", String(params.limit));
+  if (params?.offset != null) search.set("offset", String(params.offset));
+  if (params?.collection) search.set("collection", params.collection);
+  if (params?.direct) search.set("direct", "true");
   const query = search.toString();
   return getJson<MultipartModelCandidate[]>(
     `/api/v1/multipart-models/${id}/candidates${query ? `?${query}` : ""}`,

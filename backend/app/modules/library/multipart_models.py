@@ -639,8 +639,24 @@ def candidates(
     *,
     query: str | None = None,
     limit: int = 100,
+    offset: int = 0,
+    collection: str | None = None,
+    direct: bool = False,
 ) -> list[MultipartMemberRead]:
     stmt = select(Model).where(live(Model), Model.hash != SENTINEL_MODEL_HASH)
+    if collection:
+        path = collection.strip().strip("/").lower()
+        collections = select(Collection.id).where(live(Collection))
+        if direct:
+            collections = collections.where(Collection.path == path)
+        else:
+            collections = collections.where(
+                (Collection.path == path)
+                | Collection.path.startswith(path + "/", autoescape=True)
+            )
+        stmt = stmt.where(Model.collection_id.in_(collections))  # type: ignore[union-attr]
+    elif direct:
+        stmt = stmt.where(Model.collection_id.is_(None))  # type: ignore[union-attr]
     if not user.is_superuser:
         ids = rbac.accessible_collection_ids(session, user, CollectionRole.VIEW)
         if not ids:
@@ -649,7 +665,7 @@ def candidates(
     if query and (needle := query.strip()):
         stmt = stmt.where(Model.name.ilike(f"%{needle}%"))  # type: ignore[union-attr]
     rows = session.exec(
-        stmt.order_by(Model.name.asc(), Model.id.asc()).limit(limit)  # type: ignore[attr-defined]
+        stmt.order_by(Model.name.asc(), Model.id.asc()).offset(offset).limit(limit)  # type: ignore[attr-defined]
     ).all()
     counts = _file_counts(
         session, (int(model.id) for model in rows if model.id is not None)

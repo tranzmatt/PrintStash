@@ -180,7 +180,7 @@ describe("InboxDetailPage", () => {
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "Delete import" }));
-    const dialog = screen.getByRole("dialog", { name: "Delete pending import?" });
+    const dialog = await screen.findByRole("dialog", { name: "Delete pending import?" });
     expect(api.dismissPendingImport).not.toHaveBeenCalled();
 
     await user.click(within(dialog).getByRole("button", { name: "Delete import" }));

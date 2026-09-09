@@ -264,10 +264,22 @@ test.describe("multipart models", () => {
     expect(horizontalOverflow).toBeLessThanOrEqual(0);
     await page.getByRole("button", { name: "Add a part" }).click();
     await page.getByRole("button", { name: /Desk base/ }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Add parts (1)", exact: true })
+      .click();
     await page.getByRole("button", { name: "Add another part" }).click();
     await page.getByRole("button", { name: /Short handle/ }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Add parts (1)", exact: true })
+      .click();
     await page.locator("fieldset").nth(1).getByRole("button", { name: "Add variant" }).click();
     await page.getByRole("button", { name: /Long handle/ }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Add variants (1)", exact: true })
+      .click();
     await page
       .getByRole("textbox", { name: "Or use an image URL" })
       .fill("https://images.example.test/desk-organiser.webp");

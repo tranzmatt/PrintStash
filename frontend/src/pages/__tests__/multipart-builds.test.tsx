@@ -213,6 +213,7 @@ describe("Multipart manufacturing", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Revision for the next jobs")).toHaveValue("2"),
     );
+    await waitFor(() => expect(app.requestsWithMethod("PATCH")).toHaveLength(1));
     expect(JSON.parse(app.requestsWithMethod("PATCH")[0].body)).toEqual({
       version: 0,
       revision_id: 2,

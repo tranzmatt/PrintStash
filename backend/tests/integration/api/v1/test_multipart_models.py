@@ -1701,3 +1701,196 @@ class TestMultipartModels:
             ).status_code
             == 200
         )
+
+    def test_candidates_browse_collection_descendants(
+        self, client, auth_headers, make_collection, make_model, make_multipart_model
+    ):
+        parent = make_collection("Miniatures")
+        child = make_collection("Bases", parent=parent)
+        own = make_model("Body", collection=parent)
+        nested = make_model("Base", collection=child)
+        make_model("Unrelated")
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"collection": parent.path},
+        )
+
+        assert response.status_code == 200, response.text
+        assert {item["id"] for item in response.json()} == {own.id, nested.id}
+
+    def test_candidates_browse_direct_collection_members(
+        self, client, auth_headers, make_collection, make_model, make_multipart_model
+    ):
+        parent = make_collection("Miniatures")
+        child = make_collection("Bases", parent=parent)
+        own = make_model("Body", collection=parent)
+        make_model("Base", collection=child)
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"collection": parent.path, "direct": True},
+        )
+
+        assert response.status_code == 200, response.text
+        assert [item["id"] for item in response.json()] == [own.id]
+
+    def test_candidates_browse_uncollected_models(
+        self, client, auth_headers, make_collection, make_model, make_multipart_model
+    ):
+        own = make_model("Loose model")
+        make_model("Filed model", collection=make_collection("Miniatures"))
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"direct": True},
+        )
+
+        assert response.status_code == 200, response.text
+        assert [item["id"] for item in response.json()] == [own.id]
+
+    def test_candidates_search_within_collection(
+        self, client, auth_headers, make_collection, make_model, make_multipart_model
+    ):
+        collection = make_collection("Miniatures")
+        own = make_model("Dragon base", collection=collection)
+        make_model("Dragon body")
+        make_model("Knight", collection=collection)
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"collection": collection.path, "q": "dragon"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert [item["id"] for item in response.json()] == [own.id]
+
+    def test_candidates_paginate_equal_names_stably(
+        self, client, auth_headers, make_model, make_multipart_model
+    ):
+        first = make_model("Base")
+        second = make_model("Base")
+        aggregate = make_multipart_model("Kit")
+
+        page = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"limit": 1, "offset": 1},
+        )
+
+        assert page.status_code == 200, page.text
+        assert [item["id"] for item in page.json()] == [second.id]
+        assert first.id != second.id
+
+    def test_candidates_reject_negative_offset(
+        self, client, auth_headers, make_multipart_model
+    ):
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"offset": -1},
+        )
+
+        assert response.status_code == 422, response.text
+
+    def test_candidates_do_not_expose_inaccessible_collection(
+        self,
+        client,
+        make_collection,
+        make_model,
+        make_multipart_model,
+        make_user,
+        headers_for,
+        grant_role,
+    ):
+        visible = make_collection("Visible")
+        hidden = make_collection("Hidden")
+        make_model("Secret", collection=hidden)
+        aggregate = make_multipart_model("Kit", collection=visible)
+        viewer = make_user("viewer")
+        grant_role(viewer, visible, CollectionRole.VIEW)
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=headers_for(viewer),
+            params={"collection": hidden.path},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+
+    def test_candidates_exclude_trashed_models(
+        self, client, auth_headers, make_model, make_collection, make_multipart_model
+    ):
+        collection = make_collection("Miniatures")
+        make_model("Trashed", collection=collection, trashed=True)
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"collection": collection.path},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+
+    def test_candidates_unknown_collection_is_empty(
+        self, client, auth_headers, make_model, make_multipart_model
+    ):
+        make_model("Visible")
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"collection": "missing"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+
+    def test_candidates_offset_past_last_page_is_empty(
+        self, client, auth_headers, make_model, make_multipart_model
+    ):
+        make_model("Base")
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"offset": 100},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+
+    def test_candidates_treat_collection_underscores_literally(
+        self, client, auth_headers, make_model, make_collection, make_multipart_model
+    ):
+        parent = make_collection("a_b")
+        nested = make_collection("Bases", parent=parent)
+        other_parent = make_collection("axb")
+        other_child = make_collection("Other", parent=other_parent)
+        own = make_model("Base", collection=nested)
+        make_model("Unrelated", collection=other_child)
+        aggregate = make_multipart_model("Kit")
+
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}/candidates",
+            headers=auth_headers,
+            params={"collection": parent.path},
+        )
+
+        assert response.status_code == 200, response.text
+        assert [item["id"] for item in response.json()] == [own.id]

@@ -364,7 +364,7 @@ describe("MultipartModelDetailPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "Add a part" }));
 
-    expect(await screen.findByRole("list", { name: "Choose an existing model" })).toBeVisible();
+    expect(await screen.findByRole("list", { name: "Choose existing models" })).toBeVisible();
   });
 
   it("shows an explicit empty description", async () => {
@@ -665,6 +665,7 @@ describe("MultipartModelDetailPage", () => {
     await screen.findByText("No pieces added yet");
     await user.click(screen.getAllByRole("button", { name: /Add (the first part|a part)/i })[0]);
     await user.click(await screen.findByRole("button", { name: /Desk base/ }));
+    await user.click(screen.getByRole("button", { name: "Add parts (1)" }));
 
     expect(screen.getByDisplayValue("Part 1")).toBeVisible();
     expect(screen.getAllByText("Desk base")[0]).toBeVisible();
@@ -693,6 +694,7 @@ describe("MultipartModelDetailPage", () => {
     const options = await screen.findAllByRole("listitem");
     expect(options[0].querySelector("button")).toBeDisabled();
     await user.click(screen.getByRole("button", { name: /Desk base compact/ }));
+    await user.click(screen.getByRole("button", { name: "Add variants (1)" }));
 
     expect(screen.getByText(/Choose one/)).toBeVisible();
     expect(screen.getAllByText("Desk base compact")[0]).toBeVisible();
@@ -1014,14 +1016,13 @@ describe("MultipartModelDetailPage", () => {
     await user.click(await screen.findByRole("button", { name: "Edit multipart set" }));
     await screen.findByText("No pieces added yet");
     await user.click(screen.getAllByRole("button", { name: /Add (the first part|a part)/i })[0]);
-    const picker = await screen.findByRole("list", { name: "Choose an existing model" });
+    const picker = await screen.findByRole("list", { name: "Choose existing models" });
     expect(picker).toBeVisible();
-    // The shared modal focuses its panel before the transition mounts the
-    // autofocus field; walking the native tab order reaches the action button.
-    await user.tab();
-    await user.tab();
-    await user.tab();
-    expect(screen.getByRole("button", { name: /Desk base/ })).toHaveFocus();
+    const candidate = screen.getByRole("button", { name: /Desk base/ });
+    candidate.focus();
+    await user.keyboard("{Enter}");
+    expect(candidate).toHaveAttribute("aria-pressed", "true");
+    screen.getByRole("button", { name: "Add parts (1)" }).focus();
     await user.keyboard("{Enter}");
 
     expect(screen.getByDisplayValue("Part 1")).toBeVisible();
@@ -1075,5 +1076,322 @@ describe("MultipartModelDetailPage", () => {
       { model_id: 12, choice_id: 1001 },
       { model_id: 12, choice_id: 1002 },
     ]);
+  });
+});
+
+function renderPickerPage(
+  routes: import("@/test-support/render").RouteTable = {},
+  detail = aMultipart(),
+) {
+  return renderApp(<MultipartModelDetailPage />, {
+    at: "/multipart-models/7",
+    routePath: "/multipart-models/:id",
+    routes: {
+      "GET /api/v1/multipart-models/7": json(detail),
+      "GET /api/v1/multipart-models/7/candidates": json([model, alternative]),
+      "GET /api/v1/collections": json([]),
+      ...routes,
+    },
+  });
+}
+
+describe("ModelPicker", () => {
+  it("adds multiple separate parts", async () => {
+    const user = userEvent.setup();
+    renderPickerPage();
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base$/ }));
+    await user.click(screen.getByRole("button", { name: /^Desk base compact/ }));
+    await user.click(screen.getByRole("button", { name: "Add parts (2)" }));
+
+    expect(
+      screen.getAllByLabelText("Part name").map((input) => input.getAttribute("value")),
+    ).toEqual(["Part 1", "Part 2"]);
+  });
+
+  it("adds multiple variants to the same part", async () => {
+    const user = userEvent.setup();
+    renderPickerPage(
+      {
+        "GET /api/v1/multipart-models/7/candidates": json([
+          alternative,
+          { ...alternative, id: 14, name: "Wide base" },
+        ]),
+      },
+      aMultipart({ parts: [{ id: 1, name: "Base", quantity: 1, sort_order: 0, models: [model] }] }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Edit multipart set" }));
+    await user.click(screen.getByRole("button", { name: "Add variant" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base compact/ }));
+    await user.click(screen.getByRole("button", { name: /^Wide base/ }));
+    await user.click(screen.getByRole("button", { name: "Add variants (2)" }));
+
+    expect(screen.getAllByLabelText("Part name")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Remove model.*Wide base/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Remove model.*Desk base compact/ })).toBeVisible();
+  });
+
+  it("preserves selection across nested collections", async () => {
+    const user = userEvent.setup();
+    const { requests } = renderPickerPage({
+      "GET /api/v1/collections": json([
+        collection,
+        { ...collection, id: 4, name: "Bases", path: "parts/bases", parent_id: 3 },
+      ]),
+      "GET /api/v1/multipart-models/7/candidates": (url) =>
+        json(
+          new URL(url, "http://localhost").searchParams.get("collection") === "parts/bases"
+            ? [alternative]
+            : [model],
+        ),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base$/ }));
+    await user.click(screen.getByRole("button", { name: "Parts" }));
+    await user.click(await screen.findByRole("button", { name: "Bases" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base compact/ }));
+    await user.click(screen.getByRole("button", { name: "Add parts (2)" }));
+
+    expect(screen.getAllByLabelText("Part name")).toHaveLength(2);
+    expect(
+      requests().some((request) => request.url.includes("collection=parts%2Fbases&direct=true")),
+    ).toBe(true);
+  });
+
+  it("returns to a parent collection through its breadcrumb", async () => {
+    const user = userEvent.setup();
+    renderPickerPage({
+      "GET /api/v1/collections": json([
+        collection,
+        { ...collection, id: 4, name: "Bases", path: "parts/bases", parent_id: 3 },
+        { ...collection, id: 5, name: "Mounts", path: "parts/mounts", parent_id: 3 },
+      ]),
+      "GET /api/v1/multipart-models/7/candidates": (url) =>
+        json(
+          new URL(url, "http://localhost").searchParams.get("collection") === "parts/bases"
+            ? [alternative]
+            : [model],
+        ),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base$/ }));
+    await user.click(screen.getByRole("button", { name: "Parts" }));
+    await user.click(await screen.findByRole("button", { name: "Bases" }));
+    await screen.findByRole("button", { name: /^Desk base compact/ });
+    const breadcrumb = screen.getByRole("navigation", { name: "Browse collections" });
+    await user.click(within(breadcrumb).getByRole("button", { name: "Parts" }));
+
+    expect(await screen.findByRole("button", { name: /^Desk base$/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Mounts" })).toBeVisible();
+  });
+
+  it("retains existing parts across successive selections", async () => {
+    const user = userEvent.setup();
+    renderPickerPage(
+      {
+        "GET /api/v1/multipart-models/7/candidates": json([
+          alternative,
+          { ...alternative, id: 14, name: "Wide base" },
+          { ...alternative, id: 15, name: "Top" },
+        ]),
+      },
+      aMultipart({ parts: [{ id: 1, name: "Base", quantity: 1, sort_order: 0, models: [model] }] }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Edit multipart set" }));
+    await user.click(screen.getByRole("button", { name: "Add another part" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base compact/ }));
+    await user.click(screen.getByRole("button", { name: "Wide base" }));
+    await user.click(screen.getByRole("button", { name: "Add parts (2)" }));
+    await user.click(screen.getByRole("button", { name: "Add another part" }));
+    await user.click(await screen.findByRole("button", { name: "Top" }));
+    await user.click(screen.getByRole("button", { name: "Add parts (1)" }));
+
+    expect(
+      screen.getAllByLabelText("Part name").map((input) => input.getAttribute("value")),
+    ).toEqual(["Base", "Part 2", "Part 3", "Part 4"]);
+  });
+
+  it("preserves selection across pages", async () => {
+    const user = userEvent.setup();
+    renderPickerPage({
+      "GET /api/v1/multipart-models/7/candidates": (url) =>
+        json(
+          new URL(url, "http://localhost").searchParams.get("offset") === "48"
+            ? [alternative]
+            : Array.from({ length: 49 }, (_, index) => ({
+                ...model,
+                id: 100 + index,
+                name: `Model ${index}`,
+              })),
+        ),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: /^Model 0$/ }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base compact/ }));
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByRole("button", { name: /^Model 0$/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "Add parts (2)" }));
+
+    expect(screen.getAllByLabelText("Part name")).toHaveLength(2);
+  });
+
+  it("cancels selection without editing the composition", async () => {
+    const user = userEvent.setup();
+    renderPickerPage();
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base$/ }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Part name")).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: /Add (the first part|a part)/i })[0]);
+
+    expect(screen.getByRole("button", { name: "Add parts (0)" })).toBeDisabled();
+  });
+
+  it("deselects a previously selected model", async () => {
+    const user = userEvent.setup();
+    renderPickerPage();
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    const candidate = await screen.findByRole("button", { name: /^Desk base$/ });
+    await user.click(candidate);
+    await user.click(candidate);
+
+    expect(candidate).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Add parts (0)" })).toBeDisabled();
+  });
+
+  it("disables unavailable models", async () => {
+    const user = userEvent.setup();
+    renderPickerPage({
+      "GET /api/v1/multipart-models/7/candidates": json([
+        { ...model, available: false, name: null },
+      ]),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+
+    expect(await screen.findByRole("button", { name: /unavailable/i })).toBeDisabled();
+  });
+
+  it("retries a failed candidate request", async () => {
+    const user = userEvent.setup();
+    const { route } = renderPickerPage({
+      "GET /api/v1/multipart-models/7/candidates": json({ detail: "offline" }, 500),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load models. Try again.");
+    route({ "GET /api/v1/multipart-models/7/candidates": json([model]) });
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("button", { name: /^Desk base$/ })).toBeVisible();
+  });
+
+  it("shows an empty candidate result", async () => {
+    const user = userEvent.setup();
+    renderPickerPage({ "GET /api/v1/multipart-models/7/candidates": json([]) });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+
+    expect(await screen.findByText("No models match this search.")).toBeVisible();
+  });
+
+  it("preserves selection while searching", async () => {
+    const user = userEvent.setup();
+    renderPickerPage({
+      "GET /api/v1/multipart-models/7/candidates": (url) =>
+        json(new URL(url, "http://localhost").searchParams.get("q") ? [alternative] : [model]),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base$/ }));
+    await user.type(screen.getByRole("textbox", { name: /Search existing models/ }), "compact");
+    await user.click(await screen.findByRole("button", { name: /^Desk base compact/ }));
+    await user.click(screen.getByRole("button", { name: "Add parts (2)" }));
+
+    expect(screen.getAllByLabelText("Part name")).toHaveLength(2);
+  });
+  it("retries a failed collection request", async () => {
+    const user = userEvent.setup();
+    const { route } = renderPickerPage({
+      "GET /api/v1/collections": json({ detail: "offline" }, 500),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load collections.");
+    route({ "GET /api/v1/collections": json([collection]) });
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("button", { name: "Parts" })).toBeVisible();
+  });
+
+  it("returns to all models through the breadcrumb", async () => {
+    const user = userEvent.setup();
+    renderPickerPage({
+      "GET /api/v1/collections": json([collection]),
+      "GET /api/v1/multipart-models/7/candidates": (url) =>
+        json(
+          new URL(url, "http://localhost").searchParams.get("collection") ? [alternative] : [model],
+        ),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: "Parts" }));
+    expect(await screen.findByRole("button", { name: /^Desk base compact/ })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "All models" }));
+
+    expect(await screen.findByRole("button", { name: /^Desk base$/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: "All models" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("shows accessible child collections without their parent", async () => {
+    const user = userEvent.setup();
+    renderPickerPage({ "GET /api/v1/collections": json([{ ...collection, parent_id: 99 }]) });
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+
+    expect(await screen.findByRole("button", { name: "Parts" })).toBeVisible();
+  });
+  it("disables confirmation during the closing transition", async () => {
+    const user = userEvent.setup();
+    renderPickerPage();
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    await user.click(await screen.findByRole("button", { name: /^Desk base$/ }));
+    const confirm = screen.getByRole("button", { name: "Add parts (1)" });
+    await user.click(confirm);
+
+    expect(confirm).toBeDisabled();
+    expect(screen.getAllByLabelText("Part name")).toHaveLength(1);
+  });
+
+  it("keeps the dialog mounted through its closing transition", async () => {
+    const user = userEvent.setup();
+    renderPickerPage();
+
+    await user.click(await screen.findByRole("button", { name: "Add a part" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(dialog).toHaveAttribute("data-state", "closed");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

@@ -390,9 +390,9 @@ describe("FilamentProfilesCard", () => {
           "DELETE /api/v1/filament-profiles/1": json({ detail: "profile_in_use" }, 409),
         },
       });
-      await screen.findByText("Filament presets");
-
-      await user.click(screen.getByRole("button", { name: "Delete filament preset Everyday PLA" }));
+      await user.click(
+        await screen.findByRole("button", { name: "Delete filament preset Everyday PLA" }),
+      );
       await user.click(
         within(screen.getByRole("dialog", { name: "Delete filament preset?" })).getByRole(
           "button",

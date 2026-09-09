@@ -501,13 +501,24 @@ def list_multipart_candidates(
     multipart_model_id: int,
     q: Optional[str] = Query(None, max_length=128),
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    collection: Optional[str] = Query(None, max_length=1024),
+    direct: bool = Query(False),
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> list[MultipartMemberRead]:
     multipart_models.require(
         session, current_user, multipart_model_id, CollectionRole.VIEW
     )
-    return multipart_models.candidates(session, current_user, query=q, limit=limit)
+    return multipart_models.candidates(
+        session,
+        current_user,
+        query=q,
+        limit=limit,
+        offset=offset,
+        collection=collection,
+        direct=direct,
+    )
 
 
 @router.put(
