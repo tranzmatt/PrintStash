@@ -28,8 +28,7 @@ def remote_cache(e2e_db, superuser_headers, tmp_path):
     bind_materializer(old_cache)
 
 
-@pytest.mark.asyncio
-async def test_repeat_proxy_download_transfers_provider_bytes_once(
+async def _repeat_proxy_download_transfers_provider_bytes_once(
     api, e2e_db, superuser_headers, remote_cache, tmp_path
 ):
     source = tmp_path / "source.gcode"
@@ -55,8 +54,7 @@ async def test_repeat_proxy_download_transfers_provider_bytes_once(
     assert remote_cache[1].status()["leases"] == 0
 
 
-@pytest.mark.asyncio
-async def test_materialization_reuses_http_verified_content(
+async def _materialization_reuses_http_verified_content(
     api, e2e_db, superuser_headers, remote_cache, tmp_path
 ):
     source = tmp_path / "source.gcode"
@@ -81,8 +79,7 @@ async def test_materialization_reuses_http_verified_content(
     assert remote_cache[0].bytes_read == source.stat().st_size
 
 
-@pytest.mark.asyncio
-async def test_full_audit_detects_authoritative_corruption_behind_cache(
+async def _full_audit_detects_authoritative_corruption_behind_cache(
     api, e2e_db, superuser_headers, remote_cache, tmp_path
 ):
     from sqlmodel import select
@@ -115,3 +112,29 @@ async def test_full_audit_detects_authoritative_corruption_behind_cache(
     ).all()
     assert "owned_blob_hash_mismatch" in {finding.code for finding in findings}
     assert remote_cache[0].bytes_read >= source.stat().st_size * 2
+
+
+class TestArtifactCacheE2E:
+    @pytest.mark.asyncio
+    async def test_repeat_proxy_download_transfers_provider_bytes_once(
+        self, api, e2e_db, superuser_headers, remote_cache, tmp_path
+    ):
+        await _repeat_proxy_download_transfers_provider_bytes_once(
+            api, e2e_db, superuser_headers, remote_cache, tmp_path
+        )
+
+    @pytest.mark.asyncio
+    async def test_materialization_reuses_http_verified_content(
+        self, api, e2e_db, superuser_headers, remote_cache, tmp_path
+    ):
+        await _materialization_reuses_http_verified_content(
+            api, e2e_db, superuser_headers, remote_cache, tmp_path
+        )
+
+    @pytest.mark.asyncio
+    async def test_full_audit_detects_authoritative_corruption_behind_cache(
+        self, api, e2e_db, superuser_headers, remote_cache, tmp_path
+    ):
+        await _full_audit_detects_authoritative_corruption_behind_cache(
+            api, e2e_db, superuser_headers, remote_cache, tmp_path
+        )

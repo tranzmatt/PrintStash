@@ -167,10 +167,13 @@ class ArtifactHandle:
 
     def cache_representation(self) -> Representation | None:
         """Only original immutable managed remote Artifact bytes are eligible."""
+        if self.file.is_external or self.backend is None:
+            return None
+        direct_path = getattr(self.backend, "direct_path", None)
         if (
-            self.file.is_external
-            or self.backend is None
-            or self.backend.direct_path(self.file.path) is not None
+            direct_path is None
+            or inspect.iscoroutinefunction(direct_path)
+            or direct_path(self.file.path) is not None
         ):
             return None
         try:

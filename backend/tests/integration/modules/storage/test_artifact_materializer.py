@@ -429,9 +429,7 @@ class TestCacheCompletionContract:
 
 
 class TestPrivateCacheRecovery:
-    def test_wholesale_deletion_degrades_and_clean_start_recovers(
-        self, cache, representation
-    ):
+    def test_recovers_after_wholesale_deletion(self, cache, representation):
         import shutil
 
         with cache.materialize(representation, lambda: iter([b"verified bytes"])):
@@ -517,7 +515,7 @@ class TestPrivateCacheRecovery:
         cache._maintenance_lock.release()
         assert cache.status()["bytes"] == 0
 
-    def test_new_digest_and_kind_cannot_select_original_entry(
+    def test_representation_identity_cannot_select_original_entry(
         self, cache, representation
     ):
         with cache.materialize(representation, lambda: iter([b"verified bytes"])):
