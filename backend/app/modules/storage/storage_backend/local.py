@@ -18,6 +18,7 @@ from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.modules.storage.filesystem import detect_fs_kind
 from app.modules.storage.storage_identity import StorageTargetIdentity
+from app.runtime.maintenance import guarded_storage_destruction
 
 from .contracts import (
     _DIRECT_ADAPTER_IDENTITY,
@@ -53,9 +54,20 @@ class LocalStorageBackend(StorageBackend):
     def __init__(
         self,
         *,
+        data_dir: Path | None = None,
+        thumb_dir: Path | None = None,
+        backup_dir: Path | None = None,
         external_roots: tuple[Path, ...] = (),
         external_root_bindings: dict[Path, dict[str, object]] | None = None,
     ) -> None:
+        self.data_dir = Path(data_dir if data_dir is not None else settings.data_dir)
+        self.thumb_dir = Path(
+            thumb_dir if thumb_dir is not None else settings.thumb_dir
+        )
+        self.backup_dir = Path(
+            backup_dir if backup_dir is not None else settings.backup_dir
+        )
+        self._identity = self._resolve_installation_identity()
         self._capabilities = StorageCapabilities(
             conditional_create=True,
             object_identity=ObjectIdentity.INODE,
@@ -77,8 +89,11 @@ class LocalStorageBackend(StorageBackend):
         self._startup_checked = False
         self._root_binding_diagnostics: dict[str, object] = {}
 
+    def _installation_identity(self) -> str:
+        return self._identity
+
     @staticmethod
-    def _installation_identity() -> str:
+    def _resolve_installation_identity() -> str:
         configured = str(getattr(settings, "storage_identity", "") or "").strip()
         if len(configured) == 64 and all(
             char in "0123456789abcdefABCDEF" for char in configured
@@ -173,8 +188,8 @@ class LocalStorageBackend(StorageBackend):
     def _assert_no_managed_escape(self, path: Path) -> None:
         """Reject a key lexically inside a managed root that resolves outside it."""
         lexical = path.expanduser().absolute()
-        roots = [settings.data_dir, settings.thumb_dir, *self._external_roots]
-        backup_root = getattr(settings, "backup_dir", None)
+        roots = [self.data_dir, self.thumb_dir, *self._external_roots]
+        backup_root = self.backup_dir
         if backup_root is not None:
             roots.append(backup_root)
         for configured_root in roots:
@@ -203,7 +218,7 @@ class LocalStorageBackend(StorageBackend):
         opening a destination, or quarantining an object.
         """
         lexical = path.expanduser().absolute()
-        roots = (("data", Path(settings.data_dir)), ("thumb", Path(settings.thumb_dir)))
+        roots = (("data", Path(self.data_dir)), ("thumb", Path(self.thumb_dir)))
         for role, configured_root in roots:
             root = configured_root.expanduser().absolute()
             if lexical != root and not lexical.is_relative_to(root):
@@ -228,8 +243,8 @@ class LocalStorageBackend(StorageBackend):
         """
         lexical = path.expanduser().absolute()
         roots = [
-            ("data", Path(settings.data_dir)),
-            ("thumb", Path(settings.thumb_dir)),
+            ("data", Path(self.data_dir)),
+            ("thumb", Path(self.thumb_dir)),
             *(("external", root) for root in self._external_roots),
         ]
         for role, configured_root in roots:
@@ -328,10 +343,10 @@ class LocalStorageBackend(StorageBackend):
     def _owned_namespace(self, path: Path) -> str | None:
         resolved = path.resolve(strict=False)
         roots: list[tuple[str, Path]] = [
-            ("data", settings.data_dir),
-            ("thumb", settings.thumb_dir),
+            ("data", self.data_dir),
+            ("thumb", self.thumb_dir),
         ]
-        backup_root = getattr(settings, "backup_dir", None)
+        backup_root = self.backup_dir
         if backup_root is not None:
             roots.append(("backup", backup_root))
         roots.extend((f"external:{root}", root) for root in self._external_roots)
@@ -353,16 +368,15 @@ class LocalStorageBackend(StorageBackend):
             raise StorageConfigurationError("local_restore_key_not_a_path")
         target = path.resolve(strict=False)
         roots = (
-            Path(settings.data_dir).resolve(strict=False),
-            Path(settings.thumb_dir).resolve(strict=False),
-            Path(getattr(settings, "backup_dir", settings.data_dir)).resolve(
-                strict=False
-            ),
+            Path(self.data_dir).resolve(strict=False),
+            Path(self.thumb_dir).resolve(strict=False),
+            Path(self.backup_dir).resolve(strict=False),
             *self._external_roots,
         )
         if not any(target != root and target.is_relative_to(root) for root in roots):
             raise StorageConfigurationError("backup_restore_key_outside_storage")
 
+    @guarded_storage_destruction
     def reclaim_unverified(
         self,
         key: str,
@@ -545,38 +559,34 @@ class LocalStorageBackend(StorageBackend):
         return replace(receipt, key=str(path), ctime_ns=current.st_ctime_ns)
 
     def blob_key(self, slug: str, version: int, filename: str) -> str:
-        return str(settings.data_dir / slug / f"v{version}" / filename)
+        return str(self.data_dir / slug / f"v{version}" / filename)
 
     def thumbnail_key(self, file_id: int) -> str:
-        return str(settings.thumb_dir / f"{file_id}.webp")
+        return str(self.thumb_dir / f"{file_id}.webp")
 
     def source_cover_key(self, provenance_source_id: int) -> str:
-        return str(
-            settings.thumb_dir / "source-covers" / f"{provenance_source_id}.webp"
-        )
+        return str(self.thumb_dir / "source-covers" / f"{provenance_source_id}.webp")
 
     def capture_upload_slot_key(self, slot_id: str) -> str:
-        return str(settings.data_dir / "capture-slots" / slot_id)
+        return str(self.data_dir / "capture-slots" / slot_id)
 
     def legacy_thumbnail_key(self, file_id: int) -> str:
-        return str(settings.thumb_dir / f"{file_id}.png")
+        return str(self.thumb_dir / f"{file_id}.png")
 
     def stl_cache_key(self, sha256: str) -> str:
-        return str(settings.thumb_dir / "stl-cache" / f"{sha256}.stl")
+        return str(self.thumb_dir / "stl-cache" / f"{sha256}.stl")
 
     def collection_image_key(self, collection_id: int, name: str) -> str:
-        return str(settings.thumb_dir / "collection-images" / str(collection_id) / name)
+        return str(self.thumb_dir / "collection-images" / str(collection_id) / name)
 
     def document_file_key(self, document_id: int, name: str) -> str:
-        return str(settings.data_dir / "documents" / str(document_id) / name)
+        return str(self.data_dir / "documents" / str(document_id) / name)
 
     def document_image_key(self, document_id: int, name: str) -> str:
-        return str(settings.thumb_dir / "document-images" / str(document_id) / name)
+        return str(self.thumb_dir / "document-images" / str(document_id) / name)
 
     def multipart_model_cover_key(self, multipart_model_id: int, name: str) -> str:
-        return str(
-            settings.thumb_dir / "multipart-covers" / str(multipart_model_id) / name
-        )
+        return str(self.thumb_dir / "multipart-covers" / str(multipart_model_id) / name)
 
     def exists(self, key: str) -> bool:
         return Path(key).exists()
@@ -876,6 +886,7 @@ class LocalStorageBackend(StorageBackend):
             if not moved:
                 quarantine.unlink(missing_ok=True)
 
+    @guarded_storage_destruction
     def rollback_create(self, receipt: CreationReceipt) -> bool:
         if not self.capabilities.verified_delete:
             logger.warning(
@@ -900,6 +911,7 @@ class LocalStorageBackend(StorageBackend):
         quarantine.unlink()
         return True
 
+    @guarded_storage_destruction
     def replace_stream(
         self, src: BinaryIO, receipt: CreationReceipt
     ) -> CreationReceipt:
@@ -1050,6 +1062,7 @@ class LocalStorageBackend(StorageBackend):
             os.close(fd)
             Path(probe_name).unlink()
 
+    @guarded_storage_destruction
     def move(self, src_key: str, dest_key: str) -> None:
         del src_key, dest_key
         raise RuntimeError("unchecked_storage_move_disabled")
@@ -1093,8 +1106,8 @@ class LocalStorageBackend(StorageBackend):
         # directory in the container or host filesystem.
         self._startup_checked = True
         configured_roots = {
-            "data": Path(settings.data_dir).expanduser(),
-            "thumb": Path(settings.thumb_dir).expanduser(),
+            "data": Path(self.data_dir).expanduser(),
+            "thumb": Path(self.thumb_dir).expanduser(),
         }
         missing = [role for role, root in configured_roots.items() if not root.is_dir()]
         self._root_binding_diagnostics = {role: "missing" for role in missing}
@@ -1119,8 +1132,8 @@ class LocalStorageBackend(StorageBackend):
             return
         self.recovery_mode = False
         roots = (
-            self._probe_root("data", settings.data_dir),
-            self._probe_root("thumb", settings.thumb_dir),
+            self._probe_root("data", self.data_dir),
+            self._probe_root("thumb", self.thumb_dir),
         )
         hardlinks = all(root.hardlink for root in roots)
         exclusive_create = all(root.exclusive_create for root in roots)
@@ -1148,12 +1161,13 @@ class LocalStorageBackend(StorageBackend):
             "roots": [root.as_dict() for root in roots],
         }
 
+    @guarded_storage_destruction
     def delete(self, key: str) -> None:
         del key
         raise RuntimeError("unchecked_storage_delete_disabled")
 
     def list_keys(self, prefix: str = "") -> list[str]:
-        root = Path(prefix) if prefix else settings.data_dir
+        root = Path(prefix) if prefix else self.data_dir
         if not root.exists():
             return []
         return [
@@ -1163,7 +1177,7 @@ class LocalStorageBackend(StorageBackend):
         ]
 
     def walk_keys(self, prefix: str = "") -> Iterator[str]:
-        root = Path(prefix) if prefix else settings.data_dir
+        root = Path(prefix) if prefix else self.data_dir
         if not root.exists():
             return
         for p in root.rglob("*"):
@@ -1171,7 +1185,7 @@ class LocalStorageBackend(StorageBackend):
                 yield str(p)
 
     def usage(self, prefix: str = "") -> dict:
-        root = Path(prefix) if prefix else settings.data_dir
+        root = Path(prefix) if prefix else self.data_dir
         total_size = 0
         object_count = 0
         if root.exists():
@@ -1216,16 +1230,16 @@ class LocalStorageBackend(StorageBackend):
         # Re-read both sentinels so a mount disappearing after startup is
         # reflected immediately. This is validation only; `_bind_root` never
         # enrolls or creates a marker.
-        data_root = Path(settings.data_dir).expanduser()
-        thumb_root = Path(settings.thumb_dir).expanduser()
+        data_root = Path(self.data_dir).expanduser()
+        thumb_root = Path(self.thumb_dir).expanduser()
         data_ok = data_root.is_dir() and self._bind_root("data", data_root)
         thumb_ok = thumb_root.is_dir() and self._bind_root("thumb", thumb_root)
         self._roots_ready = data_ok and thumb_ok
         return {
             "backend": "local",
             "ok": data_ok and thumb_ok and self._roots_ready,
-            "data_dir": str(settings.data_dir),
-            "thumb_dir": str(settings.thumb_dir),
+            "data_dir": str(self.data_dir),
+            "thumb_dir": str(self.thumb_dir),
             "capabilities": self.capabilities.as_dict(),
             "diagnostics": self.probe_diagnostics,
         }
