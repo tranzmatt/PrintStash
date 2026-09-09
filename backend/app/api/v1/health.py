@@ -29,6 +29,7 @@ from app.db.scopes import live
 from app.db.session import get_session_factory
 from app.modules.administration.release_check import get_release_status
 from app.modules.printing.printer_provider import provider_diagnostic_summary
+from app.modules.storage.materializer_runtime import cache_health
 from app.modules.storage.storage_backend.runtime import get_backend
 
 router = APIRouter(tags=["health"])
@@ -137,7 +138,9 @@ def _capacity_probe() -> dict:
                 .order_by(StorageInventorySample.sampled_at.desc())  # type: ignore[attr-defined]
                 .limit(1)
             ).first()
-            active = int(session.exec(select(func.count(CapacityReservation.operation_id))).one())
+            active = int(
+                session.exec(select(func.count(CapacityReservation.operation_id))).one()
+            )
             recent_denials = int(
                 session.exec(
                     select(func.count(CapacityAdmissionEvent.id)).where(
@@ -370,6 +373,7 @@ def health_details() -> dict:
         "database": _database_probe(),
         "storage": _storage_probe(),
         "capacity": _capacity_probe(),
+        "artifact_cache": cache_health(),
         "backup": _backup_probe(),
         "printer_providers": _provider_probe(),
         "jobs": _jobs_probe(),

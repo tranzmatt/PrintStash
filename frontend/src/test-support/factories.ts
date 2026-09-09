@@ -1,3 +1,4 @@
+import type { ArtifactCacheRead } from "@/lib/api/artifact-cache";
 /**
  * Builders for API-shaped objects — the frontend's arrange step.
  *
@@ -393,6 +394,28 @@ export function aMultipartModel(
   };
 }
 
+export function anArtifactCache(overrides: Partial<ArtifactCacheRead> = {}): ArtifactCacheRead {
+  return {
+    policy: {
+      enabled: false,
+      root: "/cache",
+      max_bytes: 1000,
+      max_entries: 100,
+      max_fills: 2,
+      headroom_bytes: 100,
+      verify_every_hits: 100,
+      fill_wait_seconds: 30,
+    },
+    effective_root: "/cache",
+    restart_required: false,
+    source: "environment",
+    available: true,
+    health: "ready",
+    labels: { representation: "artifact", backend: "s3" },
+    usage: { bytes: 100, entries: 1, leases: 0 },
+    ...overrides,
+  };
+}
 export function anAuditPolicy(
   overrides: Partial<import("@/types/maintenance").AuditPolicy> = {},
 ): import("@/types/maintenance").AuditPolicy {

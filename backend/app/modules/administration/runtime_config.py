@@ -270,6 +270,9 @@ def apply_overlay(session: Session) -> None:
     }
     _overlay.clear()
     _merge_config_overlay(config)
+    from app.modules.administration.artifact_cache_config import apply_cache_overlay
+
+    apply_cache_overlay(config)
     apply_environment_storage_provider(session)
     _overlay.update(secret_overrides)
 
@@ -412,6 +415,9 @@ def _typed_environment_provider_config() -> dict[str, object]:
 def activate_config(config: SystemConfig) -> None:
     """Merge a newly committed config into live runtime state."""
     _merge_config_overlay(config)
+    from app.modules.administration.artifact_cache_config import apply_cache_overlay
+
+    apply_cache_overlay(config)
     ensure_dirs()
 
 

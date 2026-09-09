@@ -409,6 +409,35 @@ def _check_primary(
     return True
 
 
+def _check_artifact_cache(session: Session, run: VaultAuditRun) -> None:
+    from app.modules.storage.materializer_runtime import get_materializer
+
+    cache = get_materializer()
+    if cache is None:
+        return
+    try:
+        observation = cache.inspect_entries(full=run.mode == VaultAuditMode.FULL)
+        if observation["corrupt"]:
+            _add(
+                session,
+                run,
+                code="artifact_cache_corrupt",
+                severity=VaultAuditSeverity.WARNING,
+                resource_type="artifact_cache",
+                identifier="Artifact cache",
+                details=observation,
+            )
+    except Exception:
+        _add(
+            session,
+            run,
+            code="artifact_cache_unavailable",
+            severity=VaultAuditSeverity.INFO,
+            resource_type="artifact_cache",
+            identifier="Artifact cache",
+        )
+
+
 def _check_database(session: Session, run: VaultAuditRun) -> None:
     backend = get_backend()
     run.current_phase = "database"
@@ -861,6 +890,7 @@ def _execute_run(
             snapshot = ownership_snapshot(session)
             if not _check_primary(session, run, snapshot.primary):
                 return
+            _check_artifact_cache(session, run)
             _check_external(session, run, snapshot.external)
             if _cancelled(session, run):
                 return
@@ -1018,7 +1048,7 @@ def _reparse_metadata(session: Session, file_id: int) -> bool:
     ):
         return row is not None
     try:
-        with resolve(row).materialize() as path:
+        with resolve(row).materialize(authoritative=True) as path:
             strategy = strategy_for_artifact(row.file_type)
             values, _thumbnail = strategy.process(path, lambda _label: None)
     except ArtifactContentError:

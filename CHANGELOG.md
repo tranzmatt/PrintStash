@@ -74,6 +74,8 @@
 - An optional unified Docker image runs the full API and web UI in one container,
   with a single-service Compose file and tested AMD64/ARM64 publishing to GHCR.
 
+- Optional verified remote Artifact cache with bounded disk usage, active-reader leases, administrator controls, and authoritative audit bypass.
+
 - Successful browser-extension CI jobs provide the validated Chrome Web Store
   ZIP as a direct download, retained for 30 days.
 

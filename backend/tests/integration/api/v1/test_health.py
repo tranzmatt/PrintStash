@@ -171,6 +171,7 @@ class TestHealthDetails:
             "database",
             "storage",
             "capacity",
+            "artifact_cache",
             "backup",
             "printer_providers",
             "jobs",

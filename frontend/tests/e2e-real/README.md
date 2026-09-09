@@ -121,3 +121,5 @@ API backed by isolated SQLite, and Vite. Chromium invokes the production
 `downloadAuthenticatedFile` helper and checks the saved Unicode filename, exact
 bytes, actual provider CORS, omitted app credentials, and zero API body bytes.
 Only the test certificate's trust check is relaxed; browser CORS remains enabled.
+
+- `artifact-cache.spec.ts`: persist cache limits in Settings, explicitly clear idle cache files, then reset to environment defaults.

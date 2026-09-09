@@ -248,6 +248,11 @@ def _plan_artifact(artifact: File, request: DeliveryRequest) -> DeliveryPlan:
             )
     if path is not None:
         return DeliveryPlan(200, headers, request.media_type, path=path)
+    lease = handle.cached_path()
+    if lease is not None:
+        return DeliveryPlan(
+            200, headers, request.media_type, path=lease.path, close=lease.close
+        )
     if (
         backend is not None
         and backend.supports_ranges
