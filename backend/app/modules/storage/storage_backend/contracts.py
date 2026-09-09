@@ -41,6 +41,42 @@ class StorageTier(StrEnum):
     UNGUARDED = "unguarded"
 
 
+class CapacityReliability(StrEnum):
+    """How strongly an adapter can stand behind one capacity observation."""
+
+    EXACT = "exact"
+    ESTIMATED = "estimated"
+
+
+@dataclass(frozen=True)
+class StorageCapacity:
+    """Optional, credential-free capacity evidence for one configured namespace.
+
+    ``None`` from :meth:`StorageBackend.capacity` means unsupported/unknown. It
+    must never be translated into zero bytes of capacity.
+    """
+
+    total_bytes: int | None
+    used_bytes: int | None
+    available_bytes: int | None
+    quota_bytes: int | None
+    measured_at: datetime
+    method: str
+    reliability: CapacityReliability
+
+    def __post_init__(self) -> None:
+        values = (
+            self.total_bytes,
+            self.used_bytes,
+            self.available_bytes,
+            self.quota_bytes,
+        )
+        if any(value is not None and value < 0 for value in values):
+            raise ValueError("capacity bytes must be nonnegative")
+        if not self.method:
+            raise ValueError("capacity method is required")
+
+
 @dataclass(frozen=True)
 class StorageCapabilities:
     """Capabilities measured for one configured storage adapter."""
@@ -396,6 +432,14 @@ class StorageBackend(ABC):
 
     @abstractmethod
     def usage(self, prefix: str = "") -> dict: ...
+
+    def capacity(self) -> StorageCapacity | None:
+        """Return bounded provider capacity evidence, or ``None`` if unknown.
+
+        Implementations must not emulate capacity by walking an unbounded
+        namespace. Enumeration belongs to explicit background inventory/audit.
+        """
+        return None
 
     def delivery_diagnostics(self) -> dict:
         return {

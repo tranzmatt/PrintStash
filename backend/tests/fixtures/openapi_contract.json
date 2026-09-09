@@ -325,6 +325,412 @@
         "title": "ArtifactRequirementRead",
         "type": "object"
       },
+      "AuditObservation": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "method": {
+            "default": "vault_audit_findings",
+            "title": "Method",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          },
+          "unclaimed_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unclaimed Bytes"
+          },
+          "unclaimed_object_count": {
+            "title": "Unclaimed Object Count",
+            "type": "integer"
+          },
+          "unknown_size_count": {
+            "default": 0,
+            "title": "Unknown Size Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "completed_at",
+          "unclaimed_object_count"
+        ],
+        "title": "AuditObservation",
+        "type": "object"
+      },
+      "AuditPolicyRead": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_repair": {
+            "default": false,
+            "title": "Auto Repair",
+            "type": "boolean"
+          },
+          "bytes_per_second": {
+            "default": 10485760,
+            "maximum": 1073741824.0,
+            "minimum": 1024.0,
+            "title": "Bytes Per Second",
+            "type": "integer"
+          },
+          "cadence": {
+            "default": "weekly",
+            "enum": [
+              "weekly",
+              "monthly"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "deferred_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deferred Reason"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "estimated_remote_bytes": {
+            "default": 0,
+            "title": "Estimated Remote Bytes",
+            "type": "integer"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "full_cost_acknowledged": {
+            "default": false,
+            "title": "Full Cost Acknowledged",
+            "type": "boolean"
+          },
+          "jitter_seconds": {
+            "default": 0,
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Jitter Seconds",
+            "type": "integer"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "max_lateness_minutes": {
+            "default": 120,
+            "maximum": 44640.0,
+            "minimum": 1.0,
+            "title": "Max Lateness Minutes",
+            "type": "integer"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "month_day": {
+            "default": 1,
+            "maximum": 31.0,
+            "minimum": 1.0,
+            "title": "Month Day",
+            "type": "integer"
+          },
+          "next_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Due At"
+          },
+          "notification_channels": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "title": "Notification Channels",
+            "type": "array"
+          },
+          "notification_cooldown_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Notification Cooldown Minutes",
+            "type": "integer"
+          },
+          "notification_threshold": {
+            "default": "warning",
+            "enum": [
+              "off",
+              "critical",
+              "warning",
+              "info"
+            ],
+            "title": "Notification Threshold",
+            "type": "string"
+          },
+          "overdue": {
+            "default": false,
+            "title": "Overdue",
+            "type": "boolean"
+          },
+          "paused": {
+            "default": false,
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "read_concurrency": {
+            "default": 1,
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Read Concurrency",
+            "type": "integer"
+          },
+          "repair_actions": {
+            "items": {
+              "enum": [
+                "reparse_metadata",
+                "regenerate_thumbnail"
+              ],
+              "type": "string"
+            },
+            "title": "Repair Actions",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "start_time": {
+            "default": "02:00",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weekday": {
+            "default": 6,
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Weekday",
+            "type": "integer"
+          },
+          "window_minutes": {
+            "default": 120,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Window Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "revision",
+          "next_due_at",
+          "last_attempt_at",
+          "last_success_at",
+          "deferred_reason"
+        ],
+        "title": "AuditPolicyRead",
+        "type": "object"
+      },
+      "AuditPolicyUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_repair": {
+            "default": false,
+            "title": "Auto Repair",
+            "type": "boolean"
+          },
+          "bytes_per_second": {
+            "default": 10485760,
+            "maximum": 1073741824.0,
+            "minimum": 1024.0,
+            "title": "Bytes Per Second",
+            "type": "integer"
+          },
+          "cadence": {
+            "default": "weekly",
+            "enum": [
+              "weekly",
+              "monthly"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "full_cost_acknowledged": {
+            "default": false,
+            "title": "Full Cost Acknowledged",
+            "type": "boolean"
+          },
+          "jitter_seconds": {
+            "default": 0,
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Jitter Seconds",
+            "type": "integer"
+          },
+          "max_lateness_minutes": {
+            "default": 120,
+            "maximum": 44640.0,
+            "minimum": 1.0,
+            "title": "Max Lateness Minutes",
+            "type": "integer"
+          },
+          "month_day": {
+            "default": 1,
+            "maximum": 31.0,
+            "minimum": 1.0,
+            "title": "Month Day",
+            "type": "integer"
+          },
+          "notification_channels": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "title": "Notification Channels",
+            "type": "array"
+          },
+          "notification_cooldown_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Notification Cooldown Minutes",
+            "type": "integer"
+          },
+          "notification_threshold": {
+            "default": "warning",
+            "enum": [
+              "off",
+              "critical",
+              "warning",
+              "info"
+            ],
+            "title": "Notification Threshold",
+            "type": "string"
+          },
+          "paused": {
+            "default": false,
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "read_concurrency": {
+            "default": 1,
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Read Concurrency",
+            "type": "integer"
+          },
+          "repair_actions": {
+            "items": {
+              "enum": [
+                "reparse_metadata",
+                "regenerate_thumbnail"
+              ],
+              "type": "string"
+            },
+            "title": "Repair Actions",
+            "type": "array"
+          },
+          "start_time": {
+            "default": "02:00",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weekday": {
+            "default": 6,
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Weekday",
+            "type": "integer"
+          },
+          "window_minutes": {
+            "default": 120,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Window Minutes",
+            "type": "integer"
+          }
+        },
+        "title": "AuditPolicyUpdate",
+        "type": "object"
+      },
       "AuthProvidersRead": {
         "properties": {
           "oidc_display_name": {
@@ -1543,6 +1949,119 @@
           "version"
         ],
         "title": "BuildSelection",
+        "type": "object"
+      },
+      "CacheSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fill_wait_seconds": {
+            "default": 30,
+            "maximum": 300.0,
+            "minimum": 0.0,
+            "title": "Fill Wait Seconds",
+            "type": "integer"
+          },
+          "headroom_bytes": {
+            "minimum": 0.0,
+            "title": "Headroom Bytes",
+            "type": "integer"
+          },
+          "max_bytes": {
+            "minimum": 0.0,
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_entries": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Max Entries",
+            "type": "integer"
+          },
+          "max_fills": {
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Fills",
+            "type": "integer"
+          },
+          "root": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Root",
+            "type": "string"
+          },
+          "verify_every_hits": {
+            "minimum": 0.0,
+            "title": "Verify Every Hits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "root",
+          "max_bytes",
+          "max_entries",
+          "max_fills",
+          "headroom_bytes",
+          "verify_every_hits"
+        ],
+        "title": "CacheSettings",
+        "type": "object"
+      },
+      "CacheSettingsRead": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "effective_root": {
+            "title": "Effective Root",
+            "type": "string"
+          },
+          "health": {
+            "title": "Health",
+            "type": "string"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "object"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/CacheSettings"
+          },
+          "restart_required": {
+            "title": "Restart Required",
+            "type": "boolean"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Usage",
+            "type": "object"
+          }
+        },
+        "required": [
+          "policy",
+          "effective_root",
+          "restart_required",
+          "source",
+          "available",
+          "health",
+          "labels",
+          "usage"
+        ],
+        "title": "CacheSettingsRead",
         "type": "object"
       },
       "CaptureFieldDraft": {
@@ -4491,6 +5010,66 @@
           "state"
         ],
         "title": "IngestResponse",
+        "type": "object"
+      },
+      "InventoryBucket": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "external_bytes": {
+            "default": 0,
+            "title": "External Bytes",
+            "type": "integer"
+          },
+          "lifecycle": {
+            "title": "Lifecycle",
+            "type": "string"
+          },
+          "logical_bytes": {
+            "title": "Logical Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "lifecycle",
+          "count",
+          "logical_bytes"
+        ],
+        "title": "InventoryBucket",
+        "type": "object"
+      },
+      "InventoryReport": {
+        "properties": {
+          "forecast": {
+            "additionalProperties": true,
+            "title": "Forecast",
+            "type": "object"
+          },
+          "history": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "inventory": {
+            "$ref": "#/components/schemas/StorageInventory"
+          }
+        },
+        "required": [
+          "inventory",
+          "history",
+          "forecast"
+        ],
+        "title": "InventoryReport",
         "type": "object"
       },
       "JobPriority": {
@@ -10870,6 +11449,94 @@
         "title": "ProvenanceSourceRead",
         "type": "object"
       },
+      "ProviderCapacityEvidence": {
+        "properties": {
+          "available_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Bytes"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "method": {
+            "default": "unsupported",
+            "title": "Method",
+            "type": "string"
+          },
+          "quota_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Bytes"
+          },
+          "reliability": {
+            "default": "unknown",
+            "title": "Reliability",
+            "type": "string"
+          },
+          "status": {
+            "default": "unknown",
+            "title": "Status",
+            "type": "string"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Bytes"
+          }
+        },
+        "title": "ProviderCapacityEvidence",
+        "type": "object"
+      },
       "ProviderCategory": {
         "enum": [
           "this_machine",
@@ -10913,6 +11580,32 @@
           "connected"
         ],
         "title": "ProviderConnectionRead",
+        "type": "object"
+      },
+      "ProviderDelivery": {
+        "properties": {
+          "requires_cors_proof": {
+            "default": true,
+            "title": "Requires Cors Proof",
+            "type": "boolean"
+          },
+          "requires_endpoint_proof": {
+            "default": true,
+            "title": "Requires Endpoint Proof",
+            "type": "boolean"
+          },
+          "same_origin_fallback": {
+            "default": true,
+            "title": "Same Origin Fallback",
+            "type": "boolean"
+          },
+          "signed_get": {
+            "default": false,
+            "title": "Signed Get",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderDelivery",
         "type": "object"
       },
       "QueueJobCreate": {
@@ -13019,6 +13712,121 @@
         "title": "StorageFieldDescriptor",
         "type": "object"
       },
+      "StorageInventory": {
+        "properties": {
+          "backup_bytes": {
+            "title": "Backup Bytes",
+            "type": "integer"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/InventoryBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "confidence": {
+            "default": "known sizes only",
+            "title": "Confidence",
+            "type": "string"
+          },
+          "external_referenced_bytes": {
+            "title": "External Referenced Bytes",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "latest_audit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuditObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logical_bytes": {
+            "title": "Logical Bytes",
+            "type": "integer"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "measured_provider_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Provider Bytes"
+          },
+          "method": {
+            "default": "database ownership census",
+            "title": "Method",
+            "type": "string"
+          },
+          "provider_capacity": {
+            "$ref": "#/components/schemas/ProviderCapacityEvidence"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "target_ref": {
+            "title": "Target Ref",
+            "type": "string"
+          },
+          "temporary_bytes": {
+            "title": "Temporary Bytes",
+            "type": "integer"
+          },
+          "unique_owned_bytes": {
+            "title": "Unique Owned Bytes",
+            "type": "integer"
+          },
+          "unknown_object_count": {
+            "title": "Unknown Object Count",
+            "type": "integer"
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/VolumeEvidence"
+            },
+            "title": "Volumes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "target_ref",
+          "buckets",
+          "logical_bytes",
+          "external_referenced_bytes",
+          "unique_owned_bytes",
+          "unknown_object_count",
+          "temporary_bytes",
+          "backup_bytes"
+        ],
+        "title": "StorageInventory",
+        "type": "object"
+      },
       "StorageProvider": {
         "properties": {
           "available": {
@@ -13034,6 +13842,9 @@
             },
             "title": "Consequences",
             "type": "array"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/ProviderDelivery"
           },
           "description": {
             "title": "Description",
@@ -13052,6 +13863,15 @@
           },
           "documentation_url": {
             "title": "Documentation Url",
+            "type": "string"
+          },
+          "evidence": {
+            "default": "endpoint_required",
+            "enum": [
+              "transport_tested",
+              "endpoint_required"
+            ],
+            "title": "Evidence",
             "type": "string"
           },
           "expected_tier": {
@@ -13092,6 +13912,11 @@
             "title": "Label",
             "type": "string"
           },
+          "provider_documentation_url": {
+            "default": "",
+            "title": "Provider Documentation Url",
+            "type": "string"
+          },
           "requirements": {
             "items": {
               "additionalProperties": true,
@@ -13103,6 +13928,11 @@
           "selectable": {
             "title": "Selectable",
             "type": "boolean"
+          },
+          "setup_guidance": {
+            "default": "",
+            "title": "Setup Guidance",
+            "type": "string"
           },
           "support_level": {
             "default": "stable",
@@ -13901,6 +14731,22 @@
       },
       "VaultAuditRunRead": {
         "properties": {
+          "baseline_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Run Id"
+          },
+          "bytes_read": {
+            "default": 0,
+            "title": "Bytes Read",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -13920,6 +14766,18 @@
               }
             ],
             "title": "Current Phase"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
           },
           "error_code": {
             "anyOf": [
@@ -13962,6 +14820,11 @@
           "mode": {
             "$ref": "#/components/schemas/VaultAuditMode"
           },
+          "planned_bytes": {
+            "default": 0,
+            "title": "Planned Bytes",
+            "type": "integer"
+          },
           "progress": {
             "title": "Progress",
             "type": "number"
@@ -13969,6 +14832,23 @@
           "requested_by": {
             "title": "Requested By",
             "type": "integer"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "scope": {
+            "default": "vault",
+            "title": "Scope",
+            "type": "string"
           },
           "started_at": {
             "anyOf": [
@@ -13984,6 +14864,11 @@
           },
           "state": {
             "$ref": "#/components/schemas/VaultAuditRunState"
+          },
+          "trigger": {
+            "default": "manual",
+            "title": "Trigger",
+            "type": "string"
           },
           "warning_count": {
             "title": "Warning Count",
@@ -14227,6 +15112,11 @@
             "additionalProperties": true,
             "title": "Storage Capabilities",
             "type": "object"
+          },
+          "storage_min_free_bytes": {
+            "default": 1073741824,
+            "title": "Storage Min Free Bytes",
+            "type": "integer"
           },
           "storage_operations": {
             "additionalProperties": true,
@@ -14652,6 +15542,18 @@
             ],
             "title": "Storage Backend"
           },
+          "storage_min_free_bytes": {
+            "anyOf": [
+              {
+                "minimum": -1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Min Free Bytes"
+          },
           "storage_provider": {
             "anyOf": [
               {
@@ -14753,6 +15655,69 @@
           "storage"
         ],
         "title": "VaultStatsRead",
+        "type": "object"
+      },
+      "VolumeEvidence": {
+        "properties": {
+          "domain_id": {
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "headroom_bytes": {
+            "default": 0,
+            "title": "Headroom Bytes",
+            "type": "integer"
+          },
+          "method": {
+            "default": "statvfs",
+            "title": "Method",
+            "type": "string"
+          },
+          "reserved_bytes": {
+            "default": 0,
+            "title": "Reserved Bytes",
+            "type": "integer"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "status": {
+            "default": "unknown",
+            "title": "Status",
+            "type": "string"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          }
+        },
+        "required": [
+          "domain_id",
+          "roles"
+        ],
+        "title": "VolumeEvidence",
         "type": "object"
       }
     },
@@ -17721,6 +18686,126 @@
           }
         ],
         "summary": "Update vault configuration",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/artifact-cache": {
+      "delete": {
+        "operationId": "reset_cache_api_v1_config_artifact_cache_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Reset Cache",
+        "tags": [
+          "config"
+        ]
+      },
+      "get": {
+        "operationId": "read_cache_api_v1_config_artifact_cache_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Cache",
+        "tags": [
+          "config"
+        ]
+      },
+      "put": {
+        "operationId": "update_cache_api_v1_config_artifact_cache_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CacheSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Cache",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/artifact-cache/clear": {
+      "post": {
+        "operationId": "clear_cache_api_v1_config_artifact_cache_clear_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Clear Cache",
         "tags": [
           "config"
         ]
@@ -21792,6 +22877,138 @@
         "summary": "Import one folder under a configured library root",
         "tags": [
           "external-libraries"
+        ]
+      }
+    },
+    "/api/v1/maintenance/audit-policies": {
+      "get": {
+        "operationId": "audit_policies_api_v1_maintenance_audit_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditPolicyRead"
+                  },
+                  "title": "Response Audit Policies Api V1 Maintenance Audit Policies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Audit Policies",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/maintenance/audit-policies/{mode}": {
+      "put": {
+        "operationId": "save_audit_policy_api_v1_maintenance_audit_policies__mode__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mode",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/VaultAuditMode"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Save Audit Policy",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/maintenance/audit-policies/{mode}/skip": {
+      "post": {
+        "operationId": "skip_audit_api_v1_maintenance_audit_policies__mode__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mode",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/VaultAuditMode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Skip Audit",
+        "tags": [
+          "maintenance"
         ]
       }
     },
@@ -29872,6 +31089,289 @@
         "summary": "Probe Connection",
         "tags": [
           "storage-connections"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory": {
+      "get": {
+        "operationId": "storage_inventory_api_v1_storage_inventory_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Inventory",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/activity": {
+      "get": {
+        "operationId": "storage_capacity_activity_api_v1_storage_inventory_activity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Capacity Activity",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/cleanup-cache": {
+      "post": {
+        "operationId": "cleanup_storage_derived_cache_api_v1_storage_inventory_cleanup_cache_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cleanup Storage Derived Cache",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/cleanup-opportunities": {
+      "get": {
+        "operationId": "storage_cleanup_opportunities_api_v1_storage_inventory_cleanup_opportunities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Cleanup Opportunities",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/cleanup-staging": {
+      "post": {
+        "operationId": "cleanup_storage_staging_api_v1_storage_inventory_cleanup_staging_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cleanup Storage Staging",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/collections": {
+      "get": {
+        "operationId": "storage_logical_collections_api_v1_storage_inventory_collections_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Logical Collections",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/models": {
+      "get": {
+        "operationId": "storage_logical_models_api_v1_storage_inventory_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "collection_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Collection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Storage Logical Models",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/inventory/sample": {
+      "post": {
+        "operationId": "sample_storage_inventory_api_v1_storage_inventory_sample_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageInventory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Sample Storage Inventory",
+        "tags": [
+          "storage"
         ]
       }
     },

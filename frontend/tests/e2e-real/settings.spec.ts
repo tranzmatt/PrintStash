@@ -476,4 +476,75 @@ test.describe("settings", () => {
     await page.getByRole("spinbutton").fill("30");
     await page.getByRole("button", { name: "Save retention" }).click();
   });
+
+  test("audit schedule persists after reload", async ({ page }) => {
+    // The exact navigation path carried by storage notification payloads.
+    await page.goto("/settings?section=maintenance");
+    const form = page.getByRole("form", { name: "Quick audit schedule" });
+    const enabled = form.getByRole("checkbox", { name: "Enabled" });
+    await form.getByLabel("Frequency").selectOption("monthly");
+    await form.getByLabel("Issue notification threshold").selectOption("critical");
+    await form.getByLabel("Overdue after (minutes)").fill("45");
+    if ((await enabled.getAttribute("aria-checked")) !== "true") await enabled.click();
+    const paused = form.getByRole("checkbox", { name: "Paused" });
+    if ((await paused.getAttribute("aria-checked")) !== "true") await paused.click();
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/maintenance/audit-policies/quick") &&
+          response.request().method() === "PUT" &&
+          response.ok(),
+      ),
+      form.getByRole("button", { name: "Save schedule" }).click(),
+    ]);
+    await page.reload();
+    await expect(form.getByRole("checkbox", { name: "Enabled" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(form.getByRole("checkbox", { name: "Paused" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(form.getByLabel("Frequency")).toHaveValue("monthly");
+    await expect(form.getByLabel("Issue notification threshold")).toHaveValue("critical");
+    await expect(form.getByLabel("Overdue after (minutes)")).toHaveValue("45");
+    await form.getByLabel("Frequency").selectOption("weekly");
+    await form.getByLabel("Issue notification threshold").selectOption("warning");
+    await form.getByLabel("Overdue after (minutes)").fill("120");
+    // Restore the safe default in the shared backend after proving persistence.
+    await enabled.click();
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/maintenance/audit-policies/quick") &&
+          response.request().method() === "PUT" &&
+          response.ok(),
+      ),
+      form.getByRole("button", { name: "Save schedule" }).click(),
+    ]);
+  });
+
+  test("requires explicit cleanup from storage insights", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Storage", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Storage insights" })).toBeVisible();
+    const [measurement] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/v1/storage/inventory/sample") &&
+          response.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Refresh measurement" }).click(),
+    ]);
+    expect(measurement.status()).toBe(200);
+    await expect(page.getByText(/Provider measurement:.*Capacity evidence is known/)).toBeVisible();
+    await page.getByRole("button", { name: "Clean up expired staging" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Uncertain files are retained");
+    await dialog.getByRole("button", { name: "Clean up", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "expired leases cleared" }),
+    ).toBeVisible();
+  });
 });

@@ -60,6 +60,9 @@ from app.db.models import (
     SystemConfig,
     Tag,
     User,
+    VaultAuditEvent,
+    VaultAuditPolicy,
+    VaultAuditRun,
 )
 
 
@@ -403,3 +406,25 @@ class MakeMultipartBuildConfirmation(Protocol):
     def __call__(
         self, attempt: MultipartBuildAttempt, **overrides: Any
     ) -> MultipartBuildConfirmation: ...
+
+
+class MakeAuditPolicy(Protocol):
+    def __call__(
+        self, requested_by: User, *, mode: str = "quick", **overrides: Any
+    ) -> VaultAuditPolicy: ...
+
+
+class MakeAuditEvent(Protocol):
+    def __call__(self, run: VaultAuditRun, **overrides: Any) -> VaultAuditEvent: ...
+
+
+class MakeCapacityReservation(Protocol):
+    def __call__(self, *, expired: bool = False, **overrides: Any) -> Any: ...
+
+
+class MakeStorageInventorySample(Protocol):
+    def __call__(self, **overrides: Any) -> Any: ...
+
+
+class MakeCapacityLock(Protocol):
+    def __call__(self, **overrides: Any) -> Any: ...

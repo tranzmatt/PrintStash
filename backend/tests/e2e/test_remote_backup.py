@@ -18,8 +18,15 @@ from botocore.config import Config as BotoConfig
 from app.core.config import settings
 from app.modules.storage.storage_backend.runtime import init_backend
 from app.modules.storage.storage_opendal import OpenDALStorageBackend
-from app.modules.storage.storage_providers import SFTPProviderConfig, resolve_transport
+from app.modules.storage.storage_providers import (
+    PRESETS,
+    SFTPProviderConfig,
+    parse_provider_config,
+    resolve_transport,
+    split_provider_config,
+)
 from tests.containers import S3_ACCESS_KEY, S3_SECRET_KEY, openssh_endpoint, s3_endpoint
+from tests.fixtures.storage_presets import real_preset_configuration
 from tests.paths import FIXTURES_DIR
 
 FIXTURE = FIXTURES_DIR / "sample.gcode"
@@ -51,9 +58,33 @@ def remote_backup_bucket():
     params=[
         pytest.param("s3", marks=pytest.mark.s3),
         pytest.param("sftp", marks=pytest.mark.remote_storage),
+        *[
+            pytest.param(
+                provider,
+                id=provider,
+                marks=pytest.mark.s3
+                if preset["transport"] == "s3"
+                else pytest.mark.remote_storage,
+            )
+            for provider, preset in PRESETS.items()
+            if preset["transport"] != "local"
+        ],
     ]
 )
 def remote_backup_profile(request):
+    if request.param in PRESETS:
+        config = parse_provider_config(real_preset_configuration(request.param))
+        spec = resolve_transport(config)
+        backend = OpenDALStorageBackend(spec)
+        if spec.kind.value == "sftp":
+            backend.provision_root()
+        backend.ensure_setup()
+        configuration, secrets = split_provider_config(config)
+        return {
+            "kind": spec.kind.value,
+            "configuration": configuration,
+            "secrets": secrets,
+        }
     if request.param == "s3":
         endpoint, bucket = request.getfixturevalue("remote_backup_bucket")
         return {

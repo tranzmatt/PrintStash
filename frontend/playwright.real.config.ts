@@ -17,6 +17,7 @@ export default defineConfig({
   // server; including it here would point it at this already-configured app.
   testIgnore: [
     "storage/**/*.spec.ts",
+    "storage-presets/**/*.spec.ts",
     "critical/**/*.spec.ts",
     "onboarding/**/*.spec.ts",
     "delivery/**/*.spec.ts",

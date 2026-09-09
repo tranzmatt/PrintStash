@@ -228,6 +228,8 @@ def _merge_config_overlay(config: SystemConfig) -> None:
             _overlay["s3_root"] = config.s3_root or LEGACY_S3_ROOT
     if config.backup_retention_days is not None:
         _overlay["backup_retention_days"] = config.backup_retention_days
+    if config.storage_min_free_bytes is not None:
+        _overlay["storage_min_free_bytes"] = config.storage_min_free_bytes
     if config.trash_retention_days is not None:
         _overlay["trash_retention_days"] = config.trash_retention_days
     if config.model_thumbnail_width is not None:
@@ -268,6 +270,9 @@ def apply_overlay(session: Session) -> None:
     }
     _overlay.clear()
     _merge_config_overlay(config)
+    from app.modules.administration.artifact_cache_config import apply_cache_overlay
+
+    apply_cache_overlay(config)
     apply_environment_storage_provider(session)
     _overlay.update(secret_overrides)
 
@@ -347,23 +352,20 @@ def _typed_environment_provider_config() -> dict[str, object]:
         except AttributeError:
             return value not in (None, "")
 
+    from app.modules.storage.storage_providers import provider_transport
+
     provider = settings.storage_provider
+    transport = provider_transport(provider)
     root = settings.storage_root.strip()
     payload: dict[str, object] = {"provider": provider}
     if root and supplied("storage_root", root):
         payload["root"] = root
-    if provider == "local":
+    if transport == "local":
         if supplied("data_dir", settings.data_dir):
             payload["data_dir"] = str(settings.data_dir)
         if supplied("thumb_dir", settings.thumb_dir):
             payload["thumb_dir"] = str(settings.thumb_dir)
-    elif provider in {
-        "s3",
-        "cloudflare_r2",
-        "backblaze_b2",
-        "wasabi",
-        "s3_self_hosted",
-    }:
+    elif transport == "s3":
         for key, env_name, value in (
             ("bucket", "s3_bucket", settings.s3_bucket),
             ("region", "s3_region", settings.s3_region),
@@ -378,7 +380,7 @@ def _typed_environment_provider_config() -> dict[str, object]:
         ):
             if value not in (None, "") and supplied(env_name, value):
                 payload[key] = value
-    elif provider in {"nextcloud", "webdav"}:
+    elif transport == "webdav":
         for key, value in (
             ("endpoint_url", settings.webdav_endpoint_url),
             ("username", settings.webdav_username),
@@ -393,7 +395,7 @@ def _typed_environment_provider_config() -> dict[str, object]:
                 value,
             ):
                 payload[key] = value
-    elif provider == "sftp":
+    elif transport == "sftp":
         for key, value in (
             ("host", settings.sftp_host),
             ("port", settings.sftp_port),
@@ -413,6 +415,9 @@ def _typed_environment_provider_config() -> dict[str, object]:
 def activate_config(config: SystemConfig) -> None:
     """Merge a newly committed config into live runtime state."""
     _merge_config_overlay(config)
+    from app.modules.administration.artifact_cache_config import apply_cache_overlay
+
+    apply_cache_overlay(config)
     ensure_dirs()
 
 
@@ -514,11 +519,13 @@ def resolve_requested_storage_provider(
     provider: str,
     raw_config: dict[str, Any],
 ) -> StorageProviderConfig:
+    from app.modules.storage.storage_providers import provider_transport
+
     prior_config = _json_object(config.storage_provider_config_json)
     prior_secrets = _json_object(config.storage_provider_secret_json)
     if config.storage_provider == provider:
         merged = {**prior_config, **prior_secrets, **raw_config}
-        if provider == "sftp":
+        if provider_transport(provider) == "sftp":
             if raw_config.get("password"):
                 merged.pop("private_key_path", None)
                 merged.pop("passphrase", None)
@@ -733,6 +740,7 @@ def update_config(
     s3_access_key: Optional[str] = None,
     s3_secret_key: Optional[str] = None,
     backup_retention_days: Optional[int] = None,
+    storage_min_free_bytes: Optional[int] = None,
     trash_retention_days: Optional[int] = None,
     backup_s3_bucket: Optional[str] = None,
     backup_s3_endpoint_url: Optional[str] = None,
@@ -810,6 +818,7 @@ def update_config(
         config.s3_root = str(settings.s3_root)
         pending_overlay["s3_root"] = config.s3_root
     _apply_int("backup_retention_days", backup_retention_days)
+    _apply_int("storage_min_free_bytes", storage_min_free_bytes)
     _apply_int("trash_retention_days", trash_retention_days)
     _apply_int("model_thumbnail_width", model_thumbnail_width)
     _apply_str("backup_s3_bucket", backup_s3_bucket)
@@ -1085,6 +1094,7 @@ def get_effective_config(session: Session) -> dict:
         "automatic_local_backup_enabled": (
             config.automatic_local_backup_enabled if config else True
         ),
+        "storage_min_free_bytes": int(settings.storage_min_free_bytes),
         "trash_retention_days": int(settings.trash_retention_days),
         "model_thumbnail_width": int(settings.model_thumbnail_width),
         "backup_s3_bucket": str(settings.backup_s3_bucket),

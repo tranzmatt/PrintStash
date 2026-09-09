@@ -213,3 +213,22 @@ class TestRaises:
     def test_missing_required_config_raises(self, target, config):
         with pytest.raises(r.RenderError):
             r.render(target, _ctx(), config)
+
+
+class TestStorageEvents:
+    @pytest.mark.parametrize("event", ["storage_regression", "storage_recovery"])
+    def test_storage_events_render_without_printer_context(self, event):
+        from app.modules.notifications.notification_renderers import (
+            event_label,
+            summary_lines,
+        )
+
+        context = {
+            "event": event,
+            "audit_mode": "full",
+            "audit_run_id": 12,
+            "summary": {"new": 2, "resolved": 1},
+        }
+        assert "Vault audit" in event_label(context)
+        assert summary_lines(context)[0] == "Audit: full #12"
+        assert all("Printer" not in line for line in summary_lines(context))

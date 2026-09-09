@@ -170,12 +170,31 @@ class TestHealthDetails:
         assert set(body["components"]) == {
             "database",
             "storage",
+            "capacity",
+            "artifact_cache",
             "backup",
             "printer_providers",
             "jobs",
             "fleet_scheduler",
             "external_libraries",
             "spoolman",
+            "vault_audits",
+        }
+
+    def test_reports_bounded_capacity_health(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        body = client.get("/api/v1/health/details", headers=auth_headers).json()
+
+        assert body["components"]["capacity"] == {
+            "ok": True,
+            "capacity_known": False,
+            "capacity_stale": False,
+            "inventory_age_seconds": None,
+            "headroom_threshold_bytes": None,
+            "forecast_available": False,
+            "active_reservations": 0,
+            "recent_admission_failures": 0,
         }
 
     def test_mirrors_database_counts_into_metrics(

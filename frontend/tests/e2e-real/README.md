@@ -67,6 +67,15 @@ Requires the backend dev venv (`backend/.venv`); falls back to `uv run`.
 
 ## Coverage
 
+First-run onboarding (`playwright.onboarding.config.ts`) checks centered desktop
+and mobile layouts in Spanish, inline password visibility, immediately visible
+server folders, keyboard step navigation, and the account → first Model flow.
+The activation route also exercises the language/theme menus, the simplified
+upload dialog, mounted-folder help, postponing/resuming, and connecting a folder
+with automatic scanning. Screenshots include the Spanish chooser and dialogs at
+mobile and desktop sizes. Dismissing the guide reminder is checked across reloads
+and navigation between Settings and the empty library.
+
 auth (UI login, wrong-password, username + API-key login then revoke) ·
 vault (search, tag filter, list/grid toggle, empty state, narrow responsive toolbar) · collections
 (create / nest / delete / recursive-delete non-empty from the sidebar) ·
@@ -94,6 +103,17 @@ model name so the backend's content-hash dedupe doesn't collapse separate
 uploads. `helpers.ts` also exposes `authBundleFor`/`authedContext` to drive a
 second browser as a non-admin user.
 
+### Named storage presets
+
+`playwright.storage-presets.config.ts` reuses the real WebDAV setup harness in an
+isolated database. `storage-presets/storage-presets.spec.ts` saves a Koofr preset,
+reloads its provider identity, probes the source, scans existing G-code and
+downloads identical bytes through the linked Artifact. This is transport evidence,
+not hosted-account certification. Run `pnpm exec playwright test -c
+playwright.storage-presets.config.ts`.
+
+Storage insights: reads real capacity evidence, persists a measurement, and confirms receipt-verified expired staging cleanup.
+
 Native S3 browser delivery has a dedicated fixture and config:
 `pnpm exec playwright test --config playwright.delivery.config.ts` (also included
 in `pnpm test:e2e:storage`). It starts real SeaweedFS with test-owned TLS, a real
@@ -101,3 +121,5 @@ API backed by isolated SQLite, and Vite. Chromium invokes the production
 `downloadAuthenticatedFile` helper and checks the saved Unicode filename, exact
 bytes, actual provider CORS, omitted app credentials, and zero API body bytes.
 Only the test certificate's trust check is relaxed; browser CORS remains enabled.
+
+- `artifact-cache.spec.ts`: persist cache limits in Settings, explicitly clear idle cache files, then reset to environment defaults.

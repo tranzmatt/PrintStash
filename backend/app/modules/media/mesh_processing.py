@@ -750,13 +750,13 @@ def extract_geometry(path: Path) -> Dict[str, Optional[float]]:
                 _reclaim_memory()
 
 
-def to_stl_bytes(path: Path) -> Optional[bytes]:
+def to_stl_bytes(path: Path, *, file_type: str | None = None) -> Optional[bytes]:
     """Convert any supported mesh file to binary STL bytes.
 
     If *path* is already an STL, its raw bytes are returned untouched.
     Returns None on conversion failure.
     """
-    if path.suffix.lower() == ".stl":
+    if _canonical_suffix(path, file_type) == ".stl":
         try:
             return path.read_bytes()
         except OSError:
@@ -765,11 +765,20 @@ def to_stl_bytes(path: Path) -> Optional[bytes]:
     # Converting means a full trimesh.load_mesh + export; an over-cap mesh would OOM
     # the process and take every request down with it (#24). Refuse it cleanly —
     # the caller surfaces a 500 instead, which is far better than a crash-loop.
-    if _exceeds_cap(path):
+    over_cap = (
+        _exceeds_cap(path)
+        if file_type is None
+        else _exceeds_cap(path, file_type=file_type)
+    )
+    if over_cap:
         return None
 
     with _render_semaphore():
-        mesh = _load_mesh(path)
+        mesh = (
+            _load_mesh(path)
+            if file_type is None
+            else _load_mesh(path, file_type=file_type)
+        )
         if mesh is None:
             return None
 

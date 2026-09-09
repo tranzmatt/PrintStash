@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import tarfile
 import tempfile
 import time
 from dataclasses import replace
@@ -31,6 +32,8 @@ from app.db.models import (
 )
 from app.db.session import get_session_factory
 from app.modules.administration import audit
+from app.modules.storage import capacity_estimates
+from app.modules.storage.capacity import CapacityManager
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.runtime.jobs import registry
 from app.runtime.maintenance import (
@@ -115,6 +118,7 @@ def restore_backup(backup_id: str, *, source_ref: str | None = None) -> dict:
     maintenance_required = False
     restore_cache_path: Path | None = None
 
+    capacity_claim = None
     begin_restore_maintenance()
     try:
         with get_session_factory().session() as session:
@@ -154,6 +158,12 @@ def restore_backup(backup_id: str, *, source_ref: str | None = None) -> dict:
 
         try:
             archive_path = _downloads_module._download_backup_to_local(meta)
+            with tarfile.open(archive_path, "r:gz") as capacity_archive:
+                expanded_bytes = sum(member.size for member in capacity_archive)
+            capacity_claim = CapacityManager(get_session_factory()).reserve(
+                f"restore:{backup_id}",
+                capacity_estimates.backup_restore(expanded_bytes),
+            )
             if meta.location == "s3":
                 restore_cache_path = archive_path
             settings.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -457,6 +467,8 @@ def restore_backup(backup_id: str, *, source_ref: str | None = None) -> dict:
                 )
             raise
     finally:
+        if capacity_claim is not None and not maintenance_required:
+            capacity_claim.release()
         if not maintenance_required and not _recovery_module._restore_journal_pending():
             if restore_cache_path is not None:
                 _caches_module.cleanup_backup_cache(restore_cache_path)

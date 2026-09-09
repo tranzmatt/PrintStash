@@ -1,5 +1,7 @@
 "use client";
 
+import { GettingStartedReminder } from "@/components/getting-started-reminder";
+
 import { knownUiText } from "@/lib/locale";
 import { formatNumber } from "@/lib/format";
 import { currentLocale } from "@/lib/locale";
@@ -57,6 +59,8 @@ import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "@/lib/navigation";
 import { CURRENCY_OPTIONS } from "@/lib/currency";
 import { ExternalLibrariesPanel } from "@/components/external-libraries-panel";
+import { StorageInventoryPanel } from "@/components/storage-inventory-panel";
+import { ArtifactCacheCard } from "@/components/artifact-cache-card";
 import { StorageConfigCard } from "@/components/storage-config-card";
 import { RemoteStorageConnections } from "@/components/remote-storage-connections";
 import { MakerWorldConnectCard } from "@/components/makerworld-connect-card";
@@ -1615,11 +1619,7 @@ export function SettingsPanel() {
   return (
     <Localized>
       <div className="w-full space-y-6">
-        {user?.is_superuser && (
-          <Button variant="outline" onClick={() => router.push("/getting-started")}>
-            {t("setup.resume")}
-          </Button>
-        )}
+        <GettingStartedReminder />
         <ConfirmModal
           open={restartConfirmOpen}
           onClose={() => {
@@ -2699,6 +2699,8 @@ export function SettingsPanel() {
             {activeSection === "storage" && (
               <div className="space-y-6 animate-panel-in">
                 <StorageConfigCard storageHealth={storageHealth} />
+                {user?.is_superuser && <StorageInventoryPanel />}
+                {user?.is_superuser && <ArtifactCacheCard />}
               </div>
             )}
 

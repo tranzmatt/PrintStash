@@ -47,7 +47,9 @@ def parse_connection_config(
                 {"provider": merged.pop("provider", "webdav"), **merged}
             )
         if kind == LibrarySourceKind.SFTP:
-            return SFTPProviderConfig.model_validate({"provider": "sftp", **merged})
+            return SFTPProviderConfig.model_validate(
+                {"provider": merged.pop("provider", "sftp"), **merged}
+            )
         if kind == LibrarySourceKind.GDRIVE:
             return GoogleDriveProviderConfig.model_validate(
                 {"provider": "gdrive", **merged}

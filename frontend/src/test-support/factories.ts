@@ -1,3 +1,4 @@
+import type { ArtifactCacheRead } from "@/lib/api/artifact-cache";
 /**
  * Builders for API-shaped objects — the frontend's arrange step.
  *
@@ -37,6 +38,8 @@
 
 import type {
   CollectionRead,
+  ExternalLibrary,
+  IngestJobStatus,
   ModelListItem,
   PrinterAccess,
   PrinterCapabilities,
@@ -387,6 +390,97 @@ export function aMultipartModel(
     created_at: "2026-01-01T00:00:00Z",
     parts: [],
     guides: [],
+    ...override,
+  };
+}
+
+export function anArtifactCache(overrides: Partial<ArtifactCacheRead> = {}): ArtifactCacheRead {
+  return {
+    policy: {
+      enabled: false,
+      root: "/cache",
+      max_bytes: 1000,
+      max_entries: 100,
+      max_fills: 2,
+      headroom_bytes: 100,
+      verify_every_hits: 100,
+      fill_wait_seconds: 30,
+    },
+    effective_root: "/cache",
+    restart_required: false,
+    source: "environment",
+    available: true,
+    health: "ready",
+    labels: { representation: "artifact", backend: "s3" },
+    usage: { bytes: 100, entries: 1, leases: 0 },
+    ...overrides,
+  };
+}
+export function anAuditPolicy(
+  overrides: Partial<import("@/types/maintenance").AuditPolicy> = {},
+): import("@/types/maintenance").AuditPolicy {
+  return {
+    estimated_remote_bytes: 0,
+    overdue: false,
+    mode: "quick",
+    enabled: false,
+    paused: false,
+    cadence: "weekly",
+    timezone: "UTC",
+    weekday: 6,
+    month_day: 1,
+    start_time: "02:00",
+    window_minutes: 120,
+    bytes_per_second: 10485760,
+    read_concurrency: 1,
+    auto_repair: false,
+    repair_actions: [],
+    full_cost_acknowledged: false,
+    revision: 1,
+    next_due_at: null,
+    last_attempt_at: null,
+    last_success_at: null,
+    deferred_reason: null,
+    ...overrides,
+  };
+}
+
+/** A mounted, read-only source with its root verified. */
+export function anExternalLibrary(override?: Partial<ExternalLibrary>): ExternalLibrary {
+  return {
+    id: 1,
+    name: "My models",
+    root_path: "/libraries/models",
+    source_kind: "mounted",
+    writeback_enabled: false,
+    enabled: true,
+    scan_interval_minutes: 60,
+    scan_schedule: "0 * * * *",
+    watch_mode: "auto",
+    fs_kind: "local",
+    watch_active: false,
+    binding_state: "bound",
+    binding_reason: null,
+    root_enrollable: false,
+    collection_mode: "mirror",
+    target_collection_id: null,
+    last_scanned_at: null,
+    last_scan_status: null,
+    last_scan_summary: null,
+    ...override,
+  };
+}
+
+/** A terminal ingestion job; callers supply distinct IDs to isolate the task cache. */
+export function anIngestJob(override?: Partial<IngestJobStatus>): IngestJobStatus {
+  return {
+    job_id: "test-job",
+    state: "completed",
+    model_id: 1,
+    file_id: 1,
+    error: null,
+    started_at: FROZEN_NOW,
+    finished_at: FROZEN_NOW,
     ...override,
   };
 }

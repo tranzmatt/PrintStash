@@ -599,3 +599,52 @@ class TestManufacturingFactories:
             db_session, build, model, quantity=4
         )
         assert part.required_units == 12
+
+
+class TestAuditFactories:
+    def test_disabled_policy_is_not_due(self, db_session):
+        from app.modules.administration.vault_audit_policy import claim_due
+
+        user = factories.build_user(db_session)
+        factories.build_audit_policy(db_session, user, next_due_at=utcnow())
+        assert claim_due(db_session) is None
+
+    def test_events_have_independent_dedup_identities(self, db_session):
+        from app.db.models import VaultAuditEvent
+
+        run = factories.build_audit_run(db_session, factories.build_user(db_session))
+        factories.build_audit_event(db_session, run)
+        factories.build_audit_event(db_session, run)
+        assert len(db_session.exec(select(VaultAuditEvent)).all()) == 2
+
+class TestCapacityFactories:
+    def test_expired_capacity_claim_reconciles(self, db_session):
+        from app.db.session import get_session_factory
+        from app.modules.storage.capacity import CapacityManager
+
+        factories.build_capacity_reservation(db_session, expired=True)
+        assert CapacityManager(get_session_factory()).reconcile(lambda _: False) == 1
+
+    def test_unexpired_capacity_claim_survives(self, db_session):
+        from app.db.session import get_session_factory
+        from app.modules.storage.capacity import CapacityManager
+
+        factories.build_capacity_reservation(db_session)
+        assert CapacityManager(get_session_factory()).reconcile(lambda _: False) == 0
+
+    def test_inventory_sample_is_visible_in_history(self, db_session):
+        from app.modules.storage.storage_inventory import history
+
+        factories.build_storage_inventory_sample(db_session, owned_bytes=50)
+        assert history(db_session, "test-target")[0]["owned_bytes"] == 50
+
+    def test_capacity_lock_allows_admission(self, db_session):
+        from app.db.session import get_session_factory
+        from app.modules.storage.capacity import CapacityManager, CapacityResource
+
+        factories.build_capacity_lock(db_session)
+        manager = CapacityManager(get_session_factory(), headroom_bytes=0)
+        manager.reserve(
+            "factory-test", [CapacityResource.for_quota("test", 10, 100, role="test")]
+        )
+        assert manager.reserved_bytes() == {"quota:test": 10}

@@ -77,7 +77,19 @@ class Settings(BaseSettings):
     storage_allow_unverified: bool = False
     data_dir: Path = Path("/data/files")
     thumb_dir: Path = Path("/data/thumbs")
+    storage_min_free_bytes: int = Field(default=1024**3, ge=0)
+    storage_min_free_percent: float = Field(
+        default=0, ge=0, le=100, allow_inf_nan=False
+    )
     staging_dir: Path = Path("/data/staging")
+    artifact_cache_enabled: bool = False
+    artifact_cache_root: Path = Path("/data/artifact-cache")
+    artifact_cache_max_bytes: int = Field(default=10 * 1024**3, ge=0)
+    artifact_cache_max_entries: int = Field(default=10000, ge=0)
+    artifact_cache_max_fills: int = Field(default=2, ge=1, le=64)
+    artifact_cache_headroom_bytes: int = Field(default=1024**3, ge=0)
+    artifact_cache_verify_every_hits: int = Field(default=100, ge=0)
+    artifact_cache_fill_wait_seconds: int = Field(default=30, ge=0, le=300)
 
     s3_bucket: str = ""
     s3_endpoint_url: str = ""
@@ -131,6 +143,8 @@ class Settings(BaseSettings):
     # external slicer process can fetch the file without the user's login session.
     slicer_download_token_expire_minutes: int = Field(default=15, gt=0)
     cors_origins: str = ""
+    # Optional operator-supplied base URL for notification navigation links.
+    public_url: str = ""
 
     max_upload_mb: int = Field(default=512, gt=0)
     portable_manifest_max_mb: int = Field(default=128, gt=0)

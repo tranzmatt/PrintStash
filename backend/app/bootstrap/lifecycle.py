@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 from functools import partial
+from pathlib import Path
 
 from fastapi import FastAPI
 from sqlalchemy.engine.url import make_url
@@ -107,7 +109,10 @@ def _compose_storage_backend(
     try:
         if settings.storage_provider_error:
             raise RuntimeError(settings.storage_provider_error)
-        if settings.storage_backend in {"nextcloud", "webdav", "sftp"}:
+        from app.modules.storage.storage_providers import provider_transport
+
+        transport = provider_transport(str(settings.storage_backend))
+        if transport in {"webdav", "sftp"}:
             from app.modules.storage.storage_opendal import OpenDALStorageBackend
             from app.modules.storage.storage_providers import (
                 parse_provider_config,
@@ -118,10 +123,12 @@ def _compose_storage_backend(
                 json.loads(str(settings.storage_provider_config))
             )
             storage_backend = OpenDALStorageBackend(resolve_transport(provider_config))
-        elif settings.storage_backend == "s3":
+        elif transport == "s3":
             storage_backend = S3StorageBackend(check_bucket=not recovery_only)
-        else:
+        elif transport == "local":
             storage_backend = LocalStorageBackend()
+        else:
+            raise ValueError("storage_provider_not_available_for_vault")
     except Exception as exc:
         # An explicit but invalid provider must never silently become local
         # storage. Keep the API/health surface available in recovery mode while
@@ -249,6 +256,30 @@ async def lifespan(app: FastAPI):
         recover_publications=not restore_maintenance,
         recovery_only=restore_maintenance,
     )
+    from app.modules.administration.artifact_cache_config import (
+        live_policy,
+        validate_cache_root,
+    )
+    from app.modules.storage.artifact_materializer import ArtifactMaterializer
+    from app.modules.storage.capacity import CapacityManager, CapacityResource
+    from app.modules.storage.materializer_runtime import bind_materializer
+
+    try:
+        capacity = CapacityManager(get_session_factory())
+        bind_materializer(
+            ArtifactMaterializer(
+                validate_cache_root(settings.artifact_cache_root),
+                live_policy,
+                reserve=lambda token, root, size: capacity.hold(
+                    f"cache:{token}",
+                    [CapacityResource.for_path(root, size, role="cache")],
+                ),
+                recover_reservation=lambda token: capacity.release(f"cache:{token}"),
+            )
+        )
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
+        logger.exception("artifact cache unavailable; source reads remain enabled")
+        bind_materializer(None, configured_root=Path(settings.artifact_cache_root))
     from app.runtime.jobs import reconcile_interrupted_jobs
 
     interrupted_jobs = reconcile_interrupted_jobs() if not restore_maintenance else 0
@@ -292,6 +323,9 @@ async def lifespan(app: FastAPI):
     )
     app.state.external_scan_task = asyncio.create_task(_external_scan_loop())
     app.state.automatic_backup_task = asyncio.create_task(_automatic_backup_loop())
+    from app.runtime.audit_scheduler import run_audit_scheduler
+
+    app.state.audit_scheduler_task = asyncio.create_task(run_audit_scheduler())
     app.state.notification_task = asyncio.create_task(run_dispatcher_loop())
     app.state.fleet_scheduler_task = asyncio.create_task(
         run_fleet_scheduler(work_wakeup, provider_builder)
@@ -303,11 +337,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("library watcher failed to start; scheduled scans still run")
     yield
+    bind_materializer(None)
     logger.info("shutting down printer hub")
     await _cancel_tasks(
         app.state.gc_task,
         app.state.external_scan_task,
         app.state.automatic_backup_task,
+        app.state.audit_scheduler_task,
         app.state.notification_task,
         app.state.fleet_scheduler_task,
     )
@@ -337,6 +373,14 @@ async def _gc_loop(*, storage_maintenance_enabled: bool = True) -> None:
                 await asyncio.to_thread(run_scheduled_gc)
             except Exception:
                 logger.exception("scheduled GC failed")
+            try:
+                from app.modules.storage.storage_inventory import (
+                    refresh_inventory_sample,
+                )
+
+                await asyncio.to_thread(refresh_inventory_sample, get_session_factory())
+            except Exception:
+                logger.exception("storage inventory sampling failed")
             try:
                 from app.modules.notifications.notifications import prune_deliveries
 

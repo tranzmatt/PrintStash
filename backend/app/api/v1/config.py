@@ -39,6 +39,7 @@ class VaultConfigRead(BaseModel):
     automatic_backup_last_attempt_at: datetime | None = None
     manual_local_backup_enabled: bool = True
     automatic_local_backup_enabled: bool = True
+    storage_min_free_bytes: int = 1024**3
     trash_retention_days: int = 30
     backup_s3_bucket: str = ""
     backup_s3_endpoint_url: str = ""
@@ -109,6 +110,7 @@ class VaultConfigUpdate(BaseModel):
     )
     manual_local_backup_enabled: Optional[bool] = None
     automatic_local_backup_enabled: Optional[bool] = None
+    storage_min_free_bytes: Optional[int] = Field(default=None, ge=-1)
     trash_retention_days: Optional[int] = Field(default=None, ge=-1)
     backup_s3_bucket: Optional[str] = None
     backup_s3_endpoint_url: Optional[str] = None
@@ -422,6 +424,7 @@ def update_config(
         s3_access_key=None if new_storage_supplied else body.s3_access_key,
         s3_secret_key=None if new_storage_supplied else body.s3_secret_key,
         backup_retention_days=body.backup_retention_days,
+        storage_min_free_bytes=body.storage_min_free_bytes,
         trash_retention_days=body.trash_retention_days,
         model_thumbnail_width=body.model_thumbnail_width,
         backup_s3_bucket=body.backup_s3_bucket,

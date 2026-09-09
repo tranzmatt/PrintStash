@@ -12,6 +12,8 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { AuditSchedulePanel } from "@/components/audit-schedule-panel";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,7 +59,11 @@ const FINDING_LABELS = new Map([
 ]);
 
 function isActive(run: VaultAuditRun | null): boolean {
-  return run?.state === "pending" || run?.state === "running";
+  return (
+    run?.state === "pending" ||
+    run?.state === "running" ||
+    (run?.state === "completed" && run.current_phase === "auto_repair")
+  );
 }
 
 function sourceKey(item: BackupMeta): string {
@@ -194,6 +200,7 @@ export function MaintenancePanel() {
 
   return (
     <div className="space-y-5">
+      <AuditSchedulePanel />
       <Card>
         <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>

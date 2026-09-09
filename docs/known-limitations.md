@@ -182,8 +182,10 @@ manufacturing platform.
   mismatches, unavailable external roots, and unowned objects require manual
   recovery and are never deleted automatically.
 - Full audit hashes owned primary blobs and can be expensive on remote/S3
-  storage. Cancellation occurs between objects rather than during one object
-  stream.
+  storage. Scheduled audits throttle Artifact and backup reads and check their
+  deadline between chunks; already-started provider calls complete within their
+  transport timeout. See [scheduled audits](scheduled-audits.md) for calendar,
+  notification, and opt-in automatic repair behavior.
 - Backup verification validates archive safety, manifest/database membership,
   declared member sizes, and manifest compatibility. It does not restore an
   individual blob or prove that every application-level database invariant is
@@ -290,3 +292,14 @@ manufacturing platform.
   material, or account for consumption across multiple spools in one print.
 - Multi-material G-code without a complete tool-to-feed mapping remains
   `unknown` rather than being declared compatible or mismatched.
+
+## Storage preset evidence
+
+Named [storage presets](./storage-providers.md) configure existing transports;
+they do not imply appliance certification. Mount SMB/NFS on the host before
+using NAS folder presets. A real transport test against Nextcloud, OpenSSH or
+SeaweedFS is not a hosted-account or hardware validation. Check the configured
+endpoint and permissions for every intended role. Google Drive remains beta for
+read-only Library sources and backup replicas; managed Vault use is unavailable.
+Signed browser downloads depend on endpoint and CORS proof independently of the
+active deletion safety tier.

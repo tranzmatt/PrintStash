@@ -302,6 +302,28 @@ class TestCancelAudit:
         db_session.expire_all()
         assert db_session.get(VaultAuditRun, run.id).cancel_requested is True
 
+    def test_cancels_automatic_repair_after_the_result_is_complete(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        db_session: Session,
+        make_run,
+    ) -> None:
+        run = make_run(
+            state=VaultAuditRunState.COMPLETED,
+            current_phase="auto_repair",
+            active_slot="audit",
+        )
+
+        response = client.post(
+            f"/api/v1/maintenance/audits/{run.id}/cancel", headers=auth_headers
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["state"] == "completed"
+        db_session.expire_all()
+        assert db_session.get(VaultAuditRun, run.id).cancel_requested is True
+
     def test_reports_an_unknown_run_as_not_found(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:

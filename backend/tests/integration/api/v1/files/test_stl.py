@@ -12,12 +12,14 @@ from __future__ import annotations
 import hashlib
 import io
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 import trimesh
 from fastapi.testclient import TestClient
 
+from app.core.config import _overlay
 from app.modules.storage.storage_backend.runtime import get_backend
 from tests.fixtures.three_mf_projects import build_3d_builder_component_project
 
@@ -117,13 +119,43 @@ class TestFileAsStl:
         row = make_file(model, filename="model.3mf", ftype="3mf", path=key, sha256=sha)
         remove_blob(get_backend().stl_cache_key(sha))
         monkeypatch.setattr(
-            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path, *, file_type=None: CONVERTED
         )
 
         response = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)
 
         assert response.status_code == 200, response.text
         assert response.content == CONVERTED
+
+    def test_denies_conversion_before_materialization_when_headroom_is_unavailable(
+        self,
+        client: TestClient,
+        auth_headers,
+        monkeypatch: pytest.MonkeyPatch,
+        make_model,
+        make_file,
+        remove_blob,
+    ) -> None:
+        key = "capacity.3mf"
+        get_backend().write_bytes(b"fake-3mf-bytes", key)
+        sha = "c2" * 32
+        row = make_file(
+            make_model("stl-capacity"),
+            filename="capacity.3mf",
+            ftype="3mf",
+            path=key,
+            sha256=sha,
+        )
+        remove_blob(get_backend().stl_cache_key(sha))
+        converter = MagicMock(return_value=CONVERTED)
+        monkeypatch.setattr("app.modules.media.mesh_processing.to_stl_bytes", converter)
+        monkeypatch.setitem(_overlay, "storage_min_free_bytes", 10**18)
+
+        response = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)
+
+        assert response.status_code == 507
+        assert response.json()["detail"] == "storage_capacity_exceeded"
+        converter.assert_not_called()
 
     def test_converts_only_once(
         self,
@@ -144,7 +176,7 @@ class TestFileAsStl:
         remove_blob(get_backend().stl_cache_key(sha))
         conversions = {"n": 0}
 
-        def counted(_path):
+        def counted(_path, *, file_type=None):
             conversions["n"] += 1
             return CONVERTED
 
@@ -175,7 +207,7 @@ class TestFileAsStl:
         row = make_file(model, filename="race.3mf", ftype="3mf", path=key, sha256=sha)
         remove_blob(get_backend().stl_cache_key(sha))
         monkeypatch.setattr(
-            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path, *, file_type=None: CONVERTED
         )
 
         def already_published(*_args: object, **_kwargs: object):
@@ -209,7 +241,7 @@ class TestFileAsStl:
         )
         remove_blob(get_backend().stl_cache_key(sha))
         monkeypatch.setattr(
-            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: CONVERTED
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path, *, file_type=None: CONVERTED
         )
 
         def failing_receipt(*_args: object, **_kwargs: object):
@@ -238,7 +270,7 @@ class TestFileAsStl:
             model, filename="broken.obj", ftype="obj", path=key, sha256="c2" * 32
         )
         monkeypatch.setattr(
-            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path: None
+            "app.modules.media.mesh_processing.to_stl_bytes", lambda _path, *, file_type=None: None
         )
 
         response = client.get(f"/api/v1/files/{row.id}/stl", headers=auth_headers)

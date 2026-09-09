@@ -81,6 +81,53 @@ def _local_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestStorageComposition:
+    @pytest.mark.parametrize(
+        "provider",
+        [
+            "synology_webdav",
+            "qnap_webdav",
+            "hetzner_storage_box",
+            "hetzner_storage_box_webdav",
+            "koofr",
+        ],
+    )
+    def test_persisted_preset_restarts_with_its_remote_transport(
+        self,
+        provider: str,
+        _local_storage: None,
+        db_session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.modules.administration import runtime_config
+        from app.modules.storage import storage_opendal
+        from app.modules.storage.storage_providers import PRESETS
+        from tests.fixtures.storage_presets import preset_configuration
+
+        runtime_config.update_storage_provider(
+            db_session,
+            provider=provider,
+            raw_config=preset_configuration(provider),
+            apply_runtime=False,
+        )
+        runtime_config.apply_overlay(db_session)
+        observed = []
+
+        def remote_backend(spec):
+            observed.append(spec)
+            return storage_opendal_backend(spec)
+
+        storage_opendal_backend = storage_opendal.OpenDALStorageBackend
+        monkeypatch.setattr(storage_opendal, "OpenDALStorageBackend", remote_backend)
+        backend = lifecycle._compose_storage_backend(
+            recovery_only=True,
+            recover_publications=False,
+        )
+        assert backend.backend_name == provider
+        assert len(observed) == 1
+        assert observed[0].kind.value == PRESETS[provider]["transport"]
+        assert observed[0].provider == provider
+        assert observed[0].options["root"] == "presets"
+
     def test_provider_probe_failure_binds_unavailable_recovery_backend(
         self, _local_storage: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -672,7 +719,8 @@ class TestLifespan:
                 assert hasattr(app.state, attr), f"app.state.{attr} not set by lifespan"
             assert isinstance(app.state.printer_hub.bus, InProcessBus)
             assert (
-                app.state.printer_hub._session_factory is lifecycle.get_session_factory()
+                app.state.printer_hub._session_factory
+                is lifecycle.get_session_factory()
             )
             assert not app.state.fleet_scheduler_task.done()
             assert not app.state.gc_task.done()
@@ -902,7 +950,9 @@ class TestExternalScanLoop:
         monkeypatch.setattr(
             lifecycle, "begin_mutating_operation", _begin_mutating_operation
         )
-        monkeypatch.setattr(lifecycle, "end_mutating_operation", _end_mutating_operation)
+        monkeypatch.setattr(
+            lifecycle, "end_mutating_operation", _end_mutating_operation
+        )
         monkeypatch.setattr(
             lifecycle, "_run_due_external_scans", _run_due_external_scans
         )

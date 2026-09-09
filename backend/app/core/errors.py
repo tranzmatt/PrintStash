@@ -9,6 +9,7 @@ class ErrorKind(Enum):
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"
     GONE = "gone"
+    CAPACITY = "capacity"
     TOO_LARGE = "too_large"
     UNPROCESSABLE = "unprocessable"
     BUSY = "busy"
@@ -24,9 +25,11 @@ class OperationError(Exception):
         *,
         kind: ErrorKind = ErrorKind.INVALID,
         retry_after_seconds: int | None = None,
+        capacity: dict[str, int | None] | None = None,
     ) -> None:
         self.detail = detail
         self.code = detail
         self.kind = kind
         self.retry_after_seconds = retry_after_seconds
+        self.capacity = capacity
         super().__init__(self.code)

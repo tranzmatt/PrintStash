@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import tempfile
+import uuid
 import zipfile
 from datetime import datetime
 from enum import Enum
@@ -50,6 +51,7 @@ from app.db.models import (
     User,
 )
 from app.db.scopes import live
+from app.db.session import get_session_factory
 from app.modules.identity import rbac
 from app.modules.ingestion import ingestion
 from app.modules.library import (
@@ -58,8 +60,9 @@ from app.modules.library import (
     source_covers,
     taxonomy,
 )
-from app.modules.storage import storage
+from app.modules.storage import capacity_estimates, storage
 from app.modules.storage.artifact_content import ArtifactContentError, resolve
+from app.modules.storage.capacity import CapacityManager
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.runtime.jobs import registry
 from app.schemas.models import PartGroupWrite, PartOptionWrite
@@ -785,63 +788,72 @@ def create_archive(session: Session, user: User) -> Path:
     ):
         raise ValueError("archive_too_large")
 
-    fd, filename = tempfile.mkstemp(suffix=".printstash.zip")
-    try:
-        # Keep and write through the exclusive mkstemp descriptor. Unlinking
-        # the placeholder and reopening by name would create a race in which an
-        # unrelated file at the random path could be truncated.
-        with open(fd, "w+b", closefd=True) as output:
-            with zipfile.ZipFile(
-                output, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
-            ) as archive:
-                actual_size = len(manifest_bytes)
-                for artifact, entry in file_entries:
-                    try:
-                        with resolve(artifact).materialize() as source:
-                            digest = hashlib.sha256()
-                            artifact_size = 0
-                            with (
-                                source.open("rb") as source_file,
-                                archive.open(
-                                    entry, "w", force_zip64=True
-                                ) as archive_entry,
-                            ):
-                                while chunk := source_file.read(_HASH_CHUNK_SIZE):
-                                    artifact_size += len(chunk)
-                                    if actual_size + artifact_size > MAX_UNCOMPRESSED:
-                                        raise ValueError("archive_too_large")
-                                    digest.update(chunk)
-                                    archive_entry.write(chunk)
-                    except ArtifactContentError as exc:
-                        raise ValueError("archive_blob_hash_mismatch") from exc
-                    if (
-                        artifact_size != artifact.size_bytes
-                        or digest.hexdigest() != artifact.sha256.lower()
-                    ):
-                        raise ValueError("archive_blob_hash_mismatch")
-                    actual_size += artifact_size
-                    if actual_size > MAX_UNCOMPRESSED:
-                        raise ValueError("archive_too_large")
-                for cover, entry in cover_entries:
-                    data = get_backend().read_bytes(cover.storage_key)
-                    digest = hashlib.sha256(data).hexdigest()
-                    if len(data) != cover.size_bytes or digest != next(
-                        source["cover"]["sha256"]
-                        for model_data in provenance_models
-                        for source in model_data["sources"]
-                        if source.get("cover", {}).get("entry") == entry
-                    ):
-                        raise ValueError("archive_blob_hash_mismatch")
-                    archive.writestr(entry, data)
-                    actual_size += len(data)
-                    if actual_size > MAX_UNCOMPRESSED:
-                        raise ValueError("archive_too_large")
-                archive.writestr("manifest.json", manifest_bytes)
-                archive.writestr("provenance.json", provenance_bytes)
-        return Path(filename)
-    except Exception:
-        Path(filename).unlink(missing_ok=True)
-        raise
+    with CapacityManager(get_session_factory()).hold(
+        f"archive-export:{uuid.uuid4().hex}",
+        capacity_estimates.archive_export(expected_size),
+    ):
+        fd, filename = tempfile.mkstemp(suffix=".printstash.zip")
+        try:
+            # Keep and write through the exclusive mkstemp descriptor. Unlinking
+            # the placeholder and reopening by name would create a race in which an
+            # unrelated file at the random path could be truncated.
+            with open(fd, "w+b", closefd=True) as output:
+                with zipfile.ZipFile(
+                    output, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
+                ) as archive:
+                    actual_size = len(manifest_bytes)
+                    for artifact, entry in file_entries:
+                        try:
+                            with resolve(artifact).materialize(
+                                capacity_claimed=True
+                            ) as source:
+                                digest = hashlib.sha256()
+                                artifact_size = 0
+                                with (
+                                    source.open("rb") as source_file,
+                                    archive.open(
+                                        entry, "w", force_zip64=True
+                                    ) as archive_entry,
+                                ):
+                                    while chunk := source_file.read(_HASH_CHUNK_SIZE):
+                                        artifact_size += len(chunk)
+                                        if (
+                                            actual_size + artifact_size
+                                            > MAX_UNCOMPRESSED
+                                        ):
+                                            raise ValueError("archive_too_large")
+                                        digest.update(chunk)
+                                        archive_entry.write(chunk)
+                        except ArtifactContentError as exc:
+                            raise ValueError("archive_blob_hash_mismatch") from exc
+                        if (
+                            artifact_size != artifact.size_bytes
+                            or digest.hexdigest() != artifact.sha256.lower()
+                        ):
+                            raise ValueError("archive_blob_hash_mismatch")
+                        actual_size += artifact_size
+                        if actual_size > MAX_UNCOMPRESSED:
+                            raise ValueError("archive_too_large")
+                    for cover, entry in cover_entries:
+                        data = get_backend().read_bytes(cover.storage_key)
+                        digest = hashlib.sha256(data).hexdigest()
+                        if len(data) != cover.size_bytes or digest != next(
+                            source["cover"]["sha256"]
+                            for model_data in provenance_models
+                            for source in model_data["sources"]
+                            if source.get("cover", {}).get("entry") == entry
+                        ):
+                            raise ValueError("archive_blob_hash_mismatch")
+                        archive.writestr(entry, data)
+                        actual_size += len(data)
+                        if actual_size > MAX_UNCOMPRESSED:
+                            raise ValueError("archive_too_large")
+                    archive.writestr("manifest.json", manifest_bytes)
+                    archive.writestr("provenance.json", provenance_bytes)
+            return Path(filename)
+        except Exception:
+            Path(filename).unlink(missing_ok=True)
+            raise
 
 
 def _safe_entry(name: str) -> bool:
@@ -1759,7 +1771,15 @@ def import_archive(session: Session, archive_path: Path, user: User) -> dict[str
         created_models = created_files = skipped_files = provenance_conflicts = 0
         source_models: dict[int, Model] = {}
         source_files: dict[int, File] = {}
-        with tempfile.TemporaryDirectory(prefix="printstash-import-") as tempdir:
+        with (
+            CapacityManager(get_session_factory()).hold(
+                f"archive-import:{uuid.uuid4().hex}",
+                capacity_estimates.archive_import(
+                    sum(item.file_size for item in infos)
+                ),
+            ),
+            tempfile.TemporaryDirectory(prefix="printstash-import-") as tempdir,
+        ):
             for model_data in manifest["models"]:
                 model = session.exec(
                     select(Model).where(Model.hash == model_data["hash"], live(Model))

@@ -101,7 +101,9 @@ from tests.factories.manufacturing import (
     build_multipart_part,
 )
 from tests.factories.ops import (
+    build_audit_event,
     build_audit_finding,
+    build_audit_policy,
     build_audit_run,
     build_background_job,
     build_backup_destination_result,
@@ -163,6 +165,8 @@ __all__ = [
     "a_printer_with_a_queue",
     "bearer",
     "build_artifact_link",
+    "build_audit_policy",
+    "build_audit_event",
     "build_audit_finding",
     "build_audit_run",
     "build_background_job",
@@ -227,3 +231,10 @@ __all__ = [
     "tag_file",
     "unique_hash",
 ]
+from tests.factories.capacity import (
+    build_capacity_lock,
+    build_capacity_reservation,
+    build_storage_inventory_sample,
+)
+
+__all__ += ["build_capacity_lock", "build_capacity_reservation", "build_storage_inventory_sample"]
