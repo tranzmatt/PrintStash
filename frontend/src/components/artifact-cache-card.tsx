@@ -5,17 +5,22 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Localized } from "@/components/ui/localized";
 import { artifactCacheApi, type ArtifactCacheRead } from "@/lib/api/artifact-cache";
+import { uiText } from "@/lib/locale";
 import { toast } from "@/lib/toast";
 
 const LIMITS = [
-  { name: "max_bytes", label: "Maximum cache bytes", min: 0 },
-  { name: "headroom_bytes", label: "Minimum free bytes", min: 0 },
-  { name: "max_entries", label: "Maximum cached files", min: 0 },
-  { name: "max_fills", label: "Concurrent downloads", min: 1 },
-  { name: "fill_wait_seconds", label: "Maximum wait for an active download (seconds)", min: 0 },
+  { name: "max_bytes", labelKey: "Maximum cache bytes", min: 0 },
+  { name: "headroom_bytes", labelKey: "Minimum free bytes", min: 0 },
+  { name: "max_entries", labelKey: "Maximum cached files", min: 0 },
+  { name: "max_fills", labelKey: "Concurrent downloads", min: 1 },
+  {
+    name: "fill_wait_seconds",
+    labelKey: "Maximum wait for an active download (seconds)",
+    min: 0,
+  },
   {
     name: "verify_every_hits",
-    label: "Recheck digest every N reads (0 disables sampling)",
+    labelKey: "Recheck digest every N reads (0 disables sampling)",
     min: 0,
   },
 ] as const;
@@ -29,7 +34,13 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
     api
       .read()
       .then((result) => {
-        if (active) setValue(result);
+        if (!active) return;
+        if (result?.policy) {
+          setValue(result);
+          setFailed(false);
+        } else {
+          setFailed(true);
+        }
       })
       .catch(() => {
         if (active) setFailed(true);
@@ -38,7 +49,11 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
       active = false;
     };
   }, [api]);
-  const pending = Boolean(value?.usage.maintenance_running || value?.usage.pending_eviction_bytes);
+  const usage = value?.usage ?? {};
+  const policy = value?.policy;
+  const labels = value?.labels ?? { representation: "artifact", backend: "unknown" };
+  const health = value?.health ?? "unavailable";
+  const pending = Boolean(usage.maintenance_running || usage.pending_eviction_bytes);
   useEffect(() => {
     if (!pending) return;
     let active = true;
@@ -75,7 +90,7 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
     try {
       setValue(await action());
       setFailed(false);
-      toast.success("Artifact cache settings updated.");
+      toast.success(uiText("Artifact cache settings updated."));
     } catch (error) {
       toast.error(error);
     } finally {
@@ -87,69 +102,73 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
     <Localized>
       <Card>
         <CardHeader>
-          <CardTitle>Remote Artifact cache</CardTitle>
+          <CardTitle>{uiText("Remote Artifact cache")}</CardTitle>
           <CardDescription>
-            Reuse verified remote files for previews, printing, and downloads. Original files remain
-            in Vault storage.
+            {uiText(
+              "Reuse verified remote files for previews, printing, and downloads. Original files remain in Vault storage.",
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {failed && (
             <div role="alert" className="space-y-2">
-              <p>Cache settings could not be loaded.</p>
+              <p>{uiText("Cache settings could not be loaded.")}</p>
               <Button variant="outline" disabled={busy} onClick={() => void perform(api.read)}>
-                Retry
+                {uiText("Retry")}
               </Button>
             </div>
           )}
           {!failed && !value && (
             <p role="status" className="text-sm text-muted-foreground">
-              Loading cache settings…
+              {uiText("Loading cache settings…")}
             </p>
           )}
-          {value && (
+          {value && policy && (
             <form
               className="space-y-4"
               onSubmit={(event) => {
                 event.preventDefault();
-                void perform(() => api.save(value.policy));
+                void perform(() => api.save(policy));
               }}
             >
               <label className="flex items-center gap-3">
                 <Checkbox
-                  checked={value.policy.enabled}
+                  checked={policy.enabled}
                   disabled={busy}
-                  ariaLabel="Enable remote Artifact cache"
+                  ariaLabel={uiText("Enable remote Artifact cache")}
                   onChange={(checked) =>
-                    setValue({ ...value, policy: { ...value.policy, enabled: checked === true } })
+                    setValue({ ...value, policy: { ...policy, enabled: checked === true } })
                   }
                 />
-                <span>Enable remote Artifact cache</span>
+                <span>{uiText("Enable remote Artifact cache")}</span>
               </label>
               <p className="text-xs text-muted-foreground">
-                Disabling stops new cache use. Active reads can finish. Clear cached files
-                separately to reclaim space.
+                {uiText(
+                  "Disabling stops new cache use. Active reads can finish. Clear cached files separately to reclaim space.",
+                )}
               </p>
               <p className="text-sm text-muted-foreground">
-                Policy source:{" "}
-                {value.source === "database" ? "Saved settings" : "Environment defaults"}. Limits
-                apply immediately; changing the folder requires a restart.
+                {uiText("Policy source:")}{" "}
+                {value.source === "database"
+                  ? uiText("Saved settings")
+                  : uiText("Environment defaults")}
+                . {uiText("Limits apply immediately; changing the folder requires a restart.")}
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
-                {LIMITS.map(({ name, label, min }) => (
+                {LIMITS.map(({ name, labelKey, min }) => (
                   <label className="space-y-1" key={name}>
-                    <span className="block text-sm">{label}</span>
+                    <span className="block text-sm">{uiText(labelKey)}</span>
                     <Input
                       required
                       type="number"
                       min={min}
                       step={1}
-                      value={value.policy[name]}
+                      value={policy[name]}
                       disabled={busy}
                       onChange={(event) =>
                         setValue({
                           ...value,
-                          policy: { ...value.policy, [name]: event.target.valueAsNumber },
+                          policy: { ...policy, [name]: event.target.valueAsNumber },
                         })
                       }
                     />
@@ -157,43 +176,43 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
                 ))}
               </div>
               <label className="block space-y-1">
-                <span className="text-sm">Cache folder (restart required)</span>
+                <span className="text-sm">{uiText("Cache folder (restart required)")}</span>
                 <Input
                   required
-                  value={value.policy.root}
+                  value={policy.root}
                   disabled={busy}
                   onChange={(event) =>
-                    setValue({ ...value, policy: { ...value.policy, root: event.target.value } })
+                    setValue({ ...value, policy: { ...policy, root: event.target.value } })
                   }
                 />
               </label>
               {value.restart_required && (
                 <p role="status" className="text-sm text-warning">
-                  Restart PrintStash to use the new cache folder.
+                  {uiText("Restart PrintStash to use the new cache folder.")}
                 </p>
               )}
               {!value.available && (
                 <p className="text-sm text-muted-foreground">
-                  The cache is unavailable. Files are read from their original storage.
+                  {uiText("The cache is unavailable. Files are read from their original storage.")}
                 </p>
               )}
               <p className="text-sm tabular-nums text-muted-foreground">
-                {value.usage.bytes ?? 0} bytes cached · {value.usage.entries ?? 0} files ·{" "}
-                {value.usage.leases ?? 0} active reads
+                {usage.bytes ?? 0} {uiText("bytes cached")} · {usage.entries ?? 0} {uiText("files")}{" "}
+                · {usage.leases ?? 0} {uiText("active reads")}
               </p>
               <dl className="grid grid-cols-2 gap-3 text-sm tabular-nums sm:grid-cols-3">
                 {[
-                  ["Maximum bytes", value.policy.max_bytes],
-                  ["Hit ratio", `${value.usage.hit_ratio_percent ?? 0}%`],
-                  ["Provider bytes saved", value.usage.bytes_saved ?? 0],
-                  ["Cache hits", value.usage.hits ?? 0],
-                  ["Cache misses", value.usage.misses ?? 0],
-                  ["Completed downloads", value.usage.completed_fills ?? 0],
-                  ["Publication failures", value.usage.publication_failures ?? 0],
-                  ["Corruptions", value.usage.corruptions ?? 0],
-                  ["Cache errors", value.usage.errors ?? 0],
-                  ["Evictions", value.usage.evictions ?? 0],
-                  ["Bypasses", value.usage.bypasses ?? 0],
+                  [uiText("Maximum bytes"), policy.max_bytes],
+                  [uiText("Hit ratio"), `${usage.hit_ratio_percent ?? 0}%`],
+                  [uiText("Provider bytes saved"), usage.bytes_saved ?? 0],
+                  [uiText("Cache hits"), usage.hits ?? 0],
+                  [uiText("Cache misses"), usage.misses ?? 0],
+                  [uiText("Completed downloads"), usage.completed_fills ?? 0],
+                  [uiText("Publication failures"), usage.publication_failures ?? 0],
+                  [uiText("Corruptions"), usage.corruptions ?? 0],
+                  [uiText("Cache errors"), usage.errors ?? 0],
+                  [uiText("Evictions"), usage.evictions ?? 0],
+                  [uiText("Bypasses"), usage.bypasses ?? 0],
                 ].map(([label, count]) => (
                   <div key={label}>
                     <dt className="text-muted-foreground">{label}</dt>
@@ -202,32 +221,31 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
                 ))}
               </dl>
               <p className="text-xs text-muted-foreground">
-                Last verification:{" "}
-                {value.usage.last_verification
-                  ? new Date(value.usage.last_verification * 1000).toLocaleString()
-                  : "No cached files verified yet"}
+                {uiText("Last verification:")}{" "}
+                {usage.last_verification
+                  ? new Date(usage.last_verification * 1000).toLocaleString()
+                  : uiText("No cached files verified yet")}
                 .
               </p>
-              {value.health !== "ready" && value.health !== "disabled" && (
+              {health !== "ready" && health !== "disabled" && (
                 <p role="status" className="text-sm text-warning">
-                  Cache needs attention ({value.health.replaceAll("_", " ")}). Original Vault
-                  storage remains authoritative.
+                  {uiText("Cache needs attention")} ({health.replaceAll("_", " ")}).{" "}
+                  {uiText("Original Vault storage remains authoritative.")}
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Representation: {value.labels.representation} · Storage provider:{" "}
-                {value.labels.backend}
+                {uiText("Representation:")} {labels.representation} · {uiText("Storage provider:")}{" "}
+                {labels.backend}
               </p>
-              {(Boolean(value.usage.maintenance_running) ||
-                Boolean(value.usage.pending_eviction_bytes)) && (
+              {pending && (
                 <p role="status" className="text-sm text-muted-foreground">
-                  Reclaiming cache space. {value.usage.pending_eviction_bytes ?? 0} bytes wait for
-                  active reads to finish.
+                  {uiText("Reclaiming cache space.")} {usage.pending_eviction_bytes ?? 0}{" "}
+                  {uiText("bytes wait for active reads to finish.")}
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={busy}>
-                  Save cache settings
+                  {uiText("Save cache settings")}
                 </Button>
                 <Button
                   type="button"
@@ -235,7 +253,7 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
                   disabled={busy}
                   onClick={() => void perform(api.reset)}
                 >
-                  Reset to environment defaults
+                  {uiText("Reset to environment defaults")}
                 </Button>
                 <Button
                   type="button"
@@ -243,12 +261,13 @@ export function ArtifactCacheCard({ api = artifactCacheApi }: { api?: typeof art
                   disabled={busy}
                   onClick={() => void perform(api.clear)}
                 >
-                  Clear cached files
+                  {uiText("Clear cached files")}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Files in use stay available until their active reads finish. Clearing does not
-                remove your Artifacts.
+                {uiText(
+                  "Files in use stay available until their active reads finish. Clearing does not remove your Artifacts.",
+                )}
               </p>
             </form>
           )}

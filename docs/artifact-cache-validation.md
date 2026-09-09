@@ -74,36 +74,27 @@ to `backend/tests/`.
 | 64 | Cleans failed index publication | Error | Hard-link succeeds; index commit fails | Unindexed body removed; verified temp remains usable | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_removes_publication_when_index_commit_fails` |
 | 65 | Batches last-access updates | Edge | Repeated hit inside and outside coarsening window | Timestamp stays stable, then advances after window | Integration | ✅ `integration/modules/storage/test_artifact_materializer.py::TestCacheCompletionContract::test_batches_last_access_timestamp_updates` |
 | 66 | Recovers maintenance polling | Error | One poll fails; next succeeds | Stale failure alert clears automatically | Component | ✅ `components/__tests__/artifact-cache-card.test.tsx::ArtifactCacheCard observability::clears a transient polling failure after polling recovers` |
+| 67 | Contains malformed cache responses | Error | Settings receives a response without a cache policy | Cache panel reports the failure without crashing Settings | Component | ✅ `components/__tests__/artifact-cache-card.test.tsx::ArtifactCacheCard::reports a malformed cache response without breaking Settings` |
 
 ## Focused execution
 
-The coordinated cache run passed 61 backend tests (two workers), including the
-actual remote-corruption audit and repeated-download E2E cases. Cached mesh
-conversion regression checks passed 13 tests. Frontend component and API-client
-checks passed four tests each. The real Settings browser lifecycle passed one
-Chromium test against the actual backend. Its earlier failed attempts recorded
-`net::ERR_NETWORK_CHANGED` during concurrent container teardown; the coordinated
-stable-network rerun passed.
+The cache-engine focused suite passed 44 tests; content/API and SQLite migration
+coverage passed 45 tests. The final PostgreSQL upgrade test passed from a populated
+published-v0.12.1 schema, alongside the SQLite case (2 tests). The backend hygiene,
+health and headline E2E group passed 2,395 tests, and the exact files that had failed
+earlier passed all 227 tests on rerun. Printer, fleet and content compatibility
+passed 28 tests.
 
-Frontend typechecking, owned-file lint, and the backend architecture check passed
-with zero architecture debt. The expanded backend typecheck still reports 15
-existing errors in `vault_audit.py`; the new cache modules pass their focused
-check. Full suites, coverage ratchets, and combined API snapshot validation are
-reserved for the coordinator's final integration gate.
+The backend full non-resource phase passed 9,359 tests apart from two unrelated
+timing/concurrency flakes (a SQLite rollback race and a 2.07-second SFTP deadline);
+both passed together on immediate isolated rerun. CI remains the authoritative full
+resource and provider-matrix gate.
 
-The final conversion route file passed 10 tests. The exhausted-cache admission
-regression failed with `storage_capacity_exceeded` before the fix, then the
-managed-content group passed all 9 tests with the narrow capacity-only fallback.
+Frontend typechecking and lint pass. The cache component, Settings integration,
+API client and i18n coverage group passes all 144 tests. The panel localizes every
+authored string, contains malformed/partial responses, reports effectiveness and
+publication failures, shows pending reclamation, recovers after transient polling
+failure, and distinguishes cache degradation from authoritative Vault storage.
 
-The attachment completion pass added sharding, no-replace publication, verified-temp
-fallback, proxy singleflight, pressure eviction, asynchronous live shrink, root
-protection, health and UI observability. Its four focused backend files passed
-77 tests, and component/API tests passed 11. Recovery followups cover ASGI
-cancellation, root replacement, index symlinks and bounded verification rotation.
 Consumer eligibility, deployment/recovery and reproducible performance measurements
 are documented in [the cache design](artifact-cache-design.md).
-
-Frontend observability assertions: ✅ policy source, hit ratio, bytes saved and
-verification; ✅ pending reclamation; ✅ cache corruption distinguished from
-authoritative storage (`ArtifactCacheCard observability` in the component test).
-Full suites and coverage ratchets remain ⏭️ delegated to the integration coordinator.

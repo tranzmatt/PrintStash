@@ -4,6 +4,7 @@ import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ArtifactCacheCard } from "@/components/artifact-cache-card";
+import type { ArtifactCacheRead } from "@/lib/api/artifact-cache";
 import { renderApp } from "@/test-support/render";
 import { anArtifactCache } from "@/test-support/factories";
 
@@ -87,6 +88,23 @@ describe("ArtifactCacheCard", () => {
     expect(
       await screen.findByRole("checkbox", { name: "Enable remote Artifact cache" }),
     ).toBeInTheDocument();
+  });
+
+  it("reports a malformed cache response without breaking Settings", async () => {
+    renderApp(
+      <ArtifactCacheCard
+        api={{
+          read: async () => ({}) as ArtifactCacheRead,
+          save: async () => INITIAL,
+          reset: async () => INITIAL,
+          clear: async () => INITIAL,
+        }}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Cache settings could not be loaded.",
+    );
   });
 });
 

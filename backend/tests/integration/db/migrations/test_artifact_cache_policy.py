@@ -15,11 +15,21 @@ _PREDECESSOR = "36872a2fc034"
 _REVISION = "00cb0e8975d1"
 
 
-def _seed_and_upgrade(url: str) -> None:
+def _seed_and_upgrade(url: str, *, released_postgres: bool = False) -> None:
     config = _alembic_config(url)
-    command.upgrade(config, _PREDECESSOR)
     engine = create_engine(url)
     try:
+        if released_postgres:
+            from tests.factories.migration_rows import (
+                RELEASED_V0121_REVISION,
+                create_released_v0121_postgres_schema,
+            )
+
+            with engine.begin() as connection:
+                create_released_v0121_postgres_schema(connection)
+            command.stamp(config, RELEASED_V0121_REVISION)
+
+        command.upgrade(config, _PREDECESSOR)
         with engine.begin() as connection:
             seed_schema_row(connection, "system_config", id=1, currency="EUR")
 
@@ -61,7 +71,7 @@ class TestArtifactCachePolicyMigration:
             .render_as_string(hide_password=False)
         )
         try:
-            _seed_and_upgrade(isolated_url)
+            _seed_and_upgrade(isolated_url, released_postgres=True)
         finally:
             with admin.connect() as connection:
                 connection.exec_driver_sql(f'DROP DATABASE "{database}" WITH (FORCE)')
