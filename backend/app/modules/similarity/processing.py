@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from contextlib import ExitStack
+from collections.abc import Callable
+from contextlib import AbstractContextManager, ExitStack, nullcontext
 
 from printstash_core.mesh.similarity import GeometryError
 from sqlmodel import Session, col, select
@@ -14,16 +15,29 @@ from app.db.session import SessionFactory
 from app.modules.media import compute_slots, geometry_analysis
 from app.modules.media.fingerprints import FingerprintResult
 from app.modules.media.thumbnail_engine import ThumbnailEngine, ThumbnailRequest
-from app.modules.similarity import candidates, fingerprints, retrieval, runs
+from app.modules.similarity import (
+    candidates,
+    fingerprints,
+    retrieval,
+    runs,
+    verification_cache,
+)
 from app.modules.similarity.configuration import SimilaritySettings, read_settings
 from app.modules.storage import artifact_content
 from app.modules.storage.storage_backend.contracts import StorageBackend
 
 
 class SimilarityProcessor:
-    def __init__(self, sessions: SessionFactory, backend: StorageBackend):
+    def __init__(
+        self,
+        sessions: SessionFactory,
+        backend: StorageBackend,
+        *,
+        retain_storage: Callable[[], AbstractContextManager[None]] = nullcontext,
+    ):
         self.sessions = sessions
         self.backend = backend
+        self._retain_storage = retain_storage
 
     def work_one(self) -> bool:
         """A mesh, shortlist or pair, with the checkpoint committed before return."""
@@ -65,28 +79,31 @@ class SimilarityProcessor:
             counters = json.loads(run.counters_json)
             config = SimilaritySettings.model_validate_json(run.settings_json)
             try:
-                if run.phase == "fingerprint":
-                    self._fingerprint(
-                        session, run, token, actor, config, progress, counters
-                    )
-                elif run.phase == "embeddings":
-                    from app.modules.similarity import embeddings
+                # Idle/cancellation bookkeeping never reads Artifact bytes.
+                # Retain sources only after an authorized work unit is claimed.
+                with self._retain_storage():
+                    if run.phase == "fingerprint":
+                        self._fingerprint(
+                            session, run, token, actor, config, progress, counters
+                        )
+                    elif run.phase == "embeddings":
+                        from app.modules.similarity import embeddings
 
-                    embeddings.work_one(
-                        self.sessions,
-                        session,
-                        self.backend,
-                        actor,
-                        run,
-                        token,
-                        config,
-                        progress,
-                        counters,
-                    )
-                else:
-                    self._candidates(
-                        session, run, token, actor, config, progress, counters
-                    )
+                        embeddings.work_one(
+                            self.sessions,
+                            session,
+                            self.backend,
+                            actor,
+                            run,
+                            token,
+                            config,
+                            progress,
+                            counters,
+                        )
+                    else:
+                        self._candidates(
+                            session, run, token, actor, config, progress, counters
+                        )
             except OperationError as exc:
                 if exc.kind.value in ("busy", "capacity", "unavailable"):
                     runs.checkpoint(session, run, token)
@@ -169,6 +186,8 @@ class SimilarityProcessor:
                                 ThumbnailRequest(
                                     path=path,
                                     file_type=file.file_type.value,
+                                    include_thumbnail=False,
+                                    include_geometry=False,
                                     include_fingerprint=True,
                                     triangle_cap=config.triangle_cap,
                                     reason="similarity",
@@ -314,6 +333,13 @@ class SimilarityProcessor:
                     or fingerprints.source_digest(path_b) != second.source_sha256
                 ):
                     counters["stale"] = counters.get("stale", 0) + 1
+                    return
+                if verification_cache.reusable_pair(
+                    session, first, second, sample_points=config.sample_points
+                ):
+                    counters["verification_cached"] = (
+                        counters.get("verification_cached", 0) + 1
+                    )
                     return
                 evidence = geometry_analysis.verify_paths(
                     path_a,

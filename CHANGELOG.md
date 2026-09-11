@@ -14,6 +14,15 @@
 
 ### Fixed
 
+- Idle similarity polling no longer transiently blocks backup restoration with a storage-retention conflict.
+
+- Ordinary dense meshes such as the repository Benchy now receive complete
+  similarity analysis at the default budget. Geometry ordering, convex hulls,
+  nearest-surface queries and thumbnail allocation use less work and memory;
+  repeated exact comparisons reuse compatible proofs after checking source bytes.
+  Capture and ingestion share these improvements, including bounded STEP output
+  and Linux service memory-limit detection.
+
 - Concurrent thumbnail requests recover from transient SQLite contention after
   reserving shared compute capacity.
 
