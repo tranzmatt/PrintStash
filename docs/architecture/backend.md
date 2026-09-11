@@ -16,6 +16,8 @@ HTTP endpoint or persisted archive format.
 | `storage` | Object identity, ownership, publication, reading and verified deletion | `storage_backend.contracts`, `artifact_content`, `storage_ownership`, `storage_deletion`, `storage_operations`, `storage_connections`, `storage_paths`, `storage_providers` |
 | `backups` | Snapshot creation, catalogue, verification, replicas and journaled restore | `backup.creation`, `backup.catalogue`, `backup.verification`, `backup.adoption`, `backup.deletion`, `backup.restore`, `backup.recovery`, `backup_runs`, `retry_commands`, `backup_schedule` |
 | `printing` | Printers, provider adapters, fleet scheduling, materials and print history | `dispatch`, `costing`, `printer_provider`, `printer_hub`, `fleet`, `materials`, `printer_files`, `printer_jobs`, `print_results`, `multipart_builds` |
+| `similarity` | Versioned geometric evidence, indexed retrieval, durable analysis runs and explicit review | `fingerprints`, `retrieval`, `processing`, `candidates`, `review`, `composition` |
+| `inference` | Local native embedding contracts, immutable index generations and authorized semantic queries | `local`, `manifest`, `store`, `search` |
 | `media` | Mesh processing, thumbnails, source covers and toolpaths | `mesh_operations`, `thumbnail_engine`, `thumbnail_generations`, `thumbnail_repair`, `toolpath`, `source_cover_processing` |
 | `identity` | Product identity, collection/printer authorization, sharing and tickets | `auth`, `oidc`, `rbac`, `printer_rbac`, `share`, `ws_tickets` |
 | `notifications` | Notification preparation and delivery | `notifications`, `notification_renderers` |
@@ -94,6 +96,13 @@ Revision was recommended, clears a thumbnail only when it belonged to that
 Revision, and commits once. OSS executes the examples in `printstash_core_testkit.revisions` against its real
 persistence adapter. Cloud must execute the same examples when it adopts this port.
 
+The initial Similar Models geometry operation is
+`printstash_core.mesh.similarity.fingerprint_mesh`: bounded analysis over loaded
+arrays with no file, database, framework or inference dependency. Its partial
+results are retrieval evidence, never Model identity. The planned product
+similarity owner and its API/worker adapters are not yet implemented; see
+[ADR-0005](../adr/0005-similar-models-evidence.md).
+
 The OSS adapter checks collection edit authority and writes source tombstones
 in the same transaction. The future Cloud adapter must obtain a validated tenant context,
 check that its actor matches the caller, filter Model and Artifact reads by
@@ -144,3 +153,11 @@ lookup actually used by production. Retain assertions about failure outcomes,
 not just successful imports. Run query budgets, OpenAPI, schema parity,
 migration upgrades and publication/restore failure cases throughout extraction.
 See `docs/backend-refactor-validation.md` for the behavior matrix and evidence.
+
+Similarity analysis is an optional derivative of committed Artifacts. The runtime
+coordinates wakeups, restore/cleanup admission and the shared thumbnail compute
+budget; the capability owner checkpoints each mesh, shortlist or verified pair.
+Geometry arrays and embedding contracts live in `printstash-core`; file parsers,
+OCP/ONNX children, storage materialization and SQL authorization stay in the app.
+See [ADR 0005](../adr/0005-similar-models-evidence.md) for source/version fencing
+and the separation between measured evidence and human relationships.

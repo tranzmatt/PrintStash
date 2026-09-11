@@ -2,7 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- **Similar Models** offers opt-in local geometry analysis, resumable library scans,
+  a filtered review queue and synchronized comparisons at shared physical scale.
+  Evidence confirmation keeps each Model, Artifact and Revision separate; verified
+  part/plate matches can create or extend an existing Multipart Model.
+- Full installations can analyze STEP assemblies and use operator-supplied CPU
+  ONNX models for local text-to-shape or Model queries. Learned neighbors remain
+  separate from verified geometry, and analysis never downloads model weights.
+
 ### Fixed
+
+- Concurrent thumbnail requests recover from transient SQLite contention after
+  reserving shared compute capacity.
 
 - Active print jobs no longer remain paused indefinitely after an out-of-band
   emergency stop. Authoritative idle printer updates now close interrupted jobs,
