@@ -25,7 +25,6 @@ from app.db.models import (
 from app.db.scopes import live
 from app.modules.identity import rbac
 from app.modules.library import provenance
-from app.modules.similarity.projections import summaries as similarity_summaries
 from app.schemas.models import (
     ModelRead,
 )
@@ -37,6 +36,7 @@ from app.schemas.provenance import (
 )
 
 from .access import _effective_model_role
+from .extensions import similarity_summaries
 from .projections import _file_reads_with_revisions, collection_name_for, thumb_url
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,10 @@ def detail(session: Session, model_id: int, user: User) -> ModelRead | None:
         is not None
     )
 
+    from .families import family_summaries
+
     return ModelRead(
+        family=family_summaries(session, user, [model_id]).get(model_id),
         similarity=similarity_summaries(session, user, [model_id]).get(model_id, {}),
         id=m.id,  # type: ignore[arg-type]
         name=m.name,

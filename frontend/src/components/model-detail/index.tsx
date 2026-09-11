@@ -1,5 +1,7 @@
 "use client";
 
+import { ModelFamilyMembership } from "@/components/families/model-membership";
+
 import { currentLocale } from "@/lib/locale";
 import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
@@ -521,14 +523,15 @@ export function ModelDetail({ model: initialModel }: { model: ModelRead }) {
         />
         {/* Detail Header */}
         <header className="flex flex-wrap items-center justify-between px-4 md:px-6 py-3 gap-2 border-b border-outline-variant bg-surface-container-lowest shrink-0">
-          <div className="flex items-center gap-4">
+          <div className="flex w-full min-w-0 items-start gap-3 md:w-auto md:flex-1 md:gap-4">
             <Link
               href={model.collection ? `/?c=${encodeURIComponent(model.collection)}` : "/"}
-              className="w-10 h-10 flex items-center justify-center rounded hover:bg-surface-container-high text-on-surface-variant transition-colors"
+              aria-label={uiText("Back")}
+              className="w-10 h-10 shrink-0 flex items-center justify-center rounded hover:bg-surface-container-high text-on-surface-variant transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ArrowLeft className="h-5 w-5" />
             </Link>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               {editing ? (
                 <input
                   value={editName}
@@ -539,7 +542,7 @@ export function ModelDetail({ model: initialModel }: { model: ModelRead }) {
                   placeholder={uiText("Model name")}
                 />
               ) : (
-                <h1 className="text-xl font-semibold text-on-surface leading-tight truncate">
+                <h1 className="break-words text-xl font-semibold text-on-surface leading-tight">
                   {model.name}
                 </h1>
               )}
@@ -554,6 +557,7 @@ export function ModelDetail({ model: initialModel }: { model: ModelRead }) {
                 {uiText(" · Last updated ")}
                 {timeAgo(model.updated_at)}
               </span>
+              {!editing && <ModelFamilyMembership model={model} editable={canEditModel} />}
               {editing && !editName.trim() && (
                 <p id="model-name-error" role="alert" className="mt-1 text-xs text-destructive">
                   {uiText("Model name is required.")}

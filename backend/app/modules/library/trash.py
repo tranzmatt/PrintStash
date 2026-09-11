@@ -561,6 +561,9 @@ def hard_delete_collection(
             CollectionTagLink.collection_id == collection.id
         )
     )
+    from app.modules.library.families.lifecycle import purge_collection_references
+
+    purge_collection_references(session, int(collection.id))
     session.delete(collection)
 
 
@@ -639,6 +642,9 @@ def hard_delete_model(
         inbox.resulting_model_id = None
         session.add(inbox)
     session.exec(delete(ModelStar).where(ModelStar.model_id == model.id))
+    from app.modules.library.families.lifecycle import purge_model_references
+
+    purge_model_references(session, int(model.id))
     # Multipart compositions reference Models without owning them. Detach this
     # member before the restrictive Model FK is enforced; an empty part no
     # longer represents a useful choice and is removed, while its aggregate

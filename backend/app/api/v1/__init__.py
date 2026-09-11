@@ -11,6 +11,7 @@ from app.api.v1 import (
     config,
     documents,
     external_libraries,
+    families,
     filaments,
     files,
     fleet,
@@ -28,7 +29,6 @@ from app.api.v1 import (
     saved_views,
     setup,
     share,
-    similarity,
     spoolman,
     storage,
     storage_connections,
@@ -36,6 +36,7 @@ from app.api.v1 import (
     taxonomy,
     vault_migration,
 )
+from app.bootstrap.optional_features import install_optional_routes
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
@@ -52,7 +53,9 @@ api_router.include_router(ingest.router)
 api_router.include_router(inbox.router)
 api_router.include_router(maintenance.router)
 api_router.include_router(models.router)
-api_router.include_router(similarity.router)
+api_router.include_router(families.router)
+
+install_optional_routes(api_router)
 api_router.include_router(multipart_models.router)
 api_router.include_router(multipart_builds.router)
 api_router.include_router(saved_views.router)

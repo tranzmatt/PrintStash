@@ -96,6 +96,7 @@ from app.modules.storage.storage_deletion import (
 )
 from app.modules.storage.storage_ownership import UnsafeStorageDeleteError
 from app.runtime.jobs import registry
+from app.schemas.family_types import VariantRole
 from app.schemas.ingest import IngestResponse
 from app.schemas.models import (
     ArtifactOutcomeRead,
@@ -221,6 +222,9 @@ def list_models(
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
     has_similar_candidates: Optional[bool] = Query(None),
+    family_id: int | None = Query(None, gt=0),
+    family_role: VariantRole | None = Query(None),
+    in_family: bool | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_user),
@@ -249,6 +253,9 @@ def list_models(
         uploaded_after=uploaded_after,
         uploaded_before=uploaded_before,
         has_similar_candidates=has_similar_candidates,
+        family_id=family_id,
+        family_role=family_role,
+        in_family=in_family,
     )
     return models_listing.list_items(
         session,
@@ -285,6 +292,9 @@ def page_models(
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
     has_similar_candidates: Optional[bool] = Query(None),
+    family_id: int | None = Query(None, gt=0),
+    family_role: VariantRole | None = Query(None),
+    in_family: bool | None = Query(None),
     sort: ModelSort = Query(ModelSort.DATE_DESC),
     cursor: Optional[str] = Query(None, max_length=1024),
     limit: int = Query(60, ge=1, le=200),
@@ -314,6 +324,9 @@ def page_models(
         uploaded_after=uploaded_after,
         uploaded_before=uploaded_before,
         has_similar_candidates=has_similar_candidates,
+        family_id=family_id,
+        family_role=family_role,
+        in_family=in_family,
     )
     try:
         return models_pagination.page_items(
@@ -353,6 +366,9 @@ def outliner_models(
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
     has_similar_candidates: Optional[bool] = Query(None),
+    family_id: int | None = Query(None, gt=0),
+    family_role: VariantRole | None = Query(None),
+    in_family: bool | None = Query(None),
     limit: int = Query(500, ge=1, le=500),
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
@@ -380,6 +396,9 @@ def outliner_models(
             uploaded_after=uploaded_after,
             uploaded_before=uploaded_before,
             has_similar_candidates=has_similar_candidates,
+            family_id=family_id,
+            family_role=family_role,
+            in_family=in_family,
         ),
         limit=limit,
     )
@@ -407,6 +426,9 @@ def model_facets(
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
     has_similar_candidates: Optional[bool] = Query(None),
+    family_id: int | None = Query(None, gt=0),
+    family_role: VariantRole | None = Query(None),
+    in_family: bool | None = Query(None),
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> ModelFacetsRead:
@@ -436,6 +458,9 @@ def model_facets(
             uploaded_after=uploaded_after,
             uploaded_before=uploaded_before,
             has_similar_candidates=has_similar_candidates,
+            family_id=family_id,
+            family_role=family_role,
+            in_family=in_family,
         ),
     )
 
@@ -513,11 +538,14 @@ def export_models(
     summary="Export a portable full-library archive",
 )
 def export_library_archive(
+    version: int = Query(2, ge=1, le=2),
     current_user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> FileResponse:
     try:
-        path = library_transfer.create_archive(session, current_user)
+        path = library_transfer.create_archive(
+            session, current_user, version=1 if version == 1 else 2
+        )
     except ValueError as exc:
         detail = str(exc)
         if detail == "archive_too_large":
@@ -534,7 +562,10 @@ def export_library_archive(
     return FileResponse(
         path,
         media_type="application/zip",
-        filename="printstash-library-v1.zip",
+        filename=f"printstash-library-v{version}.zip",
+        headers={"X-PrintStash-Export-Warning": "model_families_omitted"}
+        if version == 1
+        else None,
         background=BackgroundTask(path.unlink, missing_ok=True),
     )
 
