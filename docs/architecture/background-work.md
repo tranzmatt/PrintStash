@@ -85,8 +85,8 @@ One pass (`work.reconciler.run_pass`) per definition, claimed through its
 
 A nudge (`work.nudge`) stamps the dirty mark and queues a pass unless one is
 already queued within `JOBS_SUBMIT_GRACE_SECONDS`. An interactive nudge is not
-absorbed by a queued backfill pass. The tick, a single `@DBOS.scheduled`
-workflow, nudges every definition at `JOBS_RECONCILE_INTERVAL_SECONDS` as a
+absorbed by a queued backfill pass. The tick, a single persistent DBOS
+schedule, nudges every definition at `JOBS_RECONCILE_INTERVAL_SECONDS` as a
 safety net, and schedule sources become due on it.
 
 ## Derivatives

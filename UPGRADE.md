@@ -1,5 +1,28 @@
 # PrintStash Upgrade Guide
 
+## Unreleased: DBOS 3.0
+
+The embedded background engine upgrades from DBOS 2.31.1 to 3.0.0. Its first
+startup automatically migrates the engine database on SQLite and PostgreSQL;
+saved workflow inputs and results remain readable, and queued Jobs can resume.
+The periodic reconciler now uses a persistent schedule, recreated after restore.
+
+- **Stop every API and worker process before upgrading.** Upgrade them together
+  before restarting. DBOS 2 and 3 must not run concurrently with the same
+  application version against the shared engine database. The default Compose
+  deployment should use `docker compose down` followed by the new image's
+  `docker compose up -d`; never use `down -v`.
+- **Keep a pre-upgrade backup for rollback.** DBOS 2 cannot read workflow inputs
+  or results written by DBOS 3. Before starting the previous image, stop every
+  process and discard only the disposable engine state: the SQLite sibling
+  whose filename adds `-dbos` before the application database's suffix (including
+  its `-wal` and `-shm` sidecars), or the PostgreSQL `dbos` schema. Keep the
+  application database and managed files. The reconciler rebuilds active Jobs;
+  engine history and step checkpoints are lost, so unfinished steps may rerun.
+  A backup restore also discards and rebuilds engine state.
+
+See the [DBOS upgrade guide](https://docs.dbos.dev/python/upgrading).
+
 ## 0.14.0: background work on a durable engine
 
 Background work now runs as Jobs on an embedded engine (DBOS). Nothing new has

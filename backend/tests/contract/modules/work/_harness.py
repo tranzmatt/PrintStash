@@ -1,4 +1,4 @@
-"""One harness, two engines: the inline test engine and DBOS on SQLite.
+"""One harness, two engines: inline and DBOS on SQLite or PostgreSQL.
 
 Every other tier runs background work on ``InlineJobEngine``. That is only
 sound if it keeps the same promises as the engine production runs, so this
@@ -273,11 +273,22 @@ class InlineHarness(Harness):
 class DbosHarness(Harness):
     kind = "dbos"
 
-    def __init__(self, catalog: WorkCatalog, system_db: str) -> None:
+    def __init__(
+        self,
+        catalog: WorkCatalog,
+        system_db: str,
+        *,
+        schema: str | None = None,
+        app_version: str | None = None,
+        tick_seconds: int = 3600,
+        listen_lanes: list[LaneName] | None = None,
+    ) -> None:
         super().__init__(catalog)
         self.system_db = system_db
-        self.engine = self._build(app_version=None)
-        self.engine.launch(listen_lanes=None)
+        self.schema = schema
+        self.tick_seconds = tick_seconds
+        self.engine = self._build(app_version=app_version)
+        self.engine.launch(listen_lanes=listen_lanes)
 
     def _build(self, *, app_version: str | None) -> JobEngine:
         from app.runtime.engine.dbos_engine import DbosJobEngine
@@ -285,11 +296,11 @@ class DbosHarness(Harness):
         return DbosJobEngine(
             self.catalog,
             system_database_url=self.system_db,
-            schema=None,
+            schema=self.schema,
             executor_id="contract-executor",
             app_version=app_version,
             polling_interval_seconds=0.1,
-            tick_seconds=3600,
+            tick_seconds=self.tick_seconds,
         )
 
     def settle(self, timeout: float = 30.0) -> None:

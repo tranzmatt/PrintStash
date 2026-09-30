@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+**Upgrade note:** The background engine now uses DBOS 3.0. Stop all API and
+worker processes before upgrading together. Engine state migrates on startup;
+rolling back requires discarding the upgraded, disposable engine state first.
+See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
+
 ### Added
 
 - API responses include `Server-Timing` for total request time, SQL time and
@@ -17,6 +22,9 @@
   will be removed in 0.16.
 
 ### Fixed
+
+- Background work starts on DBOS 3.0, with a persistent reconciler schedule
+  that survives process restarts and is recreated after restore.
 
 - Analysing the whole library for similar models no longer runs in the API
   process ([#259](https://github.com/xiao-villamor/PrintStash/issues/259)).

@@ -4,7 +4,7 @@ Lanes become DBOS queues; a Job attempt becomes one workflow whose inputs are
 ``(job_id, attempt)`` and whose steps are the definition's steps, run through
 ``DBOS.run_step`` so each is checkpointed and retried by DBOS; a reconcile pass
 is one more workflow on the ``reconcile`` queue; the reconciler tick is the
-only ``@DBOS.scheduled`` workflow. ``execution_id`` is the DBOS workflow id and
+only persistently scheduled workflow. ``execution_id`` is the DBOS workflow id and
 ``dedupe_key`` its deduplication id.
 
 System state lives outside the application's tables: a sibling SQLite file of
@@ -199,7 +199,6 @@ class DbosJobEngine(JobEngine):
             "system_database_url": self.url,
             "application_version": self.app_version,
             "executor_id": self._executor_id,
-            "run_admin_server": False,
             "notification_listener_polling_interval_sec": min(self.polling, 1.0),
             "scheduler_polling_interval_sec": min(self.polling * 10, 30.0),
             "log_level": "WARNING",
@@ -225,16 +224,16 @@ class DbosJobEngine(JobEngine):
 
             execute_pass(JobKind(source), runner)
 
-        @DBOS.scheduled(_tick_cron(self.tick_seconds))
         @DBOS.workflow(name=TICK_WORKFLOW)
-        def tick_workflow(scheduled: datetime, actual: datetime) -> None:
-            del scheduled, actual
+        def tick_workflow(scheduled: datetime, context: Any) -> None:
+            del scheduled, context
             from app.modules.work.reconciler import tick
 
             DBOS.run_step({"name": "work.tick"}, tick)
 
         self._job_workflow = job_workflow
         self._reconcile_workflow = reconcile_workflow
+        self._tick_workflow = tick_workflow
 
     def launch(self, *, listen_lanes: Sequence[LaneName] | None) -> None:
         with self._lock:
@@ -248,16 +247,24 @@ class DbosJobEngine(JobEngine):
             DBOS.launch()
             for lane in self.catalog.lanes.values():
                 self._queues[lane.name] = self._register_queue(lane)
+            # Upsert one durable schedule shared by API and worker processes.
+            # Reapplying updates its cadence; restore recreates it after reset.
+            DBOS.apply_schedules(
+                [
+                    {
+                        "schedule_name": TICK_WORKFLOW,
+                        "workflow_fn": self._tick_workflow,
+                        "schedule": _tick_cron(self.tick_seconds),
+                        "automatic_backfill": False,
+                    }
+                ]
+            )
             self._launched = True
 
     def _register_queue(self, lane: Lane) -> Queue:
         options: dict[str, Any] = {
             "polling_interval_sec": self.polling,
             "on_conflict": "always_update",
-            # Without it DBOS ignores every submission's priority, and a
-            # backfill (a startup reconcile, a regenerate-all) runs ahead of
-            # the upload a user is waiting on.
-            "priority_enabled": True,
         }
         if lane.partitioned:
             options["partition_concurrency"] = lane.concurrency

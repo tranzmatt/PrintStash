@@ -2266,7 +2266,7 @@ requires-dist = [
     { name = "cheroot", marker = "extra == 'dev'", specifier = ">=11,<12" },
     { name = "croniter", specifier = ">=6.2,<7" },
     { name = "cryptography", specifier = ">=50,<51" },
-    { name = "dbos", specifier = ">=2.31,<4" },
+    { name = "dbos", specifier = ">=3.0,<4" },
     { name = "deptry", marker = "extra == 'dev'", specifier = ">=0.23,<1" },
     { name = "fastapi", specifier = ">=0.141,<1" },
     { name = "greenlet", specifier = ">=3.5,<4" },
