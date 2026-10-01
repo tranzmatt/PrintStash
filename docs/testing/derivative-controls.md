@@ -57,3 +57,13 @@ The first post-merge Deep CI run passed both backend test blocks (15,179 ordinar
 | 43 | preserves an unrelated producer failure | Error | Producer raises an OperationError unrelated to policy | Same exception propagates; no policy cancellation | Unit | ✅ [test_an_unrelated_operation_error_remains_a_failure](../../backend/tests/unit/modules/derivatives/test_jobs.py) |
 | 44 | serves concurrent toolpath publication | Edge | A second database connection commits a ready toolpath between delivery reads | Same response delivers the published bytes and private cache headers | Integration | ✅ [test_serves_a_toolpath_published_during_the_lookup](../../backend/tests/integration/api/test_toolpath_response.py) |
 | 45 | limits concurrent toolpath publication | Error | Concurrent ready output exceeds the configured limit | HTTP 413 with toolpath_output_too_large | Integration | ✅ [test_refuses_an_oversized_concurrent_publication](../../backend/tests/integration/api/test_toolpath_response.py) |
+
+
+The process-recovery assertion uses the shared DBOS harness deadline (120 seconds by default). A killed process can leave a reconcile cursor claimed for 60 seconds; settlement may require the following tick. A 60-second assertion deadline raced that valid lease expiry on SQLite in post-merge CI. The test still requires policy cancellation, failed orphan rows and an unchanged attempt count of one.
+Polling also yields and checks the deadline while waiting for orphan bookkeeping to settle after a Job cancellation.
+
+The enabled predecessor-recovery case uses the same shared deadline. Its one-hour executor stale window still proves recovery does not await executor expiry; the separate 60-second cursor lease must fit within the test budget. CI caught this existing case after the disabled-recovery cases passed.
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| 46 | recovers enabled predecessor work before executor expiry | Edge | Killed API, enabled mesh policy, one-hour executor stale window, SQLite/PostgreSQL | Metadata and thumbnail ready within the shared 120-second harness budget | E2E | ✅ [test_a_restarted_api_reruns_its_predecessors_work_at_once](../../backend/tests/e2e/test_job_engine.py) |
