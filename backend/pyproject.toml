@@ -38,7 +38,7 @@ dependencies = [
     "uvicorn[standard]>=0.52,<1",
     "watchfiles>=1.2,<2",
     "pycentauri==0.9.1",
-    "dbos>=2.31,<3",
+    "dbos>=3.0,<4",
     "jsonschema>=4.26,<5",
 ]
 

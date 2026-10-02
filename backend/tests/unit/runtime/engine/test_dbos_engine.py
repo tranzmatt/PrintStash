@@ -78,7 +78,6 @@ class TestConfig:
             "9.9.9",
             "api-test",
         )
-        assert config["run_admin_server"] is False
 
 
 @pytest.fixture
@@ -98,7 +97,6 @@ class TestQueues:
         _engine()._register_queue(Lane(LaneName.INGEST, 2))
 
         assert registered["ingest"]["worker_concurrency"] == 2
-        assert registered["ingest"]["priority_enabled"] is True
 
     def test_a_global_lane_bounds_the_deployment(self, registered) -> None:
         _engine()._register_queue(Lane(LaneName.SIMILARITY, 1, scope="global"))

@@ -9,6 +9,11 @@
   failures for unchanged input, and backfill accurate metadata with recipe 3 (#259).
 
 
+**Upgrade note:** The background engine now uses DBOS 3.0. Stop all API and
+worker processes before upgrading together. Engine state migrates on startup;
+rolling back requires discarding the upgraded, disposable engine state first.
+See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
+
 ### Added
 
 - Deep CI exercises the production mesh pipeline under 1 GiB and 4 GiB
@@ -36,6 +41,9 @@
 - Cancelling active mesh work now stops its native worker tree, releases capacity,
   and preserves the original. Immediate retry cannot resume the cancelled attempt (#259).
 - Keep native STEP/STP conversion within small worker memory budgets by using serial tessellation, and classify B-rep allocation failures as resource refusals.
+
+- Background work starts on DBOS 3.0, with a persistent reconciler schedule
+  that survives process restarts and is recreated after restore.
 
 
 - Removed the duplicate Wiki entry from the profile dropdown.
