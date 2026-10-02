@@ -191,6 +191,12 @@ the default `docker-compose.yml` mounts one named volume, `printstash`, there:
 | `/data/artifact-cache` | Optional local cache for remote storage |
 | `/data/ai-models` | Downloaded AI search models |
 
+At startup, PrintStash repairs ownership of `/data` itself and the app-owned
+paths in the table (or their configured overrides). Other directories beneath
+`/data`, such as a mounted Library source at `/data/library`, are left untouched
+and can be read-only. Keep source mounts separate from the app-owned paths above;
+those paths must remain writable by PrintStash.
+
 **Keep `/data` one mount**, so imports are hard-linked rather than copied. See
 [Hard-linked imports](#hard-linked-imports) for which layouts keep that.
 
