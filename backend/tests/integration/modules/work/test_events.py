@@ -40,6 +40,7 @@ def publisher() -> Iterator[Recorder]:
 def _status(**fields) -> JobStatus:
     now = utcnow()
     return JobStatus(
+        staging=None,
         job_id="j1",
         kind=JobKind.INGESTION_UPLOAD,
         state=JobState.RUNNING,
@@ -119,3 +120,11 @@ class TestPublication:
             events.job_changed(_status(owner_user_id=7))
         finally:
             events.bind(None)
+
+
+class TestPolicyChanged:
+    def test_sends_a_payload_free_refetch_notice(self, publisher):
+        events.derivative_policy_changed()
+        assert publisher.sent == [
+            (events.POLICY_CHANNEL, {"type": "derivative_policy"})
+        ]

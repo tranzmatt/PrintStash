@@ -245,6 +245,17 @@ class TestParseFloat:
 
 
 class TestReadAscii:
+    @pytest.mark.parametrize("triangles", [1, 2], ids=["single", "repeated"])
+    def test_reads_repeated_factory_facets(self, stl, limits, triangles) -> None:
+        from tests.factories import content
+
+        stats = worker._read_ascii(
+            stl(content.ascii_stl(triangles=triangles)), limits(), lambda _chunk: None
+        )
+        assert stats.triangle_count == triangles
+        assert stats.bounds_min == (0.0, 0.0, 0.0)
+        assert stats.bounds_max == (1.0, 1.0, 0.0)
+
     def test_reads_every_facet(self, stl, limits) -> None:
         path = stl(_ascii_stl([TRIANGLE, SECOND]))
 
@@ -457,6 +468,7 @@ class TestMain:
 
     def _run(self, argv: list[str]) -> int:
         """Launch the worker the way production does and return its exit code."""
+        import os
         import subprocess
         import sys
 
@@ -468,6 +480,7 @@ class TestMain:
             [sys.executable, "-m", "app.modules.media.stl_preview_worker", *argv],
             capture_output=True,
             cwd=BACKEND_DIR,
+            env={**os.environ, "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"},
             timeout=120,
         )
         assert b"No module named" not in completed.stderr, completed.stderr.decode()

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app import __file__ as application_file
+from app.core.cancellation import checkpoint
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -314,6 +315,23 @@ def render_stl_preview_isolated(
             str(int(height)),
             *worker_limits.as_worker_args(expected_parent_pid=os.getpid()),
         ]
+        from app.modules.media.worker_bootstrap import WORKER_MARKER
+
+        if os.environ.get(WORKER_MARKER) == str(os.getpid()):
+            # The outer worker already owns a hard ceiling and deadline.
+            # Streaming consumes that allowance, rather than spawning a second
+            # process with another full allowance.
+            from app.modules.media.stl_preview_worker import main
+
+            if main(command[3:], apply_limits=False) != 0:
+                return None
+            return _decode_result(
+                output,
+                manifest,
+                width=int(width),
+                height=int(height),
+                limits=worker_limits,
+            )
         env = os.environ.copy()
         env.update(
             {
@@ -343,6 +361,7 @@ def render_stl_preview_isolated(
         peak_rss = 0
         try:
             while process.poll() is None:
+                checkpoint()
                 elapsed = time.monotonic() - started
                 if elapsed >= worker_limits.hard_timeout_seconds:
                     failure = "timeout"
@@ -364,6 +383,17 @@ def render_stl_preview_isolated(
                 process.communicate(timeout=5)
             except (subprocess.TimeoutExpired, OSError):
                 pass
+        finally:
+            if process.poll() is None:
+                _terminate_process_group(process)
+                try:
+                    process.communicate(timeout=5)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+            from app.modules.media.worker_bootstrap import reap_descendants
+
+            reap_descendants(process.pid)
+        checkpoint(force=True)
         if failure or process.returncode != 0:
             logger.warning(
                 "stl_streaming: worker failed for %s (%s)",

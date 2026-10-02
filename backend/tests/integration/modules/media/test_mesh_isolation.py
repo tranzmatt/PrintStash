@@ -144,3 +144,76 @@ class TestGenerate:
             mesh_isolation.generate(_request(path))
 
         assert raised.value.reason is ThumbnailFailureReason.RESOURCE_LIMIT
+
+
+class TestGeometryMeasurements:
+    def test_open_mesh_keeps_unknown_volume_without_refusing_geometry(self, tmp_path):
+        from app.modules.media.thumbnail_engine import GeometryReady
+
+        path = tmp_path / "open.obj"
+        path.write_text("v 0 0 1\nv 10 0 1\nv 0 10 1\nf 1 2 3\n")
+        result = mesh_isolation.generate(
+            _request(path, file_type="obj", include_fingerprint=False)
+        )
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry["triangle_count"] == 1
+        assert result.geometry["volume_mm3"] is None
+
+    def test_closed_stl_retains_its_solid_volume(self, tmp_path):
+        from app.modules.media.thumbnail_engine import GeometryReady
+        from tests.factories.geometry import tetrahedron
+
+        path = tmp_path / "closed.stl"
+        path.write_bytes(tetrahedron().export(file_type="stl"))
+        result = mesh_isolation.generate(
+            _request(path, file_type="stl", include_fingerprint=False)
+        )
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry["volume_mm3"] == pytest.approx(1000.0)
+class TestStepCapacityOwnership:
+    def test_fingerprint_worker_does_not_access_application_database(
+        self, db_session, monkeypatch
+    ):
+        from sqlmodel import select
+
+        from app.db.models import CapacityReservation
+        from tests.paths import FIXTURES_DIR
+
+        monkeypatch.setitem(
+            _overlay, "db_url", "sqlite:////missing-worker-db/worker.sqlite"
+        )
+        result = mesh_isolation.generate(
+            _request(FIXTURES_DIR / "cascadio_material.stp", file_type="step")
+        )
+        assert result.geometry["triangle_count"] > 0
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state == "ready"
+        assert db_session.exec(select(CapacityReservation)).all() == []
+
+    def test_parent_releases_capacity_after_worker_refusal(
+        self, db_session, monkeypatch
+    ):
+        from sqlmodel import select
+
+        from app.db.models import CapacityReservation
+        from tests.paths import FIXTURES_DIR
+
+        admitted = []
+        original = mesh_isolation.subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            admitted.extend(
+                row.operation_id for row in db_session.exec(select(CapacityReservation))
+            )
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(mesh_isolation.subprocess, "Popen", spawn)
+        monkeypatch.setattr(mesh_isolation, "memory_budget_bytes", lambda: 8 * 1024**2)
+        with pytest.raises(mesh_isolation.MeshWorkerError):
+            mesh_isolation.generate(
+                _request(FIXTURES_DIR / "cascadio_material.stp", file_type="step")
+            )
+        db_session.expire_all()
+        assert db_session.exec(select(CapacityReservation)).all() == []
+        assert len(admitted) == 1
+        assert admitted[0].startswith("step-tessellation:")

@@ -220,3 +220,54 @@ are only ever recognised by their heartbeat going stale.
   the intent is still in the database.
 - **A notice is dropped.** Clients also refresh on a slow interval and on
   `resync`.
+
+
+## Retained ingest input
+
+JobStatus includes a nullable staging summary (retained_bytes, lease_count,
+earliest_expiry, discard_available). It never includes storage paths. Failed,
+uncommitted ingest input remains charged until the configured lease retention
+expires or the owner explicitly discards it. Active input survives expiry.
+Completed uploads are reconciled against their committed Artifact on settlement
+and startup, releasing exact receipts promptly.
+
+POST /api/v1/jobs/{job_id}/discard-staging returns 204, including when already
+absent. Only the owner or an administrator may use it, and only terminal ingest
+jobs are eligible. Active work and uncertain ownership return 409; another user
+sees 404. Discard and retry lock the same Job row (SQLite reserves its writer),
+so retry cannot race deletion. Replacement or inaccessible paths remain charged.
+Capture-origin inputs retain their Pending Import dismissal lifecycle.
+
+Tasks show retained capacity and expiry with a confirmation before discard.
+After discard, retry requires the input to be uploaded again.
+
+
+## Producer policy admission
+
+Job Definitions may provide an engine-independent `admission(Session)` hook.
+The coordinator consults it before discovery, Job creation, submission and
+actual step execution. Derivative definitions resolve live database policy.
+Their producers serialize final admission with configuration updates and check
+again whenever actual processing executes after a recovery.
+
+Disabled derivative sources yield no subjects or retry deadlines. A bounded
+repair pass drains queued and lost attempts as policy cancellations without
+withdrawing domain intent; active, healthy processing may finish. The ordinary
+tick remains the recovery mechanism when engine cancellation or a realtime hint
+fails. Policy cancellations are excluded from submission-burst cooldown.
+
+Background work exposes effective/default/override state for each derivative
+definition. Historical failures remain inspectable but disabled groups do not
+contribute to actionable failures or retry lists.
+
+
+## Synchronous native cancellation
+
+WorkRunner scopes each synchronous step to its Job attempt. Native supervisors
+and their shared admission controller check durable withdrawal through
+app.core.cancellation; a cancelled or superseded attempt releases its process
+tree and owned resources before returning a cancelled step outcome. The scope
+is reset even when the step raises. Concurrent steps have independent probes.
+A forced check before accepting native output prevents a result finishing inside
+the normal 200 ms polling interval from publishing after observed withdrawal.
+The Job engine remains responsible for durable dispatch and settlement.

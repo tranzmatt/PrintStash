@@ -11,6 +11,7 @@ without a reload.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from app.db.models import (
     DerivativeState,
     File,
     FileType,
+    JobKind,
+    JobState,
     Metadata,
     Model,
 )
@@ -32,8 +35,12 @@ from app.modules.derivatives import producers
 from app.modules.ingestion import extensions
 from app.modules.media import mesh_isolation, toolpath
 from app.modules.media.thumbnail_publication import ThumbnailPublicationError
+from app.modules.media.worker_bootstrap import command
+from app.modules.storage.capacity import CapacityReservation
 from app.modules.storage.storage_backend.runtime import get_backend
-from app.modules.work import events
+from app.modules.work import events, runner, service
+from app.modules.work.jobs import jobs
+from app.modules.work.submission import submit
 from tests.factories import content
 from tests.factories.geometry import three_mf
 from tests.paths import FIXTURES_DIR
@@ -106,6 +113,66 @@ class TestDeriveMesh:
         assert published is not None and published.thumbnail_path
         assert get_backend().exists(published.thumbnail_path)
         assert rows[DerivativeKind.THUMBNAIL].storage_key == published.thumbnail_path
+
+    def test_refused_geometry_is_terminal_with_an_embedded_preview(
+        self, db_session, stored, monkeypatch
+    ):
+        import io
+
+        from PIL import Image
+
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 100)
+        monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
+        image = io.BytesIO()
+        Image.new("RGB", (32, 32), "red").save(image, format="PNG")
+        data = three_mf(
+            build=tuple((1, None) for _ in range(40)),
+            extras={"Metadata/thumbnail.png": image.getvalue()},
+        )
+        artifact = stored("repeated.3mf", data)
+
+        result = producers.derive_mesh(artifact.id)
+
+        assert result.kinds[DerivativeKind.METADATA] == DerivativeState.FAILED
+        row = _rows(db_session, artifact.id)[DerivativeKind.METADATA]
+        assert row.failure_reason == "resource_limit"
+        assert row.next_attempt_at is None
+        assert row.attempts == settings.derivative_max_attempts
+
+    def test_embedded_preview_survives_refused_geometry(
+        self, db_session, stored, monkeypatch
+    ):
+        import io
+
+        from PIL import Image
+
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 100)
+        monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
+        image = io.BytesIO()
+        Image.new("RGB", (32, 32), "red").save(image, format="PNG")
+        artifact = stored(
+            "repeated.3mf",
+            three_mf(
+                build=tuple((1, None) for _ in range(40)),
+                extras={"Metadata/thumbnail.png": image.getvalue()},
+            ),
+        )
+
+        result = producers.derive_mesh(artifact.id)
+
+        assert result.kinds[DerivativeKind.THUMBNAIL] == DerivativeState.READY
+        row = _rows(db_session, artifact.id)[DerivativeKind.THUMBNAIL]
+        assert row.storage_key is not None
+        assert get_backend().exists(row.storage_key)
+
+    def test_malformed_mesh_does_not_publish_successful_unknown_metadata(
+        self, db_session, stored
+    ):
+        artifact = stored("invalid.3mf", b"not a zip")
+        producers.derive_mesh(artifact.id)
+        row = _rows(db_session, artifact.id)[DerivativeKind.METADATA]
+        assert row.state == DerivativeState.FAILED
+        assert row.next_attempt_at is None
 
     def test_the_thumbnail_represents_its_model(
         self, db_session: Session, stored
@@ -580,3 +647,157 @@ class TestOutcome:
             DerivativeKind.METADATA,
             DerivativeKind.THUMBNAIL,
         ]
+
+
+class TestLivePolicy:
+    def test_reenable_processes_missing_outputs_through_the_source(
+        self, db_session, stored, work_engine
+    ):
+        from app.db.models import JobKind
+        from app.modules.derivatives import policy
+        from app.modules.work.submission import nudge
+
+        policy.update(db_session, {policy.SettingName.MESH: False})
+        artifact = stored("resume.stl", content.binary_stl())
+        nudge(JobKind.DERIVATIVES_MESH)
+        work_engine.drain()
+        assert _rows(db_session, artifact.id) == {}
+        policy.update(db_session, {policy.SettingName.MESH: True})
+        work_engine.drain()
+        assert {row.state for row in _rows(db_session, artifact.id).values()} == {
+            DerivativeState.READY
+        }
+
+    @pytest.mark.parametrize("disabled", ["gcode", "toolpath"])
+    @pytest.mark.bgcode
+    def test_binary_groups_produce_independently(
+        self, db_session, stored, work_engine, disabled, bgcode_binary
+    ):
+        from app.db.models import JobKind
+        from app.modules.derivatives import policy
+        from app.modules.work.submission import nudge
+
+        _overlay["bgcode_executable"] = str(bgcode_binary)
+        name = (
+            policy.SettingName.GCODE
+            if disabled == "gcode"
+            else policy.SettingName.TOOLPATH
+        )
+        policy.update(db_session, {name: False})
+        artifact = stored(
+            "independent.bgcode",
+            (FIXTURES_DIR / "bgcode/prusaslicer.bgcode").read_bytes(),
+        )
+        for definition in [JobKind.DERIVATIVES_GCODE, JobKind.DERIVATIVES_TOOLPATH]:
+            nudge(definition)
+        work_engine.drain()
+        rows = _rows(db_session, artifact.id)
+        if disabled == "gcode":
+            assert set(rows) == {DerivativeKind.TOOLPATH}
+            assert rows[DerivativeKind.TOOLPATH].state is DerivativeState.READY
+        else:
+            assert set(rows) == {DerivativeKind.METADATA, DerivativeKind.THUMBNAIL}
+            assert rows[DerivativeKind.METADATA].state is DerivativeState.READY
+
+
+class TestPublishedOutputs:
+    def test_disabling_preserves_published_outputs(self, db_session, stored):
+        from app.modules.derivatives import policy
+
+        artifact = stored("retained.stl", content.binary_stl())
+        producers.derive_mesh(artifact.id)
+        db_session.refresh(artifact)
+        key = artifact.thumbnail_path
+        assert key is not None
+        before = get_backend().read_bytes(key)
+        metadata = db_session.exec(
+            select(Metadata).where(Metadata.file_id == artifact.id)
+        ).one()
+        policy.update(db_session, {policy.SettingName.MESH: False})
+        assert get_backend().read_bytes(key) == before
+        db_session.refresh(metadata)
+        assert metadata.triangle_count == 12
+
+
+class TestMeshCancellation:
+    @pytest.mark.parametrize("retry", [False, True], ids=["cancel", "immediate-retry"])
+    def test_withdrawal_stops_in_flight_native_work(
+        self,
+        db_session,
+        stored,
+        make_job,
+        make_user,
+        work_engine,
+        tmp_path,
+        monkeypatch,
+        retry,
+    ):
+        original = content.binary_stl()
+        artifact = stored("waiting.stl", original)
+        owner = make_user()
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH,
+            subject=f"file/{artifact.id}",
+            owner=owner,
+        )
+        pids = tmp_path / "pids"
+        ready = tmp_path / "temporary"
+        withdrawn = runner._withdrawn
+        acted = False
+        cancelled_at = None
+
+        def cancel_when_started(*args):
+            nonlocal acted, cancelled_at
+            if ready.exists() and not acted:
+                acted = True
+                cancelled_at = time.monotonic()
+                service.cancel(job.id, actor=owner)
+                if retry:
+                    service.retry(job.id, actor=owner)
+            return withdrawn(*args)
+
+        with monkeypatch.context() as patch:
+            _overlay.update({"mesh_worker_timeout_seconds": 15})
+            patch.setattr(runner, "_withdrawn", cancel_when_started)
+            patch.setattr(
+                mesh_isolation,
+                "worker_command",
+                lambda _module, _args, budget: command(
+                    "tests.fakes.mesh_bootstrap_probe",
+                    ["tree_wait", str(pids), str(ready)],
+                    min(budget, 256 * 1024**2),
+                ),
+            )
+            submit(job.id)
+            work_engine.run_one()
+            finished = time.monotonic()
+
+        status = jobs.get(job.id)
+        assert status is not None
+        assert status.state is (JobState.QUEUED if retry else JobState.CANCELLED)
+        assert acted
+        assert cancelled_at is not None
+        assert finished - cancelled_at < 3
+        for pid in json.loads(pids.read_text()):
+            assert not Path(f"/proc/{pid}").exists()
+        assert not Path(ready.read_text()).exists()
+        assert db_session.exec(select(CapacityReservation)).all() == []
+        db_session.expire_all()
+        rows = db_session.exec(
+            select(ArtifactDerivative).where(ArtifactDerivative.file_id == artifact.id)
+        ).all()
+        if retry:
+            assert rows == []
+        else:
+            assert {row.kind: row.state for row in rows} == {
+                DerivativeKind.METADATA: DerivativeState.CANCELLED,
+                DerivativeKind.THUMBNAIL: DerivativeState.CANCELLED,
+            }
+        assert get_backend().read_bytes(artifact.path) == original
+
+        _overlay.update({"mesh_worker_timeout_seconds": 300})
+        healthy = stored("following.stl", content.binary_stl())
+        assert (
+            producers.derive_mesh(healthy.id).kinds[DerivativeKind.METADATA]
+            is DerivativeState.READY
+        )

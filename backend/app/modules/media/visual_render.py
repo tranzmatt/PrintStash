@@ -7,7 +7,6 @@ import re
 import selectors
 import struct
 import subprocess
-import sys
 from pathlib import Path
 
 from printstash_core.inference import EmbeddingError, EmbeddingInput
@@ -17,12 +16,15 @@ from printstash_core.search.point_inputs import PointRecipe
 from printstash_core.search.visual_inputs import VisualRecipe
 
 from app import __file__ as application_file
+from app.core.cancellation import checkpoint
 from app.core.config import settings
 from app.modules.inference.worker_pool import pool
 from app.modules.media import mesh_processing
 from app.modules.media.geometry_analysis import VisualViews
 from app.modules.media.stl_streaming import _terminate_process_group
 from app.modules.media.visual_worker import MAX_REPLY
+from app.modules.media.worker_bootstrap import RESOURCE_EXIT, reap_descendants
+from app.modules.media.worker_bootstrap import command as worker_command
 
 
 def _spawn(path: Path, file_type: str, recipe: VisualRecipe | PointRecipe):
@@ -32,14 +34,11 @@ def _spawn(path: Path, file_type: str, recipe: VisualRecipe | PointRecipe):
         min(MAX_ANALYSIS_FACES, settings.mesh_max_render_triangles)
     )
     return subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
+        worker_command(
             "app.modules.media.visual_worker",
-            str(path),
-            file_type,
-            recipe.encode(),
-        ],
+            [str(path), file_type, recipe.encode()],
+            mesh_processing.native_memory_budget_bytes(),
+        ),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -68,16 +67,22 @@ def render(
             with selectors.DefaultSelector() as selector:
                 selector.register(process.stdout, selectors.EVENT_READ)
                 while True:
+                    checkpoint()
                     context.remaining()
                     pool.enforce_memory_budget(
                         process,
                         mesh_processing.native_memory_budget_bytes(),
-                        mesh_processing.process_rss_bytes,
+                        mesh_processing.process_tree_rss_bytes,
                     )
                     for key, _ in selector.select(0.025):
                         chunk = os.read(key.fd, 65536)
                         if not chunk:
-                            raise EmbeddingError("embedding_render_failed")
+                            code = process.wait()
+                            raise EmbeddingError(
+                                "worker_oom"
+                                if code in (RESOURCE_EXIT, -9)
+                                else "embedding_render_failed"
+                            )
                         result.extend(chunk)
                         if len(result) >= 4 and expected is None:
                             expected = struct.unpack("!I", result[:4])[0]
@@ -86,10 +91,12 @@ def render(
                         if expected is not None and len(result) >= expected + 4:
                             if len(result) != expected + 4:
                                 raise EmbeddingError("embedding_output_invalid")
+                            checkpoint(force=True)
                             return decode_reply(bytes(result[4:]), recipe)
         finally:
             _terminate_process_group(process)
             process.wait()
+            reap_descendants(process.pid)
             if process.stdout is not None:
                 process.stdout.close()
 

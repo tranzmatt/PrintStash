@@ -157,13 +157,42 @@ class TestQuickGate:
 
     def test_keeps_required_check_present_on_every_pr(self) -> None:
         workflow = _workflow("ci.yml")
-        assert set(workflow[True]) == {"pull_request", "push", "merge_group"}
+        assert set(workflow[True]) == {"pull_request", "push", "merge_group", "workflow_dispatch"}
         assert workflow[True]["pull_request"] is None
         assert workflow["env"]["OPENBLAS_NUM_THREADS"] == "1"
         assert "gate" in workflow["jobs"]
 
 
 class TestDeepSuite:
+    def test_gates_mesh_resources_on_both_native_architectures(self):
+        job = _workflow("deep-ci.yml")["jobs"]["mesh-resources"]
+        rows = job["strategy"]["matrix"]["include"]
+        assert {(row["arch"], row["memory"]) for row in rows} == {
+            ("amd64", 1),
+            ("amd64", 4),
+            ("arm64", 1),
+            ("arm64", 4),
+        }
+        assert job.get("continue-on-error") is not True
+        build = next(
+            step
+            for step in job["steps"]
+            if step.get("name") == "Build the production backend image"
+        )
+        assert build["with"]["context"] == "backend"
+        assert build["with"]["build-args"] == "PRINTSTASH_VARIANT=full"
+        commands = _commands(job)
+        assert "scripts/mesh_resource_gate.py" in commands
+        assert "--memory-gib ${{ matrix.memory }}" in commands
+        assert "github.com/user-attachments" not in commands
+        evidence = next(
+            step
+            for step in job["steps"]
+            if step.get("name") == "Publish resource and cleanup evidence"
+        )
+        assert evidence["if"] == "always()"
+        assert evidence["with"]["if-no-files-found"] == "error"
+
     def test_covers_every_critical_browser_configuration(self) -> None:
         workflow = _workflow("deep-ci.yml")
         browser = workflow["jobs"]["browser-real"]
@@ -189,7 +218,31 @@ class TestDeepSuite:
     def test_times_library_reads_at_the_supported_scale(self) -> None:
         job = _workflow("deep-ci.yml")["jobs"]["backend-scale"]
 
-        assert "./scripts/test.sh scale -q" in _commands(job)
+        assert "./scripts/test.sh scale " in _commands(job)
+
+    def test_scale_job_collects_only_its_cases(self) -> None:
+        job = _workflow("deep-ci.yml")["jobs"]["backend-scale"]
+        scale_file = "tests/repo/test_read_scale_budgets.py"
+        marked_files = {
+            str(path.relative_to(REPO_ROOT / "backend"))
+            for path in (REPO_ROOT / "backend/tests").rglob("test_*.py")
+            if "\npytestmark = pytest.mark.scale\n" in path.read_text()
+        }
+
+        assert marked_files == {scale_file}
+        assert f"./scripts/test.sh scale {scale_file}" in _commands(job)
+
+    def test_scale_job_reports_the_case_in_progress(self) -> None:
+        job = _workflow("deep-ci.yml")["jobs"]["backend-scale"]
+        step = next(
+            step
+            for step in job["steps"]
+            if step.get("name")
+            == "Time library reads at 25,000 collections and 100,000 Models"
+        )
+
+        assert "-vv -s --durations=0 -o faulthandler_timeout=120" in step["run"]
+        assert step["env"]["PYTHONUNBUFFERED"] == "1"
 
     def test_scale_shards_cover_case_matrix_once(self) -> None:
         job = _workflow("deep-ci.yml")["jobs"]["backend-scale"]
@@ -206,7 +259,7 @@ class TestDeepSuite:
         }
         assert '-k "${{ matrix.test }} and ${{ matrix.reader }}"' in _commands(job)
 
-    def test_scale_lane_limits_worker_startup(self, tmp_path: Path) -> None:
+    def test_scale_lane_runs_serially(self, tmp_path: Path) -> None:
         fake_uv = tmp_path / "uv"
         fake_uv.write_text(
             '#!/bin/sh\nprintf "%s\\n" "$PRINTSTASH_TEST_NO_EXTERNAL" "$@"\n'
@@ -225,13 +278,9 @@ class TestDeepSuite:
             "1",
             "run",
             "pytest",
-            "-n",
-            "4",
-            "--dist",
-            "worksteal",
             "-m",
             "scale",
-            "tests",
+            "tests/repo/test_read_scale_budgets.py",
             "-q",
         ]
 

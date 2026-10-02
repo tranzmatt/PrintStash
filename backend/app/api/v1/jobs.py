@@ -115,6 +115,21 @@ def retry_job(job_id: str, current_user: User = Depends(require_user)) -> JobSta
     return work_service.retry(job_id, actor=current_user)
 
 
+@router.post(
+    "/{job_id}/discard-staging",
+    status_code=204,
+    dependencies=[Depends(require_auth)],
+    summary="Discard retained input of a terminal ingest Job",
+)
+def discard_staging(
+    job_id: str, current_user: User = Depends(require_user)
+) -> Response:
+    from app.modules.ingestion.staging_cleanup import discard
+
+    discard(job_id, actor=current_user)
+    return Response(status_code=204)
+
+
 @events_router.post(
     "/ticket",
     dependencies=[Depends(require_auth)],
@@ -174,7 +189,9 @@ async def events_ws(websocket: WebSocket) -> None:
         return
     await websocket.accept()
     sink = websocket.send_json
-    channels = {f"jobs:{user.id}"} | ({"work:admin"} if user.is_superuser else set())
+    channels = {f"jobs:{user.id}", "derivatives:policy"} | (
+        {"work:admin"} if user.is_superuser else set()
+    )
     for channel in channels:
         await bus.subscribe(channel, sink)
     await sink({"type": "resync"})

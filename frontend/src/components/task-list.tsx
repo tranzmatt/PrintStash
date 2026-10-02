@@ -1,5 +1,7 @@
 "use client";
 
+import { StagedInputRecovery } from "@/components/staged-input-recovery";
+
 import { ApiError, getErrorMessage } from "@/lib/errors";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { cancelArchiveTransfer, isArchiveTransferActive } from "@/lib/archive-upload";
@@ -13,7 +15,7 @@ import {
   type ArtifactUploadProgress,
 } from "@/lib/artifact-upload";
 
-import { CheckCircle2, ChevronDown, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, Loader2, XCircle, MinusCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth-context";
 
@@ -92,6 +94,8 @@ function TaskRow({ task }: { task: TaskItem }) {
         <div className="mt-0.5">
           {active ? (
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          ) : task.jobReason === "derivative_group_disabled" ? (
+            <MinusCircle className="h-4 w-4 text-muted-foreground" />
           ) : task.status === "completed" ? (
             <CheckCircle2 className="h-4 w-4 text-success" />
           ) : (
@@ -102,11 +106,13 @@ function TaskRow({ task }: { task: TaskItem }) {
           <div className="flex items-center justify-between gap-3">
             <p className="truncate text-sm font-medium text-foreground">{taskTitle(task)}</p>
             <span className="font-mono text-3xs uppercase tracking-wider text-muted-foreground">
-              {task.uploadPaused
-                ? uiText("Paused")
-                : needsArchiveReview(task)
-                  ? uiText("Ready")
-                  : knownUiText(task.status)}
+              {task.jobReason === "derivative_group_disabled"
+                ? uiText("Processing disabled")
+                : task.uploadPaused
+                  ? uiText("Paused")
+                  : needsArchiveReview(task)
+                    ? uiText("Ready")
+                    : knownUiText(task.status)}
             </span>
           </div>
           {(task.detail || task.stage) && (
@@ -160,7 +166,8 @@ function TaskRow({ task }: { task: TaskItem }) {
                 {uiText("Discovering total… Safe to close this view.")}
               </p>
             )}
-          {(task.similarityRunId === undefined || task.status === "completed") &&
+          {task.jobReason !== "derivative_group_disabled" &&
+            (task.similarityRunId === undefined || task.status === "completed") &&
             task.jobKind !== "backups.create" &&
             task.jobKind !== "backups.automatic" && (
               <div
@@ -192,6 +199,13 @@ function TaskRow({ task }: { task: TaskItem }) {
                 ))}
               </ul>
             </details>
+          )}
+          {task.jobId && task.staging && (
+            <StagedInputRecovery
+              jobId={task.jobId}
+              staging={task.staging}
+              onDiscard={() => updateTask(task.id, { staging: null, retryable: false })}
+            />
           )}
           {task.retryable && !active && !task.uploadSessionId && (
             <button

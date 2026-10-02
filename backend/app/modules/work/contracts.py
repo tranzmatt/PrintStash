@@ -177,6 +177,7 @@ class Step:
 class SkipReason(StrEnum):
     """Why a source declined an occurrence it reports."""
 
+    DERIVATIVE_GROUP_DISABLED = "derivative_group_disabled"
     PREVIOUS_STILL_RUNNING = "previous_still_running"
 
 
@@ -219,6 +220,10 @@ def _no_hook(_session: Session, *_args: str) -> None:
     return None
 
 
+def _allow_admission(_session: Session) -> SkipReason | None:
+    return None
+
+
 def _no_retry_hook(_session: Session, _subject_key: str) -> bool:
     return True
 
@@ -243,6 +248,7 @@ class JobDefinition:
     source: WorkSource | None = None
     cancel: CancelHook = _no_hook
     on_failure: FailureHook = _no_hook
+    on_settled: CancelHook = _no_hook
     retry: RetryHook = _no_retry_hook
     # Sources this definition's completions should nudge (always its own).
     completion_nudges: tuple[JobKind, ...] = ()
@@ -265,6 +271,8 @@ class JobDefinition:
     # backup request is not: the restored database is its own snapshot, taken
     # while that very request ran, and a restore supersedes it.
     survives_restore: bool = True
+    # Evaluated from current application state, never captured in engine input.
+    admission: Callable[["Session"], SkipReason | None] = _allow_admission
 
     def __post_init__(self) -> None:
         if not self.steps:

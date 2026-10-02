@@ -1,4 +1,4 @@
-"""The collection tree's subtree counts hold on PostgreSQL.
+"""Recursive collection reads hold on PostgreSQL.
 
 ``collection_tree`` counts a page's subtrees with a substring comparison on
 ``path`` and string concatenation: SQL whose functions and operators differ
@@ -19,13 +19,15 @@ from sqlmodel import Session, create_engine
 from app.db.migrate import run_migrations
 from app.db.models import CollectionRole
 from app.db.url import normalize_database_url
-from app.modules.library import collection_tree
+from app.modules.library import collection_tree, library_search
 from tests.containers import postgres_url
 from tests.factories import (
     build_collection,
     build_model,
+    build_tag,
     build_user,
     grant_collection_role,
+    tag_collection,
 )
 
 
@@ -53,6 +55,25 @@ def pg_session() -> Iterator[Session]:
 
 
 class TestCollectionTreeOnPostgres:
+    def test_counts_nested_search_matches(self, pg_session: Session) -> None:
+        admin = build_user(pg_session, superuser=True)
+        parts = build_collection(pg_session, "Parts")
+        spare = build_collection(pg_session, "Spare Parts", parent=parts)
+        build_model(pg_session, "Direct", collection=parts)
+        build_model(pg_session, "Nested", collection=spare)
+
+        page = collection_tree.search(
+            pg_session,
+            admin,
+            query="parts",
+            minimum=CollectionRole.VIEW,
+            cursor=None,
+            limit=10,
+        )
+
+        counts = {item.name: item.model_count for item in page.items}
+        assert counts == {"Parts": 2, "Spare Parts": 1}
+
     def test_counts_every_model_in_a_subtree(self, pg_session: Session) -> None:
         admin = build_user(pg_session, superuser=True)
         parts = build_collection(pg_session, "Parts")
@@ -105,3 +126,20 @@ class TestCollectionTreeOnPostgres:
         )
 
         assert [item.name for item in page.items] == ["Writable brackets"]
+
+
+class TestEffectiveTagsOnPostgres:
+    def test_counts_a_nested_tag_once(self, pg_session: Session) -> None:
+        root = build_collection(pg_session, "Tagged root")
+        child = build_collection(pg_session, "Tagged child", parent=root)
+        leaf = build_collection(pg_session, "Tagged leaf", parent=child)
+        tag = build_tag(pg_session, "Inherited")
+        tag_collection(pg_session, root, tag)
+        tag_collection(pg_session, child, tag)
+        build_model(pg_session, "Nested", collection=leaf)
+
+        counts = dict(
+            pg_session.exec(library_search.accessible_tag_counts_stmt()).all()
+        )
+
+        assert counts[tag.id] == 1

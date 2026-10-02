@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Independent mesh, G-code metadata/thumbnail and binary toolpath processing controls, with deployment defaults and live administrator settings. Disabling retains published previews and lets admitted processing finish; re-enabling resumes eligible missing work (#263).
+- Harden mesh workers with pre-import address-space limits, one admission controller
+  across concurrency changes, process-tree memory accounting, and shared budgets
+  for nested CAD/streaming work (#259).
+- Report refused mesh geometry separately from usable thumbnails, retain terminal
+  failures for unchanged input, and backfill accurate metadata with recipe 3 (#259).
+
 
 **Upgrade note:** The background engine now uses DBOS 3.0. Stop all API and
 worker processes before upgrading together. Engine state migrates on startup;
@@ -8,6 +15,12 @@ rolling back requires discarding the upgraded, disposable engine state first.
 See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Added
+
+- Deep CI exercises the production mesh pipeline under 1 GiB and 4 GiB
+  limits on amd64 and arm64, publishing memory, failure and cleanup evidence.
+- Job details show retained ingest capacity and provide a confirmed, identity-checked
+  discard action serialized against retry. Completed staging is reconciled at
+  startup; failed input retains its existing expiry (#259).
 
 - API responses include `Server-Timing` for total request time, SQL time and
   statement count. Requests exceeding `VAULT_SLOW_REQUEST_MS` (1,000 ms by
@@ -22,10 +35,39 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+- Containers start with read-only Library source mounts beneath `/data`. Startup
+  ownership repair is limited to app-owned directories and preserves external
+  sources, including bind mounts on the same filesystem (#330).
+- Cancelling active mesh work now stops its native worker tree, releases capacity,
+  and preserves the original. Immediate retry cannot resume the cancelled attempt (#259).
+- Keep native STEP/STP conversion within small worker memory budgets by using serial tessellation, and classify B-rep allocation failures as resource refusals.
 
 - Background work starts on DBOS 3.0, with a persistent reconciler schedule
   that survives process restarts and is recreated after restore.
 
+
+- Removed the duplicate Wiki entry from the profile dropdown.
+- Rendering model views for learned similarity embeddings no longer happens in
+  the API process ([#259](https://github.com/xiao-villamor/PrintStash/issues/259)).
+  With embeddings enabled, the similarity run rendered six views of every model
+  in the library inside the API; it now uses the same disposable worker as the
+  other mesh work. A model that exhausts memory or never finishes fails that one
+  embedding and the run continues with the rest.
+- Collection search, breadcrumbs and subtree counts now follow indexed parent
+  links, keeping these reads responsive in libraries with tens of thousands of
+  collections ([#295](https://github.com/xiao-villamor/PrintStash/issues/295)).
+- Opening the 3D viewer on a 3MF or OBJ no longer converts it inside the API
+  process ([#259](https://github.com/xiao-villamor/PrintStash/issues/259)).
+  The conversion runs in the same disposable worker as mesh derivatives, so a
+  model that exhausts memory or never finishes fails that one request with
+  `stl_conversion_failed` instead of taking the API down. A model that cannot
+  be converted still answers the same error; the viewer's behaviour is
+  otherwise unchanged.
+- Comparing two models during a similarity run no longer happens in the API
+  process ([#259](https://github.com/xiao-villamor/PrintStash/issues/259)).
+  Verification now runs in the same disposable worker as mesh derivatives, so a
+  pair whose comparison exhausts memory or never finishes is counted as a failed
+  verification and the run moves on to the next pair.
 - Analysing the whole library for similar models no longer runs in the API
   process ([#259](https://github.com/xiao-villamor/PrintStash/issues/259)).
   The fingerprint pass now uses the same disposable worker as mesh derivatives,
@@ -67,6 +109,9 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Performance
 
+- Tag counts now follow collection links when inheriting tags, so listing tags
+  stays responsive in libraries with tens of thousands of collections and
+  100,000 Models, including for users with collection-specific access.
 - **3MF geometry loads about 1.6 times faster.** The bounded 3MF loader read
   every vertex and triangle attribute with a Python call per value; it now
   hands each column to NumPy in one pass. A 320,000-face project went from
@@ -397,6 +442,18 @@ image. See UPGRADE.md before pulling.**
 
 - The browser extension is now named PrintStash in the browser, help and store
   listing. Its connection settings and extension identity are unchanged.
+
+### Performance
+
+- Direct browser uploads to S3-compatible storage are published by copying the
+  finished upload inside the bucket instead of uploading it again from
+  PrintStash. The copy is create-only and pinned to the verified object, and is
+  used only when the startup probe proves the endpoint refuses a changed source
+  and an overwrite (`server_side_copy` in the storage diagnostics); other
+  endpoints keep uploading the verified copy.
+- S3 uploads of staged files send their parts in parallel straight from the
+  file, without first copying it into a temporary spool. Adopting an existing
+  S3 object hashes it as a stream with bounded memory.
 
 ### Fixed
 

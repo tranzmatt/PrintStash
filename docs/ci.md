@@ -1,6 +1,7 @@
 # CI and image publication
 
-`CI` runs on every pull request, merge queue commit and push to `main`. Its
+`CI` runs on every pull request, merge queue commit and push to `main`, and can
+be dispatched on an integration branch. Its
 backend shards cover each test file once, excluding `slow` and tests needing
 container-backed services. Core, frontend, extension and two real-backend
 browser flows run in parallel. Configure branch protection to require **PR
@@ -20,10 +21,13 @@ commit to be tagged and wait for success. Release publication requires green
 `CI` and `Deep CI` runs for that SHA. Nightly and manual `latest` publication
 require a green `CI` run for the same SHA on `main`.
 
-The `scale` lane starts four pytest workers explicitly and splits the budget
-and growth checks by administrator and granted viewer. Each job measures 13
-reads. The fixed worker count bounds process startup; the four-way split keeps
-the supported-scale suite within each job's 30-minute cap.
+The `scale` lane runs serially within each CI job. Four separate jobs split
+budget and growth checks by administrator and granted viewer, measuring 13
+reads apiece. Running four seeded 100,000-Model databases on one CI runner
+exhausted its 30-minute cap, even after the suite was split across jobs.
+The lane and each job target the scale test module directly, so pytest does not
+collect unrelated backend tests. Jobs report the active case and per-case
+durations, and print a Python stack trace if a case waits two minutes.
 
 Publication builds all four images in one Bake graph per native architecture.
 Each architecture smokes its four digests; promotion to multiarch tags starts
@@ -59,3 +63,19 @@ step before treating the rollout as complete.
 The public history did not contain ten successful comparable pre-release image
 publications at the time of this baseline. Record the first nightly run under the
 new workflow, then compare subsequent hot-cache runs using the same timestamps.
+
+
+## Mesh resource gate
+
+Deep CI builds the actual full production image on amd64 and arm64 and runs
+the real API and DBOS engine with 1 GiB and 4 GiB cgroup ceilings. The gate
+fails on OOM kills, unresponsive API, renewed terminal work, leaked workers,
+unexplained staging/capacity reservations, or parent RSS growth after warm-up.
+It exercises synthetic nested 3MF expansion, malformed packages, sudden
+allocation, native STEP/STP, healthy successors, original/slicer downloads,
+viewer conversion, restart and retained-input discard. Each job publishes its
+JSON measurements and cleanup evidence even on failure.
+
+See [the acceptance matrix](testing/mesh-regression.md) for the commands and
+optional local acceptance of the issue attachments. CI has no download
+dependency on those attachments.

@@ -81,7 +81,7 @@ class TestDerivation:
     ) -> None:
         artifact = stored("cube.stl", content.binary_stl())
 
-        derivative_jobs.nudge_for(artifact)
+        derivative_jobs.nudge_for(db_session, artifact)
         drain_work()
 
         assert _states(db_session, artifact.id) == {
@@ -102,7 +102,7 @@ class TestDerivation:
     ) -> None:
         artifact = stored("plate.gcode", content.gcode(marker="converges"))
 
-        derivative_jobs.nudge_for(artifact)
+        derivative_jobs.nudge_for(db_session, artifact)
         drain_work()
 
         assert _states(db_session, artifact.id) == {
@@ -114,7 +114,7 @@ class TestDerivation:
         self, db_session: Session, stored
     ) -> None:
         artifact = stored("cube.stl", content.binary_stl())
-        derivative_jobs.nudge_for(artifact)
+        derivative_jobs.nudge_for(db_session, artifact)
         drain_work()
 
         work.nudge(JobKind.DERIVATIVES_MESH)
@@ -160,14 +160,36 @@ class TestNudgeFor:
         ],
     )
     def test_nudges_every_group_that_applies(
-        self, make_model, make_file, monkeypatch, filename: str, definitions
+        self, db_session, make_model, make_file, monkeypatch, filename: str, definitions
     ) -> None:
         nudged: list[str] = []
         monkeypatch.setattr(work, "nudge", lambda name, **_: nudged.append(name))
 
-        derivative_jobs.nudge_for(make_file(make_model(), filename=filename))
+        derivative_jobs.nudge_for(
+            db_session, make_file(make_model(), filename=filename)
+        )
 
         assert sorted(nudged) == sorted(definitions)
+
+    @pytest.mark.parametrize("disabled", list(derivative_jobs.policy.SETTINGS))
+    def test_disabled_groups_emit_no_nudge(
+        self, db_session, make_model, make_file, monkeypatch, disabled
+    ):
+        from app.modules.derivatives.kinds import group, groups_for
+
+        derivative_jobs.policy.update(
+            db_session, {derivative_jobs.policy.SETTINGS[disabled]: False}
+        )
+        filename = "part.stl" if disabled is JobKind.DERIVATIVES_MESH else "part.bgcode"
+        artifact = make_file(make_model(), filename=filename)
+        nudged = []
+        monkeypatch.setattr(work, "nudge", lambda name, **_: nudged.append(name))
+
+        derivative_jobs.nudge_for(db_session, artifact)
+
+        assert sorted(nudged) == sorted(
+            g.definition for g in groups_for(artifact) if g != group(disabled)
+        )
 
 
 class TestCancel:
@@ -270,3 +292,52 @@ class TestRetry:
         assert not DEFINITIONS[JobKind.DERIVATIVES_MESH].retry(
             db_session, subject_key(artifact.id)
         )
+
+
+class TestProducerAdmission:
+    @pytest.mark.parametrize("definition", list(DEFINITIONS))
+    def test_a_disable_after_step_admission_settles_orphaned_attempts(
+        self, db_session, make_model, make_file, make_derivative, make_job, definition
+    ):
+        from app.db.models import WorkPriority
+        from app.modules.derivatives import policy
+        from app.modules.derivatives.kinds import group
+        from app.modules.work.runner import ExecutionContext
+
+        artifact = make_file(
+            make_model(),
+            filename="part.stl"
+            if definition is JobKind.DERIVATIVES_MESH
+            else "part.bgcode",
+        )
+        derivative_group = group(definition)
+        rows = [
+            make_derivative(artifact, kind, state=DerivativeState.RUNNING, attempts=2)
+            for kind in derivative_group.kinds
+        ]
+        job = make_job(
+            kind=definition,
+            state=JobState.RUNNING,
+            subject=subject_key(artifact.id),
+            attempts=1,
+        )
+        context = ExecutionContext(
+            job.id, definition, job.subject_key, WorkPriority.BACKFILL, "admitted", 1
+        )
+        assert DEFINITIONS[definition].admission(db_session) is None
+        policy.update(db_session, {policy.SETTINGS[definition]: False})
+
+        # Execute the real producer after the earlier step admission. Its final
+        # transaction observes the disable; the step must settle the attempt.
+        DEFINITIONS[definition].steps[0].fn(context)
+
+        db_session.expire_all()
+        assert job.state is JobState.CANCELLED
+        status = json.loads(job.status_json)
+        assert status["error"] == "derivative_group_disabled"
+        assert status["retryable"] is False
+        for row in rows:
+            assert row.state is DerivativeState.FAILED
+            assert row.failure_reason == "derivative_group_disabled"
+            assert row.attempts == 2
+            assert row.next_attempt_at is not None
