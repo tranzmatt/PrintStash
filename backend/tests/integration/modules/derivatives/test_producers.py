@@ -33,7 +33,7 @@ from app.db.models import (
     Metadata,
     Model,
 )
-from app.modules.derivatives import producers
+from app.modules.derivatives import kinds, producers
 from app.modules.ingestion import extensions
 from app.modules.media import mesh_isolation, toolpath
 from app.modules.media.thumbnail_publication import ThumbnailPublicationError
@@ -139,8 +139,12 @@ class TestDeriveMesh:
         }
         db_session.expire_all()
         rows = _rows(db_session, artifact.id)
-        assert rows[DerivativeKind.METADATA].recipe_version == 7
-        assert rows[DerivativeKind.THUMBNAIL].recipe_version == 6
+        assert (
+            rows[DerivativeKind.METADATA].recipe_version == kinds.MESH_GEOMETRY_RECIPE
+        )
+        assert (
+            rows[DerivativeKind.THUMBNAIL].recipe_version == kinds.MESH_THUMBNAIL_RECIPE
+        )
         metadata = db_session.exec(
             select(Metadata).where(Metadata.file_id == artifact.id)
         ).one()
