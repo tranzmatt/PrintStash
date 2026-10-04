@@ -210,8 +210,9 @@ class TestAnalyzeMesh:
         assert thumb.startswith(mesh_processing._PNG_MAGIC)
         assert result.complete is True
         assert geometry["triangle_count"] == 1_001
-        assert geometry["bbox_x_mm"] == 99.8
-        assert geometry["bbox_y_mm"] == 10.8
+        # Bounds preserve the float32 coordinates encoded by the binary STL.
+        assert geometry["bbox_x_mm"] == float(np.float32(99.8))
+        assert geometry["bbox_y_mm"] == float(np.float32(10.8))
 
     def test_over_cap_3mf_still_gets_embedded_preview(
         self, tmp_path: Path, monkeypatch
