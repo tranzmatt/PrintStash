@@ -39,6 +39,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+- Active mesh workers can release their render admission while a queued worker checks durable cancellation state.
 - Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
 - Small meshes placed far from the coordinate origin retain their thumbnail
   geometry and shading. Visual recipes now refresh previews, view fingerprints,
