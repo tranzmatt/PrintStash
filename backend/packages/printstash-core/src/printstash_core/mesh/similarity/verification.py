@@ -16,10 +16,10 @@ from .geometry import (
     Surface,
     equivalent_triangles,
     measure_surface,
-    nearest_neighbors,
     prepare_surface,
     sample_surface,
 )
+from .point_neighbors import PointNeighbors
 from .proximity import SurfaceProximity
 from .time_budget import check_deadline
 from .voxel import voxelize
@@ -41,7 +41,7 @@ EvidenceClass = Literal[
     "component_of",
     "plate_of",
 ]
-VERIFICATION_VERSION = "surface-verification-v3"
+VERIFICATION_VERSION = "surface-verification-v4"
 
 
 @dataclass(frozen=True)
@@ -103,10 +103,16 @@ def verify_meshes(
     fit_b = sample_surface(right, 512, 154) * scale / diagonal
     proposals = list(_proposals(left, right, scale))
     check_deadline(deadline)
+    fit_index = PointNeighbors(fit_a[:128], deadline=deadline)
+    # At most 145 hypotheses × 64 samples fit inside the 10,000-point query cap.
+    hypotheses = np.asarray(proposals)
+    fit_distances = fit_index.query(
+        (fit_b[:64] @ hypotheses).reshape(-1, 3), deadline=deadline
+    )[0].reshape(len(proposals), 64)
     ranked = sorted(
         (
             (
-                float(nearest_neighbors(fit_b[:64] @ rotation, fit_a[:128])[0].mean()),
+                float(fit_distances[index].mean()),
                 index,
                 rotation,
             )
@@ -164,8 +170,12 @@ def verify_meshes(
         _, rotation, offset, convergence = aligned[reflected]
     a = sample_surface(left, sample_points, 15401)
     b = sample_surface(right, sample_points, 15402) @ rotation * scale + offset
-    distance_ab = nearest_neighbors(a / diagonal, b / diagonal, deadline=deadline)[0]
-    distance_ba = nearest_neighbors(b / diagonal, a / diagonal, deadline=deadline)[0]
+    distance_ab = PointNeighbors(b / diagonal, deadline=deadline).query(
+        a / diagonal, deadline=deadline
+    )[0]
+    distance_ba = PointNeighbors(a / diagonal, deadline=deadline).query(
+        b / diagonal, deadline=deadline
+    )[0]
     hausdorff = float(max(distance_ab.max(), distance_ba.max()))
     chamfer = float((distance_ab.mean() + distance_ba.mean()) / 2)
     surface_ab = (
