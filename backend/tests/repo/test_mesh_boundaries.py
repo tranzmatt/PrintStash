@@ -15,6 +15,7 @@ from tests.paths import BACKEND_DIR
 OWNERS = {
     "modules/media/mesh_processing.py",
     "modules/media/mesh_resources.py",
+    "modules/media/three_mf_scene.py",
     "modules/media/thumbnail_engine.py",
     "modules/media/geometry_analysis.py",
     "modules/media/fingerprints.py",
@@ -47,6 +48,7 @@ RAW = {
     "app.modules.media.geometry_analysis.embedding_views",
     "app.modules.media.geometry_analysis.analyze",
     "app.modules.media.mesh_resources.load_3mf",
+    "app.modules.media.three_mf_scene.read_scene",
     "app.modules.media.mesh_resources.prepare_loaded_mesh",
     "app.modules.media.mesh_render.render_thumbnail",
     "app.modules.media.mesh_render.render_mesh_thumbnail",
