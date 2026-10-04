@@ -28,7 +28,6 @@ from tests.factories.content import ascii_stl_facets as _ascii_stl
 from tests.factories.content import binary_stl_facets as _binary_stl
 from tests.paths import BACKEND_DIR
 
-
 TRIANGLE = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
 SECOND = ((0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (0.0, 1.0, 1.0))
 
