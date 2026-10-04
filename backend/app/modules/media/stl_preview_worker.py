@@ -18,7 +18,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from app.modules.media.stl_reader import (
     InvalidSTL as _InvalidSTL,
@@ -30,6 +30,11 @@ from app.modules.media.stl_reader import (
     STLReadLimits,
     iter_stl_blocks,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
+
 
 _WORKER_VERSION = 1
 _RESERVOIR_SIZE = 4096
@@ -209,6 +214,17 @@ def _frame(
     )
 
 
+def _nondegenerate_triangles(
+    view: NDArray[np.float32] | NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """Classify source facets by differences between their three vertices."""
+    import numpy as np
+
+    raw = np.cross(view[:, 1] - view[:, 0], view[:, 2] - view[:, 0])
+    length = np.linalg.norm(raw, axis=1)
+    return np.isfinite(length) & (length > 1e-12)
+
+
 def _render(
     path: Path,
     output: Path,
@@ -295,11 +311,7 @@ def _render(
             return
         tri = tri[valid]
         screen = screen[valid]
-        raw = np.cross(
-            view[valid, :, 1] - view[valid, :, 0], view[valid, :, 2] - view[valid, :, 0]
-        )
-        length = np.linalg.norm(raw, axis=1)
-        valid_normal = np.isfinite(length) & (length > 1e-12)
+        valid_normal = _nondegenerate_triangles(view[valid])
         if not valid_normal.any():
             return
         screen = screen[valid_normal]

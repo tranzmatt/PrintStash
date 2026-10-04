@@ -18,6 +18,7 @@ unexpected happened. A refusal must never be reported as a success with an empty
 
 from __future__ import annotations
 
+import math
 import time
 from pathlib import Path
 
@@ -409,3 +410,45 @@ class TestMain:
         assert manifest["scanned_bytes"] >= source.stat().st_size
         assert (tmp_path / "out.png").read_bytes().startswith(b"\x89PNG")
         assert not (tmp_path / "out.png.tmp").exists()
+
+
+class TestNondegenerateTriangles:
+    def test_retains_valid_streamed_triangle(self) -> None:
+        import numpy as np
+
+        view = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, 1.0], [0.0, 2.0, 1.0]]])
+
+        assert worker._nondegenerate_triangles(view).tolist() == [True]
+
+    @pytest.mark.parametrize(
+        "triangle",
+        [
+            ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (2.0, 2.0, 2.0)),
+            ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+        ],
+        ids=["collinear", "repeated-vertex"],
+    )
+    def test_rejects_degenerate_streamed_triangle(self, triangle) -> None:
+        import numpy as np
+
+        assert worker._nondegenerate_triangles(np.asarray([triangle])).tolist() == [
+            False
+        ]
+
+    def test_is_invariant_to_rigid_transform(self) -> None:
+        import numpy as np
+
+        view = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, 1.0], [0.0, 2.0, 1.0]]])
+        rotation = np.asarray([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+        assert worker._nondegenerate_triangles(
+            view @ rotation.T + np.asarray([5.0, -7.0, 9.0])
+        ).tolist() == [True]
+
+    @pytest.mark.parametrize("value", [math.inf, math.nan], ids=["infinity", "nan"])
+    def test_rejects_nonfinite_streamed_triangle(self, value: float) -> None:
+        import numpy as np
+
+        view = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, value], [0.0, 2.0, 1.0]]])
+
+        assert worker._nondegenerate_triangles(view).tolist() == [False]

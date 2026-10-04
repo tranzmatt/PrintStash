@@ -146,7 +146,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Restoring a backup no longer fails because a completed ZIP inspection is
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
-
+- Streamed STL previews preserve valid oblique facets that the degeneracy filter could discard.
 
 ### Performance
 
