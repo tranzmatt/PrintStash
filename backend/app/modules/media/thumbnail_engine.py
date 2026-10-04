@@ -200,6 +200,7 @@ class ThumbnailEngine:
         prepared: PreparedMesh | None = None
         fingerprint_result: FingerprintResult | None = None
         fingerprint_complete: bool | None = None
+        sample_buffers_pending = False
 
         def report(label: str) -> None:
             if request.report is not None:
@@ -391,6 +392,7 @@ class ThumbnailEngine:
                                     mesh, file_type=suffix.lstrip(".")
                                 )
                             if prepared is None and suffix == ".stl" and over_cap:
+                                sample_buffers_pending = True
                                 prepared = _prepare_sampled_stl(
                                     request.path, triangle_cap=request.triangle_cap
                                 )
@@ -504,9 +506,12 @@ class ThumbnailEngine:
                         and suffix == ".stl"
                         and (over_cap or mesh is not None)
                     ):
+                        release_buffers = mesh is not None or sample_buffers_pending
                         prepared = None
                         mesh = None
-                        mesh_processing._reclaim_memory()
+                        sample_buffers_pending = False
+                        if release_buffers:
+                            mesh_processing._reclaim_memory()
                         phases.start(MeshPhase.STREAMING, input_bytes=source_bytes)
                         streamed = stl_streaming.render_stl_preview_isolated(
                             request.path, width=width, height=height
@@ -584,6 +589,7 @@ class ThumbnailEngine:
             phases.fail_active()
             prepared = None
             mesh = None
+            sample_buffers_pending = False
             mesh_processing._reclaim_memory()
             if request.include_geometry and not isinstance(
                 geometry_outcome, GeometryReady
@@ -604,7 +610,7 @@ class ThumbnailEngine:
         finally:
             phases.fail_active()
             prepared = None
-            if mesh is not None or fingerprint_complete is not None:
+            if mesh is not None or sample_buffers_pending:
                 mesh = None
                 mesh_processing._reclaim_memory()
 

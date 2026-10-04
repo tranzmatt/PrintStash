@@ -360,6 +360,14 @@ class TestThumbnailEngine:
     ):
         references = []
         lifetimes = []
+        reclaims = []
+        reclaim = mesh_processing._reclaim_memory
+
+        def observe_reclaim():
+            reclaims.append(True)
+            reclaim()
+
+        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
         extract = thumbnail_engine.extract
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
@@ -380,6 +388,7 @@ class TestThumbnailEngine:
             return extract(prepared)
 
         def observe_stream(*args, **kwargs):
+            assert reclaims == [True]
             lifetimes.append(tuple(reference() is None for reference in references))
             return stream(*args, **kwargs)
 
@@ -407,6 +416,7 @@ class TestThumbnailEngine:
         assert result.fingerprint_result.state == ("partial" if sampled else "ready")
         assert references
         assert lifetimes == [(True,) * len(references)]
+        assert reclaims == [True]
 
     def test_analysis_request_respects_the_load_budget(self, tmp_path, monkeypatch):
         mesh = trimesh.creation.icosphere(subdivisions=2, radius=10)
@@ -431,6 +441,14 @@ class TestThumbnailEngine:
     ):
         references = []
         lifetimes = []
+        reclaims = []
+        reclaim = mesh_processing._reclaim_memory
+
+        def observe_reclaim():
+            reclaims.append(True)
+            reclaim()
+
+        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
         def fail_construction(*, vertices, faces, process):
@@ -438,6 +456,7 @@ class TestThumbnailEngine:
             raise error("sample construction failed")
 
         def observe_stream(*args, **kwargs):
+            assert reclaims == [True]
             lifetimes.append(tuple(reference() is None for reference in references))
             return stream(*args, **kwargs)
 
@@ -460,12 +479,21 @@ class TestThumbnailEngine:
         assert result.fingerprint_result.failure_code == "analysis_failed"
         assert references
         assert lifetimes == [(True, True)]
+        assert reclaims == [True]
 
     def test_releases_failed_preparation_buffers_before_streaming(
         self, cube, monkeypatch
     ):
         references = []
         lifetimes = []
+        reclaims = []
+        reclaim = mesh_processing._reclaim_memory
+
+        def observe_reclaim():
+            reclaims.append(True)
+            reclaim()
+
+        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
         prepare = thumbnail_engine.prepare_loaded_mesh
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
@@ -480,6 +508,7 @@ class TestThumbnailEngine:
             raise ValueError("preparation failed")
 
         def observe_stream(*args, **kwargs):
+            assert reclaims == [True]
             lifetimes.append(tuple(reference() is None for reference in references))
             return stream(*args, **kwargs)
 
@@ -504,6 +533,7 @@ class TestThumbnailEngine:
         assert result.fingerprint_result.failure_code == "analysis_failed"
         assert references
         assert lifetimes == [(True,) * len(references)]
+        assert reclaims == [True]
 
 class TestUnreferencedVertices:
     def test_preserves_3mf_preview(self, tmp_path):
