@@ -35,6 +35,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+- Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
 - Meshes with inconsistent triangle winding now report unknown volume while
   retaining dimensions and triangle counts. Existing metadata is recalculated
   automatically.
