@@ -147,8 +147,12 @@ class TestCandidateProjection:
 class TestInterpretationVersion:
     @pytest.mark.parametrize(
         "algorithm_version,expected_current",
-        [("geometry-v4-sh5f4577c4", False), (ALGORITHM_VERSION, True)],
-        ids=["previous", "current"],
+        [
+            ("geometry-v4-sh5f4577c4", False),
+            ("geometry-v6-sh5f4577c4", False),
+            (ALGORITHM_VERSION, True),
+        ],
+        ids=["previous", "previous-reader", "current"],
     )
     def test_version_controls_current_evidence(
         self, db_session, pair, make_user, algorithm_version, expected_current

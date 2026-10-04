@@ -209,7 +209,7 @@ class TestDeriveMesh:
                 GeometryFingerprint.algorithm_version == ALGORITHM_VERSION,
             )
         ).one()
-        assert ALGORITHM_VERSION == "geometry-v6-sh5f4577c4"
+        assert cached.algorithm_version == ALGORITHM_VERSION
         assert cached.state == "unsupported"
         assert cached.failure_code == "unsupported_3mf_capability"
         db_session.refresh(old)

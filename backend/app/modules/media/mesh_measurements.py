@@ -28,8 +28,12 @@ logger = get_logger(__name__)
 _VOLUME_INTEGRAL_BATCH_FACES = 4096
 
 
-def _volume_from_closed_mesh(mesh: Trimesh) -> VolumeMeasured | VolumeUnavailable:
-    """Evaluate signed library integrals in bounded component-local batches."""
+def signed_mesh_integral(mesh: Trimesh) -> float | VolumeUnavailable:
+    """Return a finite signed integral for already-closed, consistent surfaces.
+
+    Orientation is retained, including negative cavity contributions and zero.
+    Callers own topology admission and positive aggregate classification.
+    """
     import numpy as np
     import trimesh
 
@@ -59,9 +63,18 @@ def _volume_from_closed_mesh(mesh: Trimesh) -> VolumeMeasured | VolumeUnavailabl
         total = math.fsum(integrals)
     except OverflowError:
         return VolumeUnavailable(VolumeUnavailableCause.NONFINITE_INTEGRAL)
-    if total <= 0:
+    if not math.isfinite(total):
+        return VolumeUnavailable(VolumeUnavailableCause.NONFINITE_INTEGRAL)
+    return total
+
+
+def _volume_from_closed_mesh(mesh: Trimesh) -> VolumeMeasured | VolumeUnavailable:
+    integral = signed_mesh_integral(mesh)
+    if isinstance(integral, VolumeUnavailable):
+        return integral
+    if integral <= 0:
         return VolumeUnavailable(VolumeUnavailableCause.NON_POSITIVE_INTEGRAL)
-    return VolumeMeasured(total)
+    return VolumeMeasured(integral)
 
 
 def geometry_from_mesh(mesh: Trimesh | None) -> MeshMeasurements:

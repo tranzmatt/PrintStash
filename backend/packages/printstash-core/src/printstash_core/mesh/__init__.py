@@ -5,6 +5,7 @@ from .rasterizer import (
     FLAT_MESH_THICKNESS_RATIO,
     RasterBudget,
     render_mesh_thumbnail,
+    render_scene_thumbnail,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "PreviewProfile",
     "RasterBudget",
     "render_mesh_thumbnail",
+    "render_scene_thumbnail",
 ]

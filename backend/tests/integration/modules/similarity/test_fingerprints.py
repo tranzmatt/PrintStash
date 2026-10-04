@@ -26,12 +26,21 @@ def extracted():
 
 class TestFingerprintLeases:
     @pytest.mark.parametrize("state", ["ready", "partial", "failed"])
+    @pytest.mark.parametrize(
+        "previous_version", ["geometry-v5-sh5f4577c4", "geometry-v6-sh5f4577c4"]
+    )
     def test_recomputes_fingerprints_from_the_previous_stl_sample_recipe(
-        self, db_session, make_model, make_file, make_geometry_fingerprint, state
+        self,
+        db_session,
+        make_model,
+        make_file,
+        make_geometry_fingerprint,
+        state,
+        previous_version,
     ):
         file = make_file(make_model())
         previous = make_geometry_fingerprint(
-            file, state=state, algorithm_version="geometry-v5-sh5f4577c4"
+            file, state=state, algorithm_version=previous_version
         )
 
         claimed = fingerprints.claim(db_session, file)
@@ -39,7 +48,7 @@ class TestFingerprintLeases:
         assert claimed is not None
         assert claimed[0] != previous.id
         db_session.refresh(previous)
-        assert previous.algorithm_version == "geometry-v5-sh5f4577c4"
+        assert previous.algorithm_version == previous_version
         assert previous.state == state
 
     @pytest.mark.parametrize("state", ["ready", "partial", "failed"])

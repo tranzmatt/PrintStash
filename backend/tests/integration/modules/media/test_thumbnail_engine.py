@@ -15,12 +15,16 @@ import pytest
 import trimesh
 from PIL import Image
 from printstash_core.mesh.measurements import (
+    VolumeMeasured,
     VolumeNotCalculated,
     VolumeNotCalculatedCause,
+    VolumeUnavailable,
+    VolumeUnavailableCause,
 )
+from printstash_core.mesh.similarity import GeometryError
 
 from app.core.config import _overlay
-from app.modules.media import mesh_policy, thumbnail_engine
+from app.modules.media import mesh_policy, mesh_resources, thumbnail_engine
 from app.modules.media.fingerprints import FingerprintResultState
 from app.modules.media.mesh_contracts import (
     GeometryNotLoaded,
@@ -41,7 +45,7 @@ from app.modules.media.mesh_facts import (
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.media.worker_bootstrap import WORKER_MARKER
 from tests.factories import content
-from tests.factories.geometry import three_mf
+from tests.factories.geometry import tetrahedron, three_mf
 
 
 @pytest.fixture
@@ -443,22 +447,36 @@ class TestThumbnailEngine:
         assert lifetimes == [(True,) * len(references)]
         assert reclaims == [True]
 
-    def test_analysis_request_respects_the_load_budget(self, tmp_path, monkeypatch):
-        mesh = trimesh.creation.icosphere(subdivisions=2, radius=10)
-        path = tmp_path / "sphere.3mf"
-        path.write_bytes(three_mf(meshes={1: mesh}))
+    def test_analysis_budget_is_independent_of_scene_render_budget(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "plate-fingerprint.3mf"
+        placements = tuple(
+            (1, f"1 0 0 0 1 0 0 0 1 {index * 20} 0 0") for index in range(64)
+        )
+        path.write_bytes(three_mf(build=placements))
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 100)
+        calls = []
+        materialize = mesh_resources.materialize_scene
 
+        def construct(scene):
+            calls.append(True)
+            return materialize(scene)
+
+        monkeypatch.setattr(mesh_resources, "materialize_scene", construct)
         result = ThumbnailEngine().generate(
-            ThumbnailRequest(path, include_fingerprint=True)
+            ThumbnailRequest(path, include_fingerprint=True, triangle_cap=300)
         )
 
-        assert result.geometry_outcome == GeometryRefused(
-            ThumbnailFailureReason.RESOURCE_LIMIT
-        )
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry["triangle_count"] == 256
+        assert isinstance(result.volume, VolumeMeasured)
         assert result.image is None
-        assert result.fingerprint_result.state is FingerprintResultState.FAILED
-        assert result.fingerprint_result.failure_code == "resource_limit"
+        assert result.failure_reason is ThumbnailFailureReason.RESOURCE_LIMIT
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.READY
+        assert result.fingerprint_result.records
+        assert calls == [True]
 
     @pytest.mark.parametrize("error", [ValueError, MemoryError])
     def test_releases_failed_sample_buffers_before_streaming(
@@ -1034,3 +1052,425 @@ class TestUnsupported3MFCapability:
             assert (
                 result.failure_reason is ThumbnailFailureReason.UNSUPPORTED_CAPABILITY
             )
+
+
+class TestRetainedThreeMFScene:
+    @pytest.mark.parametrize("fingerprint", [False, True])
+    @pytest.mark.parametrize("thumbnail", [False, True])
+    def test_preserves_basic_outputs_without_source_materialization(
+        self, tmp_path, monkeypatch, fingerprint, thumbnail
+    ):
+        path = tmp_path / "plate.3mf"
+        path.write_bytes(three_mf(build=((1, None),) * 64))
+
+        def materialize(*_args, **_kwargs):
+            raise AssertionError("basic outputs must not flatten shared geometry")
+
+        monkeypatch.setattr(mesh_resources, "materialize_scene", materialize)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=thumbnail,
+                include_fingerprint=fingerprint,
+                triangle_cap=100,
+                width=160,
+                height=120,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "bbox_x_mm": 10.0,
+            "bbox_y_mm": 20.0,
+            "bbox_z_mm": 30.0,
+            "volume_mm3": 64000.0,
+            "triangle_count": 256,
+        }
+        assert (result.image is not None) is thumbnail
+        assert result.failure_reason is None
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.coverage.preview is (
+            PreviewCoverage.COMPLETE if thumbnail else PreviewCoverage.NOT_PRODUCED
+        )
+        assert result.volume == VolumeMeasured(64000.0)
+        assert (result.fingerprint_result is not None) is fingerprint
+        if fingerprint:
+            assert result.fingerprint_result is not None
+            assert result.fingerprint_result.state is FingerprintResultState.FAILED
+            assert (
+                result.fingerprint_result.failure_code
+                is FingerprintFailureCode.GEOMETRY_WORK_LIMIT
+            )
+            assert result.fingerprint_result.records == ()
+
+    def test_materializes_eligible_fingerprint_once(self, tmp_path, monkeypatch):
+        path = tmp_path / "part.3mf"
+        path.write_bytes(three_mf())
+        calls = []
+        materialize = mesh_resources.materialize_scene
+
+        def construct(scene):
+            calls.append(sum(len(r.faces) for r in scene.resources))
+            return materialize(scene)
+
+        monkeypatch.setattr(mesh_resources, "materialize_scene", construct)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=True,
+                include_fingerprint=True,
+            )
+        )
+
+        assert calls == [4]
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry["volume_mm3"] == 1000.0
+        assert result.volume == VolumeMeasured(1000.0)
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.READY
+        assert result.image is not None
+
+    @pytest.mark.parametrize("fingerprint", [False, True])
+    def test_preserves_volume_when_halves_close_after_whole_scene_welding(
+        self, tmp_path, monkeypatch, fingerprint
+    ):
+        tetra = tetrahedron()
+        half_a = trimesh.Trimesh(
+            vertices=tetra.vertices, faces=tetra.faces[:2], process=False
+        )
+        half_b = trimesh.Trimesh(
+            vertices=tetra.vertices, faces=tetra.faces[2:], process=False
+        )
+        path = tmp_path / "halves.3mf"
+        path.write_bytes(
+            three_mf(meshes={1: half_a, 2: half_b}, build=((1, None), (2, None)))
+        )
+
+        calls = []
+        materialize = mesh_resources.materialize_scene
+
+        def construct(scene):
+            calls.append(True)
+            return materialize(scene)
+
+        monkeypatch.setattr(mesh_resources, "materialize_scene", construct)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=False,
+                include_fingerprint=fingerprint,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "bbox_x_mm": 10.0,
+            "bbox_y_mm": 20.0,
+            "bbox_z_mm": 30.0,
+            "volume_mm3": 1000.0,
+            "triangle_count": 4,
+        }
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert result.volume == VolumeMeasured(1000.0)
+        assert isinstance(result.coverage.geometry, CompleteGeometry)
+        assert calls == [True]
+        if fingerprint:
+            assert result.fingerprint_result is not None
+            assert result.fingerprint_result.state is FingerprintResultState.READY
+
+    @pytest.mark.parametrize("fingerprint", [False, True])
+    def test_preserves_scene_facts_above_topology_budget(
+        self, tmp_path, monkeypatch, fingerprint
+    ):
+        tetra = tetrahedron()
+        halves = {
+            1: trimesh.Trimesh(
+                vertices=tetra.vertices, faces=tetra.faces[:2], process=False
+            ),
+            2: trimesh.Trimesh(
+                vertices=tetra.vertices, faces=tetra.faces[2:], process=False
+            ),
+        }
+        path = tmp_path / "large-topology.3mf"
+        path.write_bytes(three_mf(meshes=halves, build=((1, None), (2, None)) * 64))
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 100)
+
+        def materialize(*_args, **_kwargs):
+            raise AssertionError(
+                "topology over its allocation budget must stay retained"
+            )
+
+        monkeypatch.setattr(mesh_resources, "materialize_scene", materialize)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_thumbnail=False,
+                include_fingerprint=fingerprint,
+                triangle_cap=100,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "bbox_x_mm": 10.0,
+            "bbox_y_mm": 20.0,
+            "bbox_z_mm": 30.0,
+            "triangle_count": 256,
+            "volume_mm3": None,
+        }
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+        )
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.failure_reason is None
+        if fingerprint:
+            assert result.fingerprint_result is not None
+            assert result.fingerprint_result.state is FingerprintResultState.FAILED
+            assert (
+                result.fingerprint_result.failure_code
+                is FingerprintFailureCode.GEOMETRY_WORK_LIMIT
+            )
+        else:
+            assert result.fingerprint_result is None
+
+    def test_refuses_volume_for_coincident_unwelded_copies(self, tmp_path):
+        tetra = tetrahedron()
+        unwelded = trimesh.Trimesh(
+            vertices=tetra.vertices[tetra.faces].reshape((-1, 3)),
+            faces=np.arange(12).reshape((-1, 3)),
+            process=False,
+        )
+        path = tmp_path / "coincident.3mf"
+        path.write_bytes(three_mf(meshes={1: unwelded}, build=((1, None), (1, None))))
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=False,
+                include_fingerprint=False,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry["triangle_count"] == 8
+        assert result.geometry["volume_mm3"] is None
+        assert result.volume == VolumeUnavailable(VolumeUnavailableCause.NOT_WATERTIGHT)
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+
+    def test_refuses_optional_fingerprint_before_source_materialization(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "plate-fingerprint.3mf"
+        path.write_bytes(three_mf(build=((1, None),) * 64))
+
+        def materialize(*_args, **_kwargs):
+            raise AssertionError("refused fingerprint must not flatten shared geometry")
+
+        monkeypatch.setattr(mesh_resources, "materialize_scene", materialize)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=True,
+                include_fingerprint=True,
+                triangle_cap=100,
+            )
+        )
+
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
+        assert (
+            result.fingerprint_result.failure_code
+            is FingerprintFailureCode.GEOMETRY_WORK_LIMIT
+        )
+        assert result.fingerprint_result.records == ()
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.image is not None
+
+    def test_releases_materialized_fingerprint_before_scene_render(
+        self, tmp_path, monkeypatch
+    ):
+        from app.modules.media import mesh_render
+
+        path = tmp_path / "lifetime.3mf"
+        path.write_bytes(three_mf())
+        meshes = []
+        constructor = trimesh.Trimesh.__init__
+        render = mesh_render.render_scene_thumbnail
+
+        def construct(mesh, *args, **kwargs):
+            constructor(mesh, *args, **kwargs)
+            meshes.append(weakref.ref(mesh))
+
+        def check_scene(scene, *args, **kwargs):
+            assert len(meshes) >= 2
+            assert all(reference() is None for reference in meshes)
+            return render(scene, *args, **kwargs)
+
+        monkeypatch.setattr(trimesh.Trimesh, "__init__", construct)
+        monkeypatch.setattr(mesh_render, "render_scene_thumbnail", check_scene)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=True,
+                include_fingerprint=True,
+            )
+        )
+
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.READY
+        assert result.geometry["volume_mm3"] == 1000.0
+        assert result.volume == VolumeMeasured(1000.0)
+        assert result.image is not None
+        assert all(reference() is None for reference in meshes)
+
+    @pytest.mark.parametrize("fingerprint", [False, True])
+    def test_refuses_transformed_numeric_overflow_without_worker_crash(
+        self, tmp_path, fingerprint
+    ):
+        path = tmp_path / "range.3mf"
+        path.write_bytes(three_mf(build=((1, "1e308 0 0 0 1e308 0 0 0 1e308 0 0 0"),)))
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=False,
+                include_fingerprint=fingerprint,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryRefused)
+        assert result.geometry_outcome.reason is ThumbnailFailureReason.INVALID_SOURCE
+        assert result.geometry["triangle_count"] is None
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert (result.fingerprint_result is not None) is fingerprint
+        if fingerprint:
+            assert result.fingerprint_result is not None
+            assert result.fingerprint_result.state is FingerprintResultState.FAILED
+            assert (
+                result.fingerprint_result.failure_code
+                is FingerprintFailureCode.NUMERIC_RANGE
+            )
+            assert result.fingerprint_result.records == ()
+
+    def test_keeps_embedded_preview_when_measurements_exceed_numeric_range(
+        self, tmp_path
+    ):
+        path = tmp_path / "range-preview.3mf"
+        path.write_bytes(
+            three_mf(
+                build=((1, "1e308 0 0 0 1e308 0 0 0 1e308 0 0 0"),),
+                extras={"Metadata/thumbnail.png": content.png()},
+            )
+        )
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=True,
+                include_fingerprint=True,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryRefused)
+        assert result.geometry_outcome.reason is ThumbnailFailureReason.INVALID_SOURCE
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
+        assert (
+            result.fingerprint_result.failure_code
+            is FingerprintFailureCode.NUMERIC_RANGE
+        )
+        assert result.image is not None
+        assert result.strategy is ThumbnailStrategy.EMBEDDED
+        assert result.failure_reason is None
+
+    def test_preserves_known_geometry_when_topology_materialization_fails(
+        self, tmp_path, monkeypatch
+    ):
+        tetra = tetrahedron()
+        half_a = trimesh.Trimesh(
+            vertices=tetra.vertices, faces=tetra.faces[:2], process=False
+        )
+        half_b = trimesh.Trimesh(
+            vertices=tetra.vertices, faces=tetra.faces[2:], process=False
+        )
+        path = tmp_path / "topology.3mf"
+        path.write_bytes(
+            three_mf(meshes={1: half_a, 2: half_b}, build=((1, None), (2, None)))
+        )
+
+        calls = []
+
+        def fail(_scene):
+            calls.append(True)
+            raise GeometryError("invalid_3mf")
+
+        monkeypatch.setattr(mesh_resources, "materialize_scene", fail)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=True,
+                include_fingerprint=True,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "bbox_x_mm": 10.0,
+            "bbox_y_mm": 20.0,
+            "bbox_z_mm": 30.0,
+            "triangle_count": 4,
+            "volume_mm3": None,
+        }
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
+        assert (
+            result.fingerprint_result.failure_code is FingerprintFailureCode.INVALID_3MF
+        )
+        assert calls == [True]
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+        )
+        assert result.image is not None
+        assert result.failure_reason is None
+
+    def test_refuses_nonfinite_extent_from_finite_placements(self, tmp_path):
+        path = tmp_path / "extent.3mf"
+        path.write_bytes(
+            three_mf(
+                build=(
+                    (1, "1 0 0 0 1 0 0 0 1 -1e308 0 0"),
+                    (1, "1 0 0 0 1 0 0 0 1 1e308 0 0"),
+                )
+            )
+        )
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path,
+                include_geometry=True,
+                include_thumbnail=False,
+                include_fingerprint=True,
+            )
+        )
+
+        assert isinstance(result.geometry_outcome, GeometryRefused)
+        assert result.geometry_outcome.reason is ThumbnailFailureReason.INVALID_SOURCE
+        assert result.geometry["bbox_x_mm"] is None
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
+        assert (
+            result.fingerprint_result.failure_code
+            is FingerprintFailureCode.NUMERIC_RANGE
+        )

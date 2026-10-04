@@ -57,6 +57,8 @@ class TestPending:
         [
             (DerivativeKind.METADATA, 10, DerivativeKind.THUMBNAIL),
             (DerivativeKind.THUMBNAIL, 9, DerivativeKind.METADATA),
+            (DerivativeKind.METADATA, 11, DerivativeKind.THUMBNAIL),
+            (DerivativeKind.THUMBNAIL, 10, DerivativeKind.METADATA),
         ],
     )
     @pytest.mark.parametrize("state", [DerivativeState.READY, DerivativeState.FAILED])

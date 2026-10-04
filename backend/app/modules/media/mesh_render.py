@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
 from printstash_core.mesh import rasterizer as _core
+from printstash_core.mesh.similarity.components import ExpandedScene
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -59,9 +60,31 @@ def render_mesh_thumbnail(
     )
 
 
+def render_scene_thumbnail(
+    scene: ExpandedScene,
+    name: str,
+    width: int = 640,
+    height: int = 480,
+    *,
+    output_format: Literal["PNG", "WEBP"] = "PNG",
+) -> Optional[bytes]:
+    """Render retained placements through the bounded core scene entry point."""
+    return _core.render_scene_thumbnail(
+        scene,
+        name,
+        width=width,
+        height=height,
+        face_chunk_size=settings.mesh_render_face_chunk_size,
+        logger=logger,
+        rasterise_triangles=_rasterise_triangles,
+        output_format=output_format,
+    )
+
+
 __all__ = [
     "FLAT_MESH_THICKNESS_RATIO",
     "RasterBudget",
     "render_mesh_thumbnail",
+    "render_scene_thumbnail",
     "render_thumbnail",
 ]

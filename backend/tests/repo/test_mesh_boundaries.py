@@ -19,6 +19,7 @@ OWNERS = {
     "modules/media/mesh_processing.py",
     "modules/media/mesh_loading.py",
     "modules/media/mesh_measurements.py",
+    "modules/media/scene_measurements.py",
     "modules/media/mesh_policy.py",
     "modules/media/mesh_previews.py",
     "modules/media/mesh_resources.py",
@@ -42,6 +43,7 @@ OWNERS = {
 PRIMITIVE_OWNERS = {
     "modules/media/mesh_loading.py",
     "modules/media/mesh_measurements.py",
+    "modules/media/scene_measurements.py",
     "modules/media/mesh_policy.py",
     "modules/media/mesh_previews.py",
     "modules/media/mesh_contracts.py",
@@ -78,6 +80,8 @@ RAW = {
     "printstash_core.mesh.similarity.geometry.prepare_surface",
     "printstash_core.mesh.similarity.verification.verify_meshes",
     "printstash_core.mesh.rasterizer.render_mesh_thumbnail",
+    "printstash_core.mesh.rasterizer.render_scene_thumbnail",
+    "printstash_core.mesh.render_scene_thumbnail",
     "app.modules.media.fingerprints.fingerprint_mesh",
     "app.modules.media.fingerprints.fingerprint_path",
     "app.modules.media.thumbnail_engine.ThumbnailEngine",
@@ -85,6 +89,8 @@ RAW = {
     "app.modules.media.mesh_loading.load_step_mesh",
     "app.modules.media.mesh_loading.to_stl_bytes",
     "app.modules.media.mesh_measurements.geometry_from_mesh",
+    "app.modules.media.mesh_measurements.signed_mesh_integral",
+    "app.modules.media.scene_measurements.measure_scene",
     "app.modules.media.mesh_processing._load_mesh",
     "app.modules.media.mesh_processing._load_step_mesh_isolated",
     "app.modules.media.mesh_processing.extract_geometry",
@@ -95,10 +101,12 @@ RAW = {
     "app.modules.media.geometry_analysis.embedding_views",
     "app.modules.media.geometry_analysis.analyze",
     "app.modules.media.mesh_resources.load_3mf",
+    "app.modules.media.mesh_resources.materialize_scene",
     "app.modules.media.three_mf_scene.read_scene",
     "app.modules.media.mesh_resources.prepare_loaded_mesh",
     "app.modules.media.mesh_render.render_thumbnail",
     "app.modules.media.mesh_render.render_mesh_thumbnail",
+    "app.modules.media.mesh_render.render_scene_thumbnail",
     "app.modules.media.step_geometry.tessellate",
     "app.modules.media.step_worker.convert",
     "app.modules.media.fingerprints.extract",
@@ -216,6 +224,29 @@ class TestMeshBoundaries:
     )
     def test_rejects_mesh_bypasses(self, source):
         assert _violations(source, "app.modules.media")
+
+    @pytest.mark.parametrize(
+        ("source", "target"),
+        [
+            (source, target)
+            for target in (
+                "app.modules.media.scene_measurements.measure_scene",
+                "app.modules.media.mesh_resources.materialize_scene",
+                "app.modules.media.mesh_measurements.signed_mesh_integral",
+                "app.modules.media.mesh_render.render_scene_thumbnail",
+                "printstash_core.mesh.rasterizer.render_scene_thumbnail",
+                "printstash_core.mesh.render_scene_thumbnail",
+            )
+            for module, name in (target.rsplit(".", 1),)
+            for source in (
+                f"from {module} import {name} as direct",
+                f"import {module} as owner\nowner.{name}(source)",
+                f"import {module} as owner\ncallback = owner.{name}",
+            )
+        ],
+    )
+    def test_rejects_retained_scene_bypasses(self, source, target):
+        assert target in _violations(source, "app.modules.media")
 
     def test_allows_safe_consumers(self):
         assert (
