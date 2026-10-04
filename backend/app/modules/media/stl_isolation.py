@@ -1,10 +1,9 @@
 """Convert a mesh to STL in a disposable worker process.
 
-The 3D viewer converts a 3MF or OBJ to STL on demand, inside a request, from a
-file a user uploaded: the one place a person can make the server parse a mesh at
-will. In the API process an out-of-memory kill there takes every request with it
-(#259). The parent supervises a child exactly as it does for mesh derivatives
-(`mesh_isolation`), so a file that exhausts memory or time costs one request.
+Viewer demand is persisted as a derivative Job before native work starts. The
+Job supervises a child exactly as other mesh derivatives do (`mesh_isolation`),
+so a file that exhausts memory or time preserves its reason without taking the
+API process down (#259).
 
 The converted mesh is written to a file the parent owns, because an STL of a large
 model is far bigger than a reply frame should be; the reply says how many bytes
@@ -23,6 +22,7 @@ from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
 SIZE_MAGIC = b"STL1"
 NOTHING_MAGIC = b"NONE"
+FAILURE_MAGIC = b"FAIL"
 # Binary STL is 50 bytes a face plus an 84-byte header. A worker admitted to the
 # analysis ceiling of 2,000,000 faces writes about 100 MB, so this is generous.
 MAX_STL_BYTES = 256 * 1024 * 1024
@@ -38,6 +38,14 @@ def decode_reply(payload: bytes) -> int | None:
     """The number of bytes written, or None when there was nothing to convert."""
     if payload == NOTHING_MAGIC:
         return None
+    if payload.startswith(FAILURE_MAGIC):
+        try:
+            reason = ThumbnailFailureReason(
+                payload[len(FAILURE_MAGIC) :].decode("ascii")
+            )
+        except (ValueError, UnicodeDecodeError):
+            raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED) from None
+        raise MeshWorkerError(reason)
     if len(payload) == len(SIZE_MAGIC) + 8 and payload.startswith(SIZE_MAGIC):
         return struct.unpack("!Q", payload[len(SIZE_MAGIC) :])[0]
     raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
@@ -46,8 +54,8 @@ def decode_reply(payload: bytes) -> int | None:
 def to_stl_bytes(path: Path, *, file_type: str | None = None) -> bytes | None:
     """`mesh_processing.to_stl_bytes`, run in a supervised child.
 
-    Returns None when the mesh cannot be converted (unreadable, or over budget);
-    raises `MeshWorkerError` when the worker was killed, timed out or died.
+    Returns None when the mesh cannot be converted (unreadable);
+    raises `MeshWorkerError` for a resource refusal, kill, timeout or worker failure.
     """
     if mesh_processing._canonical_suffix(path, file_type) == ".stl":
         # Already STL: the bytes are returned untouched and nothing is parsed.
@@ -73,6 +81,8 @@ def to_stl_bytes(path: Path, *, file_type: str | None = None) -> bytes | None:
             written = output.stat().st_size
         except OSError as exc:
             raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED) from exc
-        if written != size or size > MAX_STL_BYTES:
+        if size > MAX_STL_BYTES:
+            raise MeshWorkerError(ThumbnailFailureReason.RESOURCE_LIMIT)
+        if written != size:
             raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
         return output.read_bytes()

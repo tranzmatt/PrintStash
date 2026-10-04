@@ -4157,5 +4157,12 @@
   "Deployment default: {value}": "Deployment default: {value}",
   "Use deployment default": "Use deployment default",
   "Derivative processing is disabled by the administrator.": "Derivative processing is disabled by the administrator.",
-  "viewer.processingDisabled": "Toolpath preview processing is disabled."
+  "viewer.processingDisabled": "Toolpath preview processing is disabled.",
+  "3D preview": "3D preview",
+  "3D preview omitted due to memory limits": "3D preview omitted due to memory limits",
+  "3D preview preparation timed out": "3D preview preparation timed out",
+  "This file cannot be converted to a 3D preview": "This file cannot be converted to a 3D preview",
+  "3D preview processing is disabled": "3D preview processing is disabled",
+  "3D preview preparation was cancelled": "3D preview preparation was cancelled",
+  "Preparing 3D preview…": "Preparing 3D preview…"
 }

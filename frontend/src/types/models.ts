@@ -409,6 +409,7 @@ export type JobKind =
   | "derivatives.gcode"
   | "derivatives.mesh"
   | "derivatives.toolpath"
+  | "derivatives.viewer_stl"
   | "identity.retention"
   | "inference.model_download"
   | "ingestion.archive_inspect"
@@ -455,7 +456,7 @@ export type LaneName =
   | "similarity";
 
 /** An output derived from an Artifact's bytes: the backend's `DerivativeKind`. */
-export type DerivativeKind = "metadata" | "thumbnail" | "toolpath";
+export type DerivativeKind = "metadata" | "thumbnail" | "toolpath" | "viewer_stl";
 
 export type WorkPriority = "interactive" | "backfill";
 
