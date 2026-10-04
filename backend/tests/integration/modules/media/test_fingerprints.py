@@ -11,7 +11,7 @@ from printstash_core.mesh.similarity import fingerprint_mesh
 from app.core.config import _overlay
 from app.modules.media import mesh_loading, mesh_policy
 from app.modules.media.fingerprints import SH_BASIS_DIGEST, FingerprintResultState
-from app.modules.media.mesh_contracts import ThumbnailRequest
+from app.modules.media.mesh_contracts import GeometryReady, ThumbnailRequest
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from tests.factories import content
 from tests.factories.geometry import tetrahedron, three_mf
@@ -154,26 +154,38 @@ class TestFingerprintExtraction:
             expected.keys
         )
 
-    def test_reuses_loaded_mesh_for_descriptors(self, tmp_path, monkeypatch):
-        import trimesh
-
+    def test_reuses_loaded_mesh_for_descriptors(self, tmp_path, count_source_reads):
+        # The source exceeds the admission probe so full parsing reads are
+        # distinguishable from bounded size/header inspection.
+        mesh = tetrahedron().subdivide().subdivide()
         path = tmp_path / "part.stl"
-        path.write_bytes(tetrahedron().export(file_type="stl"))
-        load = trimesh.load_scene
-        calls = []
-
-        def observed_load(*args, **kwargs):
-            calls.append(args[0])
-            return load(*args, **kwargs)
-
-        monkeypatch.setattr(trimesh, "load_scene", observed_load)
+        path.write_bytes(mesh.export(file_type="stl"))
+        source_bytes = path.stat().st_size
+        reads = count_source_reads(path)
 
         result = ThumbnailEngine().generate(
             ThumbnailRequest(path, width=64, include_fingerprint=True)
         )
 
+        assert result.geometry_outcome == GeometryReady()
+        assert result.geometry == pytest.approx(
+            {
+                "bbox_x_mm": 10.0,
+                "bbox_y_mm": 20.0,
+                "bbox_z_mm": 30.0,
+                "triangle_count": 64,
+                "volume_mm3": 1000.0,
+            }
+        )
+        assert result.image is not None
+        assert result.failure_reason is None
         assert result.fingerprint_result.state is FingerprintResultState.READY
-        assert len(calls) == 1
+        whole, component = result.fingerprint_result.records
+        assert whole.values["volume"] == pytest.approx(1000.0)
+        assert component.values["volume"] == pytest.approx(1000.0)
+        # Descriptors and preview consume retained geometry, not another source
+        # pass. P11's separate bounded header probe remains legitimate I/O.
+        assert [count for count in reads if count >= source_bytes] == [source_bytes]
 
     def test_embedded_preview_still_computes_geometry(self, tmp_path):
         path = tmp_path / "embedded.3mf"
