@@ -181,8 +181,8 @@ def load_step_mesh(
         return None
 
 
-def _load_3mf_mesh(path: Path, suffix: str) -> Trimesh | None:
-    """One `trimesh.Trimesh` for a 3MF, or None when it is invalid or over budget.
+def _load_3mf_mesh(path: Path, suffix: str) -> Trimesh:
+    """One placed `Trimesh` for a 3MF, with typed source refusals preserved.
 
     trimesh expands repeated build/component placements while it loads, so a few
     KiB of XML can allocate for millions of faces before any post-load check runs
@@ -190,21 +190,13 @@ def _load_3mf_mesh(path: Path, suffix: str) -> Trimesh | None:
     it parses, so every 3MF entry point shares that guard rather than the
     size-based estimate, which cannot see placements.
     """
-    from printstash_core.mesh.similarity import GeometryError
-
     from app.modules.media.mesh_resources import load_3mf
 
-    try:
-        return load_3mf(path, max_faces=mesh_policy.load_face_budget(suffix)).whole_mesh
-    except GeometryError as exc:
-        logger.warning(
-            "mesh_processing: 3MF load refused for %s (%s)", path.name, exc.code
-        )
-        return None
+    return load_3mf(path, max_faces=mesh_policy.load_face_budget(suffix)).whole_mesh
 
 
 def load_mesh(path: Path, *, file_type: str | None = None) -> Trimesh | None:
-    """Return a single `trimesh.Trimesh` for *path*, or None on failure."""
+    """Load a placed mesh; 3MF source refusals propagate as `GeometryError`."""
     import trimesh
 
     suffix = mesh_policy.canonical_suffix(path, file_type)
@@ -281,7 +273,7 @@ def to_stl_bytes(path: Path, *, file_type: str | None = None) -> Optional[bytes]
     """Convert any supported mesh file to binary STL bytes.
 
     If *path* is already an STL, its raw bytes are returned untouched.
-    Returns None on conversion failure.
+    Returns None on conversion failure; 3MF source refusals remain typed.
     """
     if mesh_policy.canonical_suffix(path, file_type) == ".stl":
         try:

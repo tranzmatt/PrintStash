@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import io
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.budgets import (
@@ -19,6 +20,13 @@ from printstash_core.mesh.similarity.components import (
     MeshResource,
     expand_scene,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+    from lxml.etree import _Element
+    from numpy.typing import NDArray
+
+    NumericScalar = TypeVar("NumericScalar", np.float64, np.int64)
 
 CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 PRODUCTION_NS = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
@@ -35,14 +43,46 @@ UNITS = {
 _NAMESPACES = {"c": CORE_NS}
 
 
-def _count(mesh: Any, path: str) -> int:
+class Unsupported3MFCapability(GeometryError):
+    """A reached model requires geometry semantics the reader cannot implement."""
+
+    def __init__(self, namespace: str):
+        if not isinstance(namespace, str) or not namespace:
+            raise TypeError("invalid_capability_namespace")
+        self.namespace = namespace
+        super().__init__("unsupported_3mf_capability")
+
+
+@dataclass(frozen=True)
+class _ModelPart:
+    root: _Element
+    unit: float
+    objects: dict[str, _Element]
+
+
+def _required_capabilities(root: _Element) -> None:
+    # Prefix labels are document-local. Only their resolved URI identifies the
+    # capability; an unknown namespace called "p" is still unsupported.
+    for prefix in root.get("requiredextensions", "").split():
+        namespace = root.nsmap.get(prefix)
+        if namespace is None:
+            raise GeometryError("invalid_required_extension")
+        if namespace not in {CORE_NS, PRODUCTION_NS}:
+            raise Unsupported3MFCapability(namespace)
+
+
+def _count(mesh: _Element, path: str) -> int:
     """Child count computed inside libxml2, without an element proxy per child."""
-    return int(mesh.xpath(f"count({path})", namespaces=_NAMESPACES))
+    return int(cast(float, mesh.xpath(f"count({path})", namespaces=_NAMESPACES)))
 
 
 def _attribute_columns(
-    mesh: Any, path: str, names: tuple[str, ...], dtype: Any, count: int
-) -> Any:
+    mesh: _Element,
+    path: str,
+    names: tuple[str, ...],
+    dtype: type[NumericScalar],
+    count: int,
+) -> NDArray[NumericScalar]:
     """Read ``names`` from every ``path`` element as a ``(count, len(names))`` array.
 
     One XPath per attribute hands NumPy a flat list of strings that it converts in
@@ -52,10 +92,12 @@ def _attribute_columns(
     """
     import numpy as np
 
-    columns = []
+    columns: list[list[str]] = []
     for name in names:
-        values = mesh.xpath(
-            f"{path}/@{name}", namespaces=_NAMESPACES, smart_strings=False
+        # Attribute XPath returns a string list; NumPy validates numeric input.
+        values = cast(
+            list[str],
+            mesh.xpath(f"{path}/@{name}", namespaces=_NAMESPACES, smart_strings=False),
         )
         if len(values) != count:
             raise GeometryError("invalid_3mf")
@@ -70,8 +112,8 @@ def read_scene(path: Path, *, max_faces: int = MAX_ANALYSIS_FACES) -> ExpandedSc
     supported. Package paths stay inside the ZIP namespace and never resolve
     against the filesystem or network. DTDs/entities are refused explicitly.
     """
+    import lxml.etree as etree
     import numpy as np
-    from lxml import etree
 
     if type(max_faces) is not int or not 1 <= max_faces <= MAX_ANALYSIS_FACES:
         raise GeometryError("invalid_scene_budget")
@@ -134,10 +176,13 @@ def read_scene(path: Path, *, max_faces: int = MAX_ANALYSIS_FACES) -> ExpandedSc
                 main = target.lstrip("/")
                 if main not in model_names:
                     raise GeometryError("invalid_3mf_relationship")
-            objects: list[MeshResource | Assembly] = []
-            build: list[Instance] = []
-            total_faces = total_vertices = total_xml = 0
-            for name in model_names:
+            parts: dict[str, _ModelPart] = {}
+            total_xml = total_indexed = 0
+
+            def read_part(name: str) -> _ModelPart:
+                nonlocal total_xml, total_indexed
+                if name in parts:
+                    return parts[name]
                 info = names[name]
                 total_xml += info.file_size
                 if (
@@ -149,80 +194,111 @@ def read_scene(path: Path, *, max_faces: int = MAX_ANALYSIS_FACES) -> ExpandedSc
                     payload = stream.read(64 * 1024 * 1024 + 1)
                 if len(payload) != info.file_size:
                     raise GeometryError("invalid_archive")
-                parser = etree.XMLParser(
-                    resolve_entities=False,
-                    no_network=True,
-                    load_dtd=False,
-                    huge_tree=False,
+                tree = etree.parse(
+                    io.BytesIO(payload),
+                    etree.XMLParser(
+                        resolve_entities=False,
+                        no_network=True,
+                        load_dtd=False,
+                        huge_tree=False,
+                    ),
                 )
-                tree = etree.parse(io.BytesIO(payload), parser)
                 if tree.docinfo.doctype:
                     raise GeometryError("xml_doctype_forbidden")
                 root = tree.getroot()
                 if root.tag != f"{{{CORE_NS}}}model":
                     raise GeometryError("invalid_3mf_model")
+                _required_capabilities(root)
                 unit = UNITS.get(root.get("unit", "millimeter"))
                 if unit is None:
                     raise GeometryError("unsupported_unit")
+                indexed: dict[str, _Element] = {}
                 resources = root.find(f"{{{CORE_NS}}}resources")
                 if resources is not None:
                     for obj in resources.findall(f"{{{CORE_NS}}}object"):
-                        resource_id = f"{name}#{_object_id(obj.get('id'))}"
-                        mesh = obj.find(f"{{{CORE_NS}}}mesh")
-                        if mesh is not None:
-                            vertex_count = _count(mesh, "c:vertices/c:vertex")
-                            triangle_count = _count(mesh, "c:triangles/c:triangle")
-                            total_vertices += vertex_count
-                            total_faces += triangle_count
-                            if (
-                                total_faces > max_faces
-                                or total_vertices > MAX_ANALYSIS_VERTICES
-                            ):
-                                raise GeometryError("resource_limit")
-                            vertices = (
-                                _attribute_columns(
-                                    mesh,
-                                    "c:vertices/c:vertex",
-                                    ("x", "y", "z"),
-                                    np.float64,
-                                    vertex_count,
-                                )
-                                * unit
-                            )
-                            faces = _attribute_columns(
-                                mesh,
-                                "c:triangles/c:triangle",
-                                ("v1", "v2", "v3"),
-                                np.int64,
-                                triangle_count,
-                            )
-                            objects.append(MeshResource(resource_id, vertices, faces))
-                        else:
-                            children = obj.findall(
-                                f"{{{CORE_NS}}}components/{{{CORE_NS}}}component"
-                            )
-                            objects.append(
-                                Assembly(
-                                    resource_id,
-                                    tuple(
-                                        _instance(child, name, unit, names)
-                                        for child in children
-                                    ),
-                                )
-                            )
-                        if len(objects) > 4096:
+                        object_id = _object_id(obj.get("id"))
+                        if object_id in indexed:
+                            raise GeometryError("duplicate_resource")
+                        indexed[object_id] = obj
+                        total_indexed += 1
+                        if total_indexed > 4096:
                             raise GeometryError("scene_resource_limit")
-                if name == main:
-                    build = [
-                        _instance(item, name, unit, names)
-                        for item in root.findall(
-                            f"{{{CORE_NS}}}build/{{{CORE_NS}}}item"
+                part = _ModelPart(root, unit, indexed)
+                parts[name] = part
+                return part
+
+            main_part = read_part(main)
+            build_elements = [
+                item
+                for item in main_part.root.findall(
+                    f"{{{CORE_NS}}}build/{{{CORE_NS}}}item"
+                )
+                if item.get("printable", "1") in ("1", "true")
+            ]
+            if len(build_elements) > 2048:
+                raise GeometryError("scene_resource_limit")
+            build = tuple(
+                _instance(item, main, main_part.unit, names) for item in build_elements
+            )
+            pending = [instance.resource_id for instance in reversed(build)]
+            admitted: dict[str, MeshResource | Assembly] = {}
+            total_faces = total_vertices = 0
+            while pending:
+                resource_id = pending.pop()
+                if resource_id in admitted:
+                    continue
+                document, object_id = resource_id.rsplit("#", 1)
+                part = read_part(document)
+                obj = part.objects.get(object_id)
+                if obj is None:
+                    raise GeometryError("missing_resource")
+                mesh = obj.find(f"{{{CORE_NS}}}mesh")
+                if mesh is not None:
+                    vertex_count = _count(mesh, "c:vertices/c:vertex")
+                    triangle_count = _count(mesh, "c:triangles/c:triangle")
+                    total_vertices += vertex_count
+                    total_faces += triangle_count
+                    if (
+                        total_faces > max_faces
+                        or total_vertices > MAX_ANALYSIS_VERTICES
+                    ):
+                        raise GeometryError("resource_limit")
+                    vertices = (
+                        _attribute_columns(
+                            mesh,
+                            "c:vertices/c:vertex",
+                            ("x", "y", "z"),
+                            np.float64,
+                            vertex_count,
                         )
-                        if item.get("printable", "1") in ("1", "true")
-                    ]
-                del root, tree, payload
-            scene = expand_scene(tuple(objects), tuple(build), max_faces=max_faces)
-            return scene
+                        * part.unit
+                    )
+                    faces = _attribute_columns(
+                        mesh,
+                        "c:triangles/c:triangle",
+                        ("v1", "v2", "v3"),
+                        np.int64,
+                        triangle_count,
+                    )
+                    admitted[resource_id] = MeshResource(resource_id, vertices, faces)
+                else:
+                    children = obj.findall(
+                        f"{{{CORE_NS}}}components/{{{CORE_NS}}}component"
+                    )
+                    if len(children) + len(pending) > 4096:
+                        raise GeometryError("scene_resource_limit")
+                    assembly = Assembly(
+                        resource_id,
+                        tuple(
+                            _instance(child, document, part.unit, names)
+                            for child in children
+                        ),
+                    )
+                    admitted[resource_id] = assembly
+                    pending.extend(
+                        child.resource_id for child in reversed(assembly.children)
+                    )
+            return expand_scene(tuple(admitted.values()), build, max_faces=max_faces)
     except GeometryError:
         raise
     except (
@@ -248,7 +324,7 @@ def _object_id(value: str | None) -> str:
 
 
 def _instance(
-    element: Any, document: str, unit: float, names: dict[str, Any]
+    element: _Element, document: str, unit: float, names: dict[str, zipfile.ZipInfo]
 ) -> Instance:
     import numpy as np
 

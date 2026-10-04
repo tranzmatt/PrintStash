@@ -15,7 +15,7 @@ import time
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from printstash_core.mesh.measurements import (
     VolumeNotCalculated,
@@ -43,6 +43,7 @@ from app.modules.media import gcode_parser, mesh_isolation, stl_isolation, thumb
 from app.modules.media.mesh_contracts import (
     GeometryReady,
     GeometryRefused,
+    MeshMeasurements,
     PreviewCoverage,
     ThumbnailFailureReason,
     ThumbnailRequest,
@@ -66,16 +67,10 @@ from .kinds import group
 
 logger = get_logger(__name__)
 
-_GEOMETRY_FIELDS = (
-    "bbox_x_mm",
-    "bbox_y_mm",
-    "bbox_z_mm",
-    "volume_mm3",
-    "triangle_count",
-)
 _DETERMINISTIC = {
     ThumbnailFailureReason.INVALID_SOURCE.value,
     ThumbnailFailureReason.UNSUPPORTED_FORMAT.value,
+    ThumbnailFailureReason.UNSUPPORTED_CAPABILITY.value,
     ThumbnailFailureReason.NO_GEOMETRY.value,
     ThumbnailFailureReason.RESOURCE_LIMIT.value,
     ThumbnailFailureReason.RENDERER_NO_OUTPUT.value,
@@ -159,6 +154,7 @@ def _fail(
     deterministic: bool,
     duration_ms: int | None = None,
     peak_rss_bytes: int | None = None,
+    withdraw_geometry: bool = False,
 ) -> None:
     with get_session_factory().scoped_session() as session:
         records.mark_failed(
@@ -170,7 +166,22 @@ def _fail(
             duration_ms=duration_ms,
             peak_rss_bytes=peak_rss_bytes,
         )
+        if withdraw_geometry:
+            # mark_failed claims the current attempt, source, recipe and execution
+            # before withdrawing facts from the previous parser in this transaction.
+            meta = _metadata_row(session, attempt.file_id)
+            _apply_measurements(meta, MeshMeasurements.unavailable())
+            session.add(meta)
         session.commit()
+
+
+def _apply_measurements(meta: Metadata, measurements: MeshMeasurements) -> None:
+    meta.bbox_x_mm = measurements.geometry.get("bbox_x_mm")
+    meta.bbox_y_mm = measurements.geometry.get("bbox_y_mm")
+    meta.bbox_z_mm = measurements.geometry.get("bbox_z_mm")
+    count = measurements.geometry.get("triangle_count")
+    meta.triangle_count = cast(int | None, count)
+    apply_volume(meta, measurements.volume)
 
 
 def _publish_thumbnail(
@@ -328,6 +339,8 @@ def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outc
                 deterministic=reason in _DETERMINISTIC,
                 duration_ms=result.duration_ms,
                 peak_rss_bytes=result.peak_rss_bytes,
+                withdraw_geometry=result.geometry_outcome.reason
+                is ThumbnailFailureReason.UNSUPPORTED_CAPABILITY,
             )
             outcome[DerivativeKind.METADATA] = DerivativeState.FAILED
         elif isinstance(result.geometry_outcome, GeometryReady):
@@ -341,9 +354,9 @@ def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outc
                     peak_rss_bytes=result.peak_rss_bytes,
                 )
                 meta = _metadata_row(session, file_id)
-                for name in _GEOMETRY_FIELDS:
-                    setattr(meta, name, result.geometry.get(name))
-                apply_volume(meta, result.volume)
+                _apply_measurements(
+                    meta, MeshMeasurements(result.geometry, result.volume)
+                )
                 session.add(meta)
                 session.commit()
             outcome[DerivativeKind.METADATA] = DerivativeState.READY
@@ -655,6 +668,7 @@ def _derive_viewer_stl(
                 ThumbnailFailureReason.RESOURCE_LIMIT,
                 ThumbnailFailureReason.INVALID_SOURCE,
                 ThumbnailFailureReason.UNSUPPORTED_FORMAT,
+                ThumbnailFailureReason.UNSUPPORTED_CAPABILITY,
                 ThumbnailFailureReason.NO_GEOMETRY,
             },
         )

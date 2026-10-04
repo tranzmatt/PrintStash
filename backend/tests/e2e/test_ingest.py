@@ -25,10 +25,11 @@ from PIL import Image
 from sqlmodel import select
 
 from app.core.config import _overlay, settings
-from app.db.models import ArtifactDerivative
+from app.db.models import ArtifactDerivative, GeometryFingerprint
 from app.schemas.orca import OrcaNativeContext
 from tests.e2e._jobs import settle
 from tests.factories.geometry import three_mf
+from tests.factories.three_mf_pilot import load_case, opc_package
 from tests.fixtures.three_mf_projects import build_3d_builder_component_project
 from tests.paths import FIXTURES_DIR
 
@@ -526,6 +527,79 @@ class TestMetadata:
             np.asarray([[110.0, 220.0, 330.0], [112.0, 223.0, 334.0]]),
             atol=1e-5,
         )
+
+
+class TestThreeMFCapabilities:
+    @pytest.mark.asyncio
+    async def test_required_extension_refusal_preserves_independent_artifacts(
+        self, api, tmp_path, e2e_db
+    ):
+        preview = io.BytesIO()
+        color = (220, 40, 120)
+        Image.new("RGB", (32, 24), color).save(preview, format="PNG")
+        payload = opc_package(
+            load_case("unknown-required-extension").payload,
+            mutations={"Metadata/thumbnail.png": preview.getvalue()},
+        )
+        headers = await _setup_and_login(api, tmp_path)
+        configured = await api.patch(
+            "/api/v1/similarity/settings",
+            headers=headers,
+            json={"enabled": True, "fingerprint_on_ingest": True},
+        )
+        assert configured.status_code == 200, configured.text
+        uploaded = await api.post(
+            "/api/v1/ingest/model",
+            files={"file": ("unsupported.3mf", payload, "model/3mf")},
+            data={"model_name": "Unsupported required extension"},
+            headers=headers,
+        )
+        assert uploaded.status_code == 202, uploaded.text
+        job = await _await_job(api, headers, uploaded.json()["job_id"])
+        assert job["state"] == "completed", job
+        file_id = job["file_id"]
+        derivatives = await api.get(
+            f"/api/v1/files/{file_id}/derivatives", headers=headers
+        )
+        assert derivatives.status_code == 200, derivatives.text
+        metadata = next(row for row in derivatives.json() if row["kind"] == "metadata")
+        assert metadata["state"] == "failed", metadata
+        assert metadata["failure_reason"] == "unsupported_capability"
+        fingerprint = e2e_db.exec(
+            select(GeometryFingerprint).where(GeometryFingerprint.file_id == file_id)
+        ).one()
+        assert fingerprint.state == "unsupported"
+        assert fingerprint.failure_code == "unsupported_3mf_capability"
+        assert fingerprint.physical_hash_0 is None
+        assert fingerprint.face_count is None
+        thumbnail = await _thumbnail_derivative(api, headers, file_id)
+        assert thumbnail["state"] == "ready", thumbnail
+        assert _thumbnail_output(e2e_db, file_id)["strategy"] == "embedded"
+        image_response = await api.get(
+            f"/api/v1/files/{file_id}/thumbnail", headers=headers
+        )
+        assert image_response.status_code == 200, image_response.text
+        with Image.open(io.BytesIO(image_response.content)) as image:
+            assert (
+                tuple(
+                    image.convert("RGB").getpixel((image.width // 2, image.height // 2))
+                )
+                == color
+            )
+        accepted = await api.get(f"/api/v1/files/{file_id}/stl", headers=headers)
+        assert accepted.status_code == 202, accepted.text
+        settle()
+        refused = await api.get(f"/api/v1/files/{file_id}/stl", headers=headers)
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["detail"] == "unsupported_capability"
+        original = await api.get(f"/api/v1/files/{file_id}/download", headers=headers)
+        assert original.status_code == 200, original.text
+        assert original.content == payload
+        still_ready = await api.get(
+            f"/api/v1/files/{file_id}/thumbnail", headers=headers
+        )
+        assert still_ready.status_code == 200, still_ready.text
+        assert still_ready.content == image_response.content
 
 
 class TestHardlinklessStaging:

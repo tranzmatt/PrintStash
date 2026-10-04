@@ -242,9 +242,22 @@ new recipe makes work eligible; timeout backoff keeps the configured maximum.
 Original downloads and signed slicer downloads continue to use Artifact bytes.
 
 
+## 3MF required capabilities
+
+The [3MF capability policy](3mf-capabilities.md) applies to reached Core model
+parts and the supported Production external-reference subset. Unknown required
+namespaces produce `unsupported_capability` metadata/viewer refusals and
+`unsupported_3mf_capability` fingerprint refusals. No incomplete geometry is
+published as successful. Original downloads remain usable, and a validated
+embedded preview can independently become ready. Mesh metadata recipe 10,
+thumbnail recipe 9 and viewer STL recipe 2 refresh outputs under this policy;
+the fingerprint mathematical algorithm is unchanged. Its interpretation cache
+version advances to `geometry-v5-sh5f4577c4`, so earlier candidate evidence remains
+historical rather than actionable as a current interpretation.
+
 ## On-demand 3D viewer STL
 
-`viewer_stl` recipe 1 is produced by `derivatives.viewer_stl` in `derive.native`.
+`viewer_stl` recipe 2 is produced by `derivatives.viewer_stl` in `derive.native`.
 Only 3MF, OBJ and STEP Artifacts with `files.viewer_requested_at` set are eligible;
 uploads, scans and card hover do not request conversion. The first authorized
 `GET /api/v1/files/{id}/stl` (or the scoped share endpoint) persists this demand

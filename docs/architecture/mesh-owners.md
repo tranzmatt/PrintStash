@@ -9,7 +9,9 @@ none imports the compatibility facade or thumbnail/analysis orchestration.
 | Materialized source loading, isolated STEP conversion and STL export | `app.modules.media.mesh_loading` | `load_mesh`, `load_step_mesh`, `to_stl_bytes` |
 | Source dimensions and signed volume evidence | `app.modules.media.mesh_measurements` | `geometry_from_mesh` |
 | Bounded embedded 3MF preview extraction | `app.modules.media.mesh_previews` | `extract_embedded_3mf_thumbnail` |
-| Typed request, measurement and thumbnail results | `app.modules.media.mesh_contracts` | Shared data contracts |
+| Typed request, measurement and thumbnail results | `app.modules.media.mesh_contracts` | Shared data contracts, `MeshMeasurements.unavailable` |
+| Bounded 3MF source parsing and reachable resource ownership | `app.modules.media.three_mf_scene` | `read_scene` |
+| Explicit materialized mesh preparation | `app.modules.media.mesh_resources` | `load_3mf`, `prepare_loaded_mesh` |
 
 Admission gates and cached detected memory ceilings live only in `mesh_policy`.
 Loading remains lazy and preserves scene placements. Measurements preserve source

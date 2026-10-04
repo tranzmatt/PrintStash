@@ -72,6 +72,7 @@ from app.modules.media.mesh_telemetry import (
     PhaseRecorder,
 )
 from app.modules.media.stl_reader import InvalidSTL, STLReadFailure, scan_stl
+from app.modules.media.three_mf_scene import Unsupported3MFCapability
 
 if TYPE_CHECKING:
     from trimesh import Trimesh
@@ -245,15 +246,21 @@ class ThumbnailEngine:
                                     "scene_resource_limit",
                                 }:
                                     over_cap = True
+                                refusal = (
+                                    ThumbnailFailureReason.UNSUPPORTED_CAPABILITY
+                                    if isinstance(exc, Unsupported3MFCapability)
+                                    else ThumbnailFailureReason.RESOURCE_LIMIT
+                                    if over_cap
+                                    else ThumbnailFailureReason.INVALID_SOURCE
+                                )
+                                failure = refusal
                                 if request.include_geometry:
-                                    geometry_outcome = GeometryRefused(
-                                        ThumbnailFailureReason.RESOURCE_LIMIT
-                                        if over_cap
-                                        else ThumbnailFailureReason.INVALID_SOURCE
-                                    )
+                                    geometry_outcome = GeometryRefused(refusal)
                                 if request.include_fingerprint:
                                     fingerprint_result = FingerprintResult(
-                                        FingerprintResultState.FAILED,
+                                        FingerprintResultState.UNSUPPORTED
+                                        if isinstance(exc, Unsupported3MFCapability)
+                                        else FingerprintResultState.FAILED,
                                         failure_code=FingerprintFailureCode(exc.code),
                                     )
                         elif request.include_fingerprint and suffix in (

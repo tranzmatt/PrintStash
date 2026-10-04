@@ -6,6 +6,7 @@ import io
 import json
 import os
 import weakref
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -32,7 +33,11 @@ from app.modules.media.mesh_contracts import (
     ThumbnailRequest,
     ThumbnailStrategy,
 )
-from app.modules.media.mesh_facts import CompleteGeometry, SampledGeometry
+from app.modules.media.mesh_facts import (
+    CompleteGeometry,
+    FingerprintFailureCode,
+    SampledGeometry,
+)
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.media.worker_bootstrap import WORKER_MARKER
 from tests.factories import content
@@ -940,3 +945,53 @@ class TestCoverage:
         assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
         assert result.fingerprint_result.state is FingerprintResultState.PARTIAL
         assert all(value is None for value in result.geometry.values())
+
+
+class TestUnsupported3MFCapability:
+    @pytest.mark.parametrize("embedded", [False, True])
+    def test_refuses_required_capability_without_losing_document_preview(
+        self, tmp_path, embedded
+    ):
+        preview = content.png()
+        original = three_mf(
+            extras={"Metadata/thumbnail.png": preview} if embedded else None
+        )
+        with zipfile.ZipFile(io.BytesIO(original)) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        entries["3D/3dmodel.model"] = entries["3D/3dmodel.model"].replace(
+            b"<model ",
+            b'<model xmlns:future="urn:printstash:test:unsupported" requiredextensions="future" ',
+            1,
+        )
+        source = tmp_path / "required.3mf"
+        source.write_bytes(content.zip_bytes(entries))
+        before = source.read_bytes()
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_fingerprint=True)
+        )
+
+        assert result.geometry_outcome == GeometryRefused(
+            ThumbnailFailureReason.UNSUPPORTED_CAPABILITY
+        )
+        assert result.geometry["triangle_count"] is None
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+        )
+        assert result.fingerprint_result.state is FingerprintResultState.UNSUPPORTED
+        assert (
+            result.fingerprint_result.failure_code
+            is FingerprintFailureCode.UNSUPPORTED_3MF_CAPABILITY
+        )
+        assert result.fingerprint_result.records == ()
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert source.read_bytes() == before
+        if embedded:
+            assert result.image == preview
+            assert result.strategy is ThumbnailStrategy.EMBEDDED
+            assert result.coverage.preview is PreviewCoverage.DOCUMENT_SUPPLIED
+        else:
+            assert result.image is None
+            assert (
+                result.failure_reason is ThumbnailFailureReason.UNSUPPORTED_CAPABILITY
+            )

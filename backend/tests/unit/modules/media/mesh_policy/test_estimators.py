@@ -103,27 +103,28 @@ class TestEstimateTriangleCount:
         assert est == p.stat().st_size // 250
         assert est > 0
 
-    def test_3mf_triangle_count_from_uncompressed_xml(self, tmp_path: Path) -> None:
+    def test_3mf_reserves_an_unknown_count_for_the_bounded_reader(
+        self, tmp_path: Path
+    ) -> None:
         p = tmp_path / "dense.3mf"
         model_xml = b"<triangle/>" * 10_000  # 110_000 bytes of "mesh"
         with zipfile.ZipFile(p, "w") as zf:
             zf.writestr("3D/3dmodel.model", model_xml)
-        # ~70 bytes per triangle proxy.
-        assert mesh_policy.estimate_triangle_count(p) == len(model_xml) // 70
+        # XML includes unused resources and omits placement multiplicity.
+        assert mesh_policy.estimate_triangle_count(p) is None
 
-    def test_3mf_without_model_part_falls_back_to_total_uncompressed_size(
+    def test_3mf_without_model_part_stays_unknown_for_the_bounded_reader(
         self,
         tmp_path: Path,
     ) -> None:
-        # No ".model" entry: the estimator must not return None (which would let the
-        # archive load blind). It falls back to the total uncompressed payload as a
-        # conservative upper bound (issue #29).
+        # The bounded reader diagnoses absent geometry without inventing a
+        # triangle count from unrelated archive bytes.
         p = tmp_path / "weird.3mf"
         payload = b"x" * 700_000
         with zipfile.ZipFile(p, "w", zipfile.ZIP_STORED) as zf:
             zf.writestr("3D/mesh.bin", payload)
         est = mesh_policy.estimate_triangle_count(p)
-        assert est == len(payload) // 70
+        assert est is None
 
     def test_ply_face_count_from_header(self, tmp_path: Path) -> None:
         p = tmp_path / "scan.ply"

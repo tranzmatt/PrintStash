@@ -1,16 +1,19 @@
 """The 3MF source reader owns unique arrays before any consumer materializes them."""
 
+import io
 import json
 import subprocess
 import sys
+import zipfile
 
 import numpy as np
 import pytest
 import trimesh
 from printstash_core.mesh.similarity import GeometryError, components
 
-from app.modules.media import mesh_resources
-from app.modules.media.three_mf_scene import read_scene
+from app.modules.media import mesh_resources, three_mf_scene
+from app.modules.media.three_mf_scene import Unsupported3MFCapability, read_scene
+from tests.factories.content import zip_bytes
 from tests.factories.geometry import tetrahedron, three_mf
 from tests.paths import BACKEND_DIR
 
@@ -68,9 +71,10 @@ class TestReadScene:
                 build=((2, "1 0 0 0 1 0 0 0 1 100 200 300"),),
             )
         )
-        expected_vertices = np.array(
-            [[103, 204, 305], [83, 204, 305], [101, 244, 305], [99, 210, 365]]
-        ) * 25.4
+        expected_vertices = (
+            np.array([[103, 204, 305], [83, 204, 305], [101, 244, 305], [99, 210, 365]])
+            * 25.4
+        )
         expected_faces = np.array([[1, 2, 0], [3, 1, 0], [2, 3, 0], [3, 2, 1]])
 
         scene = read_scene(path)
@@ -146,10 +150,12 @@ class TestReadScene:
         path = tmp_path / "native-free.3mf"
         path.write_bytes(three_mf())
         source = """
+import io
 import json
+import zipfile
 import sys
 from pathlib import Path
-from app.modules.media.three_mf_scene import read_scene
+from app.modules.media.three_mf_scene import Unsupported3MFCapability, read_scene
 scene = read_scene(Path(sys.argv[1]))
 print(json.dumps({
     "resource_bytes": sum(resource.vertices.nbytes + resource.faces.nbytes for resource in scene.resources),
@@ -171,3 +177,187 @@ print(json.dumps({
             "resource_bytes": 192,
             "forbidden": [],
         }
+
+
+def _model_with_attributes(attributes: str) -> bytes:
+    with zipfile.ZipFile(io.BytesIO(three_mf())) as archive:
+        model = archive.read("3D/3dmodel.model")
+    return model.replace(b"<model ", b"<model " + attributes.encode() + b" ", 1)
+
+
+class TestRequiredCapabilities:
+    @pytest.mark.parametrize(
+        "attributes",
+        [
+            'xmlns:q="urn:printstash:unknown" requiredextensions="q"',
+            'xmlns:p="urn:printstash:unknown" requiredextensions="p"',
+            'xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02" requiredextensions="m"',
+            'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" xmlns:q="urn:printstash:unknown" requiredextensions="p q"',
+        ],
+    )
+    def test_refuses_unknown_required_namespace(self, tmp_path, attributes):
+        path = tmp_path / "required.3mf"
+        path.write_bytes(
+            zip_bytes({"3D/3dmodel.model": _model_with_attributes(attributes)})
+        )
+
+        with pytest.raises(
+            Unsupported3MFCapability, match="unsupported_3mf_capability"
+        ) as error:
+            read_scene(path)
+        assert error.value.namespace in {
+            "urn:printstash:unknown",
+            "http://schemas.microsoft.com/3dmanufacturing/material/2015/02",
+        }
+
+    def test_refuses_an_undeclared_required_prefix(self, tmp_path):
+        path = tmp_path / "undeclared.3mf"
+        path.write_bytes(
+            zip_bytes(
+                {"3D/3dmodel.model": _model_with_attributes('requiredextensions="q"')}
+            )
+        )
+
+        with pytest.raises(GeometryError, match="invalid_required_extension"):
+            read_scene(path)
+
+    @pytest.mark.parametrize(
+        "attributes",
+        [
+            'xmlns:q="urn:printstash:unknown"',
+            'xmlns:alternate="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="alternate"',
+        ],
+    )
+    def test_accepts_compatible_namespace_metadata(
+        self, tmp_path, attributes
+    ):
+        path = tmp_path / "supported.3mf"
+        path.write_bytes(
+            zip_bytes({"3D/3dmodel.model": _model_with_attributes(attributes)})
+        )
+
+        scene = read_scene(path)
+
+        assert len(scene.resources) == len(scene.instances) == 1
+        np.testing.assert_array_equal(
+            np.ptp(scene.resources[0].vertices, axis=0), [10, 20, 30]
+        )
+
+
+class TestReachedResources:
+    @pytest.mark.parametrize(
+        "unused",
+        [
+            b"broken<xml",
+            _model_with_attributes(
+                'xmlns:q="urn:printstash:unknown" requiredextensions="q"'
+            ),
+        ],
+    )
+    def test_ignores_unreachable_model_parts(self, tmp_path, unused):
+        path = tmp_path / "unused-part.3mf"
+        path.write_bytes(three_mf(extras={"3D/unused.model": unused}))
+
+        scene = read_scene(path)
+
+        assert len(scene.resources) == len(scene.instances) == 1
+        assert scene.resources[0].resource_id == "3D/3dmodel.model#1"
+        np.testing.assert_array_equal(
+            np.ptp(scene.resources[0].vertices, axis=0), [10, 20, 30]
+        )
+
+    def test_does_not_allocate_arrays_for_unreachable_objects(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "unused-resource.3mf"
+        path.write_bytes(three_mf(meshes={1: tetrahedron(), 2: tetrahedron()}))
+        converted = []
+        original = three_mf_scene._attribute_columns
+
+        def capture(mesh, *args):
+            converted.append(mesh.getparent().get("id"))
+            return original(mesh, *args)
+
+        monkeypatch.setattr(three_mf_scene, "_attribute_columns", capture)
+
+        scene = read_scene(path)
+
+        assert converted == ["1", "1"]
+        assert len(scene.resources) == 1
+        assert (
+            scene.resources[0].vertices.nbytes + scene.resources[0].faces.nbytes == 192
+        )
+
+
+class TestReachedPartValidation:
+    @pytest.mark.parametrize(
+        "child, error",
+        [
+            (b"broken<xml", "invalid_3mf"),
+            (
+                _model_with_attributes(
+                    'xmlns:q="urn:printstash:unknown" requiredextensions="q"'
+                ),
+                "unsupported_3mf_capability",
+            ),
+            (
+                _model_with_attributes('requiredextensions="missing"'),
+                "invalid_required_extension",
+            ),
+        ],
+    )
+    def test_validates_a_referenced_external_part(self, tmp_path, child, error):
+        path = tmp_path / "referenced.3mf"
+        path.write_bytes(
+            three_mf(
+                meshes={},
+                assemblies={2: [(1, None)]},
+                build=((2, None),),
+                external_paths={1: "/3D/child.model"},
+                extras={"3D/child.model": child},
+            )
+        )
+
+        with pytest.raises(GeometryError, match=error):
+            read_scene(path)
+
+    def test_ignores_unused_source_faces_under_the_caller_budget(self, tmp_path):
+        path = tmp_path / "unique-budget.3mf"
+        path.write_bytes(three_mf(meshes={1: tetrahedron(), 2: tetrahedron()}))
+
+        scene = read_scene(path, max_faces=4)
+
+        assert len(scene.resources) == len(scene.instances) == 1
+        assert len(scene.resources[0].faces) == 4
+
+    def test_refuses_reached_geometry_before_array_allocation(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "before-allocation.3mf"
+        path.write_bytes(three_mf())
+        monkeypatch.setattr(
+            three_mf_scene,
+            "_attribute_columns",
+            lambda *_: pytest.fail("must admit source before allocating arrays"),
+        )
+
+        with pytest.raises(GeometryError, match="resource_limit"):
+            read_scene(path, max_faces=3)
+
+    def test_preserves_declared_main_over_malformed_unreachable_part(self, tmp_path):
+        path = tmp_path / "declared.3mf"
+        path.write_bytes(
+            three_mf(
+                model_part="3D/z-build.model",
+                relationship_target="/3D/z-build.model",
+                extras={
+                    "3D/3dmodel.model": b"broken<xml",
+                    "3D/a-unused.model": b"broken<xml",
+                },
+            )
+        )
+
+        scene = read_scene(path)
+
+        assert scene.resources[0].resource_id == "3D/z-build.model#1"
+        assert len(scene.resources[0].faces) == 4
