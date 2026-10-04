@@ -45,6 +45,9 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Small meshes placed far from the coordinate origin retain their thumbnail
   geometry and shading. Visual recipes now refresh previews, view fingerprints,
   and derived image vectors while preserving original files and encoder assets.
+- Geometric verification reuses an exact point index and preserves nearest-point
+  distances for models placed far from the origin. Previous pair proofs are
+  rechecked under the new verifier recipe while retaining review decisions.
 - Ingest acceptance keeps the API event loop responsive while staging files,
   recording work and notifying the background engine.
 
