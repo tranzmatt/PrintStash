@@ -31,6 +31,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from printstash_core.mesh.measurements import decode_volume, encode_volume
 from printstash_core.mesh.similarity import GeometryError
 
 from app import __file__ as application_file
@@ -141,6 +142,7 @@ def encode_reply(result: ThumbnailResult) -> bytes:
         {
             "phase_stats": encode_phase_stats(result.phase_stats),
             "geometry": result.geometry,
+            "volume": encode_volume(result.volume),
             "geometry_outcome": encode_geometry(result.geometry_outcome),
             "strategy": result.strategy.value,
             "complete": result.complete,
@@ -213,6 +215,7 @@ def decode_reply(payload: bytes) -> ThumbnailResult:
         return ThumbnailResult(
             image=image if header["has_image"] else None,
             geometry=dict(header["geometry"]),
+            volume=decode_volume(header["volume"]),
             geometry_outcome=decode_geometry(header["geometry_outcome"]),
             strategy=ThumbnailStrategy(header["strategy"]),
             complete=bool(header["complete"]),

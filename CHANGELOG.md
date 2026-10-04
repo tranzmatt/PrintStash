@@ -23,6 +23,11 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   production DBOS ingestion through separate reproducible benchmark paths.
   Preserve phase costs, resource observations and failed samples, with an expanded
   versioned corpus and opt-in large inputs and hash-pinned real slicer projects.
+- Publish explicit mesh volume state, method and cause independently of similarity
+  fingerprints. Preserve historical scalar provenance, keep small measurements
+  unrounded and evaluate signed volume accurately across large translations.
+  Reject nonphysical dimensions before publication and repair unusable historical
+  measurements during the additive upgrade.
 
 - Add a frozen synthetic mesh contract corpus and record benchmark environment, limits, versions and target expectations separately from observed render results.
 

@@ -6,6 +6,10 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from printstash_core.mesh.measurements import (
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+)
 
 from app.modules.media.mesh_contracts import (
     GeometryReady,
@@ -25,8 +29,9 @@ from tests.factories import content
 def native_result() -> ThumbnailResult:
     return ThumbnailResult(
         image=content.png(),
-        geometry={},
+        geometry={"volume_mm3": None},
         geometry_outcome=GeometryReady(),
+        volume=VolumeNotCalculated(VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED),
         strategy=ThumbnailStrategy.FULL,
         complete=True,
         failure_reason=None,
@@ -123,6 +128,7 @@ class TestMeasureWorker:
         refused = replace(
             native_result,
             geometry_outcome=GeometryRefused(ThumbnailFailureReason.RESOURCE_LIMIT),
+            volume=VolumeNotCalculated(VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE),
         )
         monkeypatch.setattr(benchmark_native, "generate", lambda request: refused)
         result = benchmark_native.measure_worker(Path("cube.stl"), input_identity)

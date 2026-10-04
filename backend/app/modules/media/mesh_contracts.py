@@ -12,6 +12,14 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Protocol
 
+from printstash_core.mesh.measurements import (
+    VolumeLegacyUnassessed,
+    VolumeMeasurement,
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+    validate_geometry_extents,
+    volume_value,
+)
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 
 from app.modules.media.mesh_telemetry import PhaseStats, SupervisionStats
@@ -61,6 +69,18 @@ GeometryOutcome = GeometryReady | GeometryRefused | GeometryNotRequested
 
 
 @dataclass(frozen=True)
+class MeshMeasurements:
+    geometry: Geometry
+    volume: VolumeMeasurement
+
+    def __post_init__(self) -> None:
+        validate_geometry_extents(self.geometry)
+        scalar = self.geometry["volume_mm3"]
+        if isinstance(scalar, bool) or scalar != volume_value(self.volume):
+            raise ValueError("volume scalar disagrees with measurement evidence")
+
+
+@dataclass(frozen=True)
 class ThumbnailRequest:
     path: Path
     file_type: str | None = None
@@ -80,6 +100,7 @@ class ThumbnailResult:
     image: bytes | None
     geometry: Geometry
     geometry_outcome: GeometryOutcome
+    volume: VolumeMeasurement
     strategy: ThumbnailStrategy
     complete: bool
     failure_reason: ThumbnailFailureReason | None
@@ -88,6 +109,28 @@ class ThumbnailResult:
     fingerprint_result: FingerprintResult | None = None
     phase_stats: tuple[PhaseStats, ...] = ()
     supervision: SupervisionStats | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(
+            self.geometry_outcome, GeometryNotRequested
+        ) and self.volume != VolumeNotCalculated(
+            VolumeNotCalculatedCause.NOT_REQUESTED
+        ):
+            raise ValueError("volume was not requested")
+        if isinstance(
+            self.geometry_outcome, GeometryRefused
+        ) and self.volume != VolumeNotCalculated(
+            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+        ):
+            raise ValueError("refused geometry cannot carry assessed volume")
+        if isinstance(self.volume, VolumeNotCalculated) and self.volume.cause in (
+            VolumeNotCalculatedCause.ENRICHMENT_PENDING,
+            VolumeNotCalculatedCause.NOT_APPLICABLE,
+        ):
+            raise ValueError("native output cannot carry durable row volume causes")
+        if isinstance(self.volume, VolumeLegacyUnassessed):
+            raise ValueError("native output cannot be legacy unassessed")
+        MeshMeasurements(self.geometry, self.volume)
 
 
 class ThumbnailMetricsSink(Protocol):
