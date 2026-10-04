@@ -99,4 +99,8 @@ class TestMeshMeasurementEvidence:
         derived = next(
             output for output in listing.json() if output["kind"] == "metadata"
         )
-        assert (derived["state"], derived["recipe_version"]) == ("ready", 9)
+        from app.modules.derivatives.kinds import MESH_GEOMETRY_RECIPE
+
+        assert (derived["state"], derived["recipe_version"]) == (
+            "ready", MESH_GEOMETRY_RECIPE
+        )

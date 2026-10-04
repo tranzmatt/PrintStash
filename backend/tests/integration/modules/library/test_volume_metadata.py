@@ -248,7 +248,7 @@ class TestVolumeRecipeRefresh:
         previous = make_derivative(artifact, DerivativeKind.METADATA, recipe_version=8)
         make_derivative(artifact, DerivativeKind.THUMBNAIL)
         source = DerivativeSource(group(JobKind.DERIVATIVES_MESH))
-        assert MESH_GEOMETRY_RECIPE == 9
+        assert previous.recipe_version < MESH_GEOMETRY_RECIPE
         assert previous.recipe_version == 8
         assert previous.state is DerivativeState.READY
         assert [

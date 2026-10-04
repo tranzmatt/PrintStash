@@ -188,14 +188,15 @@ class TestAnalyzeMesh:
     def test_over_cap_3mf_still_gets_embedded_preview(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1000)
+        monkeypatch.setitem(_overlay, "mesh_max_load_mb", 1)
         png = _valid_preview_png()
         p = tmp_path / "dense.3mf"
         with zipfile.ZipFile(p, "w") as zf:
             zf.writestr(
                 "3D/3dmodel.model", b"<triangle/>" * 100_000
-            )  # ~157k tris, over cap
+            )
             zf.writestr("Metadata/thumbnail.png", png)
+        assert p.stat().st_size > 1024 * 1024
 
         monkeypatch.setattr(
             mesh_loading,
@@ -212,11 +213,10 @@ class TestAnalyzeMesh:
     def test_large_3mf_uses_embedded_preview_when_flag_on(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        monkeypatch.setitem(
-            _overlay, "mesh_max_render_triangles", 1000
-        )  # 3MF is over cap
+        monkeypatch.setitem(_overlay, "mesh_max_load_mb", 1)
         monkeypatch.setitem(_overlay, "use_embedded_3mf_preview_for_large_files", True)
         p, png = _over_cap_3mf_with_preview(tmp_path)
+        assert p.stat().st_size > 1024 * 1024
         monkeypatch.setattr(
             mesh_loading,
             "load_mesh",
@@ -231,9 +231,10 @@ class TestAnalyzeMesh:
     def test_large_3mf_skips_embedded_preview_when_flag_off(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1000)
+        monkeypatch.setitem(_overlay, "mesh_max_load_mb", 1)
         monkeypatch.setitem(_overlay, "use_embedded_3mf_preview_for_large_files", False)
         p, _png = _over_cap_3mf_with_preview(tmp_path)
+        assert p.stat().st_size > 1024 * 1024
         monkeypatch.setattr(
             mesh_loading,
             "load_mesh",

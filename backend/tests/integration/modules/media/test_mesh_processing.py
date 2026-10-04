@@ -36,7 +36,11 @@ from app.modules.media import (
     mesh_policy,
     mesh_previews,
 )
-from app.modules.media.mesh_contracts import ThumbnailFailureReason, ThumbnailStrategy
+from app.modules.media.mesh_contracts import (
+    GeometryRefused,
+    ThumbnailFailureReason,
+    ThumbnailStrategy,
+)
 from tests.factories.geometry import three_mf
 from tests.fixtures.mesh_analysis import analyze, is_partial_render
 from tests.paths import TESTDATA_DIR
@@ -139,9 +143,10 @@ class TestLoadMesh:
     def test_real_compression_bomb_3mf_is_not_decompressed(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        # A real ZIP whose .model deflates from a few KB on disk to a huge mesh. The
-        # estimate reads the *uncompressed* size from the zip directory and skips it,
-        # so trimesh never decompresses the bomb. The embedded preview still stands in.
+        # A real ZIP whose .model deflates from a few KB on disk to a huge mesh.
+        # 3MF has no size-based triangle estimate. The bounded scene reader checks
+        # decoded size/compression ratio before opening model XML; the independent
+        # embedded preview remains usable.
         #
         # The preview has to be a *real* PNG: the early-thumbnail path decodes every
         # candidate (issue #82) rather than trusting the magic bytes, so a stub of
@@ -155,13 +160,25 @@ class TestLoadMesh:
             zf.writestr("3D/3dmodel.model", b"<triangle/>" * 2_000_000)  # tiny on disk
             zf.writestr("Metadata/thumbnail.png", png)
         assert p.stat().st_size < 200_000  # compressed small...
-        # ...but the uncompressed estimate is huge, so it's skipped.
-        assert mesh_policy.estimate_triangle_count(p) > 1000
+        assert mesh_policy.estimate_triangle_count(p) is None
+        opened_members = []
+        original_open = zipfile.ZipFile.open
+
+        def observe_open(archive, member, *args, **kwargs):
+            name = member.filename if isinstance(member, zipfile.ZipInfo) else member
+            opened_members.append(name)
+            return original_open(archive, member, *args, **kwargs)
+
+        monkeypatch.setattr(zipfile.ZipFile, "open", observe_open)
 
         result = analyze(p)
         geometry, thumb = result.geometry, result.image
         assert geometry["triangle_count"] is None
         assert thumb == png
+        assert "Metadata/thumbnail.png" in opened_members
+        assert "3D/3dmodel.model" not in opened_members
+        assert isinstance(result.geometry_outcome, GeometryRefused)
+        assert result.geometry_outcome.reason is ThumbnailFailureReason.RESOURCE_LIMIT
 
     def test_instanced_3mf_over_budget_keeps_embedded_preview(
         self, tmp_path: Path, monkeypatch
@@ -176,7 +193,7 @@ class TestLoadMesh:
                 extras={"Metadata/thumbnail.png": preview},
             )
         )
-        assert mesh_policy.estimate_triangle_count(path) < 50
+        assert mesh_policy.estimate_triangle_count(path) is None
 
         result = analyze(path)
 
@@ -190,7 +207,7 @@ class TestLoadMesh:
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 50)
         path = tmp_path / "repeated-no-preview.3mf"
         path.write_bytes(three_mf(assemblies={2: [(1, None)]}, build=((2, None),) * 20))
-        assert mesh_policy.estimate_triangle_count(path) < 50
+        assert mesh_policy.estimate_triangle_count(path) is None
 
         result = analyze(path)
 
