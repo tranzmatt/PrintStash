@@ -178,6 +178,20 @@ Binary STL still carries float32 coordinates; removing output rounding cannot
 recover precision already absent from the input. Volume retains the closure,
 winding, finite-value and positive-orientation requirements of recipe 4.
 
+## Measurement evidence availability
+
+Mesh metadata recipe 9 publishes required volume provenance independently of
+optional similarity fingerprints. Complete bounded STL scans retain dimensions
+and counts with explicitly unassessed topology. G-code metadata recipe 2 marks
+mesh volume as not applicable. The additive migration preserves finite historical
+scalars as unassessed, and replaces unusable nonfinite volume or nonphysical
+dimensions with unknown values before enforcing the new constraints.
+
+The public variant, scalar compatibility, signed component-local integral,
+upgrade behavior, CSV additions and exact test matrix are described in
+[mesh measurement evidence](mesh-measurements.md). Thumbnail and fingerprint
+recipes retain their existing identities for this measurement change.
+
 ## Bumping a recipe
 
 The recipe constants in `app/modules/derivatives/kinds.py` are the code's

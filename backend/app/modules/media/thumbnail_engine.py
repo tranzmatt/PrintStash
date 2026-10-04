@@ -13,6 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from printstash_core.mesh.measurements import (
+    InvalidMeshMeasurements,
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+    validate_geometry_extents,
+)
 from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 
@@ -124,6 +130,11 @@ class ThumbnailEngine:
         height = int(request.height or round(width * 3 / 4))
         suffix = mesh_processing._canonical_suffix(request.path, request.file_type)
         geometry = _empty_geometry()
+        volume = VolumeNotCalculated(
+            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+            if request.include_geometry
+            else VolumeNotCalculatedCause.NOT_REQUESTED
+        )
         geometry_outcome: GeometryOutcome = (
             GeometryRefused(ThumbnailFailureReason.INVALID_SOURCE)
             if request.include_geometry
@@ -284,6 +295,9 @@ class ThumbnailEngine:
                                     else ThumbnailFailureReason.INVALID_SOURCE
                                 )
                             else:
+                                volume = VolumeNotCalculated(
+                                    VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+                                )
                                 geometry.update(
                                     {
                                         "bbox_x_mm": measured.bounds_max[0]
@@ -296,7 +310,9 @@ class ThumbnailEngine:
                                     }
                                 )
                         else:
-                            geometry = mesh_processing._geometry_from_mesh(mesh)
+                            measured = mesh_processing._geometry_from_mesh(mesh)
+                            geometry, volume = measured.geometry, measured.volume
+                        validate_geometry_extents(geometry)
                         phases.finish(
                             triangle_count=int(geometry["triangle_count"])
                             if geometry["triangle_count"] is not None
@@ -381,6 +397,7 @@ class ThumbnailEngine:
                             image=None,
                             geometry=geometry,
                             geometry_outcome=geometry_outcome,
+                            volume=volume,
                             strategy=ThumbnailStrategy.NONE,
                             complete=fingerprint_complete
                             if fingerprint_complete is not None
@@ -469,7 +486,13 @@ class ThumbnailEngine:
                             image = streamed.png
                             strategy = ThumbnailStrategy.STREAMING
                             complete = True
-                            if geometry["triangle_count"] is None:
+                            if (
+                                request.include_geometry
+                                and geometry["triangle_count"] is None
+                            ):
+                                volume = VolumeNotCalculated(
+                                    VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+                                )
                                 geometry.update(
                                     {
                                         "bbox_x_mm": streamed.bounds_max[0]
@@ -502,7 +525,14 @@ class ThumbnailEngine:
                             image = fallback.png
                             strategy = ThumbnailStrategy.FALLBACK
                             complete = fallback.complete
-                            if fallback.complete and geometry["triangle_count"] is None:
+                            if (
+                                request.include_geometry
+                                and fallback.complete
+                                and geometry["triangle_count"] is None
+                            ):
+                                volume = VolumeNotCalculated(
+                                    VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+                                )
                                 geometry.update(
                                     {
                                         "bbox_x_mm": fallback.bounds_max[0]
@@ -523,6 +553,26 @@ class ThumbnailEngine:
                             if mesh is None
                             else ThumbnailFailureReason.RENDERER_NO_OUTPUT
                         )
+        except InvalidMeshMeasurements:
+            phases.fail_active()
+            geometry = _empty_geometry()
+            if request.include_geometry:
+                geometry_outcome = GeometryRefused(
+                    ThumbnailFailureReason.INVALID_SOURCE
+                )
+                volume = VolumeNotCalculated(
+                    VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+                )
+            if request.include_fingerprint:
+                fingerprint_result = FingerprintResult(
+                    FingerprintResultState.FAILED, failure_code="invalid_source"
+                )
+            if embedded is not None:
+                image = embedded
+                strategy = ThumbnailStrategy.EMBEDDED
+                complete = True
+            elif request.include_thumbnail:
+                failure = ThumbnailFailureReason.INVALID_SOURCE
         except MemoryError:
             phases.fail_active()
             prepared = None
@@ -591,6 +641,7 @@ class ThumbnailEngine:
             image=image,
             geometry=geometry,
             geometry_outcome=geometry_outcome,
+            volume=volume,
             strategy=strategy,
             complete=complete,
             failure_reason=failure,

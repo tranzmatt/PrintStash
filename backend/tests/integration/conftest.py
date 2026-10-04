@@ -48,6 +48,7 @@ from tests.factories.protocols import (
     MakeInferenceEndpoint,
     MakeIngestRequest,
     MakeJob,
+    MakeMetadata,
     MakeModel,
     MakeMultipartBuild,
     MakeMultipartBuildAttempt,
@@ -189,8 +190,8 @@ def make_file(db_session: Session) -> MakeFile:
 
 
 @pytest.fixture
-def make_metadata(db_session: Session) -> Any:
-    """Slicer/mesh metadata for one artifact; every field optional."""
+def make_metadata(db_session: Session) -> MakeMetadata:
+    """Slicer/mesh facts with coherent explicit volume evidence."""
     return _bound(factories.build_metadata, db_session)
 
 
@@ -473,6 +474,7 @@ __all__ = [
     "MakeDocument",
     "MakeExternalLibrary",
     "MakeFile",
+    "MakeMetadata",
     "MakeInboxItem",
     "MakeModel",
     "MakeMultipartModel",
