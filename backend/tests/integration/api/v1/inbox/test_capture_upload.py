@@ -873,7 +873,7 @@ class TestCaptureUploadExecution:
         assert uploaded.state == CaptureUploadSlotState.UPLOADED
 
     @pytest.mark.asyncio
-    async def test_closes_and_cleans_capture_spool_on_cancellation(
+    async def test_releases_capture_resources_on_cancellation(
         self, db_session, slots, user_headers, loop_handshake, monkeypatch
     ):
         import anyio
