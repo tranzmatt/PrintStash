@@ -14,7 +14,7 @@ from app.db.models import File, GeometryFingerprint, SimilarityRun, User
 from app.db.session import SessionFactory
 from app.modules.media import mesh_isolation, verification_isolation
 from app.modules.media.fingerprints import FingerprintResult
-from app.modules.media.thumbnail_engine import ThumbnailRequest
+from app.modules.media.mesh_contracts import ThumbnailRequest
 from app.modules.similarity import (
     candidates,
     fingerprints,

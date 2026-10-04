@@ -18,8 +18,8 @@ import tempfile
 from pathlib import Path
 
 from app.modules.media import mesh_isolation, mesh_processing
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
 SIZE_MAGIC = b"STL1"
 NOTHING_MAGIC = b"NONE"

@@ -11,7 +11,8 @@ from printstash_core.mesh.similarity import fingerprint_mesh
 from app.core.config import _overlay
 from app.modules.media import mesh_processing
 from app.modules.media.fingerprints import SH_BASIS_DIGEST
-from app.modules.media.thumbnail_engine import ThumbnailEngine, ThumbnailRequest
+from app.modules.media.mesh_contracts import ThumbnailRequest
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 from tests.factories import content
 from tests.factories.geometry import tetrahedron, three_mf
 

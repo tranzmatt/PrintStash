@@ -10,9 +10,7 @@ from __future__ import annotations
 import resource
 import time
 from dataclasses import dataclass, field
-from enum import Enum
-from pathlib import Path
-from typing import Any, Callable, Dict, Literal, Optional, Protocol
+from typing import Any
 
 from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
@@ -21,6 +19,18 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.modules.media import mesh_render, stl_fallback, stl_streaming
 from app.modules.media.fingerprints import FingerprintResult, extract
+from app.modules.media.mesh_contracts import (
+    Geometry,
+    GeometryNotRequested,
+    GeometryOutcome,
+    GeometryReady,
+    GeometryRefused,
+    ThumbnailFailureReason,
+    ThumbnailMetricsSink,
+    ThumbnailRequest,
+    ThumbnailResult,
+    ThumbnailStrategy,
+)
 from app.modules.media.mesh_resources import (
     ExpandedScene,
     PreparedMesh,
@@ -31,88 +41,9 @@ from app.modules.media.mesh_telemetry import (
     MeshPhase,
     PhaseOutcome,
     PhaseRecorder,
-    PhaseStats,
-    SupervisionStats,
 )
 
 logger = get_logger(__name__)
-
-Geometry = Dict[str, Optional[float]]
-ProgressReporter = Callable[[str], None]
-
-
-class ThumbnailStrategy(str, Enum):
-    NONE = "none"
-    EMBEDDED = "embedded"
-    FULL = "full"
-    STREAMING = "streaming"
-    FALLBACK = "fallback"
-
-
-class ThumbnailFailureReason(str, Enum):
-    INVALID_SOURCE = "invalid_source"
-    UNSUPPORTED_FORMAT = "unsupported_format"
-    NO_GEOMETRY = "no_geometry"
-    RESOURCE_LIMIT = "resource_limit"
-    TIMEOUT = "timeout"
-    RENDERER_NO_OUTPUT = "renderer_no_output"
-    WORKER_FAILED = "worker_failed"
-    STORAGE = "storage"
-
-
-@dataclass(frozen=True)
-class GeometryReady:
-    """Measurements were obtained; individual unknown measurements are legitimate."""
-
-
-@dataclass(frozen=True)
-class GeometryRefused:
-    reason: ThumbnailFailureReason
-
-
-@dataclass(frozen=True)
-class GeometryNotRequested:
-    pass
-
-
-GeometryOutcome = GeometryReady | GeometryRefused | GeometryNotRequested
-
-
-@dataclass(frozen=True)
-class ThumbnailRequest:
-    path: Path
-    file_type: str | None = None
-    width: int | None = None
-    height: int | None = None
-    include_geometry: bool = True
-    reason: str = "ingestion"
-    report: ProgressReporter | None = None
-    output_format: Literal["PNG", "WEBP"] = "PNG"
-    include_fingerprint: bool = False
-    triangle_cap: int = MAX_ANALYSIS_FACES
-    include_thumbnail: bool = True
-
-
-@dataclass(frozen=True)
-class ThumbnailResult:
-    image: bytes | None
-    geometry: Geometry
-    geometry_outcome: GeometryOutcome
-    strategy: ThumbnailStrategy
-    complete: bool
-    failure_reason: ThumbnailFailureReason | None
-    duration_ms: int
-    peak_rss_bytes: int | None
-    fingerprint_result: FingerprintResult | None = None
-    phase_stats: tuple[PhaseStats, ...] = ()
-    supervision: SupervisionStats | None = None
-
-
-class ThumbnailMetricsSink(Protocol):
-    def increment(self, name: str, *, labels: dict[str, str]) -> None: ...
-
-    def observe(self, name: str, value: float, *, labels: dict[str, str]) -> None: ...
-
 
 class NoopThumbnailMetrics:
     def increment(self, name: str, *, labels: dict[str, str]) -> None:
@@ -618,9 +549,4 @@ class ThumbnailEngine:
 __all__ = [
     "NoopThumbnailMetrics",
     "ThumbnailEngine",
-    "ThumbnailFailureReason",
-    "ThumbnailMetricsSink",
-    "ThumbnailRequest",
-    "ThumbnailResult",
-    "ThumbnailStrategy",
 ]

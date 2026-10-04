@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from app.modules.media import mesh_isolation
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from tests.paths import BACKEND_DIR
 
 MB = 1024**2

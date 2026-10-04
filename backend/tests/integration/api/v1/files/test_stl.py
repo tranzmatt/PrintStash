@@ -187,8 +187,8 @@ class TestFileAsStl:
         remove_blob,
     ) -> None:
         """A killed or timed-out worker answers like any conversion that failed."""
+        from app.modules.media.mesh_contracts import ThumbnailFailureReason
         from app.modules.media.mesh_isolation import MeshWorkerError
-        from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
         model = make_model("stl-worker-killed")
         key = "killed.3mf"

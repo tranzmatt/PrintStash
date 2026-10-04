@@ -10,8 +10,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from app.modules.media.mesh_contracts import ThumbnailRequest
 from app.modules.media.mesh_isolation import MeshWorkerError, generate, supervise_result
-from app.modules.media.thumbnail_engine import ThumbnailRequest
 
 
 def main() -> int:

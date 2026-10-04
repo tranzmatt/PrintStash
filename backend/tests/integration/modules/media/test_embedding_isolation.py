@@ -13,8 +13,8 @@ import pytest
 from printstash_core.mesh.similarity import GeometryError
 
 from app.modules.media import embedding_isolation, geometry_analysis, mesh_isolation
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from tests.factories.geometry import tetrahedron
 
 

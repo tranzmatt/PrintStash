@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.stl_isolation import decode_reply, encode_reply
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
 
 class TestReplyFrame:

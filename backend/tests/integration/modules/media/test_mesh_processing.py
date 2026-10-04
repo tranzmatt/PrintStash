@@ -33,10 +33,7 @@ import pytest
 
 from app.core.config import _overlay
 from app.modules.media import mesh_processing
-from app.modules.media.thumbnail_engine import (
-    ThumbnailFailureReason,
-    ThumbnailStrategy,
-)
+from app.modules.media.mesh_contracts import ThumbnailFailureReason, ThumbnailStrategy
 from tests.factories.geometry import three_mf
 from tests.fixtures.mesh_analysis import analyze, is_partial_render
 from tests.paths import TESTDATA_DIR

@@ -17,8 +17,8 @@ from app.db.models import (
 )
 from app.db.session import get_session_factory
 from app.modules.media import mesh_isolation, verification_isolation
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from app.modules.similarity import configuration, runs
 from app.modules.similarity.processing import SimilarityProcessor
 from app.modules.storage.storage_backend.runtime import get_backend

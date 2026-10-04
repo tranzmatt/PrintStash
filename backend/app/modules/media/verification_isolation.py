@@ -23,13 +23,13 @@ from printstash_core.mesh.similarity.verification import Verification
 
 from app.modules.media import mesh_isolation
 from app.modules.media.geometry_analysis import MAX_VERIFICATION_SECONDS
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import (
     MeshWorkerError,
     pack_value,
     raise_reported_error,
     unpack_value,
 )
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
 EVIDENCE_MAGIC = b"VRF1"
 
