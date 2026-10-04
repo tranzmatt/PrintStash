@@ -171,6 +171,30 @@ new recipe makes work eligible; timeout backoff keeps the configured maximum.
 Original downloads and signed slicer downloads continue to use Artifact bytes.
 
 
+## On-demand 3D viewer STL
+
+`viewer_stl` recipe 1 is produced by `derivatives.viewer_stl` in `derive.native`.
+Only 3MF, OBJ and STEP Artifacts with `files.viewer_requested_at` set are eligible;
+uploads, scans and card hover do not request conversion. The first authorized
+`GET /api/v1/files/{id}/stl` (or the scoped share endpoint) persists this demand
+and nudges the source. Reconciliation recovers it after a lost nudge or restart.
+The active-Subject constraint shares work across requests.
+
+Original STL is served directly. Other formats return 202 with `DerivativeRead`
+and `Retry-After: 1` until publication, 200 with the stored representation when
+ready, or 422 with the recorded failure `detail`. Preparation responses use
+`private, no-store`. Resource and invalid-input refusals are terminal for the
+recipe; timeouts/storage failures use bounded derivative backoff. Explicit retry
+uses the existing derivative retry endpoint. Mesh processing policy gates new
+work; published previews remain readable while disabled.
+
+Ready STL objects use immutable owned publication and `storage_key`, so backup,
+Vault migration and trash retain their existing ownership contracts. A missing
+published object becomes eligible for repair. Legacy STL caches are regenerated
+once on access. Original downloads and signed slicer handoff never depend on STL
+preparation. The browser waits for STL bytes, displays persisted failures, and
+refreshes authenticated previews after derivative completion or policy changes.
+
 ## Live processing policy
 
 `modules/derivatives/policy.py` owns the three groups' database overrides and
