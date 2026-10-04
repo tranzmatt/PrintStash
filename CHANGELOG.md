@@ -16,6 +16,9 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Added
 
+- Add a frozen synthetic mesh contract corpus and record benchmark environment, limits, versions and target expectations separately from observed render results.
+
+
 - Deep CI exercises the production mesh pipeline under 1 GiB and 4 GiB
   limits on amd64 and arm64, publishing memory, failure and cleanup evidence.
 - Job details show retained ingest capacity and provide a confirmed, identity-checked
