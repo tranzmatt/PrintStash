@@ -43,6 +43,9 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Ingest acceptance keeps the API event loop responsive while staging files,
   recording work and notifying the background engine.
 
+- Keep mesh-worker memory limits and cancellation active after the child closes its reply stream.
+
+
 - The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
 - Meshes with inconsistent triangle winding now report unknown volume while
   retaining dimensions and triangle counts. Existing metadata is recalculated
