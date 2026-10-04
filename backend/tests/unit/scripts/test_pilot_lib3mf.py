@@ -75,17 +75,18 @@ class TestBackendRegistry:
 
         assert pilot_lib3mf.enabled_backends() == BACKENDS
 
-    @pytest.mark.parametrize("mode", ["run", "worker"])
+    @pytest.mark.parametrize(
+        "mode, arguments",
+        [
+            ("run", ["--output", "/tmp/unused-pilot.json"]),
+            ("worker", ["/tmp/unused-pilot.3mf"]),
+        ],
+    )
     @pytest.mark.parametrize("backend", ["lib3mf-public", "lib3mf-buffer"])
     def test_refuses_requested_unavailable_native_backend(
-        self, monkeypatch, capsys, mode, backend
+        self, monkeypatch, capsys, mode, arguments, backend
     ):
         monkeypatch.setattr(pilot_lib3mf, "find_spec", lambda name: None)
-        arguments = (
-            ["--output", "/tmp/unused-pilot.json"]
-            if mode == "run"
-            else ["/tmp/unused-pilot.3mf"]
-        )
         monkeypatch.setattr(
             pilot_lib3mf.sys,
             "argv",
