@@ -689,7 +689,11 @@ class TestIngestModel:
 
         from app.modules.derivatives import producers
         from app.modules.media.mesh_contracts import (
+            GeometryNotLoaded,
             GeometryNotRequested,
+            MeshCoverage,
+            PreviewCoverage,
+            SourceScanState,
             ThumbnailResult,
             ThumbnailStrategy,
         )
@@ -711,7 +715,11 @@ class TestIngestModel:
                     "triangle_count": None,
                 },
                 strategy=ThumbnailStrategy.FULL,
-                complete=True,
+                coverage=MeshCoverage(
+                    SourceScanState.COMPLETE,
+                    GeometryNotLoaded(),
+                    PreviewCoverage.COMPLETE,
+                ),
                 failure_reason=None,
                 duration_ms=0,
                 peak_rss_bytes=None,

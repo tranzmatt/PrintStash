@@ -12,8 +12,12 @@ from printstash_core.mesh.measurements import (
 )
 
 from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
     GeometryReady,
     GeometryRefused,
+    MeshCoverage,
+    PreviewCoverage,
+    SourceScanState,
     ThumbnailFailureReason,
     ThumbnailResult,
     ThumbnailStrategy,
@@ -33,7 +37,9 @@ def native_result() -> ThumbnailResult:
         geometry_outcome=GeometryReady(),
         volume=VolumeNotCalculated(VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED),
         strategy=ThumbnailStrategy.FULL,
-        complete=True,
+        coverage=MeshCoverage(
+            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.COMPLETE
+        ),
         failure_reason=None,
         duration_ms=42,
         peak_rss_bytes=2**20,
@@ -97,7 +103,15 @@ class TestMeasureWorker:
     def test_rejects_missing_refusal_cause(
         self, monkeypatch, native_result, input_identity
     ):
-        invalid = replace(native_result, image=None)
+        invalid = replace(
+            native_result,
+            image=None,
+            coverage=MeshCoverage(
+                SourceScanState.COMPLETE,
+                GeometryNotLoaded(),
+                PreviewCoverage.NOT_PRODUCED,
+            ),
+        )
         monkeypatch.setattr(benchmark_native, "generate", lambda request: invalid)
         result = benchmark_native.measure_worker(Path("cube.stl"), input_identity)
         assert result.outcome == SampleOutcome.FAILED

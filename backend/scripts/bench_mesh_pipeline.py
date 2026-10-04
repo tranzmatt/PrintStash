@@ -66,11 +66,11 @@ def export_private_settings(settings: ConfigResolver) -> None:
         else:
             serialized = json.dumps(value, allow_nan=False)
         os.environ["VAULT_" + name.upper()] = serialized
-    from app.modules.media.mesh_processing import _render_jobs_limit
+    from app.modules.media.mesh_policy import render_jobs_limit
 
     # None means an adaptive limit, so exporting no value would allow the
     # child's .env to replace that policy. Pin the resolved private limit.
-    os.environ["VAULT_JOBS_DERIVE_NATIVE_CONCURRENCY"] = str(_render_jobs_limit())
+    os.environ["VAULT_JOBS_DERIVE_NATIVE_CONCURRENCY"] = str(render_jobs_limit())
 
 
 def main() -> int:

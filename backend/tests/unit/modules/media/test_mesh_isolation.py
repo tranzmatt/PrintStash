@@ -33,13 +33,22 @@ from app.modules.media.fingerprints import (
     FingerprintResultState,
 )
 from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
     GeometryNotRequested,
     GeometryReady,
     GeometryRefused,
+    MeshCoverage,
+    PreviewCoverage,
+    SourceScanState,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailResult,
     ThumbnailStrategy,
+)
+from app.modules.media.mesh_facts import (
+    CompleteGeometry,
+    FingerprintFailureCode,
+    SampledGeometry,
 )
 from app.modules.media.mesh_isolation import (
     MeshWorkerError,
@@ -289,7 +298,9 @@ def _result(**overrides) -> ThumbnailResult:
             "triangle_count": 12,
         },
         strategy=ThumbnailStrategy.FULL,
-        complete=True,
+        coverage=MeshCoverage(
+            SourceScanState.COMPLETE, CompleteGeometry(), PreviewCoverage.COMPLETE
+        ),
         failure_reason=None,
         duration_ms=42,
         peak_rss_bytes=123456,
@@ -466,7 +477,11 @@ class TestReplyFrame:
         result = _result(
             image=None,
             strategy=ThumbnailStrategy.NONE,
-            complete=False,
+            coverage=MeshCoverage(
+                SourceScanState.COMPLETE,
+                CompleteGeometry(),
+                PreviewCoverage.NOT_PRODUCED,
+            ),
             failure_reason=ThumbnailFailureReason.RESOURCE_LIMIT,
         )
 
@@ -480,19 +495,65 @@ class TestReplyFrame:
 
     @pytest.mark.parametrize("state", list(FingerprintResultState))
     def test_round_trips_each_fingerprint_state_as_a_wire_string(self, state):
-        fingerprint = FingerprintResult(state=state)
-        frame = encode_reply(_result(fingerprint_result=fingerprint))
+        record = FingerprintRecord(
+            component_index=0,
+            instance_count=1,
+            values={
+                "faces": 12,
+                "recipe": {
+                    "complete_geometry": {
+                        FingerprintResultState.READY: True,
+                        FingerprintResultState.PARTIAL: False,
+                        FingerprintResultState.FAILED: True,
+                        FingerprintResultState.UNSUPPORTED: True,
+                    }[state]
+                },
+            },
+            instances=(),
+        )
+        records = {
+            FingerprintResultState.READY: (record,),
+            FingerprintResultState.PARTIAL: (record,),
+            FingerprintResultState.FAILED: (),
+            FingerprintResultState.UNSUPPORTED: (),
+        }[state]
+        cause = {
+            FingerprintResultState.READY: None,
+            FingerprintResultState.PARTIAL: FingerprintFailureCode.SAMPLED_SOURCE,
+            FingerprintResultState.FAILED: FingerprintFailureCode.ANALYSIS_FAILED,
+            FingerprintResultState.UNSUPPORTED: FingerprintFailureCode.UNSUPPORTED_GEOMETRY,
+        }[state]
+        fingerprint = FingerprintResult(
+            state=state, records=records, failure_code=cause
+        )
+        geometry = {
+            FingerprintResultState.READY: CompleteGeometry(),
+            FingerprintResultState.PARTIAL: SampledGeometry(
+                FingerprintFailureCode.SAMPLED_SOURCE
+            ),
+            FingerprintResultState.FAILED: CompleteGeometry(),
+            FingerprintResultState.UNSUPPORTED: CompleteGeometry(),
+        }[state]
+        coverage = MeshCoverage(
+            SourceScanState.COMPLETE, geometry, PreviewCoverage.COMPLETE
+        )
+        frame = encode_reply(_result(fingerprint_result=fingerprint, coverage=coverage))
         header_length = int.from_bytes(frame[4:8], "big")
         header = json.loads(frame[8 : 8 + header_length])
 
         assert header["fingerprint"]["state"] == state.value
         assert type(header["fingerprint"]["state"]) is str
+        assert header["fingerprint"]["failure_code"] == (
+            None if cause is None else cause.value
+        )
         assert decode_reply(frame).fingerprint_result.state is state
+        assert decode_reply(frame).fingerprint_result.failure_code is cause
 
     def test_round_trips_a_fingerprint_with_its_instances(self):
         fingerprint = FingerprintResult(
             state=FingerprintResultState.READY,
             records=(
+                FingerprintRecord(0, 1, {"bbox": (1.0, 2.0, 3.0)}, ()),
                 FingerprintRecord(
                     component_index=1,
                     instance_count=2,
@@ -745,7 +806,7 @@ class TestSupervisionStats:
 
     def test_preserves_unobserved_rss(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            mesh_isolation.mesh_processing, "process_tree_rss_bytes", lambda _pid: None
+            mesh_isolation.mesh_policy, "process_tree_rss_bytes", lambda _pid: None
         )
 
         result = mesh_isolation.supervise_result(
@@ -885,3 +946,317 @@ class TestPhaseReply:
             decode_reply(legacy)
 
         assert error.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+
+class TestCoverageReply:
+    def test_complete_scan_survives_partial_preview_transport(self):
+        coverage = MeshCoverage(
+            SourceScanState.COMPLETE, CompleteGeometry(), PreviewCoverage.PARTIAL
+        )
+        result = _result(coverage=coverage)
+
+        decoded = decode_reply(encode_reply(result))
+
+        assert decoded.coverage == coverage
+        assert decoded.image == result.image
+
+    def test_sampled_geometry_survives_complete_scan_transport(self):
+        coverage = MeshCoverage(
+            SourceScanState.COMPLETE,
+            SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
+            PreviewCoverage.NOT_PRODUCED,
+        )
+        result = _result(image=None, strategy=ThumbnailStrategy.NONE, coverage=coverage)
+
+        assert decode_reply(encode_reply(result)).coverage == coverage
+
+    @pytest.mark.parametrize(
+        "damage",
+        [
+            "missing",
+            "unknown-source",
+            "unknown-preview",
+            "unknown-geometry",
+            "unknown-cause",
+        ],
+        ids=str,
+    )
+    def test_rejects_invalid_native_coverage(self, damage):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        replacements = {
+            "missing": None,
+            "unknown-source": {
+                "source_scan": "unknown",
+                "geometry": {"state": "complete"},
+                "preview": "complete",
+            },
+            "unknown-preview": {
+                "source_scan": "complete",
+                "geometry": {"state": "complete"},
+                "preview": "unknown",
+            },
+            "unknown-geometry": {
+                "source_scan": "complete",
+                "geometry": {"state": "unknown"},
+                "preview": "complete",
+            },
+            "unknown-cause": {
+                "source_scan": "partial",
+                "geometry": {"state": "sampled", "reason": "unknown"},
+                "preview": "partial",
+            },
+        }
+        header["coverage"] = replacements[damage]
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    def test_rejects_missing_native_coverage(self):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        del header["coverage"]
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    @pytest.mark.parametrize(
+        "cause",
+        ["invented_failure", "", True, 1],
+        ids=["unknown", "empty", "boolean", "number"],
+    )
+    def test_rejects_unknown_fingerprint_cause(self, cause):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["fingerprint"] = {
+            "state": "failed",
+            "failure_code": cause,
+            "algorithm_version": "x",
+            "records": [],
+        }
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+
+class TestRaiseReportedError:
+    def test_preserves_known_worker_cause(self):
+        from printstash_core.mesh.similarity import GeometryError
+
+        with pytest.raises(GeometryError) as raised:
+            mesh_isolation.raise_reported_error(b"ERR1resource_limit")
+
+        assert raised.value.code == "resource_limit"
+
+    @pytest.mark.parametrize(
+        "payload",
+        [b"ERR1invented_failure", b"ERR1", b"ERR1invalid\xff"],
+        ids=["unknown", "empty", "non-ascii"],
+    )
+    def test_rejects_unrecognized_worker_cause(self, payload):
+        with pytest.raises(MeshWorkerError) as raised:
+            mesh_isolation.raise_reported_error(payload)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+
+class TestNativePreviewOwnership:
+    @pytest.mark.parametrize(
+        ("image", "preview"),
+        [(None, PreviewCoverage.COMPLETE), (b"preview", PreviewCoverage.NOT_PRODUCED)],
+        ids=["missing-image", "unreported-image"],
+    )
+    def test_rejects_preview_fact_inconsistent_with_image(self, image, preview):
+        coverage = MeshCoverage(SourceScanState.COMPLETE, CompleteGeometry(), preview)
+
+        with pytest.raises(
+            ValueError, match="preview coverage disagrees with image presence"
+        ):
+            _result(image=image, coverage=coverage)
+
+    @pytest.mark.parametrize(
+        ("strategy", "preview"),
+        [
+            (ThumbnailStrategy.EMBEDDED, PreviewCoverage.COMPLETE),
+            (ThumbnailStrategy.FULL, PreviewCoverage.DOCUMENT_SUPPLIED),
+        ],
+        ids=["embedded-without-provenance", "rendered-with-document-provenance"],
+    )
+    def test_rejects_document_provenance_inconsistent_with_strategy(
+        self, strategy, preview
+    ):
+        coverage = MeshCoverage(SourceScanState.COMPLETE, CompleteGeometry(), preview)
+
+        with pytest.raises(ValueError, match="requires"):
+            _result(strategy=strategy, coverage=coverage)
+
+    def test_rejects_untyped_coverage(self):
+        with pytest.raises(TypeError, match="invalid mesh coverage"):
+            _result(coverage="complete")
+
+
+class TestEncodeError:
+    def test_retains_known_native_failure_literal(self):
+        from printstash_core.mesh.similarity import GeometryError
+
+        assert (
+            mesh_isolation.encode_error(GeometryError("resource_limit"))
+            == b"ERR1resource_limit"
+        )
+
+    def test_rejects_unrecognized_native_failure_literal(self):
+        from printstash_core.mesh.similarity import GeometryError
+
+        with pytest.raises(ValueError, match="is not a valid FingerprintFailureCode"):
+            mesh_isolation.encode_error(GeometryError("invented_failure"))
+
+
+class TestNativeFingerprintOwnership:
+    @pytest.mark.parametrize(
+        ("state", "geometry"),
+        [
+            (FingerprintResultState.READY, GeometryNotLoaded()),
+            (
+                FingerprintResultState.READY,
+                SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
+            ),
+            (FingerprintResultState.PARTIAL, CompleteGeometry()),
+            (FingerprintResultState.PARTIAL, GeometryNotLoaded()),
+        ],
+        ids=["ready-unloaded", "ready-sampled", "partial-full", "partial-unloaded"],
+    )
+    def test_rejects_successful_analysis_with_wrong_representation(
+        self, state, geometry
+    ):
+        record = FingerprintRecord(
+            0,
+            1,
+            {
+                "recipe": {
+                    "complete_geometry": {
+                        FingerprintResultState.READY: True,
+                        FingerprintResultState.PARTIAL: False,
+                    }[state]
+                }
+            },
+            (),
+        )
+        cause = {
+            FingerprintResultState.READY: None,
+            FingerprintResultState.PARTIAL: FingerprintFailureCode.SAMPLED_SOURCE,
+        }[state]
+        fingerprint = FingerprintResult(state, (record,), cause)
+        coverage = MeshCoverage(
+            SourceScanState.COMPLETE, geometry, PreviewCoverage.COMPLETE
+        )
+
+        with pytest.raises(ValueError, match="fingerprint requires"):
+            _result(fingerprint_result=fingerprint, coverage=coverage)
+
+    def test_rejects_partial_cause_disagreeing_with_sample(self):
+        fingerprint = FingerprintResult(
+            FingerprintResultState.PARTIAL,
+            (FingerprintRecord(0, 1, {"recipe": {"complete_geometry": False}}, ()),),
+            FingerprintFailureCode.SAMPLED_OVERSIZED_SOURCE,
+        )
+        coverage = MeshCoverage(
+            SourceScanState.COMPLETE,
+            SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
+            PreviewCoverage.COMPLETE,
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="partial fingerprint cause disagrees with sampled geometry",
+        ):
+            _result(fingerprint_result=fingerprint, coverage=coverage)
+
+    @pytest.mark.parametrize(
+        ("state", "geometry"),
+        [
+            ("ready", {"state": "not_loaded"}),
+            ("ready", {"state": "sampled", "reason": "sampled_source"}),
+            ("partial", {"state": "complete"}),
+            ("partial", {"state": "not_loaded"}),
+        ],
+        ids=["ready-unloaded", "ready-sampled", "partial-full", "partial-unloaded"],
+    )
+    def test_rejects_forged_successful_analysis_representation(self, state, geometry):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["coverage"]["geometry"] = geometry
+        header["fingerprint"] = {
+            "state": state,
+            "failure_code": {"ready": None, "partial": "sampled_source"}[state],
+            "algorithm_version": "x",
+            "records": [
+                {
+                    "component_index": 0,
+                    "instance_count": 1,
+                    "values": {
+                        "recipe": {
+                            "complete_geometry": {"ready": True, "partial": False}[
+                                state
+                            ]
+                        }
+                    },
+                    "instances": [],
+                }
+            ],
+        }
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    def test_rejects_forged_partial_cause_disagreeing_with_sample(self):
+        fingerprint = FingerprintResult(
+            FingerprintResultState.PARTIAL,
+            (FingerprintRecord(0, 1, {"recipe": {"complete_geometry": False}}, ()),),
+            FingerprintFailureCode.SAMPLED_SOURCE,
+        )
+        coverage = MeshCoverage(
+            SourceScanState.COMPLETE,
+            SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
+            PreviewCoverage.COMPLETE,
+        )
+        frame = encode_reply(_result(fingerprint_result=fingerprint, coverage=coverage))
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["fingerprint"]["failure_code"] = "sampled_oversized_source"
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED

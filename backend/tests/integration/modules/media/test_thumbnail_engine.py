@@ -19,15 +19,20 @@ from printstash_core.mesh.measurements import (
 )
 
 from app.core.config import _overlay
-from app.modules.media import mesh_processing, thumbnail_engine
+from app.modules.media import mesh_policy, thumbnail_engine
 from app.modules.media.fingerprints import FingerprintResultState
 from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
     GeometryReady,
     GeometryRefused,
+    MeshCoverage,
+    PreviewCoverage,
+    SourceScanState,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailStrategy,
 )
+from app.modules.media.mesh_facts import CompleteGeometry, SampledGeometry
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.media.worker_bootstrap import WORKER_MARKER
 from tests.factories import content
@@ -146,6 +151,9 @@ class TestMetadataOnly:
         )
         assert result.image is None
         assert result.strategy is ThumbnailStrategy.NONE
+        assert result.coverage == MeshCoverage(
+            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.NOT_PRODUCED
+        )
         assert all(
             stat.phase.value not in {"render", "streaming", "fallback"}
             for stat in result.phase_stats
@@ -305,7 +313,7 @@ class TestThumbnailEngine:
             > 0
         )
         assert result.strategy is ThumbnailStrategy.FULL
-        assert result.complete is True
+        assert result.coverage.preview is PreviewCoverage.COMPLETE
         assert result.failure_reason is None
         assert result.fingerprint_result.state is FingerprintResultState.FAILED
         assert result.fingerprint_result.failure_code == "geometry_work_limit"
@@ -347,7 +355,9 @@ class TestThumbnailEngine:
         assert result.geometry["triangle_count"] == 320
         assert isinstance(result.geometry_outcome, GeometryReady)
         assert result.image is None
-        assert result.complete is True
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, CompleteGeometry)
         assert result.failure_reason is None
         assert result.fingerprint_result.failure_code == "geometry_work_limit"
 
@@ -371,13 +381,13 @@ class TestThumbnailEngine:
         references = []
         lifetimes = []
         reclaims = []
-        reclaim = mesh_processing._reclaim_memory
+        reclaim = mesh_policy.reclaim_memory
 
         def observe_reclaim():
             reclaims.append(True)
             reclaim()
 
-        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
+        monkeypatch.setattr(mesh_policy, "reclaim_memory", observe_reclaim)
         extract = thumbnail_engine.extract
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
@@ -413,9 +423,7 @@ class TestThumbnailEngine:
             "render_stl_preview_isolated",
             observe_stream,
         )
-        monkeypatch.setattr(
-            mesh_processing, "_exceeds_cap", lambda *args, **kwargs: sampled
-        )
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *args, **kwargs: sampled)
 
         result = ThumbnailEngine().generate(
             ThumbnailRequest(cube, width=64, include_fingerprint=True)
@@ -454,13 +462,13 @@ class TestThumbnailEngine:
         references = []
         lifetimes = []
         reclaims = []
-        reclaim = mesh_processing._reclaim_memory
+        reclaim = mesh_policy.reclaim_memory
 
         def observe_reclaim():
             reclaims.append(True)
             reclaim()
 
-        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
+        monkeypatch.setattr(mesh_policy, "reclaim_memory", observe_reclaim)
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
         def fail_construction(*, vertices, faces, process):
@@ -472,9 +480,7 @@ class TestThumbnailEngine:
             lifetimes.append(tuple(reference() is None for reference in references))
             return stream(*args, **kwargs)
 
-        monkeypatch.setattr(
-            mesh_processing, "_exceeds_cap", lambda *args, **kwargs: True
-        )
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *args, **kwargs: True)
         monkeypatch.setattr(trimesh, "Trimesh", fail_construction)
         monkeypatch.setattr(
             thumbnail_engine.stl_streaming,
@@ -499,13 +505,13 @@ class TestThumbnailEngine:
         references = []
         lifetimes = []
         reclaims = []
-        reclaim = mesh_processing._reclaim_memory
+        reclaim = mesh_policy.reclaim_memory
 
         def observe_reclaim():
             reclaims.append(True)
             reclaim()
 
-        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
+        monkeypatch.setattr(mesh_policy, "reclaim_memory", observe_reclaim)
         prepare = thumbnail_engine.prepare_loaded_mesh
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
@@ -832,7 +838,7 @@ class TestBoundedVolumeAuthority:
         )
         assert result.strategy is ThumbnailStrategy.FALLBACK
         assert result.image is not None
-        assert result.complete is False
+        assert result.coverage.preview is PreviewCoverage.PARTIAL
         assert result.geometry_outcome == GeometryRefused(
             ThumbnailFailureReason.RESOURCE_LIMIT
         )
@@ -846,3 +852,91 @@ class TestBoundedVolumeAuthority:
         assert result.volume == VolumeNotCalculated(
             VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
         )
+
+
+class TestCoverage:
+    def test_embedded_preview_does_not_certify_unread_source(self, tmp_path):
+        source = tmp_path / "embedded.3mf"
+        source.write_bytes(three_mf(extras={"Metadata/thumbnail.png": content.png()}))
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_geometry=False)
+        )
+
+        assert result.image is not None
+        assert result.coverage == MeshCoverage(
+            SourceScanState.NOT_SCANNED,
+            GeometryNotLoaded(),
+            PreviewCoverage.DOCUMENT_SUPPLIED,
+        )
+
+    def test_complete_source_scan_survives_partial_preview(self, tmp_path, monkeypatch):
+        from app.modules.media import mesh_render, stl_fallback, stl_streaming
+
+        source = tmp_path / "partial-preview.stl"
+        source.write_bytes(
+            trimesh.creation.box(extents=[10, 20, 30]).export(file_type="stl")
+        )
+        monkeypatch.setattr(
+            mesh_render, "render_mesh_thumbnail", lambda *args, **kwargs: None
+        )
+        monkeypatch.setattr(
+            stl_streaming, "render_stl_preview_isolated", lambda *args, **kwargs: None
+        )
+        render_fallback = stl_fallback.render_stl_thumbnail
+        monkeypatch.setattr(
+            stl_fallback,
+            "render_stl_thumbnail",
+            lambda path, **kwargs: render_fallback(path, max_triangles=4, **kwargs),
+        )
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, width=128, height=128, include_fingerprint=False)
+        )
+
+        assert result.image is not None
+        assert result.coverage == MeshCoverage(
+            SourceScanState.COMPLETE, CompleteGeometry(), PreviewCoverage.PARTIAL
+        )
+        assert result.geometry["triangle_count"] == 12
+
+    def test_complete_source_scan_survives_sampled_analysis(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "sampled-analysis.stl"
+        source.write_bytes(
+            trimesh.creation.icosphere(subdivisions=2, radius=5).export(file_type="stl")
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_thumbnail=False, include_fingerprint=True)
+        )
+
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, SampledGeometry)
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
+        assert result.geometry["triangle_count"] == 320
+        assert result.fingerprint_result.state is FingerprintResultState.PARTIAL
+
+    def test_analysis_only_preserves_complete_source_scan(self, tmp_path, monkeypatch):
+        source = tmp_path / "analysis-only.stl"
+        source.write_bytes(
+            trimesh.creation.icosphere(subdivisions=2, radius=5).export(file_type="stl")
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                source,
+                include_geometry=False,
+                include_thumbnail=False,
+                include_fingerprint=True,
+            )
+        )
+
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, SampledGeometry)
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
+        assert result.fingerprint_result.state is FingerprintResultState.PARTIAL
+        assert all(value is None for value in result.geometry.values())

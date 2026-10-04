@@ -5,13 +5,13 @@ import io
 import numpy as np
 from PIL import Image
 
-from app.modules.media import mesh_processing, mesh_render
+from app.modules.media import mesh_loading, mesh_render
 from tests.paths import FIXTURES_DIR, TESTDATA_DIR
 
 
 class TestMeshRender:
     def test_preserves_preview_pixels(self):
-        mesh = mesh_processing._load_mesh(TESTDATA_DIR / "benchy/3dbenchy.stl")
+        mesh = mesh_loading.load_mesh(TESTDATA_DIR / "benchy/3dbenchy.stl")
 
         image = mesh_render.render_mesh_thumbnail(mesh, "benchy", width=640, height=480)
 

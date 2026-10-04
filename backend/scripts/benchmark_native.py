@@ -12,6 +12,7 @@ from PIL import Image
 
 from app.modules.media.mesh_contracts import (
     GeometryRefused,
+    PreviewCoverage,
     ThumbnailRequest,
     ThumbnailStrategy,
 )
@@ -70,7 +71,10 @@ def measure_worker(path: Path, identity: InputIdentity) -> NativeObservation:
         supervision = result.supervision
         output = result.image
         strategy = result.strategy
-        complete = result.complete
+        complete = result.coverage.preview in (
+            PreviewCoverage.COMPLETE,
+            PreviewCoverage.DOCUMENT_SUPPLIED,
+        )
         child_elapsed = result.duration_ms
         child_rss = result.peak_rss_bytes
         if output is not None:

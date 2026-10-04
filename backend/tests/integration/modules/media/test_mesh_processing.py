@@ -1,9 +1,9 @@
 """Real-file OOM / memory coverage for mesh processing (issue #29).
 
 The cap logic in ``test_mesh_limits.py`` is fast but synthetic — it monkeypatches
-``_load_mesh`` so the real trimesh load/render never runs. These tests close that
+``mesh_loading.load_mesh`` so the real trimesh load/render never runs. These tests close that
 gap: they build *real* meshes with trimesh and drive the genuine
-``analyze_mesh`` path (real load, real rasteriser, real ``_reclaim_memory``), so
+``ThumbnailEngine`` path (real load, real rasteriser, real ``mesh_policy.reclaim_memory``), so
 a regression in the actual loader/renderer/guard is caught, not just the routing.
 
 Three layers:
@@ -13,7 +13,7 @@ Three layers:
   thumbnails; a real compression-bomb 3MF is caught without being decompressed.
 * **Real happy path** — a real dense mesh still produces geometry + a PNG.
 * **Leak detector** — processing the same real mesh many times must not grow
-  resident memory, proving ``_reclaim_memory`` actually hands freed buffers back
+  resident memory, proving ``mesh_policy.reclaim_memory`` actually hands freed buffers back
   to the OS instead of letting a long scan ratchet RSS upward.
 
 A real-world corpus (the user's own NAS files — a ~900 MB 3MF, high-poly scans,
@@ -32,13 +32,16 @@ import psutil
 import pytest
 
 from app.core.config import _overlay
-from app.modules.media import mesh_processing
+from app.modules.media import (
+    mesh_policy,
+    mesh_previews,
+)
 from app.modules.media.mesh_contracts import ThumbnailFailureReason, ThumbnailStrategy
 from tests.factories.geometry import three_mf
 from tests.fixtures.mesh_analysis import analyze, is_partial_render
 from tests.paths import TESTDATA_DIR
 
-# mesh_processing lazy-imports trimesh, so importing it above is safe without it;
+# Loading owners lazy-import trimesh, so importing them is safe without it;
 # skip the whole module when trimesh itself is unavailable (these build real meshes).
 trimesh = pytest.importorskip("trimesh")
 
@@ -112,7 +115,7 @@ class TestLoadMesh:
         assert geometry["triangle_count"] == tri
         assert geometry["bbox_x_mm"] and geometry["bbox_x_mm"] > 0
         assert is_partial_render(result)
-        assert thumb.startswith(mesh_processing._PNG_MAGIC)
+        assert thumb.startswith(mesh_previews._PNG_MAGIC)
 
     def test_real_oversize_file_uses_streaming_fallback(
         self, tmp_path: Path, monkeypatch
@@ -131,7 +134,7 @@ class TestLoadMesh:
         assert geometry["triangle_count"] == tri
         assert geometry["bbox_x_mm"] and geometry["bbox_x_mm"] > 0
         assert is_partial_render(result)
-        assert thumb.startswith(mesh_processing._PNG_MAGIC)
+        assert thumb.startswith(mesh_previews._PNG_MAGIC)
 
     def test_real_compression_bomb_3mf_is_not_decompressed(
         self, tmp_path: Path, monkeypatch
@@ -153,7 +156,7 @@ class TestLoadMesh:
             zf.writestr("Metadata/thumbnail.png", png)
         assert p.stat().st_size < 200_000  # compressed small...
         # ...but the uncompressed estimate is huge, so it's skipped.
-        assert mesh_processing._estimate_triangle_count(p) > 1000
+        assert mesh_policy.estimate_triangle_count(p) > 1000
 
         result = analyze(p)
         geometry, thumb = result.geometry, result.image
@@ -173,7 +176,7 @@ class TestLoadMesh:
                 extras={"Metadata/thumbnail.png": preview},
             )
         )
-        assert mesh_processing._estimate_triangle_count(path) < 50
+        assert mesh_policy.estimate_triangle_count(path) < 50
 
         result = analyze(path)
 
@@ -187,7 +190,7 @@ class TestLoadMesh:
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 50)
         path = tmp_path / "repeated-no-preview.3mf"
         path.write_bytes(three_mf(assemblies={2: [(1, None)]}, build=((2, None),) * 20))
-        assert mesh_processing._estimate_triangle_count(path) < 50
+        assert mesh_policy.estimate_triangle_count(path) < 50
 
         result = analyze(path)
 
@@ -205,7 +208,7 @@ class TestLoadMesh:
         geometry, thumb = result.geometry, result.image
         assert geometry["triangle_count"] == tri
         assert geometry["bbox_x_mm"] and geometry["bbox_x_mm"] > 0
-        assert thumb is not None and thumb.startswith(mesh_processing._PNG_MAGIC)
+        assert thumb is not None and thumb.startswith(mesh_previews._PNG_MAGIC)
 
     def test_analysis_retains_no_mesh_afterwards(
         self, tmp_path: Path, monkeypatch

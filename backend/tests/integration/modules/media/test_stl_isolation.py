@@ -14,7 +14,7 @@ import pytest
 import trimesh
 
 from app.core.config import _overlay
-from app.modules.media import mesh_isolation, mesh_processing, stl_isolation
+from app.modules.media import mesh_isolation, mesh_loading, stl_isolation
 from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
 from tests.factories.geometry import three_mf
@@ -30,7 +30,7 @@ def cube_obj(tmp_path):
 class TestToStlBytes:
     def test_matches_the_in_process_conversion(self, cube_obj):
         isolated = stl_isolation.to_stl_bytes(cube_obj, file_type="obj")
-        direct = mesh_processing.to_stl_bytes(cube_obj, file_type="obj")
+        direct = mesh_loading.to_stl_bytes(cube_obj, file_type="obj")
 
         assert isolated == direct
         assert isolated is not None and len(isolated) > 84

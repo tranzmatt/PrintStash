@@ -54,7 +54,7 @@ class TestGenerate:
         assert isolated.image is not None
         assert isolated.geometry == direct.geometry
         assert isolated.strategy == direct.strategy
-        assert isolated.complete == direct.complete
+        assert isolated.coverage == direct.coverage
         assert isolated.failure_reason == direct.failure_reason
         assert isolated.fingerprint_result == direct.fingerprint_result
         assert isolated.fingerprint_result is not None

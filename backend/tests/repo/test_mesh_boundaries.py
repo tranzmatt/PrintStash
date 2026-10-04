@@ -17,6 +17,10 @@ from tests.paths import BACKEND_DIR
 # embedding_isolation or visual_render rather than extending this list.
 OWNERS = {
     "modules/media/mesh_processing.py",
+    "modules/media/mesh_loading.py",
+    "modules/media/mesh_measurements.py",
+    "modules/media/mesh_policy.py",
+    "modules/media/mesh_previews.py",
     "modules/media/mesh_resources.py",
     "modules/media/thumbnail_engine.py",
     "modules/media/geometry_analysis.py",
@@ -35,6 +39,10 @@ OWNERS = {
 # Array, scene, render and transport data owners cannot acquire an orchestrator
 # dependency even for annotations. New data contracts belong in mesh_contracts.
 PRIMITIVE_OWNERS = {
+    "modules/media/mesh_loading.py",
+    "modules/media/mesh_measurements.py",
+    "modules/media/mesh_policy.py",
+    "modules/media/mesh_previews.py",
     "modules/media/mesh_contracts.py",
     "modules/media/mesh_resources.py",
     "modules/media/mesh_render.py",
@@ -45,6 +53,7 @@ PRIMITIVE_OWNERS = {
 }
 CONTRACT_TYPES = {
     "Geometry",
+    "MeshMeasurements",
     "ProgressReporter",
     "ThumbnailStrategy",
     "ThumbnailFailureReason",
@@ -59,6 +68,7 @@ CONTRACT_TYPES = {
 ORCHESTRATORS = {
     "app.modules.media.thumbnail_engine",
     "app.modules.media.geometry_analysis",
+    "app.modules.media.mesh_processing",
 }
 
 RAW = {
@@ -69,6 +79,10 @@ RAW = {
     "app.modules.media.fingerprints.fingerprint_mesh",
     "app.modules.media.fingerprints.fingerprint_path",
     "app.modules.media.thumbnail_engine.ThumbnailEngine",
+    "app.modules.media.mesh_loading.load_mesh",
+    "app.modules.media.mesh_loading.load_step_mesh",
+    "app.modules.media.mesh_loading.to_stl_bytes",
+    "app.modules.media.mesh_measurements.geometry_from_mesh",
     "app.modules.media.mesh_processing._load_mesh",
     "app.modules.media.mesh_processing._load_step_mesh_isolated",
     "app.modules.media.mesh_processing.extract_geometry",
@@ -181,6 +195,9 @@ class TestMeshBoundaries:
     @pytest.mark.parametrize(
         "source",
         [
+            "from .mesh_loading import load_mesh",
+            "from .mesh_measurements import geometry_from_mesh",
+            "from app.modules.media import mesh_loading; mesh_loading.to_stl_bytes(p)",
             "import trimesh.exchange.stl",
             "from trimesh import load",
             "from OCP.STEPControl import STEPControl_Reader",
@@ -253,6 +270,8 @@ class TestPrimitiveDependencies:
             "from .thumbnail_engine import *",
             "if TYPE_CHECKING:\n    from .thumbnail_engine import ThumbnailFailureReason",
             "from .geometry_analysis import VisualViews",
+            "from .mesh_processing import _load_mesh",
+            "from . import mesh_processing",
         ],
     )
     def test_rejects_orchestrator_imports(self, source):
@@ -285,4 +304,52 @@ class TestPrimitiveDependencies:
             "app.modules.media.geometry_analysis": False,
             "app.modules.media.mesh_resources": False,
             "app.modules.media.fingerprints": False,
+        }
+
+
+# The compatibility facade has one fixed test consumer and no production ones.
+# Shrinking this inventory is allowed; adding a consumer requires using an owner.
+FACADE_CONSUMERS = {
+    "tests/unit/modules/media/mesh_processing/test_entry_points.py",
+}
+
+
+class TestMeshFacadeInventory:
+    def test_only_fixed_legacy_consumers_import_the_facade(self):
+        consumers = set()
+        for directory in (
+            BACKEND_DIR / "app",
+            BACKEND_DIR / "tests",
+            BACKEND_DIR / "scripts",
+        ):
+            for path in directory.rglob("*.py"):
+                package = ".".join(path.parent.relative_to(BACKEND_DIR).parts)
+                if any(
+                    target == "app.modules.media.mesh_processing"
+                    or target.startswith("app.modules.media.mesh_processing.")
+                    for target in _orchestrator_dependencies(path.read_text(), package)
+                ):
+                    consumers.add(path.relative_to(BACKEND_DIR).as_posix())
+        assert consumers <= FACADE_CONSUMERS, "\n".join(
+            sorted(consumers - FACADE_CONSUMERS)
+        )
+
+    def test_facade_holds_no_mutable_policy_or_native_implementation(self):
+        path = BACKEND_DIR / "app/modules/media/mesh_processing.py"
+        tree = ast.parse(path.read_text())
+        assert {
+            n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))
+        } == {"extract_geometry"}
+        assert {
+            target.id
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        } == {"__all__"}
+        assert set(_violations(path.read_text(), "app.modules.media")) <= {
+            "app.modules.media.mesh_loading.load_mesh",
+            "app.modules.media.mesh_loading.load_step_mesh",
+            "app.modules.media.mesh_loading.to_stl_bytes",
+            "app.modules.media.mesh_measurements.geometry_from_mesh",
         }

@@ -52,6 +52,18 @@ def mesh(make_model, make_file):
 
 
 class TestPending:
+    def test_rederives_previews_with_ambiguous_completeness(
+        self, db_session, mesh, make_derivative
+    ):
+        artifact = mesh()
+        make_derivative(artifact, DerivativeKind.METADATA)
+        make_derivative(
+            artifact, DerivativeKind.THUMBNAIL, recipe_version=7,
+            output_json='{"strategy":"fallback","complete":true}',
+        )
+
+        assert _subjects(db_session) == [subject_key(artifact.id)]
+
     @pytest.mark.parametrize(
         ("kind", "old_recipe", "other_kind"),
         [
