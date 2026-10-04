@@ -39,9 +39,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
-
-- Large STL files now retain complete bounding dimensions and facet counts when only metadata is requested; measurements no longer depend on producing a thumbnail.
-
+- Capture and similarity commands keep the API event loop responsive through database writes, background-engine notification and response projection.
 - Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.
 - Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
 - Small meshes placed far from the coordinate origin retain their thumbnail
@@ -137,6 +135,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Restoring a backup no longer fails because a completed ZIP inspection is
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
+
+- Large STL files now retain complete bounding dimensions and facet counts when only metadata is requested; measurements no longer depend on producing a thumbnail.
 
 ### Performance
 
