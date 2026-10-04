@@ -80,6 +80,15 @@ recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4`. Search visual recip
 and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
 invalidate earlier rendered inputs and vectors. Encoder asset manifests and
 their digests are unchanged.
+Native encoder alignment has its own stable `encoder_space()` identity. Point
+exports and search visual profiles use that identity to pair image/text towers;
+a renderer update never requires rewriting preplaced Point manifests. Legacy
+mesh-view inference uses `space()`, whose identity includes the rasterizer.
+Thumbnail and multiview search vectors additionally carry their `VisualRecipe`,
+so changed rendered inputs cannot reuse older derived vectors. Rebuild a search
+generation after its rendering recipe changes; an incompatible generation is
+not silently relabelled or reused.
+
 Historical verifier calibration remains tied to its original fingerprint and
 verification versions; it is not relabelled as a new measurement. Fingerprint
 preparation already compacts referenced vertices, so unused-vertex rendering
@@ -102,6 +111,17 @@ and the integral is not a Boolean union of overlapping solids. STL coordinates
 are assumed to be millimetres. Metadata recipe 4 recalculates existing measurements
 to remove volumes previously published for inconsistently wound surfaces; the
 fingerprint algorithm is unchanged.
+
+## Measurement precision
+
+Mesh metadata recipe 5 stores dimensions and valid volume without rounding them
+to two decimal places. Values remain in millimeters and cubic millimeters;
+display formatting is a consumer concern. This preserves small parts and the
+precision available from each source, including bounds obtained by complete STL
+streaming and fallback scans. Existing rounded metadata is eligible for backfill.
+Binary STL still carries float32 coordinates; removing output rounding cannot
+recover precision already absent from the input. Volume retains the closure,
+winding, finite-value and positive-orientation requirements of recipe 4.
 
 ## Bumping a recipe
 
