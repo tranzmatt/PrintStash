@@ -39,6 +39,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
 - Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.
 - Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
 - Small meshes placed far from the coordinate origin retain their thumbnail
