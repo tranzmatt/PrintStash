@@ -94,7 +94,7 @@ def stale_mesh_measurement_reply() -> ThumbnailResult:
         volume=VolumeMeasured(2.0),
         strategy=ThumbnailStrategy.NONE,
         coverage=MeshCoverage(
-            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.COMPLETE
+            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.NOT_PRODUCED
         ),
         failure_reason=None,
         duration_ms=1,

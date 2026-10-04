@@ -378,6 +378,7 @@ class ThumbnailEngine:
                                 )
                                 if sampled_preparation is not None:
                                     prepared, sampled_scan = sampled_preparation
+                                    del sampled_preparation
                                     if source_scan is not SourceScanState.COMPLETE:
                                         source_scan = sampled_scan
                             if (

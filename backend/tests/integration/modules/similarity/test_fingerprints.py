@@ -177,19 +177,33 @@ class TestFingerprintLeases:
 class TestFingerprintPublication:
     @pytest.mark.parametrize("state", list(FingerprintResultState))
     def test_persists_each_outcome_as_a_text_state(
-        self, db_session, make_model, make_file, state
+        self, db_session, make_model, make_file, state, extracted
     ):
         file = make_file(make_model())
-        result = FingerprintResult(state=state)
+        if state is FingerprintResultState.READY:
+            result = extracted
+        elif state is FingerprintResultState.PARTIAL:
+            result = extract(
+                PreparedMesh(
+                    tetrahedron(),
+                    ExpandedScene((), ()),
+                    SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
+                )
+            )
+        else:
+            result = FingerprintResult(
+                state=state, failure_code=FingerprintFailureCode.INVALID_SOURCE
+            )
 
         published = fingerprints.publish_precomputed(db_session, file, result)
 
         assert type(published) is str
         assert published == state.value
         db_session.expire_all()
-        row = db_session.exec(select(GeometryFingerprint)).one()
-        assert type(row.state) is str
-        assert row.state == state.value
+        rows = db_session.exec(select(GeometryFingerprint)).all()
+        assert rows
+        assert all(type(row.state) is str for row in rows)
+        assert all(row.state == state.value for row in rows)
 
     def test_persists_component_lineage(
         self, db_session, make_model, make_file, extracted
