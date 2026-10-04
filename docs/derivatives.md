@@ -75,6 +75,15 @@ recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4` distinguish the new
 pixels from earlier cached evidence. Search visual recipe 2 and the derived
 embedding-space rasterizer token `relative-f64-v1` invalidate earlier rendered
 inputs and vectors. Encoder asset manifests and their digests are unchanged.
+Native encoder alignment has its own stable `encoder_space()` identity. Point
+exports and search visual profiles use that identity to pair image/text towers;
+a renderer update never requires rewriting preplaced Point manifests. Legacy
+mesh-view inference uses `space()`, whose identity includes the rasterizer.
+Thumbnail and multiview search vectors additionally carry their `VisualRecipe`,
+so changed rendered inputs cannot reuse older derived vectors. Rebuild a search
+generation after its rendering recipe changes; an incompatible generation is
+not silently relabelled or reused.
+
 Historical verifier calibration remains tied to its original fingerprint and
 verification versions; it is not relabelled as a new measurement.
 
