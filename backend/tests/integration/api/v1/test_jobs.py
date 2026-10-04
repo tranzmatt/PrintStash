@@ -343,7 +343,7 @@ class TestCancelJob:
         )
 
         assert response.status_code == 200, response.text
-        assert cancelled == [f"{request.job_id}:2"]
+        assert cancelled == [f"{request.job_id}:{job.execution_epoch}:2"]
 
     def test_an_engine_that_cannot_cancel_does_not_fail_the_request(
         self,

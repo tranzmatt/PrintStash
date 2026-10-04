@@ -29,6 +29,7 @@ class TestIngestDerivative:
                 999,
                 None,
                 FingerprintResult(FingerprintResultState.FAILED),
+                source_sha256="a" * 64,
             )
             == "stale"
         )
@@ -46,6 +47,7 @@ class TestIngestDerivative:
             FingerprintResult(
                 FingerprintResultState.FAILED, failure_code="invalid_geometry"
             ),
+            source_sha256=file.sha256,
         )
         assert state == "failed"
         db_session.refresh(file)
@@ -68,6 +70,7 @@ class TestIngestDerivative:
             file.id,
             None if actor_state == "absent" else actor.id,
             result,
+            source_sha256=file.sha256,
         )
         assert state == "ready"
         assert db_session.exec(select(SimilarityRun)).all() == []
@@ -96,6 +99,7 @@ class TestIngestDerivative:
             file.id,
             None,
             extract(prepare_loaded_mesh(tetrahedron(), file_type="stl")),
+            source_sha256=file.sha256,
         )
 
         assert state == "ready"
@@ -119,9 +123,27 @@ class TestIngestDerivative:
             file.id,
             None,
             extract(prepare_loaded_mesh(tetrahedron(), file_type="stl")),
+            source_sha256=file.sha256,
         )
 
         assert db_session.exec(select(SimilarityRun)).all() == []
+
+    def test_rejects_fingerprints_computed_from_replaced_source_bytes(
+        self, db_session, make_file, make_model
+    ):
+        file = make_file(make_model())
+        source_sha256 = file.sha256
+        result = extract(prepare_loaded_mesh(tetrahedron(), file_type="stl"))
+        file.sha256 = "b" * 64
+        db_session.add(file)
+        db_session.commit()
+
+        state = ingestion.after_commit(
+            get_session_factory(), file.id, None, result, source_sha256=source_sha256
+        )
+
+        assert state == "stale"
+        assert db_session.exec(select(GeometryFingerprint)).all() == []
 
     def test_respects_ingest_fingerprint_switch(self, db_session, make_user):
         actor = make_user(superuser=True)
@@ -129,3 +151,63 @@ class TestIngestDerivative:
             db_session, actor, {"enabled": True, "fingerprint_on_ingest": False}
         )
         assert ingestion.extraction_options(get_session_factory()) == {}
+
+    @pytest.mark.parametrize("retired", ["cancelled", "retried"])
+    @pytest.mark.parametrize("cached", [False, True], ids=["new-cache", "ready-cache"])
+    def test_retired_execution_cannot_schedule_similarity_work(
+        self, db_session, make_file, make_model, make_user, make_job, retired, cached
+    ):
+        from app.db.models import JobState
+        from app.modules.similarity.fingerprints import publish_precomputed
+        from app.modules.work.contracts import JobExecution
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(db_session, actor, {"enabled": True})
+        file = make_file(make_model())
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH,
+            subject=f"file/{file.id}",
+            state=JobState.RUNNING,
+            attempts=1,
+        )
+        execution = JobExecution(job.id, 1, job.execution_epoch)
+        result = extract(prepare_loaded_mesh(tetrahedron(), file_type="stl"))
+        before = None
+        if cached:
+            assert publish_precomputed(db_session, file, result) == "ready"
+            before = (
+                db_session.exec(
+                    select(GeometryFingerprint).where(
+                        GeometryFingerprint.component_index == 0
+                    )
+                )
+                .one()
+                .model_dump()
+            )
+        if retired == "cancelled":
+            job.state = JobState.CANCELLED
+        else:
+            job.execution_epoch = "new-execution"
+        db_session.add(job)
+        db_session.commit()
+
+        state = ingestion.after_commit(
+            get_session_factory(),
+            file.id,
+            actor.id,
+            FingerprintResult(FingerprintResultState.FAILED, failure_code="old-result")
+            if cached
+            else result,
+            source_sha256=file.sha256,
+            execution=execution,
+        )
+
+        assert state == "ready"
+        db_session.expire_all()
+        fingerprint = db_session.exec(
+            select(GeometryFingerprint).where(GeometryFingerprint.component_index == 0)
+        ).one()
+        assert fingerprint.state == "ready"
+        if before is not None:
+            assert fingerprint.model_dump() == before
+        assert db_session.exec(select(SimilarityRun)).all() == []

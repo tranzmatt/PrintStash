@@ -16,7 +16,7 @@ class TestProducerErrors:
     def test_an_unrelated_operation_error_remains_a_failure(self, derivative_group):
         failure = OperationError("storage_unavailable")
 
-        def refuse(_file_id):
+        def refuse(_file_id, *, execution):
             raise failure
 
         context = ExecutionContext(
@@ -26,6 +26,7 @@ class TestProducerErrors:
             WorkPriority.BACKFILL,
             "attempt",
             1,
+            execution_epoch="test-epoch",
         )
         with pytest.raises(OperationError, match="storage_unavailable") as raised:
             jobs._step(refuse, derivative_group)(context)

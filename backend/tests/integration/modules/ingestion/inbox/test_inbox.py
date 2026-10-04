@@ -46,6 +46,7 @@ from app.modules.work.submission import nudge
 from app.runtime.engine.inline import InlineJobEngine
 from app.schemas.inbox import CaptureUploadSlotsCreate, InboxItemUpdate
 from tests.factories import build_collection, build_file, build_model, build_user
+from tests.factories.ops import build_job_context
 
 
 def _make_user(session: Session, username: str, *, admin: bool = True) -> User:
@@ -1260,7 +1261,7 @@ class TestRunImportJob:
         db_session.add(row)
         db_session.commit()
 
-        inbox.run_import_job(row.id, job_id or "")
+        inbox.run_import_job(row.id, build_job_context(job_id or ""))
 
         status = jobs.get(job_id or "")
         assert status is not None and status.state == "cancelled"
@@ -1289,8 +1290,8 @@ class TestRunImportJob:
 
         monkeypatch.setattr(inbox, "_download_assets", fake_download_assets)
 
-        def fake_import_assets(*, job_id: str, **_kwargs) -> None:
-            jobs.finish(job_id, JobOutcome.COMPLETED, model_id=imported_model.id)
+        def fake_import_assets(*, job_context, **_kwargs) -> None:
+            job_context.finish(JobOutcome.COMPLETED, model_id=imported_model.id)
 
         monkeypatch.setattr(importer, "import_assets", fake_import_assets)
 
@@ -1354,8 +1355,8 @@ class TestRunImportJob:
             lambda _path, names: [(extracted, "a.stl")] if "a.stl" in names else [],
         )
 
-        def fake_import_assets(*, job_id: str, **_kwargs) -> None:
-            jobs.finish(job_id, JobOutcome.COMPLETED, model_id=imported_model.id)
+        def fake_import_assets(*, job_context, **_kwargs) -> None:
+            job_context.finish(JobOutcome.COMPLETED, model_id=imported_model.id)
 
         monkeypatch.setattr(importer, "import_assets", fake_import_assets)
 
@@ -1393,13 +1394,13 @@ class TestRunImportJob:
             staging_key=str(staged),
         )
 
-        def fake_import_assets(*, job_id: str, staged_files, **_kwargs) -> None:
+        def fake_import_assets(*, job_context, staged_files, **_kwargs) -> None:
             copied, name = staged_files[0]
             assert copied != staged
             assert copied.read_bytes() == b"browser-owned-package"
             assert name == "widget.3mf"
             copied.unlink()
-            jobs.finish(job_id, JobOutcome.COMPLETED, model_id=imported_model.id)
+            job_context.finish(JobOutcome.COMPLETED, model_id=imported_model.id)
 
         monkeypatch.setattr(importer, "import_assets", fake_import_assets)
 
@@ -1458,8 +1459,8 @@ class TestRunImportJob:
 
         monkeypatch.setattr(inbox, "_download_assets", fake_download_assets)
 
-        def fake_import_assets(*, job_id: str, **_kwargs) -> None:
-            jobs.finish(job_id, JobOutcome.COMPLETED, model_id=imported_model.id)
+        def fake_import_assets(*, job_context, **_kwargs) -> None:
+            job_context.finish(JobOutcome.COMPLETED, model_id=imported_model.id)
 
         monkeypatch.setattr(importer, "import_assets", fake_import_assets)
 
@@ -1501,8 +1502,8 @@ class TestRunImportJob:
 
         monkeypatch.setattr(inbox, "_download_assets", fake_download_assets)
 
-        def fake_import_assets(*, job_id: str, **_kwargs) -> None:
-            jobs.finish(job_id, JobOutcome.COMPLETED, model_id=imported_model.id)
+        def fake_import_assets(*, job_context, **_kwargs) -> None:
+            job_context.finish(JobOutcome.COMPLETED, model_id=imported_model.id)
 
         monkeypatch.setattr(importer, "import_assets", fake_import_assets)
 
@@ -1536,8 +1537,8 @@ class TestRunImportJob:
 
         monkeypatch.setattr(inbox, "_download_assets", fake_download_assets)
 
-        def fake_import_assets(*, job_id: str, **_kwargs) -> None:
-            jobs.finish(job_id, JobOutcome.FAILED, error="ingest_exploded")
+        def fake_import_assets(*, job_context, **_kwargs) -> None:
+            job_context.finish(JobOutcome.FAILED, error="ingest_exploded")
 
         monkeypatch.setattr(importer, "import_assets", fake_import_assets)
 
@@ -1713,8 +1714,8 @@ class TestRetry:
         assert returned.inbox_item_id == row.id
         assert returned.job_id is None
 
-        def complete_import(*, job_id: str, **_kwargs) -> None:
-            jobs.finish(job_id, JobOutcome.COMPLETED, model_id=imported_model.id)
+        def complete_import(*, job_context, **_kwargs) -> None:
+            job_context.finish(JobOutcome.COMPLETED, model_id=imported_model.id)
 
         monkeypatch.setattr(inbox.importer, "import_assets", complete_import)
         _import_through_job(db_session, work_engine, row.id, [])

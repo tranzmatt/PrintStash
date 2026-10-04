@@ -57,8 +57,7 @@ from app.db.models import SUFFIX_TO_FILE_TYPE
 from app.db.session import SessionFactory, get_session_factory
 from app.modules.ingestion.ingestion import StagedArtifact, commit_staged_artifact
 from app.modules.storage.capacity import CapacityManager, CapacityResource
-from app.modules.work.contracts import JobOutcome
-from app.modules.work.jobs import jobs as registry
+from app.modules.work.contracts import JobContext, JobOutcome
 
 if TYPE_CHECKING:
     from app.modules.library.provenance import ProvenanceContext
@@ -366,7 +365,7 @@ def item_ingestion_key(job_id: str, name: str) -> str:
 
 def import_assets(
     *,
-    job_id: str,
+    job_context: JobContext,
     staged_files: list[tuple[Path, str] | StagedAsset],
     collection: Optional[str],
     tags: Optional[str],
@@ -390,12 +389,13 @@ def import_assets(
     appended to ``collection`` so a zipped folder tree is mirrored into nested
     sub-collections; otherwise every file lands directly in ``collection``.
     """
+    job_id = job_context.job_id
     total = len(staged_files)
     if total == 0:
-        registry.finish(job_id, JobOutcome.FAILED, error="no_importable_files")
+        job_context.finish(JobOutcome.FAILED, error="no_importable_files")
         return
     override = model_name.strip() if model_name and total == 1 else None
-    registry.update(job_id, total_steps=total, total=total, stage="ingesting")
+    job_context.update(total_steps=total, total=total, stage="ingesting")
     results: list[dict] = []
     succeeded = 0
     failed = 0
@@ -449,8 +449,7 @@ def import_assets(
             elif res.get("error"):
                 failed += 1
         processed = index + 1
-        registry.update(
-            job_id,
+        job_context.update(
             step=processed,
             processed=processed,
             succeeded=succeeded,
@@ -462,8 +461,7 @@ def import_assets(
     imported = [r for r in results if r.get("model_id")]
     failures = [r for r in results if r.get("error")]
     deduplicated = sum(bool(r.get("deduplicated")) for r in imported)
-    registry.finish(
-        job_id,
+    job_context.finish(
         JobOutcome.COMPLETED if imported else JobOutcome.FAILED,
         model_id=imported[0]["model_id"] if imported else None,
         result={"imported": len(imported), "total": total, "items": results},
@@ -527,7 +525,7 @@ class ResolvedGroup:
 
 def import_resolved_groups(
     *,
-    job_id: str,
+    job_context: JobContext,
     groups: list[ResolvedGroup],
     collection: Optional[str],
     tags: Optional[str],
@@ -536,9 +534,9 @@ def import_resolved_groups(
 ) -> None:
     """Ingest many already-staged groups (e.g. collection members) into one
     collection, recording each group's own ``source_url`` on its models."""
+    job_id = job_context.job_id
     total = sum(len(g.staged_files) for g in groups)
-    registry.update(
-        job_id,
+    job_context.update(
         total_steps=max(total, 1),
         total=total,
         stage="ingesting",
@@ -569,7 +567,7 @@ def import_resolved_groups(
                 continue
             results.append({**res, "member": group.title})
             done += 1
-            registry.update(job_id, step=done, progress=done / max(total, 1) * 100)
+            job_context.update(step=done, progress=done / max(total, 1) * 100)
 
     imported = [r for r in results if r.get("model_id")]
     failures = [r for r in results if r.get("error")]
@@ -594,8 +592,7 @@ def import_resolved_groups(
             if len(member_errors) == 1
             else "collection_import_failed"
         )
-        registry.finish(
-            job_id,
+        job_context.finish(
             JobOutcome.FAILED,
             error=error,
             result=result,
@@ -614,8 +611,7 @@ def import_resolved_groups(
         )
         return
 
-    registry.finish(
-        job_id,
+    job_context.finish(
         JobOutcome.COMPLETED,
         model_id=imported[0]["model_id"],
         result=result,

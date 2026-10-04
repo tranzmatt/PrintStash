@@ -49,6 +49,7 @@ class TestOptionalFeatures:
                     123,
                     actor.id,
                     FingerprintResult(state=FingerprintResultState.READY),
+                    source_sha256="a" * 64,
                 )
                 is None
             )

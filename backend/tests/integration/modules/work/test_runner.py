@@ -107,13 +107,16 @@ def _run(engine: InlineJobEngine, job: Job, attempt: int = 1) -> None:
             priority=WorkPriority.INTERACTIVE,
             attempt=attempt,
             routing=Deduplicated(f"{job.kind}|{job.subject_key}"),
+            execution_epoch=job.execution_epoch,
         ),
         sequence=0,
         status=EngineStatus.RUNNING,
         app_version=engine.app_version,
         executor_id=engine.executor_id,
     )
-    execute_job(job.id, attempt, _Runner(engine, execution))
+    execute_job(
+        job.id, attempt, _Runner(engine, execution), execution_epoch=job.execution_epoch
+    )
 
 
 def _status(job_id: str):
@@ -368,14 +371,14 @@ class TestActiveAttempt:
             state=JobState.RUNNING,
             attempts=2,
         )
-        assert _withdrawn(job.id, 1)
-        assert not _withdrawn(job.id, 2)
+        assert _withdrawn(job.id, 1, job.execution_epoch)
+        assert not _withdrawn(job.id, 2, job.execution_epoch)
 
     def test_requeued_execution_is_withdrawn(self, make_job):
         from app.modules.work.runner import _withdrawn
 
         job = make_job(kind=JobKind.DERIVATIVES_MESH, attempts=1)
-        assert _withdrawn(job.id, 1)
+        assert _withdrawn(job.id, 1, job.execution_epoch)
         assert not _withdrawn(job.id)
 
     @pytest.mark.parametrize(
@@ -396,6 +399,7 @@ class TestActiveAttempt:
             priority=job.priority,
             execution_id=f"{job.id}:1",
             attempt=1,
+            execution_epoch=job.execution_epoch,
         )
         outcome = _run_step(
             Step("native", lambda _ctx: output.write_bytes(b"stale")),
@@ -404,3 +408,170 @@ class TestActiveAttempt:
         )
         assert outcome == StepOutcome.CANCELLED.value
         assert not output.exists()
+
+
+class TestAttemptSettlement:
+    def test_late_failure_preserves_the_retried_derivative(
+        self, db_session, make_job, make_model, make_file, make_derivative
+    ):
+        from app.core.time import utcnow
+        from app.db.models import DerivativeKind, DerivativeState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.jobs import definitions
+        from app.modules.derivatives.kinds import recipes_for
+        from app.modules.work.runner import _settle
+
+        artifact = make_file(make_model(), filename="retry.stl")
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH,
+            subject=f"file/{artifact.id}",
+            state=JobState.RUNNING,
+            attempts=1,
+        )
+        definition = next(
+            d for d in definitions() if d.name == JobKind.DERIVATIVES_MESH
+        )
+        recipe = recipes_for(artifact)[DerivativeKind.THUMBNAIL]
+        records.begin(
+            db_session, artifact, DerivativeKind.THUMBNAIL, recipe, now=utcnow()
+        )
+        db_session.commit()
+        records.cancel(
+            db_session, artifact, {DerivativeKind.THUMBNAIL: recipe}, now=utcnow()
+        )
+        db_session.commit()
+        records.reset(db_session, artifact)
+        db_session.commit()
+        new = records.begin(
+            db_session, artifact, DerivativeKind.THUMBNAIL, recipe, now=utcnow()
+        )
+        token = new.attempt_token
+        job.state = JobState.RUNNING
+        job.attempts = 2
+        db_session.add(job)
+        db_session.commit()
+
+        _settle(
+            job.id,
+            1,
+            job.execution_epoch,
+            definition,
+            job.subject_key,
+            "late_old_worker_error",
+        )
+
+        db_session.expire_all()
+        assert db_session.get(Job, job.id).state is JobState.RUNNING
+        current = records.rows_for(db_session, artifact)[DerivativeKind.THUMBNAIL]
+        assert (current.state, current.attempt_token, current.failure_reason) == (
+            DerivativeState.RUNNING,
+            token,
+            None,
+        )
+
+    def test_old_context_cannot_finish_a_new_attempt(self, db_session, make_job):
+        from app.modules.work.runner import ExecutionContext
+
+        job = make_job(
+            kind=MUTATING, subject="ingest/progress", state=JobState.RUNNING, attempts=2
+        )
+        context = ExecutionContext(
+            job.id,
+            job.kind,
+            job.subject_key,
+            job.priority,
+            f"{job.id}:1",
+            1,
+            execution_epoch=job.execution_epoch,
+        )
+
+        context.finish(JobOutcome.FAILED, error="late_old_error")
+
+        db_session.expire_all()
+        assert db_session.get(Job, job.id).state is JobState.RUNNING
+
+    def test_old_context_cannot_report_progress_for_a_new_attempt(
+        self, db_session, make_job
+    ):
+        from app.modules.work.runner import ExecutionContext
+
+        job = make_job(
+            kind=MUTATING, subject="ingest/progress", state=JobState.RUNNING, attempts=2
+        )
+        context = ExecutionContext(
+            job.id,
+            job.kind,
+            job.subject_key,
+            job.priority,
+            f"{job.id}:1",
+            1,
+            execution_epoch=job.execution_epoch,
+        )
+
+        context.update(processed=50)
+
+        assert jobs.get(job.id).processed == 0
+
+    def test_retried_job_with_old_attempt_number_cannot_be_reclaimed(
+        self, db_session, make_job
+    ):
+        from app.modules.work.runner import _begin
+
+        job = make_job(
+            kind=MUTATING, subject="ingest/retry", state=JobState.QUEUED, attempts=1
+        )
+
+        assert _begin(job.id, 1, "previous-epoch") is None
+
+        db_session.expire_all()
+        assert db_session.get(Job, job.id).state is JobState.QUEUED
+
+
+class TestEpochCallbacks:
+    def test_legacy_callback_without_epoch_cannot_begin(self, engine, make_job):
+        job = make_job(kind=MUTATING)
+
+        # Legacy durable engine arguments contain only Job id and attempt.
+        class UnexpectedRunner:
+            def run(self, *_args):
+                raise AssertionError("legacy callback must not execute checkpoints")
+
+        execute_job(job.id, 1, UnexpectedRunner())
+        assert _status(job.id).state is JobState.QUEUED
+        assert _status(job.id).attempts == 0
+
+    def test_old_epoch_cannot_write_to_same_attempt_number(
+        self, db_session, engine, make_job
+    ):
+        from app.modules.work.runner import ExecutionContext, _settle
+
+        job = make_job(kind=MUTATING, state=JobState.RUNNING, attempts=1)
+        old_epoch = job.execution_epoch
+        context = ExecutionContext(
+            job.id,
+            job.kind,
+            job.subject_key,
+            job.priority,
+            f"{job.id}:{old_epoch}:1",
+            1,
+            old_epoch,
+        )
+        job.execution_epoch = "retried-epoch"
+        job.submitted_epoch = job.execution_epoch
+        db_session.add(job)
+        db_session.commit()
+
+        context.update(processed=99)
+        context.finish(JobOutcome.FAILED, error="late callback")
+        _settle(
+            job.id,
+            1,
+            old_epoch,
+            catalog_module.get_catalog().definition(MUTATING),
+            job.subject_key,
+            "late error",
+        )
+
+        assert _status(job.id).state is JobState.RUNNING
+        assert _status(job.id).processed == 0
+        assert TRACE.failures == []

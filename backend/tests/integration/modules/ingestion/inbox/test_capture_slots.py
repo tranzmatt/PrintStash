@@ -830,6 +830,19 @@ class TestCleanupCaptureSlots:
 
                 return _Scope()
 
+        from app.db.models import JobKind, JobState
+        from app.modules.work.contracts import JobExecution
+        from tests.factories.ops import build_job
+
+        stored_job = build_job(
+            db_session, kind=JobKind.INGESTION_INBOX_IMPORT, state=JobState.COMPLETED
+        )
+        row.job_id = stored_job.id
+        db_session.add(row)
+        db_session.commit()
+        execution = JobExecution(
+            stored_job.id, stored_job.attempts, stored_job.execution_epoch
+        )
         job = type("Job", (), {"state": "completed", "model_id": 1, "result": None})()
         monkeypatch.setattr(inbox.registry, "get", lambda _job_id: job)
         monkeypatch.setattr(inbox, "_record_v2_results", lambda *_args: (True, 1, 0))
@@ -849,7 +862,7 @@ class TestCleanupCaptureSlots:
         )
 
         with pytest.raises(RuntimeError, match="commit failed"):
-            inbox._finish_import(row.id, "cover-commit-failure-job", _Factory())
+            inbox._finish_import(row.id, execution, _Factory())
 
         assert seam_calls == [write]
         rollback.undo()

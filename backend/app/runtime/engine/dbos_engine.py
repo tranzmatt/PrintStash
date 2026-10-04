@@ -213,10 +213,12 @@ class DbosJobEngine(JobEngine):
         runner = _DbosRunner()
 
         @DBOS.workflow(name=JOB_WORKFLOW)
-        def job_workflow(job_id: str, attempt: int) -> None:
+        def job_workflow(
+            job_id: str, attempt: int, execution_epoch: str | None = None
+        ) -> None:
             from app.modules.work.runner import execute_job
 
-            execute_job(job_id, attempt, runner)
+            execute_job(job_id, attempt, runner, execution_epoch=execution_epoch)
 
         @DBOS.workflow(name=RECONCILE_WORKFLOW)
         def reconcile_workflow(source: str) -> None:
@@ -313,7 +315,10 @@ class DbosJobEngine(JobEngine):
                     queue.enqueue(self._reconcile_workflow, submission.source.value)
                 else:
                     queue.enqueue(
-                        self._job_workflow, submission.job_id, submission.attempt
+                        self._job_workflow,
+                        submission.job_id,
+                        submission.attempt,
+                        submission.execution_epoch,
                     )
         except dbos_error.DBOSQueueDeduplicatedError:
             return SubmitOutcome.DEDUPLICATED

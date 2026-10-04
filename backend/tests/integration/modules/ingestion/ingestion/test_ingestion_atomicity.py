@@ -599,3 +599,77 @@ class TestDerivativeHandoff:
 
         db_session.rollback()
         assert db_session.get(ReconcileCursor, JobKind.DERIVATIVES_MESH) is None
+
+
+class TestStagedAttemptPublication:
+    def test_late_upload_completion_preserves_retried_staging(
+        self, db_session, make_user, make_ingest_request, tmp_path, storage, monkeypatch
+    ):
+        from app.db.models import IngestRequestKind, Job, JobState, StagingLease
+        from app.modules.ingestion import staging_leases
+        from app.modules.work import service
+        from tests.factories.ops import build_job_context
+
+        owner = make_user()
+        request = make_ingest_request(owner, kind=IngestRequestKind.UPLOAD)
+        staged = tmp_path / "attempt.gcode"
+        original = b"; original source\nG1 X1 Y1\n"
+        replacement = b"; retry-owned bytes\nG1 X2 Y2\n"
+        staged.write_bytes(original)
+        staging_leases.create_job_lease(
+            db_session,
+            job_id=request.job_id,
+            owner_user_id=owner.id,
+            path=staged,
+            size_bytes=len(original),
+            sha256=hashlib.sha256(original).hexdigest(),
+        )
+        db_session.commit()
+        context = build_job_context(request.job_id)
+        monkeypatch.setattr(service, "nudge", lambda *_args, **_kwargs: None)
+        retried_leases = []
+
+        def retry_before_terminal(stage, job_id):
+            if stage != "before_terminal":
+                return
+            service.cancel(job_id, actor=owner)
+            staged.write_bytes(replacement)
+            lease = staging_leases.create_job_lease(
+                db_session,
+                job_id=job_id,
+                owner_user_id=owner.id,
+                path=staged,
+                size_bytes=len(replacement),
+                sha256=hashlib.sha256(replacement).hexdigest(),
+            )
+            db_session.commit()
+            retried_leases.append(lease.id)
+            service.retry(job_id, actor=owner)
+
+        monkeypatch.setattr(
+            ingestion, "_fault_injection_checkpoint", retry_before_terminal
+        )
+
+        outcome = ingestion.ingest_staged_file(
+            job_context=context,
+            artifact=ingestion.StagedArtifact(
+                staged_path=staged,
+                original_filename="attempt.gcode",
+                model_name="Attempt",
+                file_type=FileType.GCODE,
+            ),
+            actor_user_id=owner.id,
+        )
+
+        assert outcome is not None
+        db_session.expire_all()
+        job = db_session.get(Job, request.job_id)
+        assert job.state is JobState.QUEUED
+        assert job.attempts == context.attempt
+        assert job.execution_epoch != context.execution_epoch
+        assert staged.read_bytes() == replacement
+        assert db_session.get(StagingLease, retried_leases[0]) is not None
+        assert (
+            db_session.get(File, outcome.file_id).sha256
+            == hashlib.sha256(original).hexdigest()
+        )

@@ -165,7 +165,7 @@ class TestRepair:
 
         assert result.submitted == 1
         assert _row(db_session, job.id).attempts == 1
-        assert execution_id(job.id, 1) in engine.executions
+        assert execution_id(job.id, 1, job.execution_epoch) in engine.executions
 
     def test_resubmits_an_execution_the_engine_lost(
         self, engine: InlineJobEngine, make_job, db_session: Session
@@ -177,7 +177,7 @@ class TestRepair:
         row = _row(db_session, job.id)
         assert (result.interrupted, result.submitted) == (1, 1)
         assert (row.attempts, row.resubmits) == (2, 1)
-        assert execution_id(job.id, 2) in engine.executions
+        assert execution_id(job.id, 2, job.execution_epoch) in engine.executions
 
     def test_records_why_a_job_was_interrupted(
         self, engine: InlineJobEngine, make_job, db_session: Session
@@ -209,7 +209,9 @@ class TestRepair:
     ) -> None:
         job = _stale(make_job)
         run_pass(REQUESTED)
-        engine.executions[execution_id(job.id, 2)].status = EngineStatus.SUCCEEDED
+        engine.executions[
+            execution_id(job.id, 2, job.execution_epoch)
+        ].status = EngineStatus.SUCCEEDED
 
         result = run_pass(REQUESTED)
 
@@ -221,7 +223,9 @@ class TestRepair:
     ) -> None:
         job = make_job(kind=REQUESTED)
         run_pass(REQUESTED)
-        engine.executions[execution_id(job.id, 1)].status = EngineStatus.FAILED
+        engine.executions[
+            execution_id(job.id, 1, job.execution_epoch)
+        ].status = EngineStatus.FAILED
 
         result = run_pass(REQUESTED)
 
@@ -235,7 +239,7 @@ class TestRepair:
         dead = make_work_executor("dead-executor", stale=True)
         job = make_job(kind=REQUESTED)
         run_pass(REQUESTED)
-        stranded = engine.executions[execution_id(job.id, 1)]
+        stranded = engine.executions[execution_id(job.id, 1, job.execution_epoch)]
         stranded.status = EngineStatus.RUNNING
         stranded.executor_id = dead.executor_id
 
@@ -250,7 +254,7 @@ class TestRepair:
     ) -> None:
         job = make_job(kind=REQUESTED)
         run_pass(REQUESTED)
-        old = engine.executions[execution_id(job.id, 1)]
+        old = engine.executions[execution_id(job.id, 1, job.execution_epoch)]
         old.app_version = "0.0.1-previous"
 
         run_pass(REQUESTED)
@@ -263,7 +267,9 @@ class TestRepair:
     ) -> None:
         job = make_job(kind=REQUESTED)
         run_pass(REQUESTED)
-        engine.executions[execution_id(job.id, 1)].app_version = "0.0.1-previous"
+        engine.executions[
+            execution_id(job.id, 1, job.execution_epoch)
+        ].app_version = "0.0.1-previous"
 
         def unreachable(_execution_id):
             raise RuntimeError("engine down")
@@ -601,7 +607,7 @@ class TestSweepLostPasses:
         dead = make_work_executor("dead-executor", stale=True)
         job = make_job(kind=REQUESTED)
         run_pass(REQUESTED)
-        execution = engine.executions[execution_id(job.id, 1)]
+        execution = engine.executions[execution_id(job.id, 1, job.execution_epoch)]
         execution.status = EngineStatus.RUNNING
         execution.executor_id = dead.executor_id
 
@@ -615,11 +621,14 @@ class TestSweepForeignVersions:
     ) -> None:
         job = make_job(kind=REQUESTED)
         run_pass(REQUESTED)
-        engine.executions[execution_id(job.id, 1)].app_version = "0.0.1-previous"
+        engine.executions[
+            execution_id(job.id, 1, job.execution_epoch)
+        ].app_version = "0.0.1-previous"
 
         assert sweep_foreign_versions() == 1
         assert (
-            engine.executions[execution_id(job.id, 1)].status is EngineStatus.CANCELLED
+            engine.executions[execution_id(job.id, 1, job.execution_epoch)].status
+            is EngineStatus.CANCELLED
         )
 
     def test_leaves_this_versions_work_running(
@@ -629,3 +638,27 @@ class TestSweepForeignVersions:
         run_pass(REQUESTED)
 
         assert sweep_foreign_versions() == 0
+
+
+class TestInterrupt:
+    def test_stale_engine_evidence_cannot_interrupt_a_new_attempt(
+        self, db_session, make_job
+    ):
+        from app.modules.work.reconciler import Reason, _interrupt
+
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH, state=JobState.RUNNING, attempts=2
+        )
+        job_id = job.id
+        db_session.expunge(job)
+        job.attempts = 1
+
+        changed = _interrupt(job, Reason.INTERRUPTED_REPEATEDLY, now=utcnow())
+
+        assert changed is False
+        current = db_session.get(Job, job_id)
+        assert (current.state, current.attempts, current.resubmits) == (
+            JobState.RUNNING,
+            2,
+            0,
+        )

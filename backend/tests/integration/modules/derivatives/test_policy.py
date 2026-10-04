@@ -448,7 +448,7 @@ class TestRepairBacklog:
         )
         submit(healthy.id)
         work_engine.executions[
-            execution_id(healthy.id, 1)
+            execution_id(healthy.id, 1, healthy.execution_epoch)
         ].status = EngineStatus.RUNNING
         lost = make_job(
             kind=JobKind.DERIVATIVES_MESH,

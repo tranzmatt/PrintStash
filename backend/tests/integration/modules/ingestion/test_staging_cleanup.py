@@ -9,6 +9,7 @@ from app.core.time import utcnow
 from app.db.models import IngestRequestKind, JobState, StagingLease
 from app.modules.ingestion import staging_cleanup, staging_leases
 from app.modules.ingestion.ingestion import release_job_staging
+from tests.factories.ops import build_job_context
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +64,7 @@ class TestStagingCleanup:
         request, path, lease = staged_input
         path.unlink()
         path.write_bytes(b"replacement")
-        release_job_staging(request.job_id)
+        release_job_staging(build_job_context(request.job_id))
         assert path.read_bytes() == b"replacement"
         db_session.expire_all()
         assert db_session.get(StagingLease, lease.id) is not None

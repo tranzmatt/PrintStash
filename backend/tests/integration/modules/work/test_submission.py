@@ -52,6 +52,67 @@ def _cursor(session: Session, source: JobKind) -> ReconcileCursor:
 
 
 class TestSubmit:
+    @pytest.mark.parametrize(
+        "outcome,fields", [("completed", {}), ("failed", {"error": "expected"})]
+    )
+    def test_terminal_execution_before_submit_returns_keeps_its_engine_result(
+        self, work_engine, make_job, db_session, monkeypatch, outcome, fields
+    ):
+        from app.db.models import LaneName
+        from app.modules.work.catalog import default_lanes
+        from app.modules.work.contracts import (
+            EngineStatus,
+            JobDefinition,
+            JobOutcome,
+            JobSubmission,
+            Step,
+        )
+        from app.runtime.engine.inline import InlineJobEngine
+
+        def finish(ctx):
+            ctx.finish(JobOutcome(outcome), **fields)
+
+        catalog = WorkCatalog(
+            [
+                JobDefinition(
+                    name=JobKind.SOURCES_SCAN,
+                    lane=LaneName.MAINTENANCE,
+                    steps=(Step("finish-before-ack", finish),),
+                    label="Probe",
+                )
+            ],
+            lanes=default_lanes(),
+        )
+        engine = InlineJobEngine(catalog)
+        engine.launch(listen_lanes=None)
+        catalog_module.bind(engine, catalog)
+        job = make_job(kind=JobKind.SOURCES_SCAN)
+        accepted = engine.submit
+        cancellations = []
+        cancel = engine.cancel
+
+        def finish_before_ack(submission):
+            result = accepted(submission)
+            if isinstance(submission, JobSubmission):
+                engine.drain()
+            return result
+
+        def record_cancel(execution):
+            cancellations.append(execution)
+            cancel(execution)
+
+        monkeypatch.setattr(engine, "submit", finish_before_ack)
+        monkeypatch.setattr(engine, "cancel", record_cancel)
+        assert submit(job.id) is SubmitOutcome.ACCEPTED
+
+        db_session.refresh(job)
+        assert job.state.value == outcome
+        assert job.attempts == 1
+        assert job.submitted_epoch == job.execution_epoch
+        execution = execution_id(job.id, 1, job.execution_epoch)
+        assert engine.evidence([execution])[execution].status is EngineStatus.SUCCEEDED
+        assert cancellations == []
+
     def test_an_accepted_submission_counts_as_the_next_attempt(
         self, work_engine, make_job, db_session: Session
     ) -> None:
@@ -62,7 +123,7 @@ class TestSubmit:
         assert outcome is SubmitOutcome.ACCEPTED
         db_session.refresh(job)
         assert job.attempts == 1
-        execution = work_engine.executions[execution_id(job.id, 1)]
+        execution = work_engine.executions[execution_id(job.id, 1, job.execution_epoch)]
         assert execution.submission.routing == Deduplicated(
             f"sources.scan|{job.subject_key}"
         )
@@ -116,7 +177,9 @@ class TestSubmit:
 
         submit(job.id)
 
-        submission = work_engine.executions[execution_id(job.id, 1)].submission
+        submission = work_engine.executions[
+            execution_id(job.id, 1, job.execution_epoch)
+        ].submission
         assert submission.routing == Partitioned("7")
 
 
