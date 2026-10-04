@@ -304,7 +304,7 @@ print(json.dumps({'rss':rss,'workers':workers,'oom_kill':int(events['oom_kill'])
 os.environ["PYTHONPATH"] = "/tmp"
 from app.modules.media.mesh_isolation import supervise, MeshWorkerError
 from app.modules.media.worker_bootstrap import command
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 try:
  supervise(command("mesh_resource_burst", [], 128*1024*1024),
            memory_budget=128*1024*1024, timeout_seconds=30)

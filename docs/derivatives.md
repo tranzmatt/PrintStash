@@ -196,7 +196,9 @@ replacement is ready.
 
 ## Mesh geometry outcomes
 
-Mesh replies carry a geometry outcome independently from thumbnail status.
+Mesh replies use the request/result types and tagged geometry codec owned by
+`modules/media/mesh_contracts.py`, independently from thumbnail strategy
+selection. Replies carry a geometry outcome independently from thumbnail status.
 A validated embedded preview can remain ready when geometry is refused. Refused
 geometry records a failed metadata derivative, with terminal resource/malformed
 input reasons; it does not publish a successful all-unknown measurement row.

@@ -9,9 +9,9 @@ import trimesh
 
 from app.core.config import _overlay
 from app.modules.media import stl_worker
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.stl_isolation import decode_reply
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from tests.factories.geometry import three_mf
 
 

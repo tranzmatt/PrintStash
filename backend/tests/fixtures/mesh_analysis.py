@@ -11,12 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.modules.media.thumbnail_engine import (
-    ThumbnailEngine,
+from app.modules.media.mesh_contracts import (
     ThumbnailRequest,
     ThumbnailResult,
     ThumbnailStrategy,
 )
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 
 PARTIAL_STRATEGIES = (ThumbnailStrategy.STREAMING, ThumbnailStrategy.FALLBACK)
 

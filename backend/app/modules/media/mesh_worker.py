@@ -11,8 +11,9 @@ import os
 import sys
 from pathlib import Path
 
+from app.modules.media.mesh_contracts import ThumbnailRequest
 from app.modules.media.mesh_isolation import encode_reply, read_spec
-from app.modules.media.thumbnail_engine import ThumbnailEngine, ThumbnailRequest
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 
 
 def main(argv: list[str]) -> int:

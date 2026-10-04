@@ -354,8 +354,8 @@ class TestFileAsStl:
         assert pending[0].priority.value == "interactive"
 
     def test_reports_worker_timeout(self, client, auth_headers, project, monkeypatch):
+        from app.modules.media.mesh_contracts import ThumbnailFailureReason
         from app.modules.media.mesh_isolation import MeshWorkerError
-        from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
         def timeout(*args, **kwargs):
             raise MeshWorkerError(ThumbnailFailureReason.TIMEOUT)
