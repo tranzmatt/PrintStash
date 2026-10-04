@@ -52,6 +52,30 @@ def mesh(make_model, make_file):
 
 
 class TestPending:
+    def test_rederives_terminal_fingerprint_cap_refusals(
+        self, db_session, mesh, make_derivative
+    ):
+        artifact = mesh()
+        make_derivative(
+            artifact,
+            DerivativeKind.METADATA,
+            recipe_version=6,
+            state=DerivativeState.FAILED,
+            exhausted=True,
+            failure_reason="resource_limit",
+        )
+        make_derivative(
+            artifact,
+            DerivativeKind.THUMBNAIL,
+            recipe_version=4,
+            state=DerivativeState.FAILED,
+            exhausted=True,
+            failure_reason="resource_limit",
+        )
+
+        subjects = _subjects(db_session)
+
+        assert subjects == [subject_key(artifact.id)]
     def test_rederives_thumbnails_from_the_unfiltered_vertex_recipe(
         self, db_session, mesh, make_derivative
     ):
