@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 import trimesh
+from printstash_core.mesh.measurements import (
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+)
 
 from app.modules.media.mesh_contracts import (
     GeometryNotRequested,
@@ -34,8 +38,9 @@ def cube(tmp_path: Path) -> Path:
 def rendered_result() -> ThumbnailResult:
     return ThumbnailResult(
         image=content.png(),
-        geometry={},
+        geometry={"volume_mm3": None},
         geometry_outcome=GeometryNotRequested(),
+        volume=VolumeNotCalculated(VolumeNotCalculatedCause.NOT_REQUESTED),
         strategy=ThumbnailStrategy.FULL,
         complete=True,
         failure_reason=None,

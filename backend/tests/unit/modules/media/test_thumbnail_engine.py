@@ -9,9 +9,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from printstash_core.mesh.measurements import (
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+)
 
 from app.modules.media import mesh_processing
 from app.modules.media.mesh_contracts import (
+    MeshMeasurements,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailStrategy,
@@ -27,6 +32,13 @@ def _geometry() -> dict[str, float | int | None]:
         "volume_mm3": None,
         "triangle_count": 12,
     }
+
+
+def _measurements() -> MeshMeasurements:
+    return MeshMeasurements(
+        _geometry(),
+        VolumeNotCalculated(VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED),
+    )
 
 
 class _Mesh:
@@ -50,7 +62,7 @@ class TestThumbnailEngine:
         monkeypatch.setattr(mesh_processing, "_exceeds_cap", lambda *_a, **_k: False)
         monkeypatch.setattr(mesh_processing, "_load_mesh", lambda *_a, **_k: _Mesh())
         monkeypatch.setattr(
-            mesh_processing, "_geometry_from_mesh", lambda _mesh: _geometry()
+            mesh_processing, "_geometry_from_mesh", lambda _mesh: _measurements()
         )
         monkeypatch.setattr(
             "app.modules.media.mesh_render.render_mesh_thumbnail",
@@ -118,7 +130,7 @@ class TestThumbnailEngine:
         monkeypatch.setattr(mesh_processing, "_exceeds_cap", lambda *_a, **_k: False)
         monkeypatch.setattr(mesh_processing, "_load_mesh", lambda *_a, **_k: _Mesh())
         monkeypatch.setattr(
-            mesh_processing, "_geometry_from_mesh", lambda _mesh: _geometry()
+            mesh_processing, "_geometry_from_mesh", lambda _mesh: _measurements()
         )
         monkeypatch.setattr(mesh_processing, "_ram_triangle_cap", lambda _suffix: 5)
         monkeypatch.setattr(

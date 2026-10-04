@@ -17,6 +17,14 @@ import time
 from pathlib import Path
 
 import pytest
+from printstash_core.mesh.measurements import (
+    VolumeMeasured,
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+    VolumeUnavailable,
+    VolumeUnavailableCause,
+    volume_value,
+)
 
 from app.modules.media import mesh_isolation
 from app.modules.media.fingerprints import (
@@ -25,7 +33,9 @@ from app.modules.media.fingerprints import (
     FingerprintResultState,
 )
 from app.modules.media.mesh_contracts import (
+    GeometryNotRequested,
     GeometryReady,
+    GeometryRefused,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailResult,
@@ -270,6 +280,7 @@ def _result(**overrides) -> ThumbnailResult:
     values = dict(
         image=b"\x89PNG-bytes",
         geometry_outcome=GeometryReady(),
+        volume=VolumeMeasured(12.25),
         geometry={
             "bbox_x_mm": 1.5,
             "bbox_y_mm": None,
@@ -286,6 +297,163 @@ def _result(**overrides) -> ThumbnailResult:
     )
     values.update(overrides)
     return ThumbnailResult(**values)
+
+
+class TestNativeDimensionEvidence:
+    @pytest.mark.parametrize(
+        "value", [float("inf"), float("nan"), -1.0, True, "1.0", 10**400]
+    )
+    def test_rejects_nonphysical_native_dimensions(self, value):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["geometry"]["bbox_x_mm"] = value
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+
+class TestNativeVolumeEvidence:
+    @pytest.mark.parametrize(
+        "cause",
+        [
+            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE,
+            VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED,
+        ],
+    )
+    def test_rejects_volume_assessment_when_geometry_was_not_requested(self, cause):
+        with pytest.raises(ValueError, match="not requested"):
+            _result(
+                geometry_outcome=GeometryNotRequested(),
+                geometry={"volume_mm3": None},
+                volume=VolumeNotCalculated(cause),
+            )
+
+    def test_rejects_measured_volume_when_geometry_was_not_requested(self):
+        with pytest.raises(ValueError, match="not requested"):
+            _result(geometry_outcome=GeometryNotRequested())
+
+    @pytest.mark.parametrize(
+        "volume",
+        [
+            {
+                "state": "legacy_unassessed",
+                "unit": "mm3",
+                "method": None,
+                "value_mm3": 12.25,
+                "cause": None,
+            },
+            {
+                "state": "measured",
+                "unit": "mm3",
+                "method": "mesh_surface_integral",
+                "value_mm3": True,
+                "cause": None,
+            },
+            {
+                "state": "unavailable",
+                "unit": "mm3",
+                "method": "mesh_surface_integral",
+                "value_mm3": None,
+                "cause": "unknown",
+            },
+            {
+                "state": "measured",
+                "unit": "mm3",
+                "method": "mesh_surface_integral",
+                "value_mm3": 0.5,
+                "cause": None,
+            },
+        ],
+        ids=["legacy", "boolean", "unknown-cause", "scalar-mismatch"],
+    )
+    def test_rejects_invalid_native_volume_wire(self, volume):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["volume"] = volume
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    def test_rejects_geometry_not_requested_with_measured_wire_volume(self):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["geometry_outcome"] = {"state": "not_requested"}
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    def test_rejects_native_reply_without_volume_evidence(self):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        del header["volume"]
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+
+class TestNativeVolumeOwnership:
+    @pytest.mark.parametrize(
+        "volume",
+        [
+            VolumeMeasured(12.25),
+            VolumeUnavailable(VolumeUnavailableCause.NOT_WATERTIGHT),
+        ],
+    )
+    def test_rejects_assessed_volume_from_refused_geometry(self, volume):
+        geometry = dict(_result().geometry)
+        geometry["volume_mm3"] = volume_value(volume)
+        with pytest.raises(ValueError):
+            _result(
+                geometry=geometry,
+                geometry_outcome=GeometryRefused(ThumbnailFailureReason.INVALID_SOURCE),
+                volume=volume,
+            )
+
+    @pytest.mark.parametrize(
+        "cause",
+        [
+            VolumeNotCalculatedCause.ENRICHMENT_PENDING,
+            VolumeNotCalculatedCause.NOT_APPLICABLE,
+        ],
+    )
+    def test_rejects_durable_row_causes_in_native_output(self, cause):
+        geometry = dict(_result().geometry)
+        geometry["volume_mm3"] = None
+        with pytest.raises(ValueError):
+            _result(geometry=geometry, volume=VolumeNotCalculated(cause))
+
+    def test_rejects_assessed_volume_from_refused_native_frame(self):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["geometry_outcome"] = {"state": "refused", "reason": "invalid_source"}
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
 
 
 class TestReplyFrame:
@@ -491,7 +659,15 @@ class TestGeometryOutcome:
         from app.modules.media.mesh_contracts import GeometryRefused
 
         result = _result(
-            geometry_outcome=GeometryRefused(ThumbnailFailureReason.RESOURCE_LIMIT)
+            geometry_outcome=GeometryRefused(ThumbnailFailureReason.RESOURCE_LIMIT),
+            volume=VolumeNotCalculated(VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE),
+            geometry={
+                "bbox_x_mm": None,
+                "bbox_y_mm": None,
+                "bbox_z_mm": None,
+                "volume_mm3": None,
+                "triangle_count": None,
+            },
         )
         assert (
             decode_reply(encode_reply(result)).geometry_outcome

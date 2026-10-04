@@ -17,6 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from printstash_core.mesh.measurements import (
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+)
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 from sqlmodel import Session, delete, select
 
@@ -34,6 +38,7 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.db.session import get_session_factory
+from app.modules.library.volume_metadata import apply_volume
 from app.modules.media import gcode_parser, mesh_isolation, stl_isolation, thumbnail
 from app.modules.media.mesh_contracts import (
     GeometryReady,
@@ -337,6 +342,7 @@ def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outc
                 meta = _metadata_row(session, file_id)
                 for name in _GEOMETRY_FIELDS:
                     setattr(meta, name, result.geometry.get(name))
+                apply_volume(meta, result.volume)
                 session.add(meta)
                 session.commit()
             outcome[DerivativeKind.METADATA] = DerivativeState.READY
@@ -445,6 +451,9 @@ def _derive_gcode(file_id: int, *, execution: JobExecution | None = None) -> Out
                 duration_ms=duration_ms,
             )
             row = _metadata_row(session, file_id)
+            apply_volume(
+                row, VolumeNotCalculated(VolumeNotCalculatedCause.NOT_APPLICABLE)
+            )
             for name, value in meta.items():
                 if name in Metadata.model_fields and name not in {
                     "id",
