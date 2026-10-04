@@ -1,4 +1,4 @@
-"""NumPy shape descriptors, with versioned SH projection and six real views.
+"""Shape descriptors, with versioned SH projection and six real views.
 
 The projection basis is a checked-in calibration artifact. Missing or corrupt
 assets never turn an uncalibrated spectrum into a supposedly ready descriptor.

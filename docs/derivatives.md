@@ -76,7 +76,7 @@ view and remaps faces inside each existing chunk; unused source vertices remain
 unchanged. Face indices must refer to the source vertex array.
 
 Mesh thumbnail recipe 4 refreshes existing previews. Similarity uses view-descriptor
-recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4`. Search visual recipe 3
+recipe 2 and fingerprint algorithm `geometry-v4-sh5f4577c4`. Search visual recipe 3
 and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
 invalidate earlier rendered inputs and vectors. Encoder asset manifests and
 their digests are unchanged.
@@ -270,3 +270,22 @@ After commit, the event publisher emits a payload-free `derivative_policy`
 notice on the authenticated `derivatives:policy` channel. Views refetch through
 their authorized endpoints. Periodic reconciliation recovers lost notices or
 nudges.
+
+## Convex hull descriptor
+
+The mesh dependency uses SciPy/Qhull for convex hull volume. The application
+passes finite three-dimensional arrays through one array-to-scalar owner;
+SciPy objects do not cross that boundary. Translation and scale normalization
+precede the native calculation, and no coordinate perturbation is enabled.
+Coplanar or degenerate input has an explicit unavailable descriptor. Nonfinite
+input and an unrepresentable physical volume are rejected.
+
+The input ceiling is `MAX_ANALYSIS_VERTICES` (6,000,000 points), before
+preparation allocations. The old Python point/plane `max_work` counter is
+removed; `max_points` bounds inputs, while the native worker supervisor enforces
+wall-clock and RSS limits. The point ceiling alone is not a memory guarantee.
+
+Fingerprint algorithm `geometry-v4-sh5f4577c4` separates new hull values and
+newly available descriptors from the former Python hull recipe. Existing
+fingerprints are recalculated without rewriting historical records or verifier
+calibration. Mesh measurements and thumbnail recipes are unchanged.
