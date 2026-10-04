@@ -91,6 +91,27 @@ class TestPreviewCoverage:
         assert second.bounds_max[0] - second.bounds_min[0] == 10.0
         assert second.png == first.png
 
+    def test_renders_finite_ascii_near_float32_max(self, tmp_path: Path) -> None:
+        import io
+
+        import numpy as np
+        import trimesh
+        from PIL import Image
+
+        cube = trimesh.creation.box(extents=(6e38, 6e38, 6e38))
+        source = tmp_path / "extreme.stl"
+        source.write_text(trimesh.exchange.stl.export_stl_ascii(cube), encoding="ascii")
+
+        result = stl_streaming.render_stl_preview_isolated(source, width=128, height=128)
+
+        assert result is not None
+        assert result.triangle_count == 12
+        assert result.raster_candidates > 0
+        assert result.bounds_min == (-3e38, -3e38, -3e38)
+        assert result.bounds_max == (3e38, 3e38, 3e38)
+        with Image.open(io.BytesIO(result.png)) as image:
+            assert np.any(np.asarray(image.getchannel("A")))
+
     @pytest.mark.parametrize("encoding", ["binary", "ascii"], ids=str)
     def test_keeps_output_independent_of_chunk(
         self, tmp_path: Path, encoding: str

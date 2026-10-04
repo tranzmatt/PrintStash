@@ -418,19 +418,20 @@ def _render(
 
         tri = np.asarray(vertices, dtype=np.float64)
         # Source coordinates remain float64 until translation is removed.
-        view = np.asarray((tri - center) @ rotation.T, dtype=np.float32)
-        screen = np.empty_like(view)
+        view = (tri - center) @ rotation.T
+        # Apply the bounded image scale before converting projected coordinates.
+        # Finite source values near float32 max can overflow after rotation.
+        screen = np.empty(view.shape, dtype=np.float32)
         screen[:, :, 0] = (
             view[:, :, 0] - float(projected_mid[0])
         ) * scale + coverage_width * 0.5
         screen[:, :, 1] = (
             coverage_height * 0.5 - (view[:, :, 1] - float(projected_mid[1])) * scale
         )
-        screen[:, :, 2] = view[:, :, 2]
+        screen[:, :, 2] = view[:, :, 2] * scale
         valid = np.isfinite(screen).all(axis=(1, 2))
-        if not valid.any():
-            return
-        screen = screen[valid]
+        if not valid.all():
+            raise _InvalidSTL("non-finite projection")
         raw = np.cross(
             view[valid, :, 1] - view[valid, :, 0], view[valid, :, 2] - view[valid, :, 0]
         )
@@ -511,10 +512,10 @@ def _render(
         (down - up) * 0.5,
         np.where(down_ok, down - safe_depth, np.where(up_ok, safe_depth - up, 0.0)),
     )
-    # One screen pixel is 1/scale model units.  Screen rows grow downwards,
-    # hence the sign on the Y component for the view-space normal.
-    slope_x = np.clip(dz_dx * scale, -8.0, 8.0)
-    slope_y = np.clip(dz_drow * scale, -8.0, 8.0)
+    # Depth is scaled into screen units before float32 conversion. Rows grow
+    # downwards, hence the sign on Y for the view-space normal.
+    slope_x = np.clip(dz_dx, -8.0, 8.0)
+    slope_y = np.clip(dz_drow, -8.0, 8.0)
     normals = np.stack((-slope_x, slope_y, np.ones_like(slope_x)), axis=-1)
     normal_length = np.linalg.norm(normals, axis=2, keepdims=True)
     normals /= np.maximum(normal_length, 1e-6)
