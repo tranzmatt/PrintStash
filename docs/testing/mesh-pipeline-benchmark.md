@@ -58,3 +58,15 @@ an aggregate count. This matrix covers CLI orchestration. The independently
 verified cleanup-owner matrix and real native-child evidence are in
 [private ingestion benchmark cleanup](mesh-benchmark-cleanup.md). Broader gates
 are recorded with the pull request; no performance qualification is claimed.
+
+
+## Telemetry capture preconditions
+
+Telemetry is logged at INFO. Its unit assertions explicitly enable INFO for the
+owner logger and pytest capture, so another test or a WARNING-level suite setting
+cannot silently suppress the record under test. Production logging is unchanged.
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| 1 | `test_keeps_costs_in_log_message` | Edge | Supervision record; suite capture defaults to WARNING | Captured INFO JSON preserves execution identity, elapsed time and tree RSS | Unit | ✅ `unit/modules/media/test_mesh_observability.py::TestRecordSupervision::test_keeps_costs_in_log_message` |
+| 2 | `test_correlates_logged_phases` | Edge | Load phase; suite capture defaults to WARNING | Captured INFO JSON correlates execution identity and known phase measurements | Unit | ✅ `unit/modules/media/test_mesh_observability.py::TestRecordPhases::test_correlates_logged_phases` |
