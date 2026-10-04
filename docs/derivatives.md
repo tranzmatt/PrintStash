@@ -61,7 +61,7 @@ A producer derives only the kinds still owed, records every outcome on the
 kind's row, and tells viewers of the Model on `model:<id>` so an open page
 refreshes when a thumbnail lands.
 
-## Rendering distant geometry
+## Mesh rendering
 
 The software renderer subtracts the mesh's bounding-box center in float64 before
 converting relative coordinates to float32 for camera projection and shading.
@@ -70,11 +70,16 @@ Small geometry far from the origin therefore retains the precision provided by
 detail already lost when binary STL coordinates were written as float32. Source
 Artifact coordinates and physical metadata are unchanged by rendering.
 
-Mesh thumbnail recipe 3 refreshes existing previews. Similarity view-descriptor
-recipe 2 and fingerprint algorithm `geometry-v4-sh5f4577c4` distinguish the new
-pixels from earlier cached evidence. Search visual recipe 2 and the derived
-embedding-space rasterizer token `relative-f64-v1` invalidate earlier rendered
-inputs and vectors. Encoder asset manifests and their digests are unchanged.
+Only vertices referenced by triangle faces participate in framing, camera
+selection and normal welding. The renderer compacts that surface in a private
+view and remaps faces inside each existing chunk; unused source vertices remain
+unchanged. Face indices must refer to the source vertex array.
+
+Mesh thumbnail recipe 4 refreshes existing previews. Similarity uses view-descriptor
+recipe 2 and fingerprint algorithm `geometry-v4-sh5f4577c4`. Search visual recipe 3
+and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
+invalidate earlier rendered inputs and vectors. Encoder asset manifests and
+their digests are unchanged.
 Native encoder alignment has its own stable `encoder_space()` identity. Point
 exports and search visual profiles use that identity to pair image/text towers;
 a renderer update never requires rewriting preplaced Point manifests. Legacy
@@ -85,7 +90,9 @@ generation after its rendering recipe changes; an incompatible generation is
 not silently relabelled or reused.
 
 Historical verifier calibration remains tied to its original fingerprint and
-verification versions; it is not relabelled as a new measurement.
+verification versions; it is not relabelled as a new measurement. Fingerprint
+preparation already compacts referenced vertices, so unused-vertex rendering
+does not change its contents, descriptor recipe or algorithm identity.
 
 ## Mesh volume measurements
 
