@@ -130,6 +130,120 @@ class RecordingLogger:
 
 
 class TestRenderMeshThumbnail:
+    @pytest.mark.parametrize("unused_position", ["before", "after", "interleaved"])
+    def test_ignores_unreferenced_vertices(self, unused_position: str) -> None:
+        mesh = box_mesh()
+        remote = np.array([[1e6, -1e6, 1e6]], dtype=np.float64)
+        if unused_position == "before":
+            vertices = np.concatenate([remote, mesh.vertices])
+            faces = mesh.faces + 1
+        elif unused_position == "after":
+            vertices = np.concatenate([mesh.vertices, remote])
+            faces = mesh.faces.copy()
+        else:
+            vertices = np.empty((16, 3), dtype=np.float64)
+            vertices[::2] = mesh.vertices
+            vertices[1::2] = remote
+            faces = mesh.faces * 2
+        padded = SimpleNamespace(vertices=vertices, faces=faces)
+
+        expected = render_mesh_thumbnail(mesh, "cube", width=128, height=128)
+        actual = render_mesh_thumbnail(padded, "cube", width=128, height=128)
+
+        assert expected is not None and actual is not None
+        assert np.count_nonzero(pixels(expected)[..., 3]) > 0
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    @pytest.mark.parametrize("thin_axis", [0, 1, 2])
+    def test_ignores_unused_vertices_when_selecting_a_camera(
+        self, thin_axis: int
+    ) -> None:
+        mesh = box_mesh()
+        mesh.vertices[:, thin_axis] *= 0.01
+        padded = SimpleNamespace(
+            vertices=np.concatenate([mesh.vertices, [[1e6, -1e6, 1e6]]]),
+            faces=mesh.faces,
+        )
+
+        expected = render_mesh_thumbnail(mesh, "plate", width=96, height=96)
+        actual = render_mesh_thumbnail(padded, "plate", width=96, height=96)
+
+        assert expected is not None and actual is not None
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    @pytest.mark.parametrize("chunk_size", [1, 7, 64_000])
+    def test_remaps_referenced_vertices_in_face_chunks(self, chunk_size: int) -> None:
+        mesh = box_mesh()
+        padded = SimpleNamespace(
+            vertices=np.concatenate([[[1e6, -1e6, 1e6]], mesh.vertices]),
+            faces=mesh.faces + 1,
+        )
+        expected = render_mesh_thumbnail(
+            mesh, "cube", width=64, height=64, view_rotation=np.eye(3), matte=True
+        )
+
+        actual = render_mesh_thumbnail(
+            padded,
+            "cube",
+            width=64,
+            height=64,
+            face_chunk_size=chunk_size,
+            view_rotation=np.eye(3),
+            matte=True,
+        )
+
+        assert expected is not None and actual is not None
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    def test_retains_unreferenced_source_vertices(self) -> None:
+        mesh = box_mesh()
+        mesh.vertices = np.concatenate([[[1e6, -1e6, 1e6]], mesh.vertices])
+        mesh.faces = mesh.faces + 1
+        original_vertices, original_faces = mesh.vertices.copy(), mesh.faces.copy()
+        mesh.vertices.flags.writeable = False
+        mesh.faces.flags.writeable = False
+
+        rendered = render_mesh_thumbnail(mesh, "cube", width=64, height=64)
+
+        assert rendered is not None
+        assert np.count_nonzero(pixels(rendered)[..., 3]) > 0
+        np.testing.assert_array_equal(mesh.vertices, original_vertices)
+        np.testing.assert_array_equal(mesh.faces, original_faces)
+
+    def test_remaps_vertices_for_the_silhouette_fallback(self) -> None:
+        mesh = inverted_plate()
+        padded = SimpleNamespace(
+            vertices=np.concatenate([[[1e6, -1e6, 1e6]], mesh.vertices]),
+            faces=mesh.faces + 1,
+        )
+        expected = render_mesh_thumbnail(mesh, "plate", width=64, height=64)
+
+        actual = render_mesh_thumbnail(padded, "plate", width=64, height=64)
+
+        assert expected is not None and actual is not None
+        assert np.count_nonzero(pixels(actual)[..., 3]) > 0
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    @pytest.mark.parametrize("invalid_index", [-1, 8, 100_000])
+    def test_rejects_indices_outside_the_source(self, invalid_index: int) -> None:
+        mesh = box_mesh()
+        mesh.faces[0, 0] = invalid_index
+
+        assert render_mesh_thumbnail(mesh, "invalid", width=64, height=64) is None
+
+    @pytest.mark.parametrize("invalid_form", ["fractional", "rank", "corners"])
+    def test_rejects_invalid_triangle_indices(self, invalid_form: str) -> None:
+        mesh = box_mesh()
+        if invalid_form == "fractional":
+            mesh.faces = mesh.faces.astype(float)
+            mesh.faces[0, 0] = 0.5
+        elif invalid_form == "rank":
+            mesh.faces = mesh.faces[0]
+        else:
+            mesh.faces = mesh.faces[:, :2]
+
+        assert render_mesh_thumbnail(mesh, "invalid", width=64, height=64) is None
+
     @pytest.mark.parametrize(
         ("half_size", "offset"),
         [(5.0, 1e6), (5.0, 1e9), (0.125, 1e9), (512.0, 1e12), (1 / 2048, 1e8)],

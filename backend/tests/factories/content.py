@@ -187,3 +187,25 @@ def three_mf(*, model: bytes | None = None, preview: bool = True) -> bytes:
     if preview:
         entries["Metadata/thumbnail.png"] = png()
     return zip_bytes(entries)
+
+
+def binary_stl_facets(triangles: list[tuple[tuple[float, float, float], ...]]) -> bytes:
+    body = b"\0" * 80 + struct.pack("<I", len(triangles))
+    for facet in triangles:
+        body += struct.pack("<3f", 0.0, 0.0, 1.0)
+        for vertex in facet:
+            body += struct.pack("<3f", *vertex)
+        body += struct.pack("<H", 0)
+    return body
+
+
+def ascii_stl_facets(triangles: list[tuple[tuple[float, float, float], ...]]) -> bytes:
+    lines = ["solid test"]
+    for facet in triangles:
+        lines.append("facet normal 0 0 1")
+        lines.append("outer loop")
+        lines.extend(f"vertex {v[0]} {v[1]} {v[2]}" for v in facet)
+        lines.append("endloop")
+        lines.append("endfacet")
+    lines.append("endsolid test")
+    return ("\n".join(lines) + "\n").encode("ascii")

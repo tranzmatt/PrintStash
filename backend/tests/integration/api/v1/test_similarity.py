@@ -1,6 +1,8 @@
 """Public analysis controls enforce scope and do not reveal hidden candidates."""
 
+import httpx
 import pytest
+from sqlalchemy import event
 from sqlmodel import select
 
 from app.db.models import SimilarityRun
@@ -337,3 +339,53 @@ class TestReviewIdentifiers:
             headers=auth_headers,
         )
         assert response.status_code == 422
+
+
+class TestSimilarityExecution:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("action", ["start", "cancel", "query"])
+    async def test_keeps_loop_responsive_during_run_commands(
+        self, app, auth_headers, db_session, make_model, loop_handshake, action
+    ):
+        wait_for_loop, observations = loop_handshake
+        model = make_model()
+        engine = db_session.get_bind()
+
+        def delayed_query(connection, cursor, statement, parameters, context, many):
+            if "similarity_runs" in statement.lower() and not observations:
+                wait_for_loop()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            configured = await client.patch(
+                "/api/v1/similarity/settings",
+                headers=auth_headers,
+                json={"enabled": True},
+            )
+            assert configured.status_code == 200, configured.text
+            if action == "cancel":
+                started = await client.post(
+                    "/api/v1/similarity/runs", headers=auth_headers, json={}
+                )
+                assert started.status_code == 202, started.text
+                endpoint = f"/api/v1/similarity/runs/{started.json()['id']}/cancel"
+            elif action == "query":
+                endpoint = f"/api/v1/models/{model.id}/similar/query"
+            else:
+                endpoint = "/api/v1/similarity/runs"
+            event.listen(engine, "before_cursor_execute", delayed_query)
+            try:
+                response = await client.post(endpoint, headers=auth_headers, json={})
+            finally:
+                event.remove(engine, "before_cursor_execute", delayed_query)
+
+        assert response.status_code == (202 if action == "start" else 200), (
+            response.text
+        )
+        if action == "cancel":
+            assert response.json()["state"] == "cancelling"
+        else:
+            run = response.json()["run"] if action == "query" else response.json()
+            assert run["state"] == "queued"
+        assert observations == [True]
