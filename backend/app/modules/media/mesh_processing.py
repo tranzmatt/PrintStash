@@ -102,9 +102,11 @@ class _RenderAdmission:
         if depth:
             self.local.depth = depth + 1
             return self
-        with self.condition:
-            while True:
-                checkpoint()
+        while True:
+            # A checkpoint may consult durable job state. Never hold the
+            # admission lock while that external operation blocks.
+            checkpoint()
+            with self.condition:
                 if self.active == 0:
                     self.limit = self.requested
                 if self.limit == self.requested and self.active < self.limit:
@@ -517,13 +519,15 @@ def native_memory_budget_bytes() -> int:
     )
 
 
-def _load_step_mesh_isolated(path: Path, *, include_brep: bool = False):
+def _load_step_mesh_isolated(
+    path: Path, *, include_brep: bool = False, strict_failures: bool = False
+):
     """Tessellate unknown-complexity STEP in a monitored child process (#72)."""
 
     import trimesh
 
     static_cap = int(settings.mesh_max_render_triangles)
-    if include_brep:
+    if include_brep or strict_failures:
         static_cap = min(static_cap, MAX_ANALYSIS_FACES)
     ram_cap = _ram_triangle_cap(path.suffix.lower())
     triangle_limit = min(static_cap, ram_cap) if ram_cap is not None else static_cap
@@ -600,7 +604,7 @@ def _load_step_mesh_isolated(path: Path, *, include_brep: bool = False):
             _stdout, stderr = process.communicate()
             returncode = process.returncode
         if failure or returncode != 0 or not output.is_file():
-            if include_brep:
+            if include_brep or strict_failures:
                 from printstash_core.mesh.similarity import GeometryError
 
                 raise GeometryError(
@@ -642,6 +646,8 @@ def _load_step_mesh_isolated(path: Path, *, include_brep: bool = False):
             return loaded
         try:
             loaded = trimesh.load_mesh(str(output), process=False)
+        except MemoryError:
+            raise
         except Exception:
             logger.warning(
                 "mesh_processing: failed to load isolated STEP result for %s",
@@ -769,10 +775,11 @@ def _geometry_from_mesh(mesh) -> Dict[str, Optional[float]]:
         return out
 
     if mesh.vertices.shape[0] > 0:
+        # Persist source precision; display formatting belongs to consumers.
         extents = mesh.bounds[1] - mesh.bounds[0]
-        out["bbox_x_mm"] = round(float(extents[0]), 2)
-        out["bbox_y_mm"] = round(float(extents[1]), 2)
-        out["bbox_z_mm"] = round(float(extents[2]), 2)
+        out["bbox_x_mm"] = float(extents[0])
+        out["bbox_y_mm"] = float(extents[1])
+        out["bbox_z_mm"] = float(extents[2])
 
     if mesh.faces is not None and len(mesh.faces) > 0:
         out["triangle_count"] = len(mesh.faces)
@@ -793,7 +800,7 @@ def _geometry_from_mesh(mesh) -> Dict[str, Optional[float]]:
             else None
         )
         if vol is not None and math.isfinite(vol) and vol > 0:
-            out["volume_mm3"] = round(float(vol), 2)
+            out["volume_mm3"] = float(vol)
     except MemoryError:
         raise
     except Exception:
@@ -1014,6 +1021,8 @@ def to_stl_bytes(path: Path, *, file_type: str | None = None) -> Optional[bytes]
             out = io.BytesIO()
             mesh.export(out, file_type="stl")
             return out.getvalue()
+        except MemoryError:
+            raise
         except Exception:
             logger.warning(
                 "mesh_processing: STL export failed for %s", path.name, exc_info=True

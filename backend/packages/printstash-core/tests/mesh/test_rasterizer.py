@@ -130,6 +130,120 @@ class RecordingLogger:
 
 
 class TestRenderMeshThumbnail:
+    @pytest.mark.parametrize("unused_position", ["before", "after", "interleaved"])
+    def test_ignores_unreferenced_vertices(self, unused_position: str) -> None:
+        mesh = box_mesh()
+        remote = np.array([[1e6, -1e6, 1e6]], dtype=np.float64)
+        if unused_position == "before":
+            vertices = np.concatenate([remote, mesh.vertices])
+            faces = mesh.faces + 1
+        elif unused_position == "after":
+            vertices = np.concatenate([mesh.vertices, remote])
+            faces = mesh.faces.copy()
+        else:
+            vertices = np.empty((16, 3), dtype=np.float64)
+            vertices[::2] = mesh.vertices
+            vertices[1::2] = remote
+            faces = mesh.faces * 2
+        padded = SimpleNamespace(vertices=vertices, faces=faces)
+
+        expected = render_mesh_thumbnail(mesh, "cube", width=128, height=128)
+        actual = render_mesh_thumbnail(padded, "cube", width=128, height=128)
+
+        assert expected is not None and actual is not None
+        assert np.count_nonzero(pixels(expected)[..., 3]) > 0
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    @pytest.mark.parametrize("thin_axis", [0, 1, 2])
+    def test_ignores_unused_vertices_when_selecting_a_camera(
+        self, thin_axis: int
+    ) -> None:
+        mesh = box_mesh()
+        mesh.vertices[:, thin_axis] *= 0.01
+        padded = SimpleNamespace(
+            vertices=np.concatenate([mesh.vertices, [[1e6, -1e6, 1e6]]]),
+            faces=mesh.faces,
+        )
+
+        expected = render_mesh_thumbnail(mesh, "plate", width=96, height=96)
+        actual = render_mesh_thumbnail(padded, "plate", width=96, height=96)
+
+        assert expected is not None and actual is not None
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    @pytest.mark.parametrize("chunk_size", [1, 7, 64_000])
+    def test_remaps_referenced_vertices_in_face_chunks(self, chunk_size: int) -> None:
+        mesh = box_mesh()
+        padded = SimpleNamespace(
+            vertices=np.concatenate([[[1e6, -1e6, 1e6]], mesh.vertices]),
+            faces=mesh.faces + 1,
+        )
+        expected = render_mesh_thumbnail(
+            mesh, "cube", width=64, height=64, view_rotation=np.eye(3), matte=True
+        )
+
+        actual = render_mesh_thumbnail(
+            padded,
+            "cube",
+            width=64,
+            height=64,
+            face_chunk_size=chunk_size,
+            view_rotation=np.eye(3),
+            matte=True,
+        )
+
+        assert expected is not None and actual is not None
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    def test_retains_unreferenced_source_vertices(self) -> None:
+        mesh = box_mesh()
+        mesh.vertices = np.concatenate([[[1e6, -1e6, 1e6]], mesh.vertices])
+        mesh.faces = mesh.faces + 1
+        original_vertices, original_faces = mesh.vertices.copy(), mesh.faces.copy()
+        mesh.vertices.flags.writeable = False
+        mesh.faces.flags.writeable = False
+
+        rendered = render_mesh_thumbnail(mesh, "cube", width=64, height=64)
+
+        assert rendered is not None
+        assert np.count_nonzero(pixels(rendered)[..., 3]) > 0
+        np.testing.assert_array_equal(mesh.vertices, original_vertices)
+        np.testing.assert_array_equal(mesh.faces, original_faces)
+
+    def test_remaps_vertices_for_the_silhouette_fallback(self) -> None:
+        mesh = inverted_plate()
+        padded = SimpleNamespace(
+            vertices=np.concatenate([[[1e6, -1e6, 1e6]], mesh.vertices]),
+            faces=mesh.faces + 1,
+        )
+        expected = render_mesh_thumbnail(mesh, "plate", width=64, height=64)
+
+        actual = render_mesh_thumbnail(padded, "plate", width=64, height=64)
+
+        assert expected is not None and actual is not None
+        assert np.count_nonzero(pixels(actual)[..., 3]) > 0
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    @pytest.mark.parametrize("invalid_index", [-1, 8, 100_000])
+    def test_rejects_indices_outside_the_source(self, invalid_index: int) -> None:
+        mesh = box_mesh()
+        mesh.faces[0, 0] = invalid_index
+
+        assert render_mesh_thumbnail(mesh, "invalid", width=64, height=64) is None
+
+    @pytest.mark.parametrize("invalid_form", ["fractional", "rank", "corners"])
+    def test_rejects_invalid_triangle_indices(self, invalid_form: str) -> None:
+        mesh = box_mesh()
+        if invalid_form == "fractional":
+            mesh.faces = mesh.faces.astype(float)
+            mesh.faces[0, 0] = 0.5
+        elif invalid_form == "rank":
+            mesh.faces = mesh.faces[0]
+        else:
+            mesh.faces = mesh.faces[:, :2]
+
+        assert render_mesh_thumbnail(mesh, "invalid", width=64, height=64) is None
+
     @pytest.mark.parametrize(
         ("half_size", "offset"),
         [(5.0, 1e6), (5.0, 1e9), (0.125, 1e9), (512.0, 1e12), (1 / 2048, 1e8)],
@@ -525,6 +639,82 @@ class TestRasteriseTriangles:
             budget=budget,
         )
         return int(painted or 0), img
+
+    @pytest.mark.parametrize("copies", [2, 1000])
+    def test_expands_exact_duplicate_triangles_once(self, copies: int) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        expected_work, expected = self.paint(tri)
+
+        actual_work, actual = self.paint(np.repeat(tri, copies, axis=0))
+
+        assert actual_work == expected_work
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_preserves_duplicate_work_under_a_raster_budget(self) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        single_work, _ = self.paint(tri)
+        budget = RasterBudget(limit=1000)
+
+        actual_work, _ = self.paint(np.repeat(tri, 3, axis=0), budget=budget)
+
+        assert actual_work == budget.used == single_work * 3
+
+    def test_preserves_triangle_corner_order(self) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        single_work, _ = self.paint(tri)
+        reordered = np.concatenate([tri, np.roll(tri, 1, axis=1), tri[:, ::-1]])
+
+        actual_work, _ = self.paint(reordered)
+
+        assert actual_work == single_work * 3
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    @pytest.mark.parametrize("chunk_size", [1, 3, 8])
+    def test_keeps_the_first_duplicate_normals(
+        self, reverse: bool, chunk_size: int
+    ) -> None:
+        # Distinct overlapping triangles must keep input order too: the smaller
+        # X coordinate sorts first but must not steal a depth tie from its peer.
+        first = [[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]
+        second = [[1.0, 2.0, 0.0], [11.0, 2.0, 0.0], [1.0, 12.0, 0.0]]
+        tri = np.array([first, second, first, second])
+        colors = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [1.0, 1.0, 0]])
+        normals = np.repeat(colors[:, None, :], 3, axis=1)
+        if reverse:
+            tri, normals = tri[::-1], normals[::-1]
+        original_tri, original_normals = tri.copy(), normals.copy()
+        tri.flags.writeable = False
+        normals.flags.writeable = False
+
+        expected_img = np.zeros((16, 16, 3), dtype=np.uint8)
+        expected_z = np.full((16, 16), np.inf)
+        actual_img, actual_z = expected_img.copy(), expected_z.copy()
+        rasterizer._rasterise_triangles(
+            expected_img,
+            expected_z,
+            tri[:2],
+            normals[:2],
+            lambda n: n,
+            np.full(3, 255),
+            16,
+            16,
+        )
+        for start in range(0, len(tri), chunk_size):
+            rasterizer._rasterise_triangles(
+                actual_img,
+                actual_z,
+                tri[start : start + chunk_size],
+                normals[start : start + chunk_size],
+                lambda n: n,
+                np.full(3, 255),
+                16,
+                16,
+            )
+
+        np.testing.assert_array_equal(actual_img, expected_img)
+        np.testing.assert_array_equal(actual_z, expected_z)
+        np.testing.assert_array_equal(tri, original_tri)
+        np.testing.assert_array_equal(normals, original_normals)
 
     def test_paints_the_pixels_a_triangle_covers(self) -> None:
         tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])

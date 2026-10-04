@@ -27,6 +27,7 @@ from app.db.models import (
     DerivativeState,
     File,
     FileType,
+    GeometryFingerprint,
     JobKind,
     JobState,
     Metadata,
@@ -37,6 +38,7 @@ from app.modules.ingestion import extensions
 from app.modules.media import mesh_isolation, toolpath
 from app.modules.media.thumbnail_publication import ThumbnailPublicationError
 from app.modules.media.worker_bootstrap import command
+from app.modules.similarity import ingestion as similarity_ingestion
 from app.modules.storage.capacity import CapacityReservation
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.work import events, runner, service
@@ -90,6 +92,72 @@ def _rows(session: Session, file_id: int) -> dict[str, ArtifactDerivative]:
 
 
 class TestDeriveMesh:
+    @pytest.mark.parametrize("failure_code", ["geometry_work_limit", "resource_limit"])
+    def test_replaces_terminal_fingerprint_cap_refusals(
+        self,
+        db_session,
+        stored,
+        make_derivative,
+        make_geometry_fingerprint,
+        make_system_config,
+        monkeypatch,
+        failure_code,
+    ):
+        mesh = trimesh.creation.icosphere(subdivisions=2, radius=10)
+        artifact = stored("sphere.3mf", three_mf(meshes={1: mesh}))
+        make_derivative(
+            artifact,
+            DerivativeKind.METADATA,
+            recipe_version=6,
+            state=DerivativeState.FAILED,
+            exhausted=True,
+            failure_reason="resource_limit",
+        )
+        make_derivative(
+            artifact,
+            DerivativeKind.THUMBNAIL,
+            recipe_version=4,
+            state=DerivativeState.FAILED,
+            exhausted=True,
+            failure_reason="resource_limit",
+        )
+        cached = make_geometry_fingerprint(
+            artifact, state="failed", failure_code=failure_code
+        )
+        make_system_config(
+            similarity_settings_json=json.dumps(
+                {"enabled": True, "fingerprint_on_ingest": True, "triangle_cap": 100}
+            )
+        )
+        monkeypatch.setattr(extensions, "_derivatives", similarity_ingestion)
+
+        outcome = producers.derive_mesh(artifact.id)
+
+        assert outcome.kinds == {
+            DerivativeKind.METADATA: DerivativeState.READY,
+            DerivativeKind.THUMBNAIL: DerivativeState.READY,
+        }
+        db_session.expire_all()
+        rows = _rows(db_session, artifact.id)
+        assert rows[DerivativeKind.METADATA].recipe_version == 7
+        assert rows[DerivativeKind.THUMBNAIL].recipe_version == 5
+        metadata = db_session.exec(
+            select(Metadata).where(Metadata.file_id == artifact.id)
+        ).one()
+        assert metadata.triangle_count == 320
+        assert metadata.bbox_x_mm == 20
+        fresh = db_session.get(File, artifact.id)
+        assert fresh.thumbnail_path is not None
+        assert get_backend().exists(fresh.thumbnail_path)
+        fingerprint = db_session.exec(
+            select(GeometryFingerprint).where(
+                GeometryFingerprint.file_id == artifact.id
+            )
+        ).one()
+        assert fingerprint.id == cached.id
+        assert fingerprint.state == "failed"
+        assert fingerprint.failure_code == failure_code
+
     def test_derives_every_mesh_kind_from_one_load(
         self, db_session: Session, stored, announced
     ) -> None:
@@ -114,6 +182,27 @@ class TestDeriveMesh:
         assert published is not None and published.thumbnail_path
         assert get_backend().exists(published.thumbnail_path)
         assert rows[DerivativeKind.THUMBNAIL].storage_key == published.thumbnail_path
+
+    def test_replaces_rounded_small_measurements(
+        self, db_session, stored, make_derivative, make_metadata
+    ):
+        mesh = trimesh.creation.box(extents=[0.001, 0.002, 0.003])
+        artifact = stored("small.3mf", three_mf(meshes={1: mesh}))
+        make_metadata(artifact, bbox_x_mm=0, bbox_y_mm=0, bbox_z_mm=0, volume_mm3=0)
+        make_derivative(artifact, DerivativeKind.METADATA, recipe_version=4)
+        make_derivative(artifact, DerivativeKind.THUMBNAIL)
+
+        outcome = producers.derive_mesh(artifact.id)
+
+        db_session.expire_all()
+        meta = db_session.exec(
+            select(Metadata).where(Metadata.file_id == artifact.id)
+        ).one()
+        assert outcome.kinds[DerivativeKind.METADATA] == DerivativeState.READY
+        assert (meta.bbox_x_mm, meta.bbox_y_mm, meta.bbox_z_mm) == pytest.approx(
+            (0.001, 0.002, 0.003), rel=1e-12, abs=0
+        )
+        assert meta.volume_mm3 == pytest.approx(6e-9, rel=1e-12, abs=0)
 
     def test_replaces_stale_inconsistent_winding_volume(
         self, db_session, stored, make_derivative, make_metadata

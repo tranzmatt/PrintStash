@@ -11,25 +11,13 @@ import { ModelListItem, FileRevisionStatus } from "@/types";
 import { FileText, Star, Tags, ScanSearch } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { getAssetUrl, starModel, unstarModel } from "@/lib/api";
+import { starModel, unstarModel } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { timeAgoShort } from "@/lib/format";
 import { useAuthenticatedAssetUrl } from "@/lib/use-authenticated-asset-url";
 import { Localized } from "@/components/ui/localized";
 import { MODEL_DND_MIME } from "@/lib/model-dnd";
 
-// STL blobs already warmed this session (the /stl endpoint serves
-// Cache-Control'd responses, so a hover fetch lands in the HTTP cache and the
-// viewer's loader reads from disk instead of the network).
-const warmedMeshFiles = new Set<number>();
-
-function warmStl(meshFileId: number | null) {
-  if (meshFileId == null || warmedMeshFiles.has(meshFileId)) return;
-  warmedMeshFiles.add(meshFileId);
-  fetch(getAssetUrl(`/api/v1/files/${meshFileId}/stl`)).catch(() => {
-    warmedMeshFiles.delete(meshFileId);
-  });
-}
 import {
   CARD_METRIC_STORAGE_KEY,
   CardMetricId,
@@ -243,7 +231,6 @@ function ModelCardInner({
   // the STL into the browser cache so the 3D viewer opens without a spinner.
   function handleHover() {
     router.prefetch(`/models/${model.id}`);
-    warmStl(model.mesh_file_id ?? null);
   }
 
   return (

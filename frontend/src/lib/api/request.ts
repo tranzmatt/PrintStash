@@ -60,6 +60,16 @@ export async function getAuthenticatedBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+/** A published binary derivative, or its pending preparation state. */
+export type DerivedBlob = { ready: true; blob: Blob } | { ready: false };
+
+export async function getDerivedBlob(path: string, signal?: AbortSignal): Promise<DerivedBlob> {
+  const response = await fetchArtifact(path, signal);
+  if (!response.ok) throw await parseError(response);
+  if (response.status === 202) return { ready: false };
+  return { ready: true, blob: await response.blob() };
+}
+
 /** Read a protected text resource while preserving the shared 401 handling. */
 export async function getAuthenticatedText(path: string, signal?: AbortSignal): Promise<string> {
   const res = await fetchArtifact(path, signal);

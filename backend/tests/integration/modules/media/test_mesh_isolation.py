@@ -20,6 +20,7 @@ from app.modules.media.thumbnail_engine import (
     ThumbnailEngine,
     ThumbnailFailureReason,
     ThumbnailRequest,
+    ThumbnailStrategy,
 )
 from tests.factories import content
 from tests.factories.geometry import three_mf
@@ -148,6 +149,70 @@ class TestGenerate:
 
 
 class TestGeometryMeasurements:
+    def test_preserves_native_hull_descriptor(self, tmp_path):
+        mesh = trimesh.creation.box(extents=[10, 10, 10])
+        path = tmp_path / "hull.stl"
+        path.write_bytes(mesh.export(file_type="stl"))
+
+        result = mesh_isolation.generate(_request(path))
+
+        assert result.fingerprint_result.algorithm_version == "geometry-v4-sh5f4577c4"
+        values = result.fingerprint_result.records[0].values
+        assert values["hull_ratio"] == pytest.approx(1)
+        assert not any(name == "hull_ratio" for name, _ in values["unavailable"])
+
+    @pytest.mark.parametrize(
+        "strategy", [ThumbnailStrategy.STREAMING, ThumbnailStrategy.FALLBACK]
+    )
+    def test_preserves_small_streamed_bounds(self, tmp_path, monkeypatch, strategy):
+        import numpy as np
+
+        from app.modules.media import stl_streaming
+
+        mesh = trimesh.creation.box(extents=[0.001, 0.002, 0.003])
+        mesh.faces = np.tile(mesh.faces, (100, 1))
+        _overlay["mesh_max_render_triangles"] = 1000
+        path = tmp_path / "small-many-faces.stl"
+        path.write_bytes(mesh.export(file_type="stl"))
+        if strategy is ThumbnailStrategy.FALLBACK:
+            monkeypatch.setattr(
+                stl_streaming,
+                "render_stl_preview_isolated",
+                lambda *args, **kwargs: None,
+            )
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                path, file_type="stl", triangle_cap=1000, width=32, height=32
+            )
+        )
+
+        assert result.strategy is strategy
+        assert tuple(
+            result.geometry[f"bbox_{axis}_mm"] for axis in ("x", "y", "z")
+        ) == pytest.approx((0.001, 0.002, 0.003), rel=1e-6, abs=0)
+
+    @pytest.mark.parametrize("source", ["stl", "millimeter", "micron"])
+    def test_preserves_small_physical_measurements(self, tmp_path, source):
+        edge = 1.0 if source == "micron" else 0.001
+        mesh = trimesh.creation.box(extents=[edge, edge, edge])
+        path = tmp_path / ("tiny.stl" if source == "stl" else "tiny.3mf")
+        path.write_bytes(
+            mesh.export(file_type="stl")
+            if source == "stl"
+            else three_mf(meshes={1: mesh}, unit=source)
+        )
+
+        result = mesh_isolation.generate(
+            ThumbnailRequest(path, include_thumbnail=False)
+        )
+
+        for axis in ("x", "y", "z"):
+            assert result.geometry[f"bbox_{axis}_mm"] == pytest.approx(
+                0.001, rel=1e-6, abs=0
+            )
+        assert result.geometry["volume_mm3"] == pytest.approx(1e-9, rel=1e-6, abs=0)
+
     @pytest.mark.parametrize("file_type", ["stl", "3mf"], ids=["stl", "3mf"])
     def test_refuses_volume_with_inconsistent_winding(self, tmp_path, file_type):
         mesh = trimesh.creation.box(extents=[10, 10, 10])

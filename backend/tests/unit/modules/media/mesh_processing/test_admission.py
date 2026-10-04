@@ -8,6 +8,60 @@ from app.modules.media import mesh_processing
 
 
 class TestRenderAdmission:
+    def test_release_progresses_during_waiter_checkpoint(self, monkeypatch) -> None:
+        gate = mesh_processing._RenderAdmission()
+        admitted = threading.Event()
+        release = threading.Event()
+        released = threading.Event()
+        checkpoint_entered = threading.Event()
+        checkpoint_finish = threading.Event()
+        waiter_finished = threading.Event()
+        errors = []
+
+        def active_worker():
+            try:
+                with gate:
+                    admitted.set()
+                    assert release.wait(5)
+                released.set()
+            except BaseException as exc:
+                errors.append(exc)
+
+        def checkpoint():
+            checkpoint_entered.set()
+            assert checkpoint_finish.wait(5)
+
+        def waiting_worker():
+            try:
+                with gate:
+                    pass
+                waiter_finished.set()
+            except BaseException as exc:
+                errors.append(exc)
+
+        active = threading.Thread(target=active_worker)
+        waiter = threading.Thread(target=waiting_worker)
+        active.start()
+        try:
+            assert admitted.wait(5)
+            monkeypatch.setattr(mesh_processing, "checkpoint", checkpoint)
+            waiter.start()
+            assert checkpoint_entered.wait(5)
+            release.set()
+            progressed = released.wait(1)
+        finally:
+            checkpoint_finish.set()
+            release.set()
+            active.join(5)
+            if waiter.ident is not None:
+                waiter.join(5)
+        assert not active.is_alive()
+        assert not waiter.is_alive()
+        assert not errors
+        assert waiter_finished.is_set()
+        assert progressed
+        assert gate.active == 0
+
     def test_config_change_waits_for_old_admissions_to_settle(self, monkeypatch):
         monkeypatch.setattr(mesh_processing, "_RENDER_SEMAPHORE", None)
         monkeypatch.setitem(_overlay, "max_render_jobs", 1)

@@ -34,6 +34,7 @@ from app.modules.media.mesh_telemetry import (
     PhaseStats,
     SupervisionStats,
 )
+from app.modules.media.stl_reader import InvalidSTL, STLReadFailure, scan_stl
 
 logger = get_logger(__name__)
 
@@ -142,6 +143,31 @@ def _peak_rss_bytes() -> int | None:
         return None
 
 
+def _prepare_sampled_stl(path: Path, *, triangle_cap: int) -> PreparedMesh | None:
+    """Keep sample buffers within one lifetime, including construction failures."""
+    import numpy as np
+    import trimesh
+
+    sampled = stl_fallback.sample_stl_geometry(
+        path, max_triangles=min(10_000, triangle_cap)
+    )
+    if sampled is None or not sampled.sampled_triangles:
+        return None
+    points = np.array(sampled.coordinates, dtype=np.float64).reshape((-1, 3))
+    mesh = trimesh.Trimesh(
+        vertices=points,
+        faces=np.arange(len(points)).reshape((-1, 3)),
+        process=False,
+    )
+    return PreparedMesh(
+        mesh,
+        ExpandedScene((), ()),
+        "stl",
+        complete=False,
+        failure_code="sampled_source",
+    )
+
+
 @dataclass
 class ThumbnailEngine:
     metrics: ThumbnailMetricsSink = field(default_factory=NoopThumbnailMetrics)
@@ -173,6 +199,8 @@ class ThumbnailEngine:
         mesh: Any | None = None
         prepared: PreparedMesh | None = None
         fingerprint_result: FingerprintResult | None = None
+        fingerprint_complete: bool | None = None
+        sample_buffers_pending = False
 
         def report(label: str) -> None:
             if request.report is not None:
@@ -189,12 +217,6 @@ class ThumbnailEngine:
             over_cap = mesh_processing._exceeds_cap(request.path)
         else:
             over_cap = mesh_processing._exceeds_cap(request.path, file_type=suffix)
-        if request.include_fingerprint and not over_cap:
-            estimate = mesh_processing._estimate_triangle_count(
-                request.path, file_type=suffix
-            )
-            over_cap = estimate is not None and estimate > request.triangle_cap
-
         phases.finish()
 
         if over_cap and request.include_geometry:
@@ -244,8 +266,6 @@ class ThumbnailEngine:
                             # The resource loader counts expanded faces before
                             # composing a mesh and bounds XML parsing too.
                             face_cap = mesh_processing._load_face_budget(suffix)
-                            if request.include_fingerprint:
-                                face_cap = min(face_cap, request.triangle_cap)
                             try:
                                 prepared = load_3mf(request.path, max_faces=face_cap)
                                 mesh = prepared.whole_mesh
@@ -311,7 +331,34 @@ class ThumbnailEngine:
                     report("extracting_geometry")
                     if request.include_geometry:
                         phases.start(MeshPhase.MEASUREMENTS)
-                        geometry = mesh_processing._geometry_from_mesh(mesh)
+                        if (
+                            over_cap
+                            and suffix == ".stl"
+                            and not request.include_thumbnail
+                        ):
+                            try:
+                                measured = scan_stl(request.path)
+                            except (InvalidSTL, OSError) as exc:
+                                geometry_outcome = GeometryRefused(
+                                    ThumbnailFailureReason.RESOURCE_LIMIT
+                                    if isinstance(exc, InvalidSTL)
+                                    and exc.reason is STLReadFailure.RESOURCE_LIMIT
+                                    else ThumbnailFailureReason.INVALID_SOURCE
+                                )
+                            else:
+                                geometry.update(
+                                    {
+                                        "bbox_x_mm": measured.bounds_max[0]
+                                        - measured.bounds_min[0],
+                                        "bbox_y_mm": measured.bounds_max[1]
+                                        - measured.bounds_min[1],
+                                        "bbox_z_mm": measured.bounds_max[2]
+                                        - measured.bounds_min[2],
+                                        "triangle_count": measured.triangle_count,
+                                    }
+                                )
+                        else:
+                            geometry = mesh_processing._geometry_from_mesh(mesh)
                         phases.finish(
                             triangle_count=int(geometry["triangle_count"])
                             if geometry["triangle_count"] is not None
@@ -322,7 +369,9 @@ class ThumbnailEngine:
                         )
                         if geometry["triangle_count"] is not None:
                             geometry_outcome = GeometryReady()
-                        elif over_cap:
+                        elif over_cap and (
+                            suffix != ".stl" or request.include_thumbnail
+                        ):
                             geometry_outcome = GeometryRefused(
                                 ThumbnailFailureReason.RESOURCE_LIMIT
                             )
@@ -331,40 +380,30 @@ class ThumbnailEngine:
                         phases.start(MeshPhase.FINGERPRINT)
                         report("extracting_fingerprint")
                         try:
+                            # Analysis admission cannot remove useful measurements
+                            # or a preview from a mesh admitted by the load budget.
+                            if (
+                                mesh is not None
+                                and len(mesh.faces) > request.triangle_cap
+                            ):
+                                raise GeometryError("geometry_work_limit")
                             if prepared is None and mesh is not None:
                                 prepared = prepare_loaded_mesh(
                                     mesh, file_type=suffix.lstrip(".")
                                 )
                             if prepared is None and suffix == ".stl" and over_cap:
-                                import numpy as np
-                                import trimesh
-
-                                sampled = stl_fallback.sample_stl_geometry(
-                                    request.path,
-                                    max_triangles=min(10_000, request.triangle_cap),
+                                sample_buffers_pending = True
+                                prepared = _prepare_sampled_stl(
+                                    request.path, triangle_cap=request.triangle_cap
                                 )
-                                if sampled is not None and sampled.sampled_triangles:
-                                    points = np.array(
-                                        sampled.coordinates, dtype=np.float64
-                                    ).reshape((-1, 3))
-                                    sampled_mesh = trimesh.Trimesh(
-                                        vertices=points,
-                                        faces=np.arange(len(points)).reshape((-1, 3)),
-                                        process=False,
-                                    )
-                                    prepared = PreparedMesh(
-                                        sampled_mesh,
-                                        ExpandedScene((), ()),
-                                        "stl",
-                                        complete=False,
-                                        failure_code="sampled_source",
-                                    )
                             if (
                                 prepared is not None
                                 and len(prepared.whole_mesh.faces)
                                 > request.triangle_cap
                             ):
                                 raise GeometryError("geometry_work_limit")
+                            if prepared is not None:
+                                fingerprint_complete = prepared.complete
                             fingerprint_result = (
                                 extract(prepared)
                                 if prepared is not None
@@ -387,6 +426,12 @@ class ThumbnailEngine:
                                 else "analysis_failed",
                             )
 
+                        finally:
+                            # Fingerprints contain serialized descriptors, never
+                            # mesh buffers. Render keeps only its loaded mesh;
+                            # fallback must not overlap with analysis allocations.
+                            prepared = None
+
                         phases.finish(
                             outcome=PhaseOutcome.COMPLETED
                             if fingerprint_result.state == "ready"
@@ -399,8 +444,8 @@ class ThumbnailEngine:
                             geometry=geometry,
                             geometry_outcome=geometry_outcome,
                             strategy=ThumbnailStrategy.NONE,
-                            complete=prepared.complete
-                            if prepared
+                            complete=fingerprint_complete
+                            if fingerprint_complete is not None
                             else mesh is not None,
                             failure_reason=None,
                             duration_ms=max(
@@ -461,9 +506,11 @@ class ThumbnailEngine:
                         and suffix == ".stl"
                         and (over_cap or mesh is not None)
                     ):
-                        if mesh is not None:
-                            del mesh
-                            mesh = None
+                        release_buffers = mesh is not None or sample_buffers_pending
+                        prepared = None
+                        mesh = None
+                        sample_buffers_pending = False
+                        if release_buffers:
                             mesh_processing._reclaim_memory()
                         phases.start(MeshPhase.STREAMING, input_bytes=source_bytes)
                         streamed = stl_streaming.render_stl_preview_isolated(
@@ -487,21 +534,12 @@ class ThumbnailEngine:
                             if geometry["triangle_count"] is None:
                                 geometry.update(
                                     {
-                                        "bbox_x_mm": round(
-                                            streamed.bounds_max[0]
-                                            - streamed.bounds_min[0],
-                                            2,
-                                        ),
-                                        "bbox_y_mm": round(
-                                            streamed.bounds_max[1]
-                                            - streamed.bounds_min[1],
-                                            2,
-                                        ),
-                                        "bbox_z_mm": round(
-                                            streamed.bounds_max[2]
-                                            - streamed.bounds_min[2],
-                                            2,
-                                        ),
+                                        "bbox_x_mm": streamed.bounds_max[0]
+                                        - streamed.bounds_min[0],
+                                        "bbox_y_mm": streamed.bounds_max[1]
+                                        - streamed.bounds_min[1],
+                                        "bbox_z_mm": streamed.bounds_max[2]
+                                        - streamed.bounds_min[2],
                                         "triangle_count": streamed.triangle_count,
                                     }
                                 )
@@ -529,21 +567,12 @@ class ThumbnailEngine:
                             if fallback.complete and geometry["triangle_count"] is None:
                                 geometry.update(
                                     {
-                                        "bbox_x_mm": round(
-                                            fallback.bounds_max[0]
-                                            - fallback.bounds_min[0],
-                                            2,
-                                        ),
-                                        "bbox_y_mm": round(
-                                            fallback.bounds_max[1]
-                                            - fallback.bounds_min[1],
-                                            2,
-                                        ),
-                                        "bbox_z_mm": round(
-                                            fallback.bounds_max[2]
-                                            - fallback.bounds_min[2],
-                                            2,
-                                        ),
+                                        "bbox_x_mm": fallback.bounds_max[0]
+                                        - fallback.bounds_min[0],
+                                        "bbox_y_mm": fallback.bounds_max[1]
+                                        - fallback.bounds_min[1],
+                                        "bbox_z_mm": fallback.bounds_max[2]
+                                        - fallback.bounds_min[2],
                                         "triangle_count": fallback.triangle_count,
                                     }
                                 )
@@ -560,6 +589,7 @@ class ThumbnailEngine:
             phases.fail_active()
             prepared = None
             mesh = None
+            sample_buffers_pending = False
             mesh_processing._reclaim_memory()
             if request.include_geometry and not isinstance(
                 geometry_outcome, GeometryReady
@@ -580,8 +610,8 @@ class ThumbnailEngine:
         finally:
             phases.fail_active()
             prepared = None
-            if mesh is not None:
-                del mesh
+            if mesh is not None or sample_buffers_pending:
+                mesh = None
                 mesh_processing._reclaim_memory()
 
         if request.include_geometry and geometry["triangle_count"] is not None:
