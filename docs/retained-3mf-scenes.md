@@ -69,6 +69,29 @@ A supplied image cannot certify geometry that was refused or never read.
 
 See [derivative contracts](derivatives.md) for publication and retry behavior.
 
+## Bounded measurement comparison
+
+A diagnostic comparison used one closed icosphere resource (1,280 faces), with
+1,64 and512 separated placements. Each mode ran twice in fresh processes,
+alternating execution order. Timing covers measurement and, for the materialized
+mode, its whole-scene allocation. Imports and source creation precede timing;
+this is not an ingestion-throughput or rendering benchmark. Source digests,
+array identities and physical results matched in all twelve observations.
+
+| Placements | Retained median time | Materialized median time | Retained tracked peak | Materialized tracked peak |
+|---|---|---|---|---|
+| 1 | 17.99 ms | 12.37 ms | 0.695 MiB | 0.705 MiB |
+| 64 | 39.62 ms | 295.76 ms | 0.716 MiB | 21.617 MiB |
+| 512 | 202.74 ms | 2159.59 ms | 0.861 MiB | 172.853 MiB |
+
+The tracked peak is allocation memory observed by `tracemalloc`, not total RSS.
+At512 placements, process high-water RSS medians were164 MiB for retained and
+340 MiB for materialized measurement, including the runtime baseline. Retained
+measurement has overhead for the single placement; its memory advantage here
+comes from evaluating the unique resource once while bounding placed scratch.
+These small synthetic samples support that contract and do not establish a
+production latency target. The run used Python3.12.3 with one BLAS/OpenMP thread.
+
 ## Validation
 
 Focused core checks:60 passed. Affected backend checks:152 passed with two
