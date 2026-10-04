@@ -436,7 +436,11 @@ class TestSampleFingerprintRecipe:
         assert source_scan is SourceScanState.COMPLETE
         assert isinstance(prepared.geometry, SampledGeometry)
         assert result.state is FingerprintResultState.PARTIAL
-        assert result.algorithm_version == golden["algorithm_version"]
+        from app.modules.media.fingerprints import ALGORITHM_VERSION
+
+        # The v6 fixture freezes sample values; eligibility receipts evolve separately.
+        assert golden["algorithm_version"] == "geometry-v6-sh5f4577c4"
+        assert result.algorithm_version == ALGORITHM_VERSION
         assert (
             hashlib.sha256(source.read_bytes()).hexdigest() == golden["source_sha256"]
         )

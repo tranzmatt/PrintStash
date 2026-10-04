@@ -54,7 +54,7 @@ library at backfill priority while uploads keep interactive priority.
 
 | Definition | Lane | Kinds | Produced from |
 | --- | --- | --- | --- |
-| `derivatives.mesh` | `derive.native` | `metadata` (geometry), `thumbnail` | One native mesh load (also hands similarity its fingerprints) |
+| `derivatives.mesh` | `derive.native` | `metadata` (geometry), `thumbnail` | One bounded source preparation; 3MF resources and placements remain retained until topology or fingerprints need materialization |
 | `derivatives.gcode` | `derive.light` | `metadata` (slicer facts, material requirements), `thumbnail` | One header read; no embedded image means `skipped` |
 | `derivatives.toolpath` | `derive.native` | `toolpath` | The binary G-code converter, under resource limits |
 
@@ -76,8 +76,9 @@ selection and normal welding. The renderer compacts that surface in a private
 view and remaps faces inside each existing chunk; unused source vertices remain
 unchanged. Face indices must refer to the source vertex array.
 
-Mesh thumbnail recipe 4 refreshes existing previews. Similarity uses view-descriptor
-recipe 2 and fingerprint algorithm `geometry-v5-sh5f4577c4`. Search visual recipe 3
+Referenced-relative rendering was introduced with mesh thumbnail recipe 4 and
+view-descriptor recipe 2. The current mesh recipe identities are listed below.
+Search visual recipe 3
 and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
 invalidate earlier rendered inputs and vectors. Encoder asset manifests and
 their digests are unchanged.
@@ -140,6 +141,46 @@ algorithm version stay unchanged.
 Mesh thumbnail recipe 6 refreshes streamed previews whose valid oblique facets
 were discarded by the former degeneracy filter. Collinear and repeated facets
 retain the same rejection threshold.
+
+## Retained 3MF measurements and previews
+
+The bounded 3MF reader preserves each reachable resource once, with explicit
+instance transforms. Dimensions and triangle counts are measured from referenced
+placed surfaces in bounded point chunks, without allocating a whole placed mesh.
+Closed indexed resources use the existing component-local signed volume integral;
+negative cavity contributions survive until the aggregate is evaluated. This
+preserves the established additive policy for overlapping closed solids, rather
+than computing a Boolean union.
+
+Resources that need global welding produce an explicit topology decision. The
+engine attempts whole-scene materialization once within the load budget. If that
+evaluation cannot run within its budget, exact dimensions and counts remain
+available with volume not calculated and cause `topology_not_evaluated`.
+Unexpected failures confined to volume calculation retain the dimensions/counts
+with `measurement_failed`.
+Optional fingerprint admission uses the placed face count and can refuse analysis
+without withdrawing those measurements or a usable preview.
+
+Rendering consumes the retained resources after any topology/fingerprint mesh is
+released. Relative float32 positions and global normal arrays still scale with
+expanded referenced vertices; face traversal is repeatable and chunked. This
+avoids retaining a full float64 mesh and a full face buffer merely to produce the
+preview, but is not zero-copy instancing.
+
+| Current output identity | Version |
+| --- | --- |
+| Mesh metadata recipe | 12 |
+| Mesh thumbnail recipe | 11 |
+| Fingerprint interpretation | `geometry-v7-sh5f4577c4` |
+| Viewer STL recipe | 2 (unchanged) |
+
+The mesh recipes refresh prior measurements/previews under the retained-scene
+eligibility and budget policy. The fingerprint version invalidates earlier
+eligibility receipts; descriptor mathematics, SH basis and verifier calibration
+are unchanged. Historical measured evidence and human review decisions are not
+relabelled. Viewer conversion continues to require a materialized STL output.
+The [retained-scene contract](retained-3mf-scenes.md) records the behavior and
+verification evidence.
 
 ## Bounded STL measurements
 

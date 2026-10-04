@@ -41,6 +41,12 @@ from PIL import Image
 
 from printstash_core.mesh import rasterizer, render_mesh_thumbnail
 from printstash_core.mesh.rasterizer import RasterBudget
+from printstash_core.mesh.similarity import components
+from printstash_core.mesh.similarity.components import (
+    ExpandedScene,
+    Instance,
+    MeshResource,
+)
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # 25°, the tilt a flat mesh is viewed at so recesses read.
@@ -842,3 +848,120 @@ class TestModuleDependencies:
                 "trimesh",
             }
         )
+
+
+class TestRenderSceneThumbnail:
+    @pytest.mark.parametrize("spacing,chunk", [(0, 5), (3, 5), (3, 1000)])
+    def test_preserves_placed_mesh_pixels_without_materialization(
+        self, spacing, chunk, monkeypatch
+    ):
+        source = box_mesh()
+        transforms = np.tile(np.eye(4), (64, 1, 1))
+        transforms[1::2, 0, 0] = -2
+        transforms[:, :3, 3] = np.arange(64)[:, None] * [spacing, spacing, 0]
+        scene = ExpandedScene(
+            (MeshResource("part", source.vertices, source.faces),),
+            tuple(Instance("part", transform) for transform in transforms),
+        )
+        vertices, faces = components.compose_scene(scene)
+        expected = render_mesh_thumbnail(
+            SimpleNamespace(vertices=vertices, faces=faces),
+            "placed",
+            width=160,
+            height=120,
+            face_chunk_size=chunk,
+        )
+        originals = (
+            source.vertices.tobytes(),
+            source.faces.tobytes(),
+            transforms.tobytes(),
+        )
+
+        def materialize(*_args, **_kwargs):
+            raise AssertionError("scene rendering must not materialize source geometry")
+
+        monkeypatch.setattr(components, "compose_scene", materialize)
+        actual = rasterizer.render_scene_thumbnail(
+            scene, "placed", width=160, height=120, face_chunk_size=chunk
+        )
+
+        assert expected is not None
+        assert actual is not None
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+        assert (
+            source.vertices.tobytes(),
+            source.faces.tobytes(),
+            transforms.tobytes(),
+        ) == originals
+
+    @pytest.mark.parametrize("offset", [1e9, -1e9])
+    def test_preserves_scene_pixels_after_large_translation(self, offset):
+        source = box_mesh()
+        transforms = np.tile(np.eye(4), (2, 1, 1))
+        transforms[1, :3, 3] = [3, 4, 5]
+        scene = ExpandedScene(
+            (MeshResource("part", source.vertices / 100, source.faces),),
+            tuple(Instance("part", transform) for transform in transforms),
+        )
+        translated = transforms.copy()
+        translated[:, :3, 3] += offset
+        distant = ExpandedScene(
+            scene.resources,
+            tuple(Instance("part", transform) for transform in translated),
+        )
+
+        original = rasterizer.render_scene_thumbnail(
+            scene, "near", width=160, height=120
+        )
+        shifted = rasterizer.render_scene_thumbnail(
+            distant, "far", width=160, height=120
+        )
+
+        assert original is not None
+        assert shifted is not None
+        np.testing.assert_array_equal(pixels(shifted), pixels(original))
+
+    def test_ignores_unused_scene_coordinates(self):
+        source = box_mesh()
+        regular = ExpandedScene(
+            (MeshResource("part", source.vertices, source.faces),),
+            (Instance("part", np.eye(4)),),
+        )
+        unused = ExpandedScene(
+            (
+                MeshResource(
+                    "part", np.vstack((source.vertices, [1e9, -1e9, 1e9])), source.faces
+                ),
+            ),
+            regular.instances,
+        )
+
+        expected = rasterizer.render_scene_thumbnail(
+            regular, "regular", width=160, height=120
+        )
+        actual = rasterizer.render_scene_thumbnail(
+            unused, "unused", width=160, height=120
+        )
+
+        assert expected is not None
+        assert actual is not None
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    def test_keeps_silhouette_fallback_for_scene(self):
+        source = inverted_plate()
+        scene = ExpandedScene(
+            (MeshResource("part", source.vertices, source.faces),),
+            (Instance("part", np.eye(4)),),
+        )
+        expected = render_mesh_thumbnail(source, "inverted", width=160, height=120)
+
+        actual = rasterizer.render_scene_thumbnail(
+            scene, "inverted", width=160, height=120
+        )
+
+        assert expected is not None
+        assert actual is not None
+        np.testing.assert_array_equal(pixels(actual), pixels(expected))
+
+    def test_returns_nothing_for_empty_scene(self):
+        assert rasterizer.render_scene_thumbnail(ExpandedScene((), ()), "empty") is None

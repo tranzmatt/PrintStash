@@ -43,6 +43,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
 
 from .preview_profile import PREVIEW_PROFILE
+from .render_geometry import (
+    MeshRenderInput,
+    SceneRenderInput,
+    prepare_mesh,
+    prepare_scene,
+)
+from .similarity.components import ExpandedScene
 
 if TYPE_CHECKING:
     import numpy as np
@@ -112,6 +119,62 @@ def render_mesh_thumbnail(
     view_rotation: FloatArray | None = None,
     matte: bool = False,
 ) -> bytes | None:
+    """Render a loaded structural mesh through the shared prepared geometry path."""
+    return _render_thumbnail(
+        MeshRenderInput(mesh),
+        name,
+        width,
+        height,
+        face_chunk_size=face_chunk_size,
+        logger=logger,
+        rasterise_triangles=rasterise_triangles,
+        output_format=output_format,
+        view_rotation=view_rotation,
+        matte=matte,
+    )
+
+
+def render_scene_thumbnail(
+    scene: ExpandedScene,
+    name: str,
+    width: int = 640,
+    height: int = 480,
+    *,
+    face_chunk_size: int = 64_000,
+    logger: LogSink | None = None,
+    rasterise_triangles: Rasteriser | None = None,
+    output_format: Literal["PNG", "WEBP"] = "PNG",
+    view_rotation: FloatArray | None = None,
+    matte: bool = False,
+) -> bytes | None:
+    """Render retained scene resources without source materialization."""
+    return _render_thumbnail(
+        SceneRenderInput(scene),
+        name,
+        width,
+        height,
+        face_chunk_size=face_chunk_size,
+        logger=logger,
+        rasterise_triangles=rasterise_triangles,
+        output_format=output_format,
+        view_rotation=view_rotation,
+        matte=matte,
+    )
+
+
+def _render_thumbnail(
+    source: MeshRenderInput | SceneRenderInput,
+    name: str,
+    width: int = 640,
+    height: int = 480,
+    *,
+    face_chunk_size: int = 64_000,
+    logger: LogSink | None = None,
+    rasterise_triangles: Rasteriser | None = None,
+    output_format: Literal["PNG", "WEBP"] = "PNG",
+    view_rotation: FloatArray | None = None,
+    matte: bool = False,
+) -> bytes | None:
     """Render a PNG thumbnail from an already-loaded mesh.
 
     Lets callers that need both geometry and a thumbnail load the mesh once.
@@ -130,38 +193,17 @@ def render_mesh_thumbnail(
             )
         return None
 
-    if (
-        mesh is None
-        or len(mesh.vertices) == 0
-        or mesh.faces is None
-        or len(mesh.faces) == 0
-    ):
-        if logger is not None:
-            logger.warning("mesh_render: empty mesh for %s", name)
-        return None
-
     try:
-        # World coordinates need float64 until their shared origin is removed:
-        # casting first can collapse a small object placed far from the origin.
-        verts = np.asarray(mesh.vertices, dtype=np.float64)
-        faces = np.asarray(mesh.faces)
-        if faces.ndim != 2 or faces.shape[1] != 3 or faces.dtype.kind not in "iu":
-            raise ValueError("invalid triangle indices")
-        if faces.min() < 0 or faces.max() >= len(verts):
-            raise ValueError("triangle index outside vertex array")
-        faces = faces.astype(np.int64, copy=False)
-
-        # Framing, view selection and normal welding describe the surface only.
-        # Mark its vertex domain without a sorted copy of every face corner, then
-        # remap face chunks below so compaction adds only vertex-scale storage.
-        referenced = np.zeros(len(verts), dtype=bool)
-        referenced[faces] = True
-        vertex_remap = None
-        if not referenced.all():
-            vertex_remap = np.cumsum(referenced, dtype=np.int64)
-            vertex_remap -= 1
-            verts = verts[referenced]
-        del referenced
+        geometry = (
+            prepare_scene(source.scene)
+            if isinstance(source, SceneRenderInput)
+            else prepare_mesh(source.mesh)
+        )
+        if geometry is None:
+            if logger is not None:
+                logger.warning("mesh_render: empty mesh for %s", name)
+            return None
+        verts = geometry.vertices
 
         supersample = PREVIEW_PROFILE.supersample_for(width)
         ss_width = width * supersample
@@ -170,10 +212,8 @@ def render_mesh_thumbnail(
         # ------------------------------------------------------------------
         # 1. Centre and normalise the mesh to a unit-ish bounding sphere.
         # ------------------------------------------------------------------
-        center = (verts.max(axis=0) + verts.min(axis=0)) * 0.5
-        # Keep the existing half-width per-face geometry/shading pipeline. The
-        # subtraction allocates a render copy; source coordinates stay intact.
-        verts = (verts - center).astype(np.float32)
+        # Preparation already removed the shared float64 world origin before
+        # allocating the relative float32 positions used throughout rendering.
 
         # ------------------------------------------------------------------
         # 2. Pick a camera view.
@@ -233,7 +273,6 @@ def render_mesh_thumbnail(
         del q, key
 
         rot_T = rotation.T  # original-space -> view-space, applied per chunk
-        n_faces = int(faces.shape[0])
         # Per-face arrays below are each O(faces); building them one chunk at a
         # time keeps peak render memory O(chunk_size) rather than O(total_faces).
         chunk = max(int(face_chunk_size), 1)
@@ -251,10 +290,7 @@ def render_mesh_thumbnail(
         #     gives the same table at O(chunk_size) memory.
         # ------------------------------------------------------------------
         vacc = np.zeros((n_pos, 3), dtype=np.float64)
-        for s in range(0, n_faces, chunk):
-            fc = faces[s : s + chunk]
-            if vertex_remap is not None:
-                fc = vertex_remap[fc]
+        for fc in geometry.face_chunks(chunk):
             f_obj = verts[fc]  # (c, 3, 3)
             fn = np.cross(f_obj[:, 1] - f_obj[:, 0], f_obj[:, 2] - f_obj[:, 0])
             fn = fn / np.where(
@@ -381,10 +417,7 @@ def render_mesh_thumbnail(
         zbuf = np.full((ss_height, ss_width), np.inf, dtype=np.float64)
 
         visible_total = 0
-        for s in range(0, n_faces, chunk):
-            fc = faces[s : s + chunk]
-            if vertex_remap is not None:
-                fc = vertex_remap[fc]
+        for fc in geometry.face_chunks(chunk):
             tri = screen[fc]  # (c, 3, 3) screen-space
             view_tri = view[fc]  # (c, 3, 3) view-space
 
@@ -461,10 +494,7 @@ def render_mesh_thumbnail(
             ) -> FloatArray:
                 return np.broadcast_to(_c, n.shape)
 
-            for s in range(0, n_faces, chunk):
-                fc = faces[s : s + chunk]
-                if vertex_remap is not None:
-                    fc = vertex_remap[fc]
+            for fc in geometry.face_chunks(chunk):
                 tri = screen[fc]
                 nrm = np.zeros((tri.shape[0], 3, 3), dtype=np.float32)
                 rasterise(

@@ -12,6 +12,7 @@ from printstash_core.mesh.similarity.components import (
     ExpandedScene,
     Instance,
     compose_scene,
+    expand_scene,
     split_components,
 )
 
@@ -26,6 +27,31 @@ from .mesh_facts import (
 
 if TYPE_CHECKING:
     from trimesh import Trimesh
+
+
+@dataclass(frozen=True)
+class PreparedScene:
+    """An admitted source scene, without materialized placed geometry.
+
+    Admission preserves each unique resource's buffers and checks placed counts
+    before any whole-scene allocation. It does not claim materialized coverage.
+    """
+
+    scene: ExpandedScene
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scene, ExpandedScene):
+            raise TypeError("invalid_prepared_scene")
+        admitted = expand_scene(self.scene.resources, self.scene.instances)
+        object.__setattr__(self, "scene", admitted)
+
+    @property
+    def triangle_count(self) -> int:
+        counts = {
+            resource.resource_id: len(resource.faces)
+            for resource in self.scene.resources
+        }
+        return sum(counts[instance.resource_id] for instance in self.scene.instances)
 
 
 @dataclass(frozen=True)
@@ -107,10 +133,15 @@ def prepare_loaded_mesh(mesh: Trimesh, *, file_type: str) -> PreparedMesh:
 
 def load_3mf(path: Path, *, max_faces: int = MAX_ANALYSIS_FACES) -> PreparedMesh:
     """Read a bounded source scene, then explicitly materialize its placed mesh."""
+    return materialize_scene(read_scene(path, max_faces=max_faces))
+
+
+def materialize_scene(scene: ExpandedScene) -> PreparedMesh:
+    """Allocate placed arrays only after complete source-scene admission."""
     import numpy as np
     import trimesh
 
-    scene = read_scene(path, max_faces=max_faces)
+    scene = PreparedScene(scene).scene
     try:
         vertices, faces = compose_scene(scene)
         if not np.isfinite(vertices).all():

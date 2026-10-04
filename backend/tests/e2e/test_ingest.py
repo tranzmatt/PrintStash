@@ -770,10 +770,16 @@ class TestMeshFailureRecovery:
         self, api, tmp_path, e2e_db, monkeypatch
     ):
         from app.db.models import DerivativeKind
+        from app.modules.derivatives import kinds
 
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 100)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
-        data = three_mf(build=tuple((1, None) for _ in range(40)))
+        preview = io.BytesIO()
+        Image.new("RGB", (32, 32), "red").save(preview, format="PNG")
+        data = three_mf(
+            build=tuple((1, None) for _ in range(2049)),
+            extras={"Metadata/thumbnail.png": preview.getvalue()},
+        )
         headers = await _setup_and_login(api, tmp_path)
         uploaded = await api.post(
             "/api/v1/ingest/model",
@@ -791,6 +797,18 @@ class TestMeshFailureRecovery:
         ).one()
         updated, attempts = before.updated_at, before.attempts
         assert before.state == "failed"
+        assert before.failure_reason == "resource_limit"
+        assert before.next_attempt_at is None
+        assert attempts == settings.derivative_max_attempts
+        assert before.recipe_version == kinds.MESH_GEOMETRY_RECIPE
+        thumbnail = await _thumbnail_derivative(api, headers, file_id)
+        assert thumbnail["state"] == "ready"
+        assert thumbnail["recipe_version"] == kinds.MESH_THUMBNAIL_RECIPE
+        assert _thumbnail_output(e2e_db, file_id)["strategy"] == "embedded"
+        image_response = await api.get(
+            f"/api/v1/files/{file_id}/thumbnail", headers=headers
+        )
+        assert image_response.status_code == 200, image_response.text
         for _ in range(3):
             response = await api.post(
                 "/api/v1/admin/work/derivatives/metadata/regenerate",
@@ -803,6 +821,20 @@ class TestMeshFailureRecovery:
         after = e2e_db.get(ArtifactDerivative, before.id)
         assert after.updated_at == updated
         assert after.attempts == attempts
+        assert after.state == "failed"
+        assert after.failure_reason == "resource_limit"
+        assert after.next_attempt_at is None
+        assert after.recipe_version == kinds.MESH_GEOMETRY_RECIPE
+        original = await api.get(f"/api/v1/files/{file_id}/download", headers=headers)
+        assert original.status_code == 200, original.text
+        assert original.content == data
+        with zipfile.ZipFile(io.BytesIO(original.content)) as archive:
+            assert archive.read("Metadata/thumbnail.png") == preview.getvalue()
+        still_ready = await api.get(
+            f"/api/v1/files/{file_id}/thumbnail", headers=headers
+        )
+        assert still_ready.status_code == 200, still_ready.text
+        assert still_ready.content == image_response.content
 
     @pytest.mark.asyncio
     async def test_original_download_survives_geometry_failure(

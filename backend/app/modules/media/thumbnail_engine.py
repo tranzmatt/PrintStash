@@ -15,9 +15,11 @@ from typing import TYPE_CHECKING
 
 from printstash_core.mesh.measurements import (
     InvalidMeshMeasurements,
+    VolumeMeasurement,
     VolumeNotCalculated,
     VolumeNotCalculatedCause,
     validate_geometry_extents,
+    volume_value,
 )
 from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
@@ -30,6 +32,7 @@ from app.modules.media import (
     mesh_policy,
     mesh_previews,
     mesh_render,
+    mesh_resources,
     stl_fallback,
     stl_streaming,
 )
@@ -63,7 +66,7 @@ from app.modules.media.mesh_facts import (
 from app.modules.media.mesh_resources import (
     ExpandedScene,
     PreparedMesh,
-    load_3mf,
+    PreparedScene,
     prepare_loaded_mesh,
 )
 from app.modules.media.mesh_telemetry import (
@@ -71,8 +74,9 @@ from app.modules.media.mesh_telemetry import (
     PhaseOutcome,
     PhaseRecorder,
 )
+from app.modules.media.scene_measurements import VolumeTopologyRequired, measure_scene
 from app.modules.media.stl_reader import InvalidSTL, STLReadFailure, scan_stl
-from app.modules.media.three_mf_scene import Unsupported3MFCapability
+from app.modules.media.three_mf_scene import Unsupported3MFCapability, read_scene
 
 if TYPE_CHECKING:
     from trimesh import Trimesh
@@ -151,7 +155,7 @@ class ThumbnailEngine:
         height = int(request.height or round(width * 3 / 4))
         suffix = mesh_policy.canonical_suffix(request.path, request.file_type)
         geometry = _empty_geometry()
-        volume = VolumeNotCalculated(
+        volume: VolumeMeasurement = VolumeNotCalculated(
             VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
             if request.include_geometry
             else VolumeNotCalculatedCause.NOT_REQUESTED
@@ -169,6 +173,8 @@ class ThumbnailEngine:
         image: bytes | None = None
         mesh: Trimesh | None = None
         prepared: PreparedMesh | None = None
+        source_scene: PreparedScene | None = None
+        scene_cleanup_pending = False
         fingerprint_result: FingerprintResult | None = None
         sample_buffers_pending = False
 
@@ -229,16 +235,16 @@ class ThumbnailEngine:
                     if not over_cap:
                         phases.start(MeshPhase.LOAD, input_bytes=source_bytes)
                         if suffix == ".3mf":
-                            # The ZIP-size estimate cannot account for repeated
-                            # build/component instances. Trimesh expands those
-                            # placements while loading and can exhaust the API
-                            # process before the post-load face cap runs (#259).
-                            # The resource loader counts expanded faces before
-                            # composing a mesh and bounds XML parsing too.
-                            face_cap = mesh_policy.load_face_budget(suffix)
+                            # Retained scenes admit unique source buffers and
+                            # placed counts without allocating a whole mesh.
+                            # Render, topology and FP apply their own budgets
+                            # before a consumer materializes placed geometry.
                             try:
-                                prepared = load_3mf(request.path, max_faces=face_cap)
-                                mesh = prepared.whole_mesh
+                                source_scene = PreparedScene(
+                                    read_scene(
+                                        request.path, max_faces=MAX_ANALYSIS_FACES
+                                    )
+                                )
                             except GeometryError as exc:
                                 if exc.code in {
                                     "archive_resource_limit",
@@ -316,14 +322,18 @@ class ThumbnailEngine:
 
                         phases.finish(
                             outcome=PhaseOutcome.COMPLETED
-                            if mesh is not None
+                            if mesh is not None or source_scene is not None
                             else PhaseOutcome.FAILED,
-                            triangle_count=len(mesh.faces)
+                            triangle_count=source_scene.triangle_count
+                            if source_scene is not None
+                            else len(mesh.faces)
                             if mesh is not None
                             else None,
                         )
 
-                    if mesh is not None:
+                    if source_scene is not None:
+                        source_scan = SourceScanState.COMPLETE
+                    elif mesh is not None:
                         source_scan = SourceScanState.COMPLETE
                         geometry_representation = CompleteGeometry()
 
@@ -360,6 +370,69 @@ class ThumbnailEngine:
                                         "triangle_count": measured.triangle_count,
                                     }
                                 )
+                        elif source_scene is not None:
+                            # Unique-resource topology caches also own native cycles.
+                            # Release them before rendering, even without fingerprints.
+                            scene_cleanup_pending = True
+                            try:
+                                scene_measurements = measure_scene(source_scene.scene)
+                            except GeometryError as exc:
+                                # Source syntax may be valid while placed coordinates
+                                # exceed the numeric range. Embedded output is independent.
+                                scene_cleanup_pending = True
+                                source_scene = None
+                                geometry = _empty_geometry()
+                                volume = VolumeNotCalculated(
+                                    VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+                                )
+                                geometry_outcome = GeometryRefused(
+                                    ThumbnailFailureReason.INVALID_SOURCE
+                                )
+                                if request.include_fingerprint:
+                                    fingerprint_result = FingerprintResult(
+                                        FingerprintResultState.FAILED,
+                                        failure_code=FingerprintFailureCode(exc.code),
+                                    )
+                            else:
+                                geometry = scene_measurements.geometry
+                                scene_volume = scene_measurements.volume
+                                if isinstance(scene_volume, VolumeTopologyRequired):
+                                    volume = VolumeNotCalculated(
+                                        VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+                                    )
+                                    if (
+                                        source_scene.triangle_count
+                                        <= mesh_policy.load_face_budget(suffix)
+                                    ):
+                                        scene_cleanup_pending = True
+                                        try:
+                                            prepared = mesh_resources.materialize_scene(
+                                                source_scene.scene
+                                            )
+                                        except (GeometryError, MemoryError) as exc:
+                                            # A failed topology attempt cannot withdraw
+                                            # independent bounds/count or force an FP retry.
+                                            if request.include_fingerprint:
+                                                fingerprint_result = FingerprintResult(
+                                                    FingerprintResultState.FAILED,
+                                                    failure_code=FingerprintFailureCode(
+                                                        exc.code
+                                                    )
+                                                    if isinstance(exc, GeometryError)
+                                                    else FingerprintFailureCode.RESOURCE_LIMIT,
+                                                )
+                                        else:
+                                            geometry_representation = CompleteGeometry()
+                                            volume = (
+                                                mesh_measurements.geometry_from_mesh(
+                                                    prepared.whole_mesh
+                                                ).volume
+                                            )
+                                            geometry["volume_mm3"] = volume_value(
+                                                volume
+                                            )
+                                else:
+                                    volume = scene_volume
                         else:
                             measured = mesh_measurements.geometry_from_mesh(mesh)
                             geometry, volume = measured.geometry, measured.volume
@@ -388,10 +461,18 @@ class ThumbnailEngine:
                             # Analysis admission cannot remove useful measurements
                             # or a preview from a mesh admitted by the load budget.
                             if (
-                                mesh is not None
+                                source_scene is not None
+                                and source_scene.triangle_count > request.triangle_cap
+                                or mesh is not None
                                 and len(mesh.faces) > request.triangle_cap
                             ):
                                 raise GeometryError("geometry_work_limit")
+                            if prepared is None and source_scene is not None:
+                                scene_cleanup_pending = True
+                                prepared = mesh_resources.materialize_scene(
+                                    source_scene.scene
+                                )
+                                geometry_representation = CompleteGeometry()
                             if prepared is None and mesh is not None:
                                 prepared = prepare_loaded_mesh(
                                     mesh, file_type=suffix.lstrip(".")
@@ -487,28 +568,51 @@ class ThumbnailEngine:
                         image = embedded
                         strategy = ThumbnailStrategy.EMBEDDED
                         preview_coverage = PreviewCoverage.DOCUMENT_SUPPLIED
-                    elif mesh is not None:
+                    elif mesh is not None or source_scene is not None:
+                        if source_scene is not None:
+                            # Topology/FP descriptors own no mesh buffers. Direct
+                            # scene rendering must not overlap their materialization.
+                            prepared = None
+                            mesh = None
+                            if scene_cleanup_pending:
+                                scene_cleanup_pending = False
+                                mesh_policy.reclaim_memory()
+                        if source_scene is not None:
+                            render_triangles = source_scene.triangle_count
+                        else:
+                            assert mesh is not None
+                            render_triangles = len(mesh.faces)
                         cap = int(settings.mesh_max_render_triangles)
                         ram_cap = mesh_policy.ram_triangle_cap(suffix)
                         if ram_cap is not None:
                             cap = min(cap, ram_cap)
-                        if len(mesh.faces) > cap:
+                        if render_triangles > cap:
                             failure = ThumbnailFailureReason.RESOURCE_LIMIT
                             logger.warning(
                                 "thumbnail_engine: post-load triangle budget exceeded",
                                 extra={
                                     "strategy": "full",
-                                    "triangles": len(mesh.faces),
+                                    "triangles": render_triangles,
                                 },
                             )
                         else:
                             try:
-                                image = mesh_render.render_mesh_thumbnail(
-                                    mesh,
-                                    request.path.name,
-                                    width=width,
-                                    height=height,
-                                    output_format=request.output_format,
+                                image = (
+                                    mesh_render.render_scene_thumbnail(
+                                        source_scene.scene,
+                                        request.path.name,
+                                        width=width,
+                                        height=height,
+                                        output_format=request.output_format,
+                                    )
+                                    if source_scene is not None
+                                    else mesh_render.render_mesh_thumbnail(
+                                        mesh,
+                                        request.path.name,
+                                        width=width,
+                                        height=height,
+                                        output_format=request.output_format,
+                                    )
                                 )
                             except Exception:  # noqa: BLE001 - bounded fallbacks remain
                                 logger.exception(
@@ -629,7 +733,7 @@ class ThumbnailEngine:
                             ThumbnailFailureReason.RESOURCE_LIMIT
                             if over_cap
                             else ThumbnailFailureReason.NO_GEOMETRY
-                            if mesh is None
+                            if mesh is None and source_scene is None
                             else ThumbnailFailureReason.RENDERER_NO_OUTPUT
                         )
         except InvalidMeshMeasurements:
@@ -657,7 +761,9 @@ class ThumbnailEngine:
             phases.fail_active()
             prepared = None
             mesh = None
+            source_scene = None
             sample_buffers_pending = False
+            scene_cleanup_pending = False
             mesh_policy.reclaim_memory()
             if request.include_geometry and not isinstance(
                 geometry_outcome, GeometryReady
@@ -679,8 +785,15 @@ class ThumbnailEngine:
         finally:
             phases.fail_active()
             prepared = None
-            if mesh is not None or sample_buffers_pending:
-                mesh = None
+            release_buffers = (
+                mesh is not None
+                or source_scene is not None
+                or sample_buffers_pending
+                or scene_cleanup_pending
+            )
+            mesh = None
+            source_scene = None
+            if release_buffers:
                 mesh_policy.reclaim_memory()
 
         if request.include_geometry and geometry["triangle_count"] is not None:

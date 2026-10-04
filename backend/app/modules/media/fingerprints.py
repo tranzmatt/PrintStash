@@ -18,7 +18,7 @@ from printstash_core.mesh.similarity.verification import VERIFICATION_VERSION
 from .mesh_facts import CompleteGeometry, FingerprintFailureCode, FingerprintResultState
 from .mesh_resources import PreparedMesh
 
-ALGORITHM_VERSION = "geometry-v6-sh5f4577c4"
+ALGORITHM_VERSION = "geometry-v7-sh5f4577c4"
 SH_BASIS_DIGEST = "5f4577c4d06d73c281f343f4538adebcfff371b9d356185b42f5f11ddd41ea46"
 
 

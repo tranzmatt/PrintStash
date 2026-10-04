@@ -1,9 +1,13 @@
 """Upload measurements expose their volume policy independently of fingerprints."""
 
+import io
+
 import pytest
 import trimesh
+from PIL import Image
 from sqlmodel import select
 
+from app.core.config import _overlay
 from app.db.models import GeometryFingerprint, Metadata
 from tests.e2e._jobs import finished_job
 from tests.factories import content
@@ -102,5 +106,62 @@ class TestMeshMeasurementEvidence:
         from app.modules.derivatives.kinds import MESH_GEOMETRY_RECIPE
 
         assert (derived["state"], derived["recipe_version"]) == (
-            "ready", MESH_GEOMETRY_RECIPE
+            "ready",
+            MESH_GEOMETRY_RECIPE,
+        )
+
+
+class TestRetainedSceneMeasurementEvidence:
+    @pytest.mark.asyncio
+    async def test_ingestion_measures_instances_beyond_materialization_budget(
+        self, api, superuser_headers, e2e_db, monkeypatch
+    ):
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 100)
+        raw = three_mf(
+            build=((1, None),) * 64, extras={"Metadata/thumbnail.png": content.png()}
+        )
+        disabled = await api.patch(
+            "/api/v1/similarity/settings",
+            headers=superuser_headers,
+            json={"enabled": False, "fingerprint_on_ingest": False},
+        )
+        assert disabled.status_code == 200, disabled.text
+        upload = await api.post(
+            "/api/v1/ingest/model",
+            headers=superuser_headers,
+            files={"file": ("retained-instances.3mf", raw, "model/3mf")},
+        )
+        job = await finished_job(api, upload, superuser_headers)
+        assert job["state"] == "completed", job
+        response = await api.get(
+            f"/api/v1/models/{job['model_id']}", headers=superuser_headers
+        )
+        assert response.status_code == 200, response.text
+        artifact = next(
+            row for row in response.json()["files"] if row["id"] == job["file_id"]
+        )
+        metadata = artifact["metadata"]
+        assert metadata["triangle_count"] == 256
+        assert tuple(metadata[f"bbox_{axis}_mm"] for axis in "xyz") == (10, 20, 30)
+        assert metadata["volume_measurement"] == {
+            "state": "measured",
+            "unit": "mm3",
+            "method": "mesh_surface_integral",
+            "value_mm3": 64000.0,
+            "cause": None,
+        }
+        preview = await api.get(
+            f"/api/v1/files/{job['file_id']}/thumbnail", headers=superuser_headers
+        )
+        assert preview.status_code == 200, preview.text
+        with Image.open(io.BytesIO(preview.content)) as image:
+            assert image.convert("RGB").getextrema() != ((255, 255),) * 3
+        e2e_db.expire_all()
+        assert (
+            e2e_db.exec(
+                select(GeometryFingerprint).where(
+                    GeometryFingerprint.file_id == job["file_id"]
+                )
+            ).all()
+            == []
         )
