@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Keep mesh measurements and previews available when optional fingerprint analysis
+  exceeds its triangle budget, and release analysis buffers before STL rendering fallbacks.
+  Re-derive earlier terminal refusals at updated mesh recipes.
 - Independent mesh, G-code metadata/thumbnail and binary toolpath processing controls, with deployment defaults and live administrator settings. Disabling retains published previews and lets admitted processing finish; re-enabling resumes eligible missing work (#263).
 - Harden mesh workers with pre-import address-space limits, one admission controller
   across concurrency changes, process-tree memory accounting, and shared budgets

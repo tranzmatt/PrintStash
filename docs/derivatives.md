@@ -113,6 +113,25 @@ are assumed to be millimetres. Metadata recipe 4 recalculates existing measureme
 to remove volumes previously published for inconsistently wound surfaces; the
 fingerprint algorithm is unchanged.
 
+## Optional fingerprint budgets
+
+Similarity's triangle cap admits fingerprint analysis using the actual loaded
+face count, including expanded 3MF instances. It does not reduce the separate
+mesh load or rendering limits. A mesh admitted for measurements and preview
+therefore retains those outputs even when its fingerprint is refused with
+`geometry_work_limit`. Sources exceeding the mesh load limit still use the
+existing bounded strategies, including explicitly partial STL fingerprints.
+
+Fingerprint results contain serialized descriptors. Prepared scene buffers are
+released after analysis, and a failed full STL render releases its loaded mesh
+before the streaming strategy starts. Sample preparation has its own scope so
+construction errors also release temporary arrays before recovery begins.
+
+Metadata recipe 7 and thumbnail recipe 5 recover terminal resource-limit
+refusals produced by the earlier coupled admission policy. The derivative source
+finds missing current-recipe outputs, including when an earlier fingerprint
+failure remains cached. Successful content algorithms and the fingerprint
+algorithm version stay unchanged.
 ## Bounded STL measurements
 
 Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the
