@@ -49,6 +49,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   recording work and notifying the background engine.
 
 - Keep mesh-worker memory limits and cancellation active after the child closes its reply stream.
+- Active mesh workers can release their render admission while a queued worker checks durable cancellation state.
 
 
 - The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
