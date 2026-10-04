@@ -16,6 +16,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Added
 
+- Add a frozen synthetic mesh contract corpus and record benchmark environment, limits, versions and target expectations separately from observed render results.
+
 - Mesh workers retain bounded phase costs and parent-observed resource usage in structured process logs and local Prometheus counters, including metadata-only work and failed or cancelled native processes.
 
 - Deep CI exercises the production mesh pipeline under 1 GiB and 4 GiB

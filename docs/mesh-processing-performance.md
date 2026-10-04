@@ -52,7 +52,10 @@ Omit `--quick` for the larger synthetic dense mesh. `--external-model PATH`
 adds a local model without committing its bytes. Standard output is a JSON
 report; renderer diagnostics go to standard error.
 
-Schema version 2 replaces the earlier cold/warm summary fields. `renders`
+Schema version 3 adds environment evidence and an optional frozen contract
+manifest to the version 2 measurements. Use `--contract-corpus` for the
+[versioned geometry inputs](mesh-benchmark-corpus.md); their target expectations
+are separate from observed parser compliance. `renders`
 contains every real `ThumbnailEngine` attempt, including WebP normalization.
 `representation_reads` measures the production stored-representation delivery
 planner followed by reading the complete persisted local thumbnail. Publication
