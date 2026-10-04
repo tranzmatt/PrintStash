@@ -34,6 +34,7 @@ from app.db.models import (
     ArtifactDerivative,
     DerivativeState,
     File,
+    JobKind,
     ReconcileCursor,
     WorkPriority,
 )
@@ -142,7 +143,8 @@ class DerivativeSource:
                 WorkItem(
                     subject_key=subject_key(file_id),
                     priority=WorkPriority.INTERACTIVE
-                    if ensure_utc(uploaded_at) >= recent
+                    if self.group.definition is JobKind.DERIVATIVES_VIEWER_STL
+                    or ensure_utc(uploaded_at) >= recent
                     else WorkPriority.BACKFILL,
                 )
             )
@@ -174,7 +176,10 @@ class DerivativeSource:
                     continue
                 items.append(
                     WorkItem(
-                        subject_key=subject_key(file_id), priority=WorkPriority.BACKFILL
+                        subject_key=subject_key(file_id),
+                        priority=WorkPriority.INTERACTIVE
+                        if self.group.definition is JobKind.DERIVATIVES_VIEWER_STL
+                        else WorkPriority.BACKFILL,
                     )
                 )
             if len(window) >= room and window:

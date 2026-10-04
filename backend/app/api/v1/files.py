@@ -1,9 +1,7 @@
-"""File download + thumbnail + on-the-fly STL conversion."""
+"""Original delivery, thumbnails and on-demand derived STL previews."""
 
 from __future__ import annotations
 
-import secrets
-import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,7 +11,6 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
-    Response,
 )
 from fastapi.responses import (
     PlainTextResponse,
@@ -44,9 +41,7 @@ from app.modules.storage.artifact_delivery import (
     plan_stored_representation,
 )
 from app.modules.storage.delivery_contracts import content_disposition
-from app.modules.storage.storage_backend.contracts import StorageCollisionError
 from app.modules.storage.storage_backend.runtime import get_backend
-from app.modules.storage.storage_ownership import publish_bytes
 from app.schemas.jobs import DerivativeRead
 
 logger = get_logger(__name__)
@@ -303,7 +298,8 @@ def thumbnail_response(
     summary="Serve any mesh file as STL for 3D preview",
     description=(
         "If the file is already STL it is served directly. 3MF and OBJ files are "
-        "converted to binary STL on the fly via trimesh."
+        "converted to binary STL by background Jobs on first viewer access. "
+        "Pending previews return 202; failed previews return 422 with their reason."
     ),
 )
 def file_as_stl(
@@ -322,7 +318,6 @@ def stl_response(
     """Serve a mesh File as binary STL (cached). No access checks — callers
     are responsible for authorising access to *f* first."""
     stem = Path(f.original_filename).stem
-    delivery = delivery_request(request, f"{stem}.stl", "application/sla", purpose)
     if Path(f.original_filename).suffix.lower() == ".stl":
         return serve_artifact(
             f,
@@ -334,74 +329,11 @@ def stl_response(
             else purpose,
         )
 
-    backend = get_backend()
-    cache_key = backend.stl_cache_key(f.sha256)
-    if backend.exists(cache_key):
-        return render_delivery(plan_stored_representation(backend, cache_key, delivery))
+    from app.api.stl_response import derived_stl_response
 
-    # Mesh parsing is unbounded work on an uploaded file, so it runs in a
-    # disposable worker rather than in this process (#259).
-    from app.modules.media import stl_isolation
-    from app.modules.media.mesh_isolation import MeshWorkerError
-    from app.modules.storage.capacity import CapacityManager, CapacityResource
-    from app.modules.storage.capacity_estimates import vault_allocation
-
-    estimate = max(f.size_bytes * 3, 16 * 1024**2)
-    with CapacityManager(get_session_factory()).hold(
-        f"media-conversion:{secrets.token_hex(12)}",
-        [
-            CapacityResource.for_path(
-                Path(tempfile.gettempdir()), estimate, role="mesh conversion"
-            ),
-            vault_allocation(estimate, role="derived STL publication"),
-        ],
-    ):
-        try:
-            with resolve(f).materialize(capacity_claimed=True) as path:
-                data = stl_isolation.to_stl_bytes(path, file_type=f.file_type.value)
-        except ArtifactContentMissingError as exc:
-            raise HTTPException(status_code=410, detail="file_blob_missing") from exc
-        except MeshWorkerError as exc:
-            logger.warning(
-                "stl conversion failed in its worker",
-                extra={"file_id": f.id, "reason": exc.reason.value},
-            )
-            raise HTTPException(
-                status_code=500, detail="stl_conversion_failed"
-            ) from exc
-        if data is None:
-            raise HTTPException(status_code=500, detail="stl_conversion_failed")
-
-        cached = False
-        try:
-            with get_session_factory().scoped_session() as ownership_session:
-                publish_bytes(
-                    ownership_session,
-                    backend,
-                    cache_key,
-                    data,
-                    object_kind="derived_stl_cache",
-                )
-                ownership_session.commit()
-                cached = True
-        except StorageCollisionError:
-            # Another request won the create-only race. Serve our in-memory result;
-            # subsequent requests will use the already-published cache object.
-            pass
-        except Exception:
-            logger.warning("stl cache write failed for file %s", f.id, exc_info=True)
-
-        if cached:
-            return render_delivery(
-                plan_stored_representation(backend, cache_key, delivery)
-            )
-        status_code, headers = bytes_response_headers(data, delivery)
-        return Response(
-            content=data if status_code == 200 else b"",
-            status_code=status_code,
-            media_type="application/sla",
-            headers=headers,
-        )
+    with get_session_factory().scoped_session() as session:
+        file = _live_file(session, f.id)
+        return derived_stl_response(session, file, request, purpose)
 
 
 @router.get(
@@ -410,7 +342,7 @@ def stl_response(
     summary="Derivative states of one Artifact at the current recipes",
     description=(
         "Every derivative kind that applies to the Artifact (metadata, thumbnail, "
-        "toolpath) with its state. `pending` means no attempt exists yet at the "
+        "toolpath, and requested viewer STL) with its state. `pending` means no attempt exists yet at the "
         "current recipe, so every value the kind supplies is still unknown."
     ),
 )

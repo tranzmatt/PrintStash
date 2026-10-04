@@ -510,6 +510,10 @@ class TestMetadata:
         job = await _await_job(api, headers, uploaded.json()["job_id"])
         assert job["state"] == "completed", job
 
+        accepted = await api.get(f"/api/v1/files/{job['file_id']}/stl", headers=headers)
+        assert accepted.status_code == 202, accepted.text
+        settle()
+
         response = await api.get(f"/api/v1/files/{job['file_id']}/stl", headers=headers)
 
         assert response.status_code == 200, response.text
@@ -655,6 +659,38 @@ async def _original_response_bytes(response, ca_file):
 
 
 class TestMeshFailureRecovery:
+    @pytest.mark.asyncio
+    async def test_original_download_survives_viewer_failure(
+        self, api, refused_original
+    ):
+        file_id, headers, original, ca_file = refused_original
+        accepted = await api.get(f"/api/v1/files/{file_id}/stl", headers=headers)
+        assert accepted.status_code == 202, accepted.text
+        settle()
+        failed = await api.get(f"/api/v1/files/{file_id}/stl", headers=headers)
+        assert (failed.status_code, failed.json()["detail"]) == (422, "invalid_source")
+
+        response = await api.get(f"/api/v1/files/{file_id}/download", headers=headers)
+        downloaded = await _original_response_bytes(response, ca_file)
+
+        assert downloaded == original
+
+    @pytest.mark.asyncio
+    async def test_signed_slicer_download_survives_viewer_failure(
+        self, api, refused_original
+    ):
+        file_id, headers, original, _ca_file = refused_original
+        await api.get(f"/api/v1/files/{file_id}/stl", headers=headers)
+        settle()
+        failed = await api.get(f"/api/v1/files/{file_id}/stl", headers=headers)
+        assert (failed.status_code, failed.json()["detail"]) == (422, "invalid_source")
+        signed = await api.get(f"/api/v1/files/{file_id}/slicer-url", headers=headers)
+
+        response = await api.get(signed.json()["url"])
+
+        assert response.status_code == 200, response.text
+        assert response.content == original
+
     @pytest.mark.asyncio
     async def test_unchanged_terminal_failure_survives_reconciler_nudges(
         self, api, tmp_path, e2e_db, monkeypatch

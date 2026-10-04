@@ -204,6 +204,11 @@ class TestBuildModel:
 
 
 class TestBuildFile:
+    def test_unopened_artifact_has_no_viewer_demand(self, db_session):
+        artifact = factories.build_file(db_session, factories.build_model(db_session))
+
+        assert artifact.viewer_requested_at is None
+
     def test_takes_the_models_next_version(self, db_session: Session) -> None:
         model = factories.build_model(db_session)
 

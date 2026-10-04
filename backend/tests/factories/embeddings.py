@@ -286,7 +286,7 @@ def point_embedding_assets(directory: Path) -> Path:
             "checkpoint_sha256": "3" * 64,
             "license": "CC0-1.0",
             "paired": paired.model_dump(),
-            "paired_space_hash": paired.space().config_hash,
+            "paired_space_hash": paired.encoder_space().config_hash,
             "point": {
                 "graph": {
                     "filename": "points.onnx",

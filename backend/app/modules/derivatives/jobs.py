@@ -108,6 +108,11 @@ def _definition(
 def definitions() -> list[JobDefinition]:
     return [
         _definition(
+            JobKind.DERIVATIVES_VIEWER_STL,
+            LaneName.DERIVE_NATIVE,
+            producers.derive_viewer_stl,
+        ),
+        _definition(
             JobKind.DERIVATIVES_MESH, LaneName.DERIVE_NATIVE, producers.derive_mesh
         ),
         _definition(
