@@ -858,7 +858,7 @@ class TestBoundedVolumeAuthority:
             VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
         )
 
-    def test_partial_fallback_cannot_publish_sampled_measurements(
+    def test_complete_source_with_partial_preview_preserves_unknown_volume(
         self, tmp_path, monkeypatch
     ):
         from app.modules.media import stl_fallback, stl_streaming
@@ -883,18 +883,18 @@ class TestBoundedVolumeAuthority:
         assert result.strategy is ThumbnailStrategy.FALLBACK
         assert result.image is not None
         assert result.coverage.preview is PreviewCoverage.PARTIAL
-        assert result.geometry_outcome == GeometryRefused(
-            ThumbnailFailureReason.RESOURCE_LIMIT
-        )
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.geometry_outcome == GeometryReady()
         assert result.geometry == {
-            "bbox_x_mm": None,
-            "bbox_y_mm": None,
-            "bbox_z_mm": None,
+            "bbox_x_mm": 1.0,
+            "bbox_y_mm": 2.0,
+            "bbox_z_mm": 3.0,
             "volume_mm3": None,
-            "triangle_count": None,
+            "triangle_count": 12,
         }
         assert result.volume == VolumeNotCalculated(
-            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+            VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
         )
 
 
