@@ -62,6 +62,41 @@ A producer derives only the kinds still owed, records every outcome on the
 kind's row, and tells viewers of the Model on `model:<id>` so an open page
 refreshes when a thumbnail lands.
 
+## Rendering distant geometry
+
+The software renderer subtracts the mesh's bounding-box center in float64 before
+converting relative coordinates to float32 for camera projection and shading.
+Small geometry far from the origin therefore retains the precision provided by
+3MF coordinates and transforms or other float64 sources. This does not restore
+detail already lost when binary STL coordinates were written as float32. Source
+Artifact coordinates and physical metadata are unchanged by rendering.
+
+Mesh thumbnail recipe 3 refreshes existing previews. Similarity view-descriptor
+recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4` distinguish the new
+pixels from earlier cached evidence. Search visual recipe 2 and the derived
+embedding-space rasterizer token `relative-f64-v1` invalidate earlier rendered
+inputs and vectors. Encoder asset manifests and their digests are unchanged.
+Historical verifier calibration remains tied to its original fingerprint and
+verification versions; it is not relabelled as a new measurement.
+
+## Mesh volume measurements
+
+Mesh metadata publishes a volume only for a closed surface with consistent
+triangle winding and a finite, positive signed volume. STL facet vertices are
+welded in a measurement copy; this does not repair winding or change the source
+Artifact. Open or inconsistently wound surfaces retain their bounding dimensions
+and triangle counts, with unknown (`null`) volume. A globally reversed surface
+also retains unknown metadata volume under the positive-orientation policy.
+Similarity fingerprints have a separate established policy: they report the
+magnitude for consistently wound closed surfaces, including a global reversal,
+and retain `volume_reason = inconsistent_winding` when winding is inconsistent.
+
+These topology checks do not establish that a surface has no self-intersections,
+and the integral is not a Boolean union of overlapping solids. STL coordinates
+are assumed to be millimetres. Metadata recipe 4 recalculates existing measurements
+to remove volumes previously published for inconsistently wound surfaces; the
+fingerprint algorithm is unchanged.
+
 ## Bumping a recipe
 
 The recipe constants in `app/modules/derivatives/kinds.py` are the code's
