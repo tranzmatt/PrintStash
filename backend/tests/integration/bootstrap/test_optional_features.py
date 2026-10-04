@@ -13,8 +13,6 @@ from app.modules.media.fingerprints import FingerprintResult
 
 
 class TestOptionalFeatures:
-
-
     @pytest.mark.parametrize("missing", ["similarity", "inference"])
     def test_absent_feature_preserves_manual_library_work(
         self, monkeypatch, db_session, make_user, make_model, missing
@@ -47,7 +45,11 @@ class TestOptionalFeatures:
             assert ingestion.extraction_options(sessions) == {}
             assert (
                 ingestion.after_commit(
-                    sessions, 123, actor.id, FingerprintResult(state="ready")
+                    sessions,
+                    123,
+                    actor.id,
+                    FingerprintResult(state="ready"),
+                    source_sha256="a" * 64,
                 )
                 is None
             )

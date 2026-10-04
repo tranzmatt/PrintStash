@@ -137,6 +137,15 @@ class Lane:
         return self.concurrency * settings.jobs_lane_headroom_factor
 
 
+@dataclass(frozen=True)
+class JobExecution:
+    """The immutable authority carried by one engine execution."""
+
+    job_id: str
+    attempt: int
+    execution_epoch: str
+
+
 class JobContext(Protocol):
     """What a running step may ask of the engine. Nothing else is available."""
 
@@ -146,6 +155,7 @@ class JobContext(Protocol):
     priority: WorkPriority
     execution_id: str
     attempt: int
+    execution_epoch: str
 
     def update(self, **fields: Any) -> None:
         """Merge display-safe progress, counts or result into the Job."""
@@ -364,6 +374,7 @@ class JobSubmission:
     lane: LaneName
     priority: WorkPriority
     attempt: int
+    execution_epoch: str
     routing: Deduplicated | Partitioned
     delay_seconds: float | None = None
 

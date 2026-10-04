@@ -15,10 +15,10 @@ from pathlib import Path
 from printstash_core.mesh.similarity import GeometryError
 
 from app.modules.media import mesh_processing
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError, read_spec
 from app.modules.media.mesh_resources import load_3mf
 from app.modules.media.stl_isolation import FAILURE_MAGIC, encode_reply
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
 
 def convert(path: Path, file_type: str | None) -> bytes | None:

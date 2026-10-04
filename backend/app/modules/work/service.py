@@ -9,6 +9,7 @@ failed or cancelled Job's subject to pending and queues the same Job again.
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime
 from typing import cast
 
@@ -98,13 +99,19 @@ def cancel(job_id: str, *, actor: User) -> JobStatus:
         row = session.get(Job, job_id)
         if row is None:
             raise OperationError("job_not_found", kind=ErrorKind.NOT_FOUND)
-        definition.cancel(session, row.subject_key)
-        session.commit()
-        attempts = row.attempts
-    jobs.finish(job_id, JobOutcome.CANCELLED, error="cancelled_by_user")
+        attempts, epoch, state = row.attempts, row.execution_epoch, row.state
+    settled = jobs.cancel_attempt(
+        job_id,
+        attempts,
+        execution_epoch=epoch,
+        expected_state=state,
+        withdraw=definition.cancel,
+    )
+    if settled is None:
+        raise OperationError("job_not_active", kind=ErrorKind.CONFLICT)
     if attempts:
         try:
-            catalog_module.get_engine().cancel(execution_id(job_id, attempts))
+            catalog_module.get_engine().cancel(execution_id(job_id, attempts, epoch))
         except Exception:  # noqa: BLE001 - the Job is settled; the engine catches up
             logger.warning("engine cancel failed", extra={"job_id": job_id})
     result = jobs.get(job_id)
@@ -213,6 +220,7 @@ def retry(job_id: str, *, actor: User) -> JobStatus:
             if key in {"result", "current_item", "total"}
         }
         row.state = JobState.QUEUED
+        row.execution_epoch = uuid.uuid4().hex
         row.resubmits = 0
         row.finished_at = None
         row.status_json = json.dumps(payload, separators=(",", ":"))

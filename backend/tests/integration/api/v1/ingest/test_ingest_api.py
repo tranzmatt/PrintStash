@@ -683,7 +683,7 @@ class TestIngestModel:
         replacement = replacement_buffer.getvalue()
 
         from app.modules.derivatives import producers
-        from app.modules.media.thumbnail_engine import (
+        from app.modules.media.mesh_contracts import (
             GeometryNotRequested,
             ThumbnailResult,
             ThumbnailStrategy,

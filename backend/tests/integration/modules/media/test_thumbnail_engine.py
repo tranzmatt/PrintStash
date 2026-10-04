@@ -15,14 +15,14 @@ from PIL import Image
 
 from app.core.config import _overlay
 from app.modules.media import mesh_processing, thumbnail_engine
-from app.modules.media.thumbnail_engine import (
+from app.modules.media.mesh_contracts import (
     GeometryReady,
     GeometryRefused,
-    ThumbnailEngine,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailStrategy,
 )
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.media.worker_bootstrap import WORKER_MARKER
 from tests.factories import content
 from tests.factories.geometry import three_mf

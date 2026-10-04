@@ -27,6 +27,7 @@ from tests._env import use_local_storage
 from tests.factories import (
     build_user,
 )
+from tests.factories.ops import build_job_context
 from tests.factories.protocols import MakeIngestRequest
 
 
@@ -195,7 +196,7 @@ class TestHandleCollectionUrl:
             AsyncMock(return_value=("Cool Collection", members)),
         ):
             await ingest_background._handle_collection_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -245,7 +246,7 @@ class TestHandleCollectionUrl:
             ),
         ):
             await ingest_background._handle_collection_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -277,7 +278,7 @@ class TestImportFromUrl:
             ),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -313,7 +314,7 @@ class TestImportFromUrl:
             ),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -349,7 +350,7 @@ class TestImportFromUrl:
             ),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -388,7 +389,7 @@ class TestImportFromUrl:
             patch.object(importer, "download_to_staging", fake_download),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -428,7 +429,7 @@ class TestImportFromUrl:
             patch.object(importer, "download_to_staging", fake_download),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -463,7 +464,7 @@ class TestImportFromUrl:
             ),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -509,7 +510,7 @@ class TestImportFromUrl:
             ),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -549,7 +550,7 @@ class TestImportFromUrl:
             patch.object(importer, "download_to_staging", fake_download),
         ):
             await ingest_background.import_from_url(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 req=req,
                 actor_user_id=owner.id,
                 session_factory=get_session_factory(),
@@ -570,7 +571,7 @@ class TestInspectUploadedArchive:
             archive.writestr("notes.txt", "No models here")
 
         ingest_background.inspect_uploaded_archive(
-            job_id=job_id,
+            job_context=build_job_context(job_id),
             staged=staged,
             original_filename="staged.zip",
             cancelled=lambda: False,
@@ -588,7 +589,7 @@ class TestInspectUploadedArchive:
         staged = _leased_archive(db_session, owner, job_id)
 
         ingest_background.inspect_uploaded_archive(
-            job_id=job_id,
+            job_context=build_job_context(job_id),
             staged=staged,
             original_filename="staged.zip",
             cancelled=lambda: False,
@@ -605,7 +606,7 @@ class TestInspectUploadedArchive:
         staged = _leased_archive(db_session, owner, job_id)
 
         ingest_background.inspect_uploaded_archive(
-            job_id=job_id,
+            job_context=build_job_context(job_id),
             staged=staged,
             original_filename="staged.zip",
             cancelled=lambda: True,
@@ -623,7 +624,10 @@ class TestInspectUploadedArchive:
         staged = _leased_archive(db_session, owner, job_id)
 
         ingest_background.inspect_uploaded_archive(
-            job_id=job_id, staged=staged, original_filename="staged.zip", cancelled=lambda: False
+            job_context=build_job_context(job_id),
+            staged=staged,
+            original_filename="staged.zip",
+            cancelled=lambda: False,
         )
 
         db_session.expire_all()
@@ -645,7 +649,10 @@ class TestInspectUploadedArchive:
             importer, "inspect_archive", side_effect=ImportError_("archive_zip_bomb")
         ):
             ingest_background.inspect_uploaded_archive(
-                job_id=job_id, staged=staged, original_filename="staged.zip", cancelled=lambda: False
+                job_context=build_job_context(job_id),
+                staged=staged,
+                original_filename="staged.zip",
+                cancelled=lambda: False,
             )
 
         status = jobs.get(job_id)
@@ -662,7 +669,10 @@ class TestInspectUploadedArchive:
             importer, "inspect_archive", side_effect=ImportError_("archive_zip_bomb")
         ):
             ingest_background.inspect_uploaded_archive(
-                job_id=job_id, staged=staged, original_filename="staged.zip", cancelled=lambda: False
+                job_context=build_job_context(job_id),
+                staged=staged,
+                original_filename="staged.zip",
+                cancelled=lambda: False,
             )
 
         assert staged.exists()
@@ -678,7 +688,10 @@ class TestInspectUploadedArchive:
         ):
             with pytest.raises(RuntimeError, match="boom"):
                 ingest_background.inspect_uploaded_archive(
-                    job_id=job_id, staged=staged, original_filename="staged.zip", cancelled=lambda: False
+                    job_context=build_job_context(job_id),
+                    staged=staged,
+                    original_filename="staged.zip",
+                    cancelled=lambda: False,
                 )
 
         # Kept for the retry the runner's failure makes possible.
@@ -697,7 +710,7 @@ class TestRunFileSelectionImport:
             AsyncMock(side_effect=ImportError_("printables_resolve_failed")),
         ):
             await ingest_background.run_file_selection_import(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 page_url="https://www.printables.com/model/1",
                 files=[],
                 collection=None,
@@ -729,7 +742,7 @@ class TestRunFileSelectionImport:
             ),
         ):
             await ingest_background.run_file_selection_import(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 page_url="https://www.printables.com/model/1",
                 files=[],
                 collection=None,
@@ -756,7 +769,7 @@ class TestRunFileSelectionImport:
             AsyncMock(side_effect=RuntimeError("boom")),
         ):
             await ingest_background.run_file_selection_import(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 page_url="https://www.printables.com/model/1",
                 files=[],
                 collection=None,
@@ -785,7 +798,7 @@ class TestRunCollectionMemberImport:
             AsyncMock(side_effect=RuntimeError("boom")),
         ):
             await ingest_background.run_collection_member_import(
-                job_id=job_id,
+                job_context=build_job_context(job_id),
                 members=[],
                 target_collection="Cool",
                 tags=None,

@@ -141,3 +141,34 @@ class TestPreviewCoverage:
         assert small.png == large.png
         assert small.bounds_min == large.bounds_min
         assert small.bounds_max == large.bounds_max
+
+class TestValidTriangle:
+    def test_renders_valid_oblique_facet(self, tmp_path: Path) -> None:
+        import io
+
+        from PIL import Image
+
+        source = tmp_path / "oblique.stl"
+        source.write_text(
+            """solid oblique
+facet normal -2 -2 4
+outer loop
+vertex 0 0 0
+vertex 2 0 1
+vertex 0 2 1
+endloop
+endfacet
+endsolid oblique
+""",
+            encoding="ascii",
+        )
+
+        result = stl_streaming.render_stl_preview_isolated(
+            source, width=128, height=128
+        )
+
+        assert result is not None
+        assert result.parsed_triangles == 1
+        assert result.raster_candidates > 0
+        with Image.open(io.BytesIO(result.png)) as image:
+            assert image.getchannel("A").getbbox() is not None

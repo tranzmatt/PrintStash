@@ -157,3 +157,147 @@ class TestRetention:
         assert source is not None
 
         assert source.cron(db_session) == "35 * * * *"  # type: ignore[attr-defined]
+
+
+class TestCompletionOwnership:
+    def test_old_completion_preserves_a_new_imports_staging(
+        self, db_session, make_job, make_inbox_item, make_model, owner
+    ):
+        import json
+
+        from app.core.config import settings
+        from app.db.models import JobState
+        from app.db.session import get_session_factory
+        from app.modules.work.contracts import JobExecution
+
+        item = make_inbox_item(owner, state=InboxItemState.IMPORTING)
+        model = make_model()
+        old = make_job(
+            kind=JobKind.INGESTION_INBOX_IMPORT,
+            subject=f"inbox_item/{item.id}",
+            owner=owner,
+            state=JobState.COMPLETED,
+            attempts=1,
+            status_json=json.dumps({"model_id": model.id}),
+        )
+        execution = JobExecution(old.id, old.attempts, old.execution_epoch)
+        current = make_job(
+            kind=old.kind,
+            subject=old.subject_key,
+            owner=owner,
+            state=JobState.RUNNING,
+            attempts=1,
+        )
+        settings.incoming_dir.mkdir(parents=True, exist_ok=True)
+        staged = settings.incoming_dir / "current-import.gcode"
+        staged.write_bytes(b"new import owns these bytes")
+        item.job_id = current.id
+        item.staging_key = str(staged)
+        db_session.add(item)
+        db_session.commit()
+
+        inbox._finish_import(item.id, execution, get_session_factory())
+
+        db_session.refresh(item)
+        assert item.state is InboxItemState.IMPORTING
+        assert item.job_id == current.id
+        assert item.resulting_model_id is None
+        assert staged.read_bytes() == b"new import owns these bytes"
+
+    def test_rejected_completion_retains_cover_recovery_ownership(
+        self, db_session, make_job, make_inbox_item, make_model, owner, monkeypatch
+    ):
+        import io
+        import json
+        import uuid
+
+        from PIL import Image
+        from sqlmodel import select
+
+        from app.core.config import settings
+        from app.db.models import (
+            JobState,
+            ModelProvenanceSource,
+            ModelSourceCover,
+            OwnedStorageObject,
+            StagingLease,
+            StorageObjectState,
+        )
+        from app.db.session import get_session_factory
+        from app.modules.library import source_covers
+        from app.modules.storage.storage_backend.runtime import get_backend
+        from app.modules.work.contracts import JobExecution
+
+        model = make_model()
+        source = ModelProvenanceSource(
+            model_id=model.id,
+            provider="test",
+            identity_key=uuid.uuid4().hex * 2,
+            canonical_url="https://example.test/retired-cover",
+        )
+        db_session.add(source)
+        db_session.commit()
+        source_id = source.id
+        item = make_inbox_item(owner, state=InboxItemState.IMPORTING)
+        old = make_job(
+            kind=JobKind.INGESTION_INBOX_IMPORT,
+            subject=f"inbox_item/{item.id}",
+            owner=owner,
+            state=JobState.COMPLETED,
+            attempts=1,
+            status_json=json.dumps({"model_id": model.id}),
+        )
+        execution = JobExecution(old.id, old.attempts, old.execution_epoch)
+        current = make_job(
+            kind=old.kind,
+            subject=old.subject_key,
+            owner=owner,
+            state=JobState.RUNNING,
+            attempts=1,
+        )
+        settings.incoming_dir.mkdir(parents=True, exist_ok=True)
+        staged = settings.incoming_dir / "current-cover-import.gcode"
+        staged.write_bytes(b"current import staging")
+        item.job_id = current.id
+        item.staging_key = str(staged)
+        db_session.add(item)
+        db_session.commit()
+        output = io.BytesIO()
+        Image.new("RGB", (8, 8), "navy").save(output, format="PNG")
+        backend = get_backend()
+
+        def publish_cover(session, _row):
+            return source_covers.put(
+                session,
+                backend,
+                provenance_source_id=source_id,
+                actor_id=None,
+                data=output.getvalue(),
+                content_type="image/png",
+            )
+
+        monkeypatch.setattr(inbox, "_attach_capture_cover", publish_cover)
+        inbox._finish_import(item.id, execution, get_session_factory())
+
+        db_session.expire_all()
+        preserved = db_session.get(InboxItem, item.id)
+        assert preserved.state is InboxItemState.IMPORTING
+        assert preserved.job_id == current.id
+        assert preserved.resulting_model_id is None
+        assert staged.read_bytes() == b"current import staging"
+        cover = db_session.exec(select(ModelSourceCover)).one()
+        lease = db_session.exec(
+            select(StagingLease).where(StagingLease.model_source_cover_id == cover.id)
+        ).one()
+        proof = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.key == cover.storage_key
+            )
+        ).one()
+        assert proof.state is StorageObjectState.PENDING
+        assert lease.sha256 is not None
+        assert backend.object_info(cover.storage_key) is not None
+        assert source_covers.reconcile_pending(db_session, backend) == 1
+        db_session.commit()
+        assert backend.read_bytes(cover.storage_key)
+        assert staged.read_bytes() == b"current import staging"

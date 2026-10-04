@@ -15,8 +15,8 @@ import pytest
 from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.verification import Verification
 
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError, encode_error
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from app.modules.media.verification_isolation import decode_reply, encode_reply
 
 

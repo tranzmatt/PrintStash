@@ -15,6 +15,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from sqlmodel import Session
 
@@ -260,6 +261,9 @@ def build_job(
         {"subject_key": "subject", "owner_user_id": "owner", "finished_at": "finished"},
     )
     overrides.setdefault("id", f"job-{nth('job')}")
+    overrides.setdefault("execution_epoch", uuid4().hex)
+    if overrides.get("attempts", 0) > 0:
+        overrides.setdefault("submitted_epoch", overrides["execution_epoch"])
     terminal = state in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}
     if finished if finished is not None else terminal:
         overrides["finished_at"] = overrides.get("updated_at") or utcnow()
@@ -346,6 +350,10 @@ def build_derivative(
     if exhausted:
         overrides.setdefault("attempts", settings.derivative_max_attempts)
     overrides.setdefault("attempts", 1)
+    if state is DerivativeState.RUNNING:
+        from uuid import uuid4
+
+        overrides.setdefault("attempt_token", str(uuid4()))
     if state in (DerivativeState.FAILED, DerivativeState.SKIPPED):
         # The database refuses a failure or skip that does not say why.
         overrides.setdefault("failure_reason", f"test_{state.value}")
@@ -701,3 +709,30 @@ def build_audit_event(
     overrides.setdefault("dedup_key", f"audit-event-{nth('audit_event')}")
     overrides.setdefault("event_type", "storage_regression")
     return save(session, VaultAuditEvent(run_id=run.id, **overrides))
+
+
+def build_job_context(job_id: str):
+    """Claim a real stored Job before invoking a worker body directly in a test."""
+    from app.db.session import get_session_factory
+    from app.modules.work.runner import ExecutionContext, _begin
+    from app.modules.work.submission import execution_id
+
+    with get_session_factory().scoped_session() as session:
+        job = session.get(Job, job_id)
+        assert job is not None, f"worker context requires stored Job: {job_id}"
+        attempt = (
+            job.attempts
+            if job.state in {JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}
+            else max(1, job.attempts)
+        )
+        context = ExecutionContext(
+            job.id,
+            job.kind,
+            job.subject_key,
+            job.priority,
+            execution_id(job.id, attempt, job.execution_epoch),
+            attempt,
+            job.execution_epoch,
+        )
+    _begin(job_id, attempt, context.execution_epoch)
+    return context

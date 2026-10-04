@@ -14,8 +14,8 @@ from printstash_core.mesh.similarity import GeometryError
 
 from app.core.config import _overlay
 from app.modules.media import geometry_analysis, mesh_isolation, verification_isolation
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from tests.factories.geometry import tetrahedron
 
 

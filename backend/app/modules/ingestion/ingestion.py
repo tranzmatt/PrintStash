@@ -54,7 +54,7 @@ from app.modules.storage.storage_backend.contracts import (
 from app.modules.storage.storage_backend.local import LocalStorageBackend
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_ownership import provider_ref_for_backend, publish_file
-from app.modules.work.contracts import JobOutcome
+from app.modules.work.contracts import JobContext, JobOutcome
 from app.modules.work.jobs import failure_of
 
 if TYPE_CHECKING:
@@ -965,20 +965,21 @@ def commit_staged_artifact(
     )
 
 
-def release_job_staging(
-    job_id: str, session_factory: SessionFactory | None = None
-) -> None:
-    """Remove a finished upload Job's own staged file and its lease.
+def release_job_staging(job_context: JobContext) -> None:
+    """Release exact staging receipts only while this execution remains terminal."""
+    from app.modules.work.jobs import jobs
 
-    A capture-slot lease is never released here: its bytes belong to the
-    capture slot until the Pending Import that owns it is settled.
-    """
-    session_factory = session_factory or get_session_factory()
-    with session_factory.scoped_session() as session:
-        from .staging_cleanup import release_job
+    from .staging_cleanup import release_job
 
-        release_job(session, job_id)
-        session.commit()
+    def release(session: Session, _subject: str) -> None:
+        release_job(session, job_context.job_id)
+
+    jobs.reconcile_settled_attempt(
+        job_context.job_id,
+        job_context.attempt,
+        release,
+        execution_epoch=job_context.execution_epoch,
+    )
 
 
 def _committed_by_key(
@@ -1000,7 +1001,7 @@ def _committed_by_key(
 
 def ingest_staged_file(
     *,
-    job_id: str,
+    job_context: JobContext,
     artifact: StagedArtifact,
     actor_user_id: int | None,
     session_factory: SessionFactory | None = None,
@@ -1008,11 +1009,10 @@ def ingest_staged_file(
     ingestion_key: str | None = None,
 ) -> CommitOutcome | None:
     """Commit one staged file on behalf of Job ``job_id`` and settle the Job."""
-    from app.modules.work.jobs import jobs
+    job_id = job_context.job_id
 
     key = ingestion_key or job_id
-    jobs.update(
-        job_id,
+    job_context.update(
         current_item=artifact.original_filename,
         total=1,
     )
@@ -1023,21 +1023,18 @@ def ingest_staged_file(
             actor_user_id=actor_user_id,
             session_factory=session_factory,
             provenance_context=provenance_context,
-            report=lambda **fields: jobs.update(job_id, **fields),
+            report=lambda **fields: job_context.update(**fields),
         )
     except Exception as exc:  # noqa: BLE001 - the Job records the failure
         logger.exception("ingestion commit failed", extra={"job_id": job_id})
         committed = _committed_by_key(key, session_factory)
         if committed is None:
-            jobs.finish(
-                job_id, JobOutcome.FAILED, error=failure_of(exc), retryable=True
-            )
+            job_context.finish(JobOutcome.FAILED, error=failure_of(exc), retryable=True)
             return None
         # The Artifact is durable even though a later step failed: report what
         # exists rather than a failure the user would retry into a duplicate.
         model_id, file_id = committed
-        jobs.finish(
-            job_id,
+        job_context.finish(
             JobOutcome.COMPLETED,
             completion="partial",
             model_id=model_id,
@@ -1047,11 +1044,10 @@ def ingest_staged_file(
             total=1,
             succeeded=1,
         )
-        release_job_staging(job_id, session_factory)
+        release_job_staging(job_context)
         return None
     _fault_injection_checkpoint("before_terminal", job_id)
-    jobs.finish(
-        job_id,
+    job_context.finish(
         JobOutcome.COMPLETED,
         completion="complete",
         model_id=outcome.model_id,
@@ -1068,7 +1064,7 @@ def ingest_staged_file(
             **({"deduplicated": True} if outcome.deduplicated else {}),
         },
     )
-    release_job_staging(job_id, session_factory)
+    release_job_staging(job_context)
     return outcome
 
 

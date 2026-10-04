@@ -52,6 +52,17 @@ def mesh(make_model, make_file):
 
 
 class TestPending:
+    def test_rederives_previews_from_the_axis_degeneracy_recipe(
+        self, db_session, mesh, make_derivative
+    ):
+        artifact = mesh()
+        make_derivative(artifact, DerivativeKind.METADATA)
+        make_derivative(artifact, DerivativeKind.THUMBNAIL, recipe_version=5)
+
+        subjects = _subjects(db_session)
+
+        assert subjects == [subject_key(artifact.id)]
+
     def test_rederives_terminal_fingerprint_cap_refusals(
         self, db_session, mesh, make_derivative
     ):

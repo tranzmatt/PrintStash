@@ -83,6 +83,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 - Background work starts on DBOS 3.0, with a persistent reconciler schedule
   that survives process restarts and is recreated after restore.
+- Late derivative results can no longer overwrite cancellation, retries, regeneration, trashed Artifacts or replaced source bytes. Stale Job executions also cannot settle a newer attempt or reclaim its staging files.
 
 
 - Removed the duplicate Wiki entry from the profile dropdown.
@@ -146,6 +147,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
 - Large STL previews frame every source component and preserve ASCII geometry after large translations.
+
+- Streamed STL previews preserve valid oblique facets that the degeneracy filter could discard.
 
 ### Performance
 

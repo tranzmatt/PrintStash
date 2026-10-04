@@ -54,7 +54,12 @@ def _execute(submission: Submission, runner: _Runner) -> None:
     else:
         from app.modules.work.runner import execute_job
 
-        execute_job(submission.job_id, submission.attempt, runner)
+        execute_job(
+            submission.job_id,
+            submission.attempt,
+            runner,
+            execution_epoch=submission.execution_epoch,
+        )
 
 
 def _dedupe_key(submission: Submission) -> str | None:
