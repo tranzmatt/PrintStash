@@ -15,6 +15,7 @@ from PIL import Image
 
 from app.core.config import _overlay
 from app.modules.media import mesh_processing, thumbnail_engine
+from app.modules.media.fingerprints import FingerprintResultState
 from app.modules.media.mesh_contracts import (
     GeometryReady,
     GeometryRefused,
@@ -297,7 +298,7 @@ class TestThumbnailEngine:
         assert result.strategy is ThumbnailStrategy.FULL
         assert result.complete is True
         assert result.failure_reason is None
-        assert result.fingerprint_result.state == "failed"
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
         assert result.fingerprint_result.failure_code == "geometry_work_limit"
         assert result.fingerprint_result.records == ()
 
@@ -350,7 +351,7 @@ class TestThumbnailEngine:
             ThumbnailRequest(path, width=64, include_fingerprint=True, triangle_cap=320)
         )
 
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         assert result.fingerprint_result.records[0].values["face_count"] == 320
         assert isinstance(result.geometry_outcome, GeometryReady)
 
@@ -413,7 +414,9 @@ class TestThumbnailEngine:
 
         assert result.image is not None
         assert result.strategy is ThumbnailStrategy.STREAMING
-        assert result.fingerprint_result.state == ("partial" if sampled else "ready")
+        assert result.fingerprint_result.state is (
+            FingerprintResultState.PARTIAL if sampled else FingerprintResultState.READY
+        )
         assert references
         assert lifetimes == [(True,) * len(references)]
         assert reclaims == [True]
@@ -432,7 +435,7 @@ class TestThumbnailEngine:
             ThumbnailFailureReason.RESOURCE_LIMIT
         )
         assert result.image is None
-        assert result.fingerprint_result.state == "failed"
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
         assert result.fingerprint_result.failure_code == "resource_limit"
 
     @pytest.mark.parametrize("error", [ValueError, MemoryError])

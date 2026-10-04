@@ -19,7 +19,11 @@ from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.modules.media import mesh_render, stl_fallback, stl_streaming
-from app.modules.media.fingerprints import FingerprintResult, extract
+from app.modules.media.fingerprints import (
+    FingerprintResult,
+    FingerprintResultState,
+    extract,
+)
 from app.modules.media.mesh_contracts import (
     Geometry,
     GeometryNotRequested,
@@ -46,6 +50,7 @@ from app.modules.media.mesh_telemetry import (
 from app.modules.media.stl_reader import InvalidSTL, STLReadFailure, scan_stl
 
 logger = get_logger(__name__)
+
 
 class NoopThumbnailMetrics:
     def increment(self, name: str, *, labels: dict[str, str]) -> None:
@@ -216,7 +221,8 @@ class ThumbnailEngine:
                                     )
                                 if request.include_fingerprint:
                                     fingerprint_result = FingerprintResult(
-                                        "failed", failure_code=exc.code
+                                        FingerprintResultState.FAILED,
+                                        failure_code=exc.code,
                                     )
                         elif request.include_fingerprint and suffix in (
                             ".step",
@@ -239,9 +245,9 @@ class ThumbnailEngine:
                                         else ThumbnailFailureReason.INVALID_SOURCE
                                     )
                                 fingerprint_result = FingerprintResult(
-                                    "unsupported"
+                                    FingerprintResultState.UNSUPPORTED
                                     if exc.code == "step_unavailable"
-                                    else "failed",
+                                    else FingerprintResultState.FAILED,
                                     failure_code=exc.code,
                                 )
                         elif request.file_type is None:
@@ -340,9 +346,9 @@ class ThumbnailEngine:
                                 extract(prepared)
                                 if prepared is not None
                                 else FingerprintResult(
-                                    "unsupported"
+                                    FingerprintResultState.UNSUPPORTED
                                     if suffix in (".step", ".stp")
-                                    else "failed",
+                                    else FingerprintResultState.FAILED,
                                     failure_code="step_unavailable"
                                     if suffix in (".step", ".stp")
                                     else "resource_limit"
@@ -352,7 +358,7 @@ class ThumbnailEngine:
                             )
                         except (GeometryError, ValueError, MemoryError) as exc:
                             fingerprint_result = FingerprintResult(
-                                "failed",
+                                FingerprintResultState.FAILED,
                                 failure_code=exc.code
                                 if isinstance(exc, GeometryError)
                                 else "analysis_failed",
@@ -366,7 +372,7 @@ class ThumbnailEngine:
 
                         phases.finish(
                             outcome=PhaseOutcome.COMPLETED
-                            if fingerprint_result.state == "ready"
+                            if fingerprint_result.state is FingerprintResultState.READY
                             else PhaseOutcome.FAILED
                         )
 
@@ -531,7 +537,7 @@ class ThumbnailEngine:
                 )
             if request.include_fingerprint:
                 fingerprint_result = FingerprintResult(
-                    "failed", failure_code="resource_limit"
+                    FingerprintResultState.FAILED, failure_code="resource_limit"
                 )
             if embedded is not None:
                 image = embedded

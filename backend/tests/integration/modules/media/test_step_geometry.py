@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from app.modules.media import mesh_processing
+from app.modules.media.fingerprints import FingerprintResultState
 from app.modules.media.mesh_contracts import ThumbnailRequest
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from tests.paths import FIXTURES_DIR
@@ -50,7 +51,7 @@ class TestStepGeometry:
         result = ThumbnailEngine().generate(
             ThumbnailRequest(ocp_box, include_fingerprint=True, width=64)
         )
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         whole = result.fingerprint_result.records[0]
         brep = whole.values["brep"]
         assert brep["counts"] == {"faces": 6, "edges": 12, "vertices": 8, "solids": 1}
@@ -109,7 +110,10 @@ class TestStepGeometry:
         result = ThumbnailEngine().generate(
             ThumbnailRequest(path, include_fingerprint=True)
         )
-        assert result.fingerprint_result.state in ("failed", "unsupported")
+        assert result.fingerprint_result.state in (
+            FingerprintResultState.FAILED,
+            FingerprintResultState.UNSUPPORTED,
+        )
         assert result.fingerprint_result.failure_code in (
             "invalid_step",
             "step_unavailable",

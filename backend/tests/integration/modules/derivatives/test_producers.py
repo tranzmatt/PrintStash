@@ -1178,7 +1178,7 @@ class TestDeriveViewerStl:
         from app.core.time import utcnow
         from app.modules.derivatives import records
         from app.modules.derivatives.kinds import group
-        from app.modules.media.thumbnail_engine import ThumbnailFailureReason
+        from app.modules.media.mesh_contracts import ThumbnailFailureReason
 
         artifact = stored(
             "failed.obj",

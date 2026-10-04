@@ -13,7 +13,7 @@ from app.core.errors import OperationError
 from app.db.models import File, GeometryFingerprint, SimilarityRun, User
 from app.db.session import SessionFactory
 from app.modules.media import mesh_isolation, verification_isolation
-from app.modules.media.fingerprints import FingerprintResult
+from app.modules.media.fingerprints import FingerprintResult, FingerprintResultState
 from app.modules.media.mesh_contracts import ThumbnailRequest
 from app.modules.similarity import (
     candidates,
@@ -176,7 +176,8 @@ class SimilarityProcessor:
                     ).materialize() as path:
                         if fingerprints.source_digest(path) != file.sha256:
                             result = FingerprintResult(
-                                "failed", failure_code="source_changed"
+                                FingerprintResultState.FAILED,
+                                failure_code="source_changed",
                             )
                             metrics = None
                         else:
@@ -192,23 +193,31 @@ class SimilarityProcessor:
                                 )
                             )
                             result = metrics.fingerprint_result or FingerprintResult(
-                                "failed", failure_code="analysis_unavailable"
+                                FingerprintResultState.FAILED,
+                                failure_code="analysis_unavailable",
                             )
                 except artifact_content.ArtifactContentChangedError:
                     result, metrics = (
-                        FingerprintResult("failed", failure_code="source_changed"),
+                        FingerprintResult(
+                            FingerprintResultState.FAILED, failure_code="source_changed"
+                        ),
                         None,
                     )
                 except mesh_isolation.MeshWorkerError as exc:
                     # The worker died or was killed for this file's bytes. The run
                     # walks the whole library, so the file fails alone.
                     result, metrics = (
-                        FingerprintResult("failed", failure_code=exc.reason.value),
+                        FingerprintResult(
+                            FingerprintResultState.FAILED, failure_code=exc.reason.value
+                        ),
                         None,
                     )
                 except artifact_content.ArtifactContentError:
                     result, metrics = (
-                        FingerprintResult("failed", failure_code="source_unavailable"),
+                        FingerprintResult(
+                            FingerprintResultState.FAILED,
+                            failure_code="source_unavailable",
+                        ),
                         None,
                     )
                 published = fingerprints.publish(
@@ -220,7 +229,7 @@ class SimilarityProcessor:
                     duration_ms=metrics.duration_ms if metrics else None,
                     peak_rss_bytes=metrics.peak_rss_bytes if metrics else None,
                 )
-                state = result.state if published else "stale"
+                state = result.state.value if published else "stale"
                 counters[state] = counters.get(state, 0) + 1
             finally:
                 fingerprints.release(session, claimed[0], claimed[1])

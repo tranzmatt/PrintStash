@@ -7,7 +7,11 @@ from sqlmodel import Session, select
 
 from app.core.time import utcnow
 from app.db.models import File, GeometryFingerprint
-from app.modules.media.fingerprints import FingerprintResult, extract
+from app.modules.media.fingerprints import (
+    FingerprintResult,
+    FingerprintResultState,
+    extract,
+)
 from app.modules.media.mesh_resources import prepare_loaded_mesh
 from app.modules.similarity import fingerprints
 from tests.factories.geometry import tetrahedron
@@ -132,7 +136,9 @@ class TestFingerprintLeases:
     ):
         file = make_file(make_model())
         claimed = fingerprints.claim(db_session, file)
-        failed = FingerprintResult(state, failure_code="invalid_source")
+        failed = FingerprintResult(
+            FingerprintResultState(state), failure_code="invalid_source"
+        )
         assert fingerprints.publish(
             db_session, file, failed, fingerprint_id=claimed[0], token=claimed[1]
         )
@@ -155,6 +161,22 @@ class TestFingerprintLeases:
 
 
 class TestFingerprintPublication:
+    @pytest.mark.parametrize("state", list(FingerprintResultState))
+    def test_persists_each_outcome_as_a_text_state(
+        self, db_session, make_model, make_file, state
+    ):
+        file = make_file(make_model())
+        result = FingerprintResult(state=state)
+
+        published = fingerprints.publish_precomputed(db_session, file, result)
+
+        assert type(published) is str
+        assert published == state.value
+        db_session.expire_all()
+        row = db_session.exec(select(GeometryFingerprint)).one()
+        assert type(row.state) is str
+        assert row.state == state.value
+
     def test_persists_component_lineage(
         self, db_session, make_model, make_file, extracted
     ):
