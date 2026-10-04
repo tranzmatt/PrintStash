@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Keep mesh measurements and previews available when optional fingerprint analysis
+  exceeds its triangle budget, and release analysis buffers before STL rendering fallbacks.
+  Re-derive earlier terminal refusals at updated mesh recipes.
 - Independent mesh, G-code metadata/thumbnail and binary toolpath processing controls, with deployment defaults and live administrator settings. Disabling retains published previews and lets admitted processing finish; re-enabling resumes eligible missing work (#263).
 - Harden mesh workers with pre-import address-space limits, one admission controller
   across concurrency changes, process-tree memory accounting, and shared budgets
@@ -15,6 +18,8 @@ rolling back requires discarding the upgraded, disposable engine state first.
 See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Added
+
+- Add a frozen synthetic mesh contract corpus and record benchmark environment, limits, versions and target expectations separately from observed render results.
 
 - Mesh workers retain bounded phase costs and parent-observed resource usage in structured process logs and local Prometheus counters, including metadata-only work and failed or cancelled native processes.
 
@@ -37,18 +42,35 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
-
-- Streamed STL previews now preserve valid oblique facets that the degeneracy filter could discard.
+- Capture and similarity commands keep the API event loop responsive through database writes, background-engine notification and response projection.
+- Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.
+- Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
+- Small meshes placed far from the coordinate origin retain their thumbnail
+  geometry and shading. Visual recipes now refresh previews, view fingerprints,
+  and derived image vectors while preserving original files and encoder assets.
 - Ingest acceptance keeps the API event loop responsive while staging files,
   recording work and notifying the background engine.
 
+- Keep mesh-worker memory limits and cancellation active after the child closes its reply stream.
+- Active mesh workers can release their render admission while a queued worker checks durable cancellation state.
+
+
 - The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
+- Large STL files now retain complete bounding dimensions and facet counts when only metadata is requested; measurements no longer depend on producing a thumbnail.
+- Mesh previews and image embeddings ignore vertices unused by any face when
+  framing the surface. Existing visual derivatives are regenerated.
+- Meshes with repeated identical faces no longer expand the same thumbnail pixels
+  repeatedly, avoiding unnecessary rasterization work during ingestion.
 - Meshes with inconsistent triangle winding now report unknown volume while
   retaining dimensions and triangle counts. Existing metadata is recalculated
   automatically.
 - Browser-local upload queues recover as interrupted after a reload, so stale
   tasks can be cleared. Resumable uploads retain their recovery controls, and
   queued browser work now asks users to keep the tab open (#336).
+- 3D viewer conversions run as durable, on-demand Jobs. Requests share preparation
+  and retain failure reasons; memory refusals show a clear message while original
+  downloads and slicer handoff stay available. Hovering a model card no longer
+  starts a mesh conversion (#259).
 - Containers start with read-only Library source mounts beneath `/data`. Startup
   ownership repair is limited to app-owned directories and preserves external
   sources, including bind mounts on the same filesystem (#330).
@@ -120,8 +142,11 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Restoring a backup no longer fails because a completed ZIP inspection is
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
+- Streamed STL previews preserve valid oblique facets that the degeneracy filter could discard.
 
 ### Performance
+
+- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
 
 - Tag counts now follow collection links when inheriting tags, so listing tags
   stays responsive in libraries with tens of thousands of collections and

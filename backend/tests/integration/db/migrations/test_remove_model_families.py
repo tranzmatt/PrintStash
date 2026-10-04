@@ -5,13 +5,12 @@ from sqlmodel import Session, select
 
 from alembic import command
 from app.db.migrate import _alembic_config
-from app.db.models import File, FileType, Model, MultipartModel, PrintJob
+from app.db.models import Model, MultipartModel, PrintJob
 from tests.factories import (
-    build_file,
     build_model,
     build_multipart_model,
-    build_print_job,
 )
+from tests.factories.migration_rows import seed_schema_row
 
 PREVIOUS = "6f27f2e6090a"
 REMOVAL = "0b36c56fb17d"
@@ -26,16 +25,28 @@ class TestRemoveModelFamiliesMigration:
         try:
             with Session(engine) as session:
                 model = build_model(session, "Original", hash="a" * 64)
-                revision = build_file(
-                    session,
-                    model,
-                    file_type=FileType.GCODE,
-                    filename="original.gcode",
+                # Seed the historical File schema, without later viewer columns.
+                seed_schema_row(
+                    session.connection(),
+                    "files",
+                    id=1,
+                    model_id=model.id,
+                    file_type="GCODE",
+                    original_filename="original.gcode",
                     path="/library/original.gcode",
+                    version=1,
                     size_bytes=3,
                     sha256="b" * 64,
                 )
-                job = build_print_job(session, revision)
+                seed_schema_row(
+                    session.connection(),
+                    "print_jobs",
+                    id=1,
+                    file_id=1,
+                    model_id=model.id,
+                    remote_filename="original.gcode",
+                    state="QUEUED",
+                )
                 multipart = build_multipart_model(session, "Printed kit")
                 now = "2026-01-01T00:00:00+00:00"
                 session.execute(
@@ -59,8 +70,8 @@ class TestRemoveModelFamiliesMigration:
                 session.commit()
                 model_id, file_id, job_id, multipart_id = (
                     model.id,
-                    revision.id,
-                    job.id,
+                    1,
+                    1,
                     multipart.id,
                 )
 
@@ -77,7 +88,13 @@ class TestRemoveModelFamiliesMigration:
             )
             with Session(engine) as session:
                 assert session.get(Model, model_id).name == "Original"
-                assert session.get(File, file_id).original_filename == "original.gcode"
+                assert (
+                    session.execute(
+                        text("SELECT original_filename FROM files WHERE id = :id"),
+                        {"id": file_id},
+                    ).scalar_one()
+                    == "original.gcode"
+                )
                 assert session.get(PrintJob, job_id).model_id == model_id
                 assert session.get(MultipartModel, multipart_id).name == "Printed kit"
                 assert session.exec(select(Model.id)).all() == [model_id]
@@ -92,7 +109,12 @@ class TestRemoveModelFamiliesMigration:
             } <= tables
             with Session(engine) as session:
                 assert session.exec(select(Model.id)).all() == [model_id]
-                assert session.execute(text("SELECT COUNT(*) FROM model_families")).scalar_one() == 0
+                assert (
+                    session.execute(
+                        text("SELECT COUNT(*) FROM model_families")
+                    ).scalar_one()
+                    == 0
+                )
 
             command.upgrade(config, REMOVAL)
             assert "model_families" not in inspect(engine).get_table_names()

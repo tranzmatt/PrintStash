@@ -18,15 +18,24 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Iterator
+from typing import TYPE_CHECKING, Callable
+
+from app.modules.media.stl_reader import (
+    InvalidSTL as _InvalidSTL,
+)
+from app.modules.media.stl_reader import (
+    STLBudgetExceeded as _BudgetExceeded,
+)
+from app.modules.media.stl_reader import (
+    STLReadLimits,
+    iter_stl_blocks,
+)
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
 
-_BINARY_HEADER_BYTES = 84
-_BINARY_RECORD_BYTES = 50
-_FLOAT32_MAX = 3.4028234663852886e38
+
 _WORKER_VERSION = 1
 _RESERVOIR_SIZE = 4096
 _MAX_RENDER_DIMENSION = 2048
@@ -39,14 +48,6 @@ _MAX_LINES = 10_000_000
 _MAX_LINE_BYTES = 64 * 1024
 _MAX_TIMEOUT_SECONDS = 45.0
 _MAX_ADDRESS_SPACE_BYTES = 512 * 1024 * 1024
-
-
-class _InvalidSTL(Exception):
-    pass
-
-
-class _BudgetExceeded(_InvalidSTL):
-    pass
 
 
 def _apply_worker_limits(
@@ -132,222 +133,14 @@ def _check_deadline(limits: _Limits) -> None:
         raise _BudgetExceeded("deadline")
 
 
-def _valid_value(value: float) -> bool:
-    return math.isfinite(value) and abs(value) <= _FLOAT32_MAX
-
-
-def _source_is_binary(path: Path) -> tuple[int, int] | None:
-    try:
-        size = path.stat().st_size
-        if size < _BINARY_HEADER_BYTES:
-            return None
-        with path.open("rb") as stream:
-            header = stream.read(_BINARY_HEADER_BYTES)
-        if len(header) != _BINARY_HEADER_BYTES:
-            return None
-        count = struct.unpack_from("<I", header, 80)[0]
-        if count <= 0 or count > 20_000_000:
-            return None
-        if size != _BINARY_HEADER_BYTES + count * _BINARY_RECORD_BYTES:
-            return None
-        return count, size
-    except (OSError, struct.error):
-        return None
-
-
-def _read_binary(
-    path: Path,
-    limits: _Limits,
-    callback: Callable[[object], None],
-) -> _PassStats:
-    try:
-        import numpy as np
-    except ImportError as exc:  # pragma: no cover - deployment dependency
-        raise _InvalidSTL("numpy unavailable") from exc
-
-    info = _source_is_binary(path)
-    if info is None:
-        raise _InvalidSTL("not an exact binary STL")
-    declared, size = info
-    if declared > limits.max_triangles or size > limits.max_source_bytes:
-        raise _BudgetExceeded("source budget")
-    dtype = np.dtype(
-        [
-            ("normal", "<f4", (3,)),
-            ("vertices", "<f4", (3, 3)),
-            ("attribute", "<u2"),
-        ],
-        align=False,
-    )
-    lower = np.full(3, np.inf, dtype=np.float64)
-    upper = np.full(3, -np.inf, dtype=np.float64)
-    scanned = _BINARY_HEADER_BYTES
-    with path.open("rb") as stream:
-        header = stream.read(_BINARY_HEADER_BYTES)
-        if len(header) != _BINARY_HEADER_BYTES:
-            raise _InvalidSTL("truncated header")
-        parsed = 0
-        while parsed < declared:
-            _check_deadline(limits)
-            count = min(max(limits.chunk_triangles, 1), declared - parsed)
-            raw = stream.read(count * _BINARY_RECORD_BYTES)
-            scanned += len(raw)
-            if len(raw) != count * _BINARY_RECORD_BYTES:
-                raise _InvalidSTL("truncated record")
-            records = np.frombuffer(raw, dtype=dtype, count=count)
-            vertices = records["vertices"]
-            if not np.isfinite(vertices).all():
-                raise _InvalidSTL("non-finite coordinate")
-            callback(vertices)
-            lower = np.minimum(lower, vertices.min(axis=(0, 1)))
-            upper = np.maximum(upper, vertices.max(axis=(0, 1)))
-            parsed += count
-    return _PassStats(
-        triangle_count=parsed,
-        scanned_bytes=scanned,
-        bounds_min=(float(lower[0]), float(lower[1]), float(lower[2])),
-        bounds_max=(float(upper[0]), float(upper[1]), float(upper[2])),
-    )
-
-
-def _parse_float(token: str) -> float:
-    try:
-        value = float(token)
-    except ValueError as exc:
-        raise _InvalidSTL("invalid number") from exc
-    if not _valid_value(value):
-        raise _InvalidSTL("non-finite coordinate")
-    return value
-
-
-def _iter_ascii_facets(
-    stream, limits: _Limits
-) -> Iterator[tuple[tuple[float, float, float], ...]]:
-    state = "outside"
-    vertices: list[tuple[float, float, float]] = []
-    lines = 0
-    scanned = 0
-    saw_facet = False
-    ended = False
-    while True:
-        _check_deadline(limits)
-        if lines >= limits.max_lines:
-            raise _BudgetExceeded("line budget")
-        raw = stream.readline(limits.max_line_bytes + 1)
-        if not raw:
-            break
-        scanned += len(raw)
-        lines += 1
-        if scanned > limits.max_source_bytes:
-            raise _BudgetExceeded("source budget")
-        if len(raw) > limits.max_line_bytes:
-            raise _InvalidSTL("line too long")
-        try:
-            text = raw.decode("ascii").strip()
-        except UnicodeDecodeError as exc:
-            raise _InvalidSTL("non-ascii input") from exc
-        if not text or text.startswith("#") or text.startswith("//"):
-            continue
-        parts = text.split()
-        keyword = parts[0].lower()
-        if state == "outside":
-            if ended:
-                raise _InvalidSTL("content after endsolid")
-            if keyword == "solid":
-                continue
-            if keyword == "facet":
-                if len(parts) != 5 or parts[1].lower() != "normal":
-                    raise _InvalidSTL("invalid facet normal")
-                for token in parts[2:]:
-                    _parse_float(token)
-                state = "facet"
-                saw_facet = True
-                continue
-            if keyword == "endsolid":
-                ended = True
-                continue
-            raise _InvalidSTL("unexpected ASCII STL token")
-        if state == "facet":
-            if keyword != "outer" or len(parts) != 2 or parts[1].lower() != "loop":
-                raise _InvalidSTL("missing outer loop")
-            vertices = []
-            state = "loop"
-            continue
-        if state == "loop":
-            if keyword != "vertex" or len(parts) != 4:
-                raise _InvalidSTL("invalid vertex")
-            vertices.append(
-                (
-                    _parse_float(parts[1]),
-                    _parse_float(parts[2]),
-                    _parse_float(parts[3]),
-                )
-            )
-            if len(vertices) > 3:
-                raise _InvalidSTL("too many vertices")
-            if len(vertices) == 3:
-                state = "endloop"
-            continue
-        if state == "endloop":
-            if keyword != "endloop" or len(parts) != 1:
-                raise _InvalidSTL("missing endloop")
-            state = "endfacet"
-            continue
-        if state == "endfacet":
-            if keyword != "endfacet" or len(parts) != 1:
-                raise _InvalidSTL("missing endfacet")
-            yield (vertices[0], vertices[1], vertices[2])
-            vertices = []
-            state = "outside"
-            continue
-    # ``endsolid`` is required by the formal grammar but a number of slicers
-    # omit it while still emitting complete facets. EOF at a facet boundary is
-    # unambiguous and safe to accept; an unfinished loop/facet remains invalid.
-    if state != "outside" or not saw_facet:
-        raise _InvalidSTL("truncated ASCII STL")
-
-
-def _read_ascii(
-    path: Path,
-    limits: _Limits,
-    callback: Callable[[object], None],
-) -> _PassStats:
-    try:
-        import numpy as np
-    except ImportError as exc:  # pragma: no cover - deployment dependency
-        raise _InvalidSTL("numpy unavailable") from exc
-    lower = np.full(3, np.inf, dtype=np.float64)
-    upper = np.full(3, -np.inf, dtype=np.float64)
-    parsed = 0
-    batch: list[tuple[tuple[float, float, float], ...]] = []
-    with path.open("rb") as stream:
-        for facet in _iter_ascii_facets(stream, limits):
-            _check_deadline(limits)
-            if parsed >= limits.max_triangles:
-                raise _BudgetExceeded("triangle budget")
-            batch.append(facet)
-            vertices = np.asarray(facet, dtype=np.float32)
-            lower = np.minimum(lower, vertices.min(axis=0))
-            upper = np.maximum(upper, vertices.max(axis=0))
-            parsed += 1
-            if len(batch) >= max(limits.chunk_triangles, 1):
-                chunk = np.asarray(batch, dtype=np.float32)
-                if not np.isfinite(chunk).all():
-                    raise _InvalidSTL("non-finite coordinate")
-                callback(chunk)
-                batch.clear()
-        if batch:
-            chunk = np.asarray(batch, dtype=np.float32)
-            if not np.isfinite(chunk).all():
-                raise _InvalidSTL("non-finite coordinate")
-            callback(chunk)
-    if parsed == 0:
-        raise _InvalidSTL("empty ASCII STL")
-    return _PassStats(
-        triangle_count=parsed,
-        scanned_bytes=int(path.stat().st_size),
-        bounds_min=(float(lower[0]), float(lower[1]), float(lower[2])),
-        bounds_max=(float(upper[0]), float(upper[1]), float(upper[2])),
+def _reader_limits(limits: _Limits) -> STLReadLimits:
+    return STLReadLimits(
+        max_triangles=limits.max_triangles,
+        max_source_bytes=limits.max_source_bytes,
+        chunk_triangles=limits.chunk_triangles,
+        max_lines=limits.max_lines,
+        max_line_bytes=limits.max_line_bytes,
+        deadline=limits.deadline,
     )
 
 
@@ -356,9 +149,25 @@ def _read_pass(
     limits: _Limits,
     callback: Callable[[object], None],
 ) -> _PassStats:
-    if _source_is_binary(path) is not None:
-        return _read_binary(path, limits, callback)
-    return _read_ascii(path, limits, callback)
+    import numpy as np
+
+    lower = np.full(3, np.inf, dtype=np.float64)
+    upper = np.full(3, -np.inf, dtype=np.float64)
+    parsed = 0
+    for vertices in iter_stl_blocks(path, _reader_limits(limits)):
+        # Preserve the worker's established float32 preview interpretation;
+        # metadata-only scanning keeps the source coordinates in float64.
+        vertices = vertices.astype(np.float32)
+        callback(vertices)
+        lower = np.minimum(lower, vertices.min(axis=(0, 1)))
+        upper = np.maximum(upper, vertices.max(axis=(0, 1)))
+        parsed += len(vertices)
+    return _PassStats(
+        parsed,
+        path.stat().st_size,
+        (float(lower[0]), float(lower[1]), float(lower[2])),
+        (float(upper[0]), float(upper[1]), float(upper[2])),
+    )
 
 
 def _frame(

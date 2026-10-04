@@ -11,10 +11,12 @@ import hashlib
 import os
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from printstash_core.files import PublicationStrategy
+from sqlalchemy import event
 from sqlmodel import Session, select
 from starlette.requests import Request
 
@@ -945,3 +947,44 @@ class TestArtifactUploads:
 
         assert response.status_code == 200
         assert response.json()["state"] == "aborted"
+
+
+class TestChunkExecution:
+    @pytest.mark.asyncio
+    async def test_keeps_loop_responsive_during_chunk_publication(
+        self, app, db_session, auth_headers, loop_handshake
+    ):
+        payload = content.ascii_stl()
+        wait_for_loop, observations = loop_handshake
+        engine = db_session.get_bind()
+
+        def delayed_query(connection, cursor, statement, parameters, context, many):
+            if "artifact_upload_sessions" in statement.lower() and not observations:
+                wait_for_loop()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            created = await client.post(
+                "/api/v1/artifact-uploads", json=_request(payload), headers=auth_headers
+            )
+            assert created.status_code == 201, created.text
+            upload_id = created.json()["id"]
+            event.listen(engine, "before_cursor_execute", delayed_query)
+            try:
+                uploaded = await client.put(
+                    f"/api/v1/artifact-uploads/{upload_id}/chunks/0",
+                    params={
+                        "offset": 0,
+                        "length": len(payload),
+                        "sha256": hashlib.sha256(payload).hexdigest(),
+                    },
+                    headers=auth_headers,
+                    content=payload,
+                )
+            finally:
+                event.remove(engine, "before_cursor_execute", delayed_query)
+
+        assert uploaded.status_code == 200, uploaded.text
+        assert uploaded.json()["part"]["size_bytes"] == len(payload)
+        assert observations == [True]
