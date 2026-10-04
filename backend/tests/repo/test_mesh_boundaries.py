@@ -38,6 +38,7 @@ OWNERS = {
 PRIMITIVE_OWNERS = {
     "modules/media/mesh_contracts.py",
     "modules/media/mesh_resources.py",
+    "modules/media/three_mf_scene.py",
     "modules/media/mesh_render.py",
     "modules/media/mesh_telemetry.py",
     "modules/media/fingerprints.py",
