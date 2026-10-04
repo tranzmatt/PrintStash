@@ -56,7 +56,8 @@ def to_stl_bytes(path: Path, *, file_type: str | None = None) -> bytes | None:
     """`mesh_loading.to_stl_bytes`, run in a supervised child.
 
     Returns None when the mesh cannot be converted (unreadable);
-    raises `MeshWorkerError` for a resource refusal, kill, timeout or worker failure.
+    raises `MeshWorkerError` for unsupported required capabilities, resource refusals,
+    kills, timeouts or worker failures.
     """
     if canonical_suffix(path, file_type) == ".stl":
         # Already STL: the bytes are returned untouched and nothing is parsed.

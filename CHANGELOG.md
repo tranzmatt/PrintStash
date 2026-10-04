@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Interpret reachable Core 3MF geometry and Production external model references
+  through an explicit bounded scene reader. Refuse unsupported required
+  capabilities with typed metadata, similarity and viewer reasons while retaining
+  original downloads and independently usable embedded previews. Refresh mesh
+  derivative recipes without introducing a Lib3MF dependency.
 - Keep mesh measurements and previews available when optional fingerprint analysis
   exceeds its triangle budget, and release analysis buffers before STL rendering fallbacks.
   Re-derive earlier terminal refusals at updated mesh recipes.

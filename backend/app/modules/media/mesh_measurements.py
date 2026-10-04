@@ -7,13 +7,11 @@ analysis and rendering have separate owners and budgets.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING
 
 from printstash_core.mesh.measurements import (
     VolumeMeasured,
     VolumeMeasurement,
-    VolumeNotCalculated,
-    VolumeNotCalculatedCause,
     VolumeUnavailable,
     VolumeUnavailableCause,
     validate_geometry_extents,
@@ -67,18 +65,11 @@ def _volume_from_closed_mesh(mesh: Trimesh) -> VolumeMeasured | VolumeUnavailabl
 
 
 def geometry_from_mesh(mesh: Trimesh | None) -> MeshMeasurements:
-    out: Dict[str, Optional[float]] = {
-        "bbox_x_mm": None,
-        "bbox_y_mm": None,
-        "bbox_z_mm": None,
-        "volume_mm3": None,
-        "triangle_count": None,
-    }
-    volume: VolumeMeasurement = VolumeNotCalculated(
-        VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
-    )
+    unavailable = MeshMeasurements.unavailable()
     if mesh is None:
-        return MeshMeasurements(out, volume)
+        return unavailable
+    out = unavailable.geometry.copy()
+    volume: VolumeMeasurement = unavailable.volume
 
     if mesh.vertices.shape[0] > 0:
         # Persist source precision; display formatting belongs to consumers.

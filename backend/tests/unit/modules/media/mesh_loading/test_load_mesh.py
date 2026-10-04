@@ -64,8 +64,8 @@ class TestLoadMesh:
             trimesh.creation.box(extents=[3, 3, 3]).apply_translation([10, 0, 0]),
             node_name="b",
         )
-        p = tmp_path / "scene.3mf"
-        scene.export(p, file_type="3mf")
+        p = tmp_path / "scene.obj"
+        p.write_bytes(b"placeholder")
 
         monkeypatch.setattr(trimesh, "load_scene", lambda *a, **k: scene)
         mesh = mesh_loading.load_mesh(p)

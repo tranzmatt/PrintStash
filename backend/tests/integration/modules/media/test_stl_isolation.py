@@ -18,6 +18,7 @@ from app.modules.media import mesh_isolation, mesh_loading, stl_isolation
 from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
 from tests.factories.geometry import three_mf
+from tests.factories.three_mf_pilot import load_case
 
 
 @pytest.fixture
@@ -59,6 +60,17 @@ class TestToStlBytes:
         with pytest.raises(MeshWorkerError) as error:
             stl_isolation.to_stl_bytes(path, file_type="3mf")
         assert error.value.reason is ThumbnailFailureReason.RESOURCE_LIMIT
+
+    def test_preserves_required_extension_refusal_across_a_real_worker(self, tmp_path):
+        payload = load_case("unknown-required-extension").payload
+        source = tmp_path / "unsupported.3mf"
+        source.write_bytes(payload)
+
+        with pytest.raises(MeshWorkerError) as raised:
+            stl_isolation.to_stl_bytes(source, file_type="3mf")
+
+        assert raised.value.reason is ThumbnailFailureReason.UNSUPPORTED_CAPABILITY
+        assert source.read_bytes() == payload
 
     def test_preserves_step_triangle_refusal(self, tmp_path, monkeypatch):
         from tests.paths import FIXTURES_DIR

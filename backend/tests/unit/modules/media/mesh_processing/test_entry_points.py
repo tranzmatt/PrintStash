@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import trimesh
+from printstash_core.mesh.similarity import GeometryError
 
 from app.core.config import _overlay
 from app.modules.media import (
@@ -128,5 +130,6 @@ class TestExtractGeometry:
         path.write_bytes(build_instanced_project(300))
         scene_loads = _forbid_trimesh_scene_load(monkeypatch)
 
-        assert mesh_processing.extract_geometry(path)["triangle_count"] is None
+        with pytest.raises(GeometryError, match="scene_resource_limit"):
+            mesh_processing.extract_geometry(path)
         assert scene_loads == []

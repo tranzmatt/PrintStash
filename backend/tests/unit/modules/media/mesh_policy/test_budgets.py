@@ -34,11 +34,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from printstash_core.mesh.similarity import GeometryError
 
 from app.core.config import _overlay
 from app.modules.media import (
     mesh_policy,
 )
+from app.modules.media.three_mf_scene import read_scene
+from tests.factories import content
+from tests.factories.geometry import three_mf
 
 from .._meshes import _write_binary_stl
 
@@ -231,6 +235,27 @@ class TestRenderJobsLimit:
 
 
 class TestExceedsCap:
+    def test_3mf_keeps_the_global_source_byte_ceiling(self, tmp_path, monkeypatch):
+        source = tmp_path / "bytes.3mf"
+        source.write_bytes(
+            content.zip_bytes({"Metadata/unused.bin": b"x" * 1024**2}, compress=False)
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_load_mb", 1)
+
+        assert mesh_policy.exceeds_cap(source) is True
+
+    def test_3mf_with_disabled_byte_cap_still_uses_bounded_scene_admission(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "bounded.3mf"
+        source.write_bytes(three_mf(extras={"3D/unused.model": b"unreachable-" * 1000}))
+        monkeypatch.setitem(_overlay, "mesh_max_load_mb", 0)
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 100)
+
+        assert mesh_policy.exceeds_cap(source) is False
+        with pytest.raises(GeometryError, match="resource_limit"):
+            read_scene(source, max_faces=3)
+
     def test_unknown_estimate_without_a_size_proof_uses_the_bounded_path(
         self, tmp_path: Path, monkeypatch
     ) -> None:

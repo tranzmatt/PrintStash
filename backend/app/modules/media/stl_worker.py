@@ -20,6 +20,7 @@ from app.modules.media.mesh_isolation import MeshWorkerError, read_spec
 from app.modules.media.mesh_loading import load_step_mesh, to_stl_bytes
 from app.modules.media.mesh_resources import load_3mf
 from app.modules.media.stl_isolation import FAILURE_MAGIC, encode_reply
+from app.modules.media.three_mf_scene import Unsupported3MFCapability
 
 
 def convert(path: Path, file_type: str | None) -> bytes | None:
@@ -40,7 +41,9 @@ def convert(path: Path, file_type: str | None) -> bytes | None:
             )
         except GeometryError as exc:
             reason = (
-                ThumbnailFailureReason.RESOURCE_LIMIT
+                ThumbnailFailureReason.UNSUPPORTED_CAPABILITY
+                if isinstance(exc, Unsupported3MFCapability)
+                else ThumbnailFailureReason.RESOURCE_LIMIT
                 if exc.code
                 in {
                     "archive_resource_limit",

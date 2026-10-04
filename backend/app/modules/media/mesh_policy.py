@@ -11,7 +11,6 @@ import ctypes.util
 import gc
 import struct
 import threading
-import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Literal, Optional
 
@@ -150,7 +149,8 @@ def estimate_triangle_count(
 
     Exact for binary STL (the triangle count is a uint32 in the header) and for
     PLY (the face count is declared in the ASCII header); a face-directive count
-    for OBJ; a size-based estimate for ASCII STL and 3MF (uncompressed mesh XML).
+    for OBJ; a size-based estimate for ASCII STL. 3MF stays unknown because its
+    bounded source reader admits reachable and placed geometry separately.
     For an STL that fails the exact binary size check we distinguish ASCII from a
     binary file with trailing bytes and pick the *conservative* density, so we
     never underestimate a binary mesh into an unsafe load. Returns None for
@@ -226,22 +226,10 @@ def estimate_triangle_count(
                     faces += max(verts - 2, 1)
             return faces or None
         if suffix == ".3mf":
-            with zipfile.ZipFile(path) as zf:
-                infos = zf.infolist()
-                xml_bytes = sum(
-                    info.file_size
-                    for info in infos
-                    if info.filename.lower().endswith(".model")
-                )
-                if not xml_bytes:
-                    # Some 3MF variants keep the mesh outside a ".model" part (or
-                    # name it unusually). Rather than return None and let the
-                    # caller load a possibly-huge archive blind (#29), fall back to
-                    # the total uncompressed payload as a conservative upper bound.
-                    xml_bytes = sum(info.file_size for info in infos)
-            # 3MF mesh XML runs ~70 bytes per <triangle> (verts are shared).
-            return xml_bytes // 70 if xml_bytes else None
-    except (OSError, zipfile.BadZipFile, struct.error):
+            # XML byte counts include unreachable objects and cannot represent
+            # placement multiplicity. The bounded source reader owns admission.
+            return None
+    except (OSError, struct.error):
         return None
     return None
 
@@ -343,9 +331,8 @@ def exceeds_cap(path: Path, *, file_type: str | None = None) -> bool:
     spot:
 
     * A raw on-disk **size** cap (``mesh_max_load_mb``). Format-blind, so it
-      catches the files the triangle estimate can't size up — a 3MF whose mesh
-      the estimator doesn't sum returns ``None`` below, and the old code then
-      loaded the whole archive and OOM-killed the scan inside trimesh (#29).
+      catches source files independently of their estimated geometry. 3MF then
+      enters its bounded reader, whose reachable/placed counts own allocation.
     * The **triangle** estimate vs. ``mesh_max_render_triangles`` (#24), which
       catches a dense lattice/gyroid that is small on disk but explodes on load.
 
@@ -371,6 +358,11 @@ def exceeds_cap(path: Path, *, file_type: str | None = None) -> bool:
             return True
 
     suffix = canonical_suffix(path, file_type)
+    if suffix == ".3mf":
+        # This format always enters its bounded ZIP/XML scene reader, even when
+        # the independent source-byte ceiling is disabled. No estimate can
+        # certify arrays or build multiplicity before reachability is resolved.
+        return False
     if file_type is None:
         estimate = estimate_triangle_count(path)
     else:

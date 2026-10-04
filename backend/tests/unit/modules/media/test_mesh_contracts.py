@@ -8,6 +8,10 @@ an apparently successful measurement.
 from __future__ import annotations
 
 import pytest
+from printstash_core.mesh.measurements import (
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+)
 
 from app.modules.media.mesh_contracts import (
     GeometryNotLoaded,
@@ -15,6 +19,7 @@ from app.modules.media.mesh_contracts import (
     GeometryReady,
     GeometryRefused,
     MeshCoverage,
+    MeshMeasurements,
     PreviewCoverage,
     SourceScanState,
     ThumbnailFailureReason,
@@ -220,3 +225,19 @@ class TestDecodeCoverage:
 
         with pytest.raises(ValueError, match="invalid_sampled_geometry_reason"):
             decode_coverage(encoded)
+
+
+class TestMeshMeasurements:
+    def test_unavailable_measurements_preserve_typed_geometry_evidence(self):
+        measurements = MeshMeasurements.unavailable()
+
+        assert measurements.geometry == {
+            "bbox_x_mm": None,
+            "bbox_y_mm": None,
+            "bbox_z_mm": None,
+            "volume_mm3": None,
+            "triangle_count": None,
+        }
+        assert measurements.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+        )

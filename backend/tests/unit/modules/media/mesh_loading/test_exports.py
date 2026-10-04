@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import io
-import zipfile
 from pathlib import Path
 
 import numpy as np
+import pytest
 import trimesh
+from printstash_core.mesh.similarity import GeometryError
 
 from app.core.config import _overlay
 from app.modules.media import (
@@ -22,6 +23,7 @@ from tests.fixtures.three_mf_projects import (
 from .._meshes import (
     _real_binary_stl_cube,
     _write_binary_stl,
+    _write_obj,
 )
 
 
@@ -49,9 +51,8 @@ class TestToStlBytes:
         # A download-as-STL click on a monster 3MF/OBJ must not run an unbounded
         # trimesh.load_mesh (which would OOM the process for every user). Refuse cleanly.
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1000)
-        p = tmp_path / "dense.3mf"
-        with zipfile.ZipFile(p, "w") as zf:
-            zf.writestr("3D/3dmodel.model", b"<triangle/>" * 100_000)  # over cap
+        p = tmp_path / "dense.obj"
+        _write_obj(p, 5000)
         monkeypatch.setattr(
             mesh_loading,
             "load_mesh",
@@ -106,10 +107,13 @@ class TestToStlBytes:
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1000)
         path = tmp_path / "instanced.3mf"
         path.write_bytes(build_instanced_project(300))
-        assert not mesh_policy.exceeds_cap(path)  # the estimate is fooled
+        assert not mesh_policy.exceeds_cap(
+            path
+        )  # the bounded reader owns placement cost
         scene_loads = _forbid_trimesh_scene_load(monkeypatch)
 
-        assert mesh_loading.to_stl_bytes(path) is None
+        with pytest.raises(GeometryError, match="scene_resource_limit"):
+            mesh_loading.to_stl_bytes(path)
         assert scene_loads == []
 
     def test_to_stl_bytes_converts_an_instanced_3mf_inside_the_budget(
@@ -130,16 +134,12 @@ class TestToStlBytes:
     def test_to_stl_bytes_fails_closed_on_a_3mf_it_cannot_open(
         self, tmp_path: Path
     ) -> None:
-        """A 3MF is a zip; something that is not one has to answer None.
-
-        The route turns `None` into a 422 the user can read. Letting the zip error
-        escape turns a corrupt upload — or a file renamed to `.3mf` — into a 500
-        on a download link.
-        """
+        """Malformed 3MF produces a typed refusal for the caller to project."""
         path = tmp_path / "malformed.3mf"
         path.write_bytes(b"not a zip archive")
 
-        assert mesh_loading.to_stl_bytes(path) is None
+        with pytest.raises(GeometryError, match="invalid_3mf"):
+            mesh_loading.to_stl_bytes(path)
 
     def test_to_stl_bytes_read_failure_returns_none(
         self, tmp_path: Path, monkeypatch

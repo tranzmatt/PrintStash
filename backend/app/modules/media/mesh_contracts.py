@@ -48,6 +48,7 @@ class ThumbnailStrategy(str, Enum):
 class ThumbnailFailureReason(str, Enum):
     INVALID_SOURCE = "invalid_source"
     UNSUPPORTED_FORMAT = "unsupported_format"
+    UNSUPPORTED_CAPABILITY = "unsupported_capability"
     NO_GEOMETRY = "no_geometry"
     RESOURCE_LIMIT = "resource_limit"
     TIMEOUT = "timeout"
@@ -128,6 +129,20 @@ class MeshCoverage:
 class MeshMeasurements:
     geometry: Geometry
     volume: VolumeMeasurement
+
+    @classmethod
+    def unavailable(cls) -> MeshMeasurements:
+        """Unknown geometry with explicit evidence that it was not obtained."""
+        return cls(
+            {
+                "bbox_x_mm": None,
+                "bbox_y_mm": None,
+                "bbox_z_mm": None,
+                "volume_mm3": None,
+                "triangle_count": None,
+            },
+            VolumeNotCalculated(VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE),
+        )
 
     def __post_init__(self) -> None:
         validate_geometry_extents(self.geometry)
