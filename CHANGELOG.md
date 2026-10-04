@@ -144,6 +144,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Performance
 
+- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
+
 - Tag counts now follow collection links when inheriting tags, so listing tags
   stays responsive in libraries with tens of thousands of collections and
   100,000 Models, including for users with collection-specific access.
