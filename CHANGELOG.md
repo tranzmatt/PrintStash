@@ -6,6 +6,8 @@
   placed mesh, materialize only for admitted fingerprints or global topology,
   and release that mesh before rendering. Keep exact dimensions and counts when
   optional volume or fingerprint analysis fails, with explicit volume evidence.
+  Preserve finite volume when source and placement scales compensate, and clear
+  measurement topology caches before rendering even without fingerprints.
   Refresh mesh outputs under the new eligibility and budget policy.
 - Share bounded STL source validation across measurements, full loading, fallback
   samples and streamed previews. Validate complete source facets and stable EOF

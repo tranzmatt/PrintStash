@@ -92,6 +92,84 @@ class TestMeasureScene:
         assert measured.volume.value_mm3 == pytest.approx(expected_volume)
         assert measured.geometry == pytest.approx(legacy.geometry)
 
+    @pytest.mark.parametrize(
+        "source_scale,placement_scale",
+        [
+            pytest.param(1e-100, 1e110, id="determinant-overflow"),
+            pytest.param(1e100, 1e-110, id="determinant-underflow"),
+            pytest.param(1e-110, 1e120, id="source-integral-underflow"),
+            pytest.param(1e110, 1e-100, id="source-integral-overflow"),
+        ],
+    )
+    def test_preserves_compensated_affine_volume(
+        self, resource, source_scale, placement_scale
+    ):
+        vertices = resource.vertices * source_scale
+        transform = np.diag([placement_scale, placement_scale, placement_scale, 1.0])
+        scene = ExpandedScene(
+            (MeshResource("part", vertices, resource.faces),),
+            (Instance("part", transform),),
+        )
+        originals = vertices.tobytes(), resource.faces.tobytes(), transform.tobytes()
+        expected = 1000.0 * (source_scale * placement_scale) ** 3
+        materialized = geometry_from_mesh(materialize_scene(scene).whole_mesh)
+
+        measured = measure_scene(scene)
+
+        assert isinstance(materialized.volume, VolumeMeasured)
+        assert materialized.volume.value_mm3 == pytest.approx(
+            expected, rel=1e-12, abs=0
+        )
+        assert isinstance(measured.volume, VolumeMeasured)
+        assert measured.volume.value_mm3 == pytest.approx(expected, rel=1e-12, abs=0)
+        assert measured.geometry == pytest.approx(
+            materialized.geometry, rel=1e-12, abs=0
+        )
+        assert (
+            vertices.tobytes(),
+            resource.faces.tobytes(),
+            transform.tobytes(),
+        ) == originals
+
+    @pytest.mark.parametrize(
+        "source_scale,placement_scale",
+        [
+            pytest.param(1e-100, 1e110, id="negative-determinant-overflow"),
+            pytest.param(1e-110, 1e120, id="negative-source-integral-underflow"),
+        ],
+    )
+    def test_preserves_compensated_negative_orientation(
+        self, resource, source_scale, placement_scale
+    ):
+        vertices = resource.vertices * source_scale
+        faces = resource.faces[:, ::-1].copy()
+        transform = np.diag([placement_scale, placement_scale, placement_scale, 1.0])
+        scene = ExpandedScene(
+            (MeshResource("part", vertices, faces),), (Instance("part", transform),)
+        )
+        originals = vertices.tobytes(), faces.tobytes(), transform.tobytes()
+        reference = geometry_from_mesh(materialize_scene(scene).whole_mesh)
+
+        measured = measure_scene(scene)
+
+        expected_volume = VolumeUnavailable(
+            VolumeUnavailableCause.NON_POSITIVE_INTEGRAL
+        )
+        assert reference.volume == expected_volume
+        assert measured.volume == expected_volume
+        assert measured.geometry == pytest.approx(reference.geometry, rel=1e-12, abs=0)
+        assert measured.geometry["triangle_count"] == 4
+        assert measured.geometry["bbox_x_mm"] == pytest.approx(
+            10.0 * source_scale * placement_scale, rel=1e-12, abs=0
+        )
+        assert measured.geometry["bbox_y_mm"] == pytest.approx(
+            20.0 * source_scale * placement_scale, rel=1e-12, abs=0
+        )
+        assert measured.geometry["bbox_z_mm"] == pytest.approx(
+            30.0 * source_scale * placement_scale, rel=1e-12, abs=0
+        )
+        assert (vertices.tobytes(), faces.tobytes(), transform.tobytes()) == originals
+
     @pytest.mark.parametrize("shift", [0.0, 10.0], ids=["coincident", "overlap"])
     def test_preserves_additive_closed_overlap_volume(self, resource, shift):
         transform = np.eye(4)

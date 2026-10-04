@@ -371,6 +371,9 @@ class ThumbnailEngine:
                                     }
                                 )
                         elif source_scene is not None:
+                            # Unique-resource topology caches also own native cycles.
+                            # Release them before rendering, even without fingerprints.
+                            scene_cleanup_pending = True
                             try:
                                 scene_measurements = measure_scene(source_scene.scene)
                             except GeometryError as exc:

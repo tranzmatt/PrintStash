@@ -30,8 +30,8 @@ Consumers then apply separate budgets:
   and a validated document preview.
 
 When topology and fingerprint extraction both need placed geometry, they reuse
-one materialization during the request. Its temporary mesh buffers are released
-before direct scene rendering. A failed topology attempt does not trigger a
+one materialization during the request. Its temporary mesh buffers and measurement topology caches are released
+before direct scene rendering, including when fingerprints are disabled. A failed topology attempt does not trigger a
 second materialization for the fingerprint or erase known bounds and count.
 
 Measurement retains unique resource geometry and referenced-vertex indices;
@@ -49,6 +49,11 @@ the placement; reflected facets retain the renderer's corrected winding policy.
 Signed resource contributions remain signed until their final sum, so a
 negatively oriented inner shell subtracts a cavity instead of adding its volume.
 A nonfinite or nonpositive final integral is a typed unavailable volume.
+When source and placement scales compensate for each other, intermediate
+underflow or overflow must not reject a finite placed volume. The ordinary
+signed integral/product remains unchanged when representable. Lost source
+range is recovered with exact power-of-two coordinate scaling; signed
+logarithmic placement arithmetic avoids an overflowing intermediate determinant.
 
 Open resources require whole-scene topology evaluation: separate parts may close
 only after global welding, and coincident unwelded copies may remain invalid.
@@ -80,27 +85,33 @@ array identities and physical results matched in all twelve observations.
 
 | Placements | Retained median time | Materialized median time | Retained tracked peak | Materialized tracked peak |
 |---|---|---|---|---|
-| 1 | 17.99 ms | 12.37 ms | 0.695 MiB | 0.705 MiB |
-| 64 | 39.62 ms | 295.76 ms | 0.716 MiB | 21.617 MiB |
-| 512 | 202.74 ms | 2159.59 ms | 0.861 MiB | 172.853 MiB |
+| 1 | 9.66 ms | 12.40 ms | 0.695 MiB | 0.705 MiB |
+| 64 | 32.33 ms | 239.94 ms | 0.716 MiB | 21.618 MiB |
+| 512 | 242.45 ms | 1778.73 ms | 0.861 MiB | 172.848 MiB |
 
 The tracked peak is allocation memory observed by `tracemalloc`, not total RSS.
-At512 placements, process high-water RSS medians were164 MiB for retained and
-340 MiB for materialized measurement, including the runtime baseline. Retained
-measurement has overhead for the single placement; its memory advantage here
-comes from evaluating the unique resource once while bounding placed scratch.
-These small synthetic samples support that contract and do not establish a
-production latency target. The run used Python3.12.3 with one BLAS/OpenMP thread.
+At512 placements, process high-water RSS medians were164.1 MiB for retained and
+340.2 MiB for materialized measurement, including the runtime baseline. Memory
+stays near unique-resource cost while placed scratch remains bounded. The final
+comparison completed in28.23s after the compensated-scale/lifetime corrections.
+An earlier run recorded17.99ms versus12.37ms for one placement; this final run
+recorded9.66ms versus12.40ms, so small timings do not establish a general speedup.
+These synthetic samples support the allocation contract, not a production
+latency target. Python3.12.3 used one BLAS/OpenMP thread.
 
 ## Validation
 
 Focused core checks:60 passed. Affected backend checks:152 passed with two
 initial fixture/architecture failures; the exact lifetime correction passed
 separately and all53 architecture guard cases passed after registering the
-new primitive. The initial failure logs remain available for diagnosis.
+new primitive. The initial failure logs remain available for diagnosis. Independent review
+added six compensated-scale regressions, reproduced red before correction;
+all54 related scene/integral/precision checks passed after correction.
+The extended lifetime test reproduced retained measurement caches without
+fingerprints; both lifetime cases passed after releasing those caches.
 The current configured backend type check and Ruff checks passed.
 
-The completed matrix below records93 distinct test functions; parameterized
+The completed matrix below records95 distinct test functions; parameterized
 cases were verified against the passing test results. It includes the real
 ingestion flow, recipe backfill and historical descriptor regressions.
 
@@ -174,7 +185,7 @@ ingestion flow, recipe backfill and historical descriptor regressions.
 | 66 | Preserve retained facts above topology budget | Edge | 256 faces in open halves; topology budget100; optional FP cap100 | No materialization; exact bbox/count retained; volume TOPOLOGY_NOT_EVALUATED; complete scan and geometry not loaded; optional FP budget refusal | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_preserves_scene_facts_above_topology_budget` |
 | 67 | Refuse volume for coincident unwelded copies | Error | Two overlapping copies whose resources use unshared facet vertices | Metadata remains ready with8 faces; typed NOT_WATERTIGHT, no scalar volume | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_refuses_volume_for_coincident_unwelded_copies` |
 | 68 | Refuse FP before allocating its over-budget scene | Error | 256 faces; FP cap100; preview requested | FP FAILED/GEOMETRY_WORK_LIMIT, no records or materialization; metadata ready and image preserved | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_refuses_optional_fingerprint_before_source_materialization` |
-| 69 | Release temporary topology/FP buffers before rendering | Edge | Eligible FP and direct scene preview; Trimesh lifetimes observed | All temporary meshes dead at scene-render entry and return; FP READY, volume and image preserved | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_releases_materialized_fingerprint_before_scene_render` |
+| 69 | Release temporary topology/FP buffers before rendering | Edge | Basic metadata with FP disabled/enabled and direct preview; Trimesh lifetimes observed | All temporary meshes dead before rendering and at return; optional FP outcome, volume and image preserved | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_releases_materialized_fingerprint_before_scene_render` |
 | 70 | Refuse placement numeric overflow without crashing | Error | Finite transform entries overflow placed coordinates; FP off/on | Geometry INVALID_SOURCE with no count; source syntax scan complete and no materialized geometry; requested FP fails NUMERIC_RANGE | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_refuses_transformed_numeric_overflow_without_worker_crash` |
 | 71 | Keep document image after placement overflow | Error | Numeric overflow plus a valid embedded PNG | Geometry INVALID_SOURCE and FP FAILED/NUMERIC_RANGE; embedded image succeeds independently with no thumbnail failure | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_keeps_embedded_preview_when_measurements_exceed_numeric_range` |
 | 72 | Keep known facts when topology allocation fails | Error | Open halves; materializer raises invalid_3mf; FP and preview requested | One attempt; bbox/count remain ready; volume TOPOLOGY_NOT_EVALUATED; FP INVALID_3MF; scene image still produced | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestRetainedThreeMFScene::test_preserves_known_geometry_when_topology_materialization_fails` |
@@ -199,3 +210,5 @@ ingestion flow, recipe backfill and historical descriptor regressions.
 | 91 | Retries previous eligibility receipts | Edge | Fingerprintv5/v6, ready/partial/failed | New version claim created and old receipt unchanged | Integration | ✅ `tests/integration/modules/similarity/test_fingerprints.py::TestFingerprintLeases::test_recomputes_fingerprints_from_the_previous_stl_sample_recipe` |
 | 92 | Filters current similarity evidence by canonical version | Edge | Previousv4/v6 or current version | Previous versions historical; only current evidence eligible | Integration | ✅ `tests/integration/modules/similarity/candidates/test_candidates.py::TestInterpretationVersion::test_version_controls_current_evidence` |
 | 93 | Preserves historical STL descriptor values | Edge | Historicalv6 sample golden and current eligibility receipt | Source/sample/D2/descriptor numeric hashes unchanged; result records current canonical version | Integration | ✅ `tests/integration/modules/media/test_stl_reader.py::TestSampleFingerprintRecipe::test_preserves_measured_partial_fingerprint` |
+| 94 | test_preserves_compensated_affine_volume | Edge | Tetrahedron source/placement scales:1e-100×1e110;1e100×1e-110;1e-110×1e120;1e110×1e-100 | VolumeMeasured equals independent1000×(source_scale×placement_scale)^3 with zero absolute tolerance; all geometry matches actual materialized owner; source vertices/faces/transform unchanged | Unit | ✅ `tests/unit/modules/media/test_scene_measurements.py::TestMeasureScene::test_preserves_compensated_affine_volume` |
+| 95 | test_preserves_compensated_negative_orientation | Edge | Reversed tetrahedron source/placement scales:1e-100×1e110;1e-110×1e120 | NON_POSITIVE_INTEGRAL matches actual materialized owner; analytical bbox/count retained; source vertices/faces/transform unchanged | Unit | ✅ `tests/unit/modules/media/test_scene_measurements.py::TestMeasureScene::test_preserves_compensated_negative_orientation` |

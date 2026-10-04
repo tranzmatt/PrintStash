@@ -1293,8 +1293,15 @@ class TestRetainedThreeMFScene:
         assert isinstance(result.geometry_outcome, GeometryReady)
         assert result.image is not None
 
+    @pytest.mark.parametrize(
+        "include_fingerprint",
+        [
+            pytest.param(False, id="basic-outputs"),
+            pytest.param(True, id="with-fingerprint"),
+        ],
+    )
     def test_releases_materialized_fingerprint_before_scene_render(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch, include_fingerprint
     ):
         from app.modules.media import mesh_render
 
@@ -1309,7 +1316,7 @@ class TestRetainedThreeMFScene:
             meshes.append(weakref.ref(mesh))
 
         def check_scene(scene, *args, **kwargs):
-            assert len(meshes) >= 2
+            assert len(meshes) >= 1 + int(include_fingerprint)
             assert all(reference() is None for reference in meshes)
             return render(scene, *args, **kwargs)
 
@@ -1320,12 +1327,16 @@ class TestRetainedThreeMFScene:
                 path,
                 include_geometry=True,
                 include_thumbnail=True,
-                include_fingerprint=True,
+                include_fingerprint=include_fingerprint,
             )
         )
 
-        assert result.fingerprint_result is not None
-        assert result.fingerprint_result.state is FingerprintResultState.READY
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert (result.fingerprint_result is not None) is include_fingerprint
+        assert (
+            result.fingerprint_result is None
+            or result.fingerprint_result.state is FingerprintResultState.READY
+        )
         assert result.geometry["volume_mm3"] == 1000.0
         assert result.volume == VolumeMeasured(1000.0)
         assert result.image is not None

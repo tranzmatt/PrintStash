@@ -30,6 +30,7 @@ from app.modules.media.mesh_resources import PreparedScene
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
+    from trimesh import Trimesh
 
 logger = get_logger(__name__)
 _POINT_CHUNK_SIZE = 64_000
@@ -95,12 +96,75 @@ class SceneMeasurements:
         return MeshMeasurements(self.geometry, self.volume)
 
 
+def _resource_integral(mesh: Trimesh) -> tuple[float, int] | VolumeUnavailable:
+    """Keep ordinary signed integrals; rescale only lost numeric range.
+
+    The integer records the source coordinate exponent. Scaling by powers of
+    two is exact and preserves component-local subtraction in the canonical kernel.
+    Only a unique resource gets a temporary coordinate buffer, never placements.
+    """
+    import numpy as np
+    import trimesh
+
+    integral = signed_mesh_integral(mesh)
+    if isinstance(integral, VolumeUnavailable):
+        if integral.cause is not VolumeUnavailableCause.NONFINITE_INTEGRAL:
+            return integral
+    elif integral != 0:
+        return integral, 0
+    magnitude = max(abs(float(mesh.vertices.min())), abs(float(mesh.vertices.max())))
+    if magnitude == 0:
+        return 0.0, 0
+    _, exponent = math.frexp(magnitude)
+    normalized = trimesh.Trimesh(
+        vertices=np.ldexp(mesh.vertices, -exponent),
+        faces=mesh.faces,
+        process=False,
+    )
+    integral = signed_mesh_integral(normalized)
+    if isinstance(integral, VolumeUnavailable):
+        return integral
+    return integral, exponent
+
+
+def _placed_integral(
+    resource: tuple[float, int], transform: NDArray[np.float64]
+) -> float | VolumeUnavailable:
+    """Apply placement scale without overflowing an intermediate determinant."""
+    import numpy as np
+
+    value, exponent = resource
+    if value == 0:
+        return 0.0
+    if exponent == 0:
+        # Preserve the ordinary path, including its exact rounding behavior.
+        determinant = abs(float(np.linalg.det(transform[:3, :3])))
+        product = value * determinant
+        if math.isfinite(product) and product != 0:
+            return product
+    # compose_scene reverses reflected facets. Only determinant magnitude is
+    # needed; the source integral's sign still represents cavities or inversion.
+    _, log_determinant = np.linalg.slogdet(transform[:3, :3])
+    logarithm = (
+        math.log(abs(value)) + 3 * exponent * math.log(2) + float(log_determinant)
+    )
+    if not math.isfinite(logarithm):
+        return VolumeUnavailable(VolumeUnavailableCause.NONFINITE_INTEGRAL)
+    try:
+        product = math.copysign(math.exp(logarithm), value)
+    except OverflowError:
+        return VolumeUnavailable(VolumeUnavailableCause.NONFINITE_INTEGRAL)
+    if not math.isfinite(product):
+        return VolumeUnavailable(VolumeUnavailableCause.NONFINITE_INTEGRAL)
+    return product
+
+
 def _scene_volume(scene: ExpandedScene) -> SceneVolume:
     """Keep volume faults independent from already-obtained dimensions/count."""
     import numpy as np
     import trimesh
 
-    raw_integrals: dict[str, float] = {}
+    raw_integrals: dict[str, tuple[float, int]] = {}
     unresolved = False
     inconsistent = False
     unavailable: VolumeUnavailable | None = None
@@ -114,7 +178,7 @@ def _scene_volume(scene: ExpandedScene) -> SceneVolume:
             elif not raw.is_winding_consistent:
                 inconsistent = True
             else:
-                integral = signed_mesh_integral(raw)
+                integral = _resource_integral(raw)
                 if isinstance(integral, VolumeUnavailable):
                     unavailable = integral
                 else:
@@ -130,12 +194,11 @@ def _scene_volume(scene: ExpandedScene) -> SceneVolume:
         integrals: list[float] = []
         with np.errstate(over="ignore", invalid="ignore"):
             for instance in scene.instances:
-                # compose_scene reverses reflected facets, hence abs(det) only;
-                # the resource's signed integral itself must retain its sign.
-                determinant = abs(float(np.linalg.det(instance.transform[:3, :3])))
-                integral = raw_integrals[instance.resource_id] * determinant
-                if not math.isfinite(integral):
-                    return VolumeUnavailable(VolumeUnavailableCause.NONFINITE_INTEGRAL)
+                integral = _placed_integral(
+                    raw_integrals[instance.resource_id], instance.transform
+                )
+                if isinstance(integral, VolumeUnavailable):
+                    return integral
                 integrals.append(integral)
         try:
             total = math.fsum(integrals)
