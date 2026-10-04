@@ -366,9 +366,26 @@ class TestThumbnailEngine:
         assert result.image is None
         assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
         assert result.coverage.source_scan is SourceScanState.COMPLETE
-        assert isinstance(result.coverage.geometry, CompleteGeometry)
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert isinstance(result.volume, VolumeMeasured)
+        assert result.volume.value_mm3 == pytest.approx(mesh.volume)
+        assert result.geometry == pytest.approx(
+            {
+                "triangle_count": 320,
+                "bbox_x_mm": 20.0,
+                "bbox_y_mm": 20.0,
+                "bbox_z_mm": 20.0,
+                "volume_mm3": mesh.volume,
+            }
+        )
         assert result.failure_reason is None
-        assert result.fingerprint_result.failure_code == "geometry_work_limit"
+        assert result.fingerprint_result is not None
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
+        assert (
+            result.fingerprint_result.failure_code
+            is FingerprintFailureCode.GEOMETRY_WORK_LIMIT
+        )
+        assert result.fingerprint_result.records == ()
 
     def test_accepts_analysis_at_its_exact_budget(self, tmp_path):
         mesh = trimesh.creation.icosphere(subdivisions=2, radius=10)

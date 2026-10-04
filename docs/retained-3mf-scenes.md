@@ -107,11 +107,14 @@ separately and all53 architecture guard cases passed after registering the
 new primitive. The initial failure logs remain available for diagnosis. Independent review
 added six compensated-scale regressions, reproduced red before correction;
 all54 related scene/integral/precision checks passed after correction.
+CI exposed six former coupled-budget consumer expectations. The corrected
+contracts retain metadata above preview caps; terminal-refusal fixtures exceed
+the unchanged hard2048-instance limit. All six focused checks passed in37.32s.
 The extended lifetime test reproduced retained measurement caches without
 fingerprints; both lifetime cases passed after releasing those caches.
 The current configured backend type check and Ruff checks passed.
 
-The completed matrix below records95 distinct test functions; parameterized
+The completed matrix below records101 distinct test functions; parameterized
 cases were verified against the passing test results. It includes the real
 ingestion flow, recipe backfill and historical descriptor regressions.
 
@@ -212,3 +215,9 @@ ingestion flow, recipe backfill and historical descriptor regressions.
 | 93 | Preserves historical STL descriptor values | Edge | Historicalv6 sample golden and current eligibility receipt | Source/sample/D2/descriptor numeric hashes unchanged; result records current canonical version | Integration | ✅ `tests/integration/modules/media/test_stl_reader.py::TestSampleFingerprintRecipe::test_preserves_measured_partial_fingerprint` |
 | 94 | test_preserves_compensated_affine_volume | Edge | Tetrahedron source/placement scales:1e-100×1e110;1e100×1e-110;1e-110×1e120;1e110×1e-100 | VolumeMeasured equals independent1000×(source_scale×placement_scale)^3 with zero absolute tolerance; all geometry matches actual materialized owner; source vertices/faces/transform unchanged | Unit | ✅ `tests/unit/modules/media/test_scene_measurements.py::TestMeasureScene::test_preserves_compensated_affine_volume` |
 | 95 | test_preserves_compensated_negative_orientation | Edge | Reversed tetrahedron source/placement scales:1e-100×1e110;1e-110×1e120 | NON_POSITIVE_INTEGRAL matches actual materialized owner; analytical bbox/count retained; source vertices/faces/transform unchanged | Unit | ✅ `tests/unit/modules/media/test_scene_measurements.py::TestMeasureScene::test_preserves_compensated_negative_orientation` |
+| 96 | test_repeated_3mf_preserves_measurements_when_worker_refuses_preview | Edge | Actual supervised400tetra placements; render cap1000faces | GeometryReady count1600/bbox2005×20×30/VolumeMeasured400000; complete source and geometry not loaded; absent previewRESOURCE_LIMIT; normal supervised exit | Integration | ✅ `tests/integration/modules/media/test_mesh_isolation.py::TestGenerate::test_repeated_3mf_preserves_measurements_when_worker_refuses_preview` |
+| 97 | test_instanced_3mf_preserves_measurements_with_embedded_preview | Edge | 20assembly placements; cap50; actual embeddedPNG | Exact count80/bbox10×20×30/VolumeMeasured20000; complete source and geometry not loaded; embedded image unchanged with no failure | Integration | ✅ `tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh::test_instanced_3mf_preserves_measurements_with_embedded_preview` |
+| 98 | test_instanced_3mf_preserves_measurements_when_render_is_refused | Edge | 20assembly placements; cap50; no embeddedPNG | Same exact full metadata; complete source and geometry not loaded; absent previewRESOURCE_LIMIT | Integration | ✅ `tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh::test_instanced_3mf_preserves_measurements_when_render_is_refused` |
+| 99 | test_analysis_budget_preserves_measurements_without_render | Edge | 320face real sphere; fingerprint cap100; no render | GeometryReady and exact source measures with VolumeMeasured; geometry not loaded; fingerprintFAILED/GEOMETRY_WORK_LIMIT/empty records | Integration | ✅ `tests/integration/modules/media/test_thumbnail_engine.py::TestThumbnailEngine::test_analysis_budget_preserves_measurements_without_render` |
+| 100 | Hard scene refusal preserves embedded preview | Error | 2049 placements of one tetrahedron exceed the unchanged 2048-instance admission limit; soft render cap remains 100; original PNG embedded | Metadata RESOURCE_LIMIT terminal at max attempts/current recipe; thumbnail READY/current recipe/embedded; stored source and embedded PNG bytes unchanged | Integration | ✅ `tests/integration/modules/derivatives/test_producers.py::TestDeriveMesh::test_refused_geometry_is_terminal_with_an_embedded_preview` |
+| 101 | Reconciler cannot retry unchanged hard scene refusal | Edge | Same 2049-placement source with original PNG embedded; soft render cap remains 100 | Metadata terminal RESOURCE_LIMIT/max attempts/current recipe; updated_at and attempts unchanged; preview READY/current recipe/embedded and stable bytes; original ZIP and embedded PNG unchanged | E2E | ✅ `tests/e2e/test_ingest.py::TestMeshFailureRecovery::test_unchanged_terminal_failure_survives_reconciler_nudges` |

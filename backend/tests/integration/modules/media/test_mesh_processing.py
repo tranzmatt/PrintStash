@@ -30,6 +30,7 @@ from pathlib import Path
 
 import psutil
 import pytest
+from printstash_core.mesh.measurements import VolumeMeasured
 
 from app.core.config import _overlay
 from app.modules.media import (
@@ -37,7 +38,11 @@ from app.modules.media import (
     mesh_previews,
 )
 from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
+    GeometryReady,
     GeometryRefused,
+    PreviewCoverage,
+    SourceScanState,
     ThumbnailFailureReason,
     ThumbnailStrategy,
 )
@@ -180,7 +185,7 @@ class TestLoadMesh:
         assert isinstance(result.geometry_outcome, GeometryRefused)
         assert result.geometry_outcome.reason is ThumbnailFailureReason.RESOURCE_LIMIT
 
-    def test_instanced_3mf_over_budget_keeps_embedded_preview(
+    def test_instanced_3mf_preserves_measurements_with_embedded_preview(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 50)
@@ -199,9 +204,21 @@ class TestLoadMesh:
 
         assert result.strategy is ThumbnailStrategy.EMBEDDED
         assert result.image == preview
-        assert result.geometry["triangle_count"] is None
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "triangle_count": 80,
+            "bbox_x_mm": 10.0,
+            "bbox_y_mm": 20.0,
+            "bbox_z_mm": 30.0,
+            "volume_mm3": 20000.0,
+        }
+        assert result.volume == VolumeMeasured(20000.0)
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.coverage.preview is PreviewCoverage.DOCUMENT_SUPPLIED
+        assert result.failure_reason is None
 
-    def test_instanced_3mf_over_budget_without_preview_reports_resource_limit(
+    def test_instanced_3mf_preserves_measurements_when_render_is_refused(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 50)
@@ -212,7 +229,18 @@ class TestLoadMesh:
         result = analyze(path)
 
         assert result.image is None
-        assert result.geometry["triangle_count"] is None
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "triangle_count": 80,
+            "bbox_x_mm": 10.0,
+            "bbox_y_mm": 20.0,
+            "bbox_z_mm": 30.0,
+            "volume_mm3": 20000.0,
+        }
+        assert result.volume == VolumeMeasured(20000.0)
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
         assert result.failure_reason is ThumbnailFailureReason.RESOURCE_LIMIT
 
     def test_real_dense_mesh_renders(self, tmp_path: Path, monkeypatch) -> None:

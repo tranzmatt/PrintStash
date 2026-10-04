@@ -560,7 +560,7 @@ class TestDeriveMesh:
         image = io.BytesIO()
         Image.new("RGB", (32, 32), "red").save(image, format="PNG")
         data = three_mf(
-            build=tuple((1, None) for _ in range(40)),
+            build=tuple((1, None) for _ in range(2049)),
             extras={"Metadata/thumbnail.png": image.getvalue()},
         )
         artifact = stored("repeated.3mf", data)
@@ -568,10 +568,22 @@ class TestDeriveMesh:
         result = producers.derive_mesh(artifact.id)
 
         assert result.kinds[DerivativeKind.METADATA] == DerivativeState.FAILED
-        row = _rows(db_session, artifact.id)[DerivativeKind.METADATA]
+        rows = _rows(db_session, artifact.id)
+        row = rows[DerivativeKind.METADATA]
         assert row.failure_reason == "resource_limit"
         assert row.next_attempt_at is None
         assert row.attempts == settings.derivative_max_attempts
+        assert row.recipe_version == kinds.MESH_GEOMETRY_RECIPE
+        assert result.kinds[DerivativeKind.THUMBNAIL] == DerivativeState.READY
+        thumbnail = rows[DerivativeKind.THUMBNAIL]
+        assert thumbnail.recipe_version == kinds.MESH_THUMBNAIL_RECIPE
+        assert json.loads(thumbnail.output_json)["strategy"] == "embedded"
+        assert thumbnail.storage_key is not None
+        assert get_backend().exists(thumbnail.storage_key)
+        original = get_backend().read_bytes(artifact.path)
+        assert original == data
+        with zipfile.ZipFile(io.BytesIO(original)) as archive:
+            assert archive.read("Metadata/thumbnail.png") == image.getvalue()
 
     def test_embedded_preview_survives_refused_geometry(
         self, db_session, stored, monkeypatch
