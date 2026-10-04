@@ -37,6 +37,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+
+- Streamed STL previews now preserve valid oblique facets that the degeneracy filter could discard.
 - Ingest acceptance keeps the API event loop responsive while staging files,
   recording work and notifying the background engine.
 
