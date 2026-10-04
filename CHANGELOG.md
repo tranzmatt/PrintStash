@@ -143,9 +143,10 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
 
-- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
 
 ### Performance
+
+- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
 
 - Tag counts now follow collection links when inheriting tags, so listing tags
   stays responsive in libraries with tens of thousands of collections and
