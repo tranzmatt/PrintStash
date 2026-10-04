@@ -112,6 +112,25 @@ are assumed to be millimetres. Metadata recipe 4 recalculates existing measureme
 to remove volumes previously published for inconsistently wound surfaces; the
 fingerprint algorithm is unchanged.
 
+## Bounded STL measurements
+
+Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the
+full mesh/render cap can still supply exact bounding
+coordinates and facet count to a metadata-only request. The scanner reads bounded
+binary or ASCII blocks independently of thumbnail rendering, preserves ASCII
+coordinates in float64, and accepts measurements only after a complete read of a
+stable source. It does not validate closed topology, so volume remains unknown.
+
+Binary STL requires exactly its declared records; trailing bytes, truncation and
+non-finite vertices are rejected. ASCII accepts complete facets without an
+`endsolid` line, ignores blank/comment lines, and rejects incomplete facets or
+content after `endsolid`. Byte, facet, line and line-length limits still apply;
+read errors, changed sources and budget refusals publish no complete measurements.
+The preview worker shares this parser while retaining its existing float32
+coordinate interpretation. Its temporary read-pass adapter remains
+local to `stl_preview_worker`; fallback sampling and full mesh loading migrate to
+the block iterator separately.
+
 ## Measurement precision
 
 Mesh metadata recipe 5 stores dimensions and valid volume without rounding them

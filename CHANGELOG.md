@@ -49,9 +49,11 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   recording work and notifying the background engine.
 
 - Keep mesh-worker memory limits and cancellation active after the child closes its reply stream.
+- Active mesh workers can release their render admission while a queued worker checks durable cancellation state.
 
 
 - The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
+- Large STL files now retain complete bounding dimensions and facet counts when only metadata is requested; measurements no longer depend on producing a thumbnail.
 - Mesh previews and image embeddings ignore vertices unused by any face when
   framing the surface. Existing visual derivatives are regenerated.
 - Meshes with repeated identical faces no longer expand the same thumbnail pixels
@@ -138,9 +140,10 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
 
-- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
 
 ### Performance
+
+- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
 
 - Tag counts now follow collection links when inheriting tags, so listing tags
   stays responsive in libraries with tens of thousands of collections and
