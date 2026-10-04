@@ -90,3 +90,19 @@ class TestViewerResourceBounds:
         with pytest.raises(MeshWorkerError) as error:
             stl_isolation.to_stl_bytes(tmp_path / "mesh.obj")
         assert error.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    def test_does_not_hide_export_allocation_failure(self, tmp_path, monkeypatch):
+        import trimesh
+
+        from app.modules.media import stl_worker
+
+        source = tmp_path / "cube.obj"
+        trimesh.creation.box().export(source, file_type="obj")
+
+        def exhausted(*args, **kwargs):
+            raise MemoryError("export allocation")
+
+        monkeypatch.setattr(trimesh.Trimesh, "export", exhausted)
+
+        with pytest.raises(MemoryError):
+            stl_worker.convert(source, "obj")

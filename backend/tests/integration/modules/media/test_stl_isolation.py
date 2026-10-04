@@ -46,7 +46,9 @@ class TestToStlBytes:
 
         assert stl_isolation.to_stl_bytes(raw, file_type="stl") == b"already stl"
 
-    def test_a_3mf_over_the_budget_preserves_resource_refusal(self, tmp_path, monkeypatch):
+    def test_a_3mf_over_the_budget_preserves_resource_refusal(
+        self, tmp_path, monkeypatch
+    ):
         """#259: the worker's bounded loader refuses placements past the budget."""
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1000)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
@@ -56,6 +58,19 @@ class TestToStlBytes:
 
         with pytest.raises(MeshWorkerError) as error:
             stl_isolation.to_stl_bytes(path, file_type="3mf")
+        assert error.value.reason is ThumbnailFailureReason.RESOURCE_LIMIT
+
+    def test_preserves_step_triangle_refusal(self, tmp_path, monkeypatch):
+        from tests.paths import FIXTURES_DIR
+
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+        monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
+
+        with pytest.raises(MeshWorkerError) as error:
+            stl_isolation.to_stl_bytes(
+                FIXTURES_DIR / "cascadio_material.stp", file_type="step"
+            )
+
         assert error.value.reason is ThumbnailFailureReason.RESOURCE_LIMIT
 
     def test_finds_a_source_given_as_a_path_relative_to_the_caller(

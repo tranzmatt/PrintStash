@@ -375,7 +375,7 @@ class TestFileAsStl:
             raise OSError("publication unavailable")
 
         monkeypatch.setattr(
-            "app.modules.derivatives.viewer_stl.publish_bytes", unavailable
+            "app.modules.derivatives.producers.publish_bytes", unavailable
         )
         client.get(f"/api/v1/files/{project.id}/stl", headers=auth_headers)
         drain_work()

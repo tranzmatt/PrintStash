@@ -306,9 +306,15 @@ class TestProducerAdmission:
 
         artifact = make_file(
             make_model(),
-            filename="part.stl"
-            if definition is JobKind.DERIVATIVES_MESH
-            else "part.bgcode",
+            filename={
+                JobKind.DERIVATIVES_MESH: "part.stl",
+                JobKind.DERIVATIVES_GCODE: "part.bgcode",
+                JobKind.DERIVATIVES_TOOLPATH: "part.bgcode",
+                JobKind.DERIVATIVES_VIEWER_STL: "part.3mf",
+            }[definition],
+            viewer_requested_at=utcnow()
+            if definition is JobKind.DERIVATIVES_VIEWER_STL
+            else None,
         )
         derivative_group = group(definition)
         rows = [

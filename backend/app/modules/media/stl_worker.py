@@ -26,13 +26,19 @@ def convert(path: Path, file_type: str | None) -> bytes | None:
     file_type = mesh_processing._canonical_suffix(path, file_type).lstrip(".")
     if mesh_processing._exceeds_cap(path, file_type=file_type):
         raise MeshWorkerError(ThumbnailFailureReason.RESOURCE_LIMIT)
-    if file_type != "3mf":
+    if file_type not in {"3mf", "step", "stp"}:
         return mesh_processing.to_stl_bytes(path, file_type=file_type)
     with mesh_processing._render_semaphore():
         try:
-            mesh = load_3mf(
-                path, max_faces=mesh_processing._load_face_budget(".3mf")
-            ).whole_mesh
+            mesh = (
+                load_3mf(
+                    path, max_faces=mesh_processing._load_face_budget(".3mf")
+                ).whole_mesh
+                if file_type == "3mf"
+                else mesh_processing._load_step_mesh_isolated(
+                    path, strict_failures=True
+                )
+            )
         except GeometryError as exc:
             reason = (
                 ThumbnailFailureReason.RESOURCE_LIMIT
@@ -41,11 +47,17 @@ def convert(path: Path, file_type: str | None) -> bytes | None:
                     "archive_resource_limit",
                     "resource_limit",
                     "scene_resource_limit",
+                    "geometry_work_limit",
+                    "worker_oom",
                 }
+                else ThumbnailFailureReason.TIMEOUT
+                if exc.code == "tessellation_timeout"
+                else ThumbnailFailureReason.UNSUPPORTED_FORMAT
+                if exc.code == "step_unavailable"
                 else ThumbnailFailureReason.INVALID_SOURCE
             )
             raise MeshWorkerError(reason) from exc
-        return mesh.export(file_type="stl")
+        return None if mesh is None else mesh.export(file_type="stl")
 
 
 def main(argv: list[str]) -> int:
