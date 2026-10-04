@@ -11,31 +11,15 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import threading
 import zipfile
 
 import httpx
 import pytest
-import pytest_asyncio
 
 from app.db.models import IngestRequestKind, JobState
 from app.modules.storage import storage
 from tests.factories import build_user
 from tests.factories.identity import bearer
-
-
-@pytest_asyncio.fixture
-async def loop_handshake():
-    loop = asyncio.get_running_loop()
-    progressed = threading.Event()
-    observations: list[bool] = []
-
-    def wait_for_loop() -> None:
-        progressed.clear()
-        loop.call_soon_threadsafe(progressed.set)
-        observations.append(progressed.wait(timeout=1.0))
-
-    return wait_for_loop, observations
 
 
 class TestIngestExecution:

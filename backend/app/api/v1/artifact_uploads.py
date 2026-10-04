@@ -19,6 +19,7 @@ from fastapi import (
     Response,
     status,
 )
+from fastapi.concurrency import run_in_threadpool
 from sqlmodel import Session, select
 
 from app.core.config import settings
@@ -389,10 +390,33 @@ async def put_artifact_upload_chunk(
             ) from exc
     payload = bytearray()
     async for chunk in request.stream():
-        payload.extend(chunk)
-        if len(payload) > CHUNK_SIZE:
+        if len(payload) + len(chunk) > CHUNK_SIZE:
             raise HTTPException(status_code=413, detail="upload_chunk_too_large")
+        payload.extend(chunk)
 
+    return await run_in_threadpool(
+        _record_received_chunk,
+        session,
+        current_user,
+        session_id,
+        index,
+        offset,
+        length,
+        sha256,
+        payload,
+    )
+
+
+def _record_received_chunk(
+    session: Session,
+    current_user: User,
+    session_id: str,
+    index: int,
+    offset: int,
+    length: int,
+    sha256: str,
+    payload: bytearray,
+) -> ArtifactUploadChunkRead:
     manager = _manager(session)
     try:
         part = manager.record_chunk(
