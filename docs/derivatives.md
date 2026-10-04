@@ -61,7 +61,7 @@ A producer derives only the kinds still owed, records every outcome on the
 kind's row, and tells viewers of the Model on `model:<id>` so an open page
 refreshes when a thumbnail lands.
 
-## Rendering distant geometry
+## Mesh rendering
 
 The software renderer subtracts the mesh's bounding-box center in float64 before
 converting relative coordinates to float32 for camera projection and shading.
@@ -70,13 +70,29 @@ Small geometry far from the origin therefore retains the precision provided by
 detail already lost when binary STL coordinates were written as float32. Source
 Artifact coordinates and physical metadata are unchanged by rendering.
 
-Mesh thumbnail recipe 3 refreshes existing previews. Similarity view-descriptor
-recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4` distinguish the new
-pixels from earlier cached evidence. Search visual recipe 2 and the derived
-embedding-space rasterizer token `relative-f64-v1` invalidate earlier rendered
-inputs and vectors. Encoder asset manifests and their digests are unchanged.
+Only vertices referenced by triangle faces participate in framing, camera
+selection and normal welding. The renderer compacts that surface in a private
+view and remaps faces inside each existing chunk; unused source vertices remain
+unchanged. Face indices must refer to the source vertex array.
+
+Mesh thumbnail recipe 4 refreshes existing previews. Similarity uses view-descriptor
+recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4`. Search visual recipe 3
+and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
+invalidate earlier rendered inputs and vectors. Encoder asset manifests and
+their digests are unchanged.
+Native encoder alignment has its own stable `encoder_space()` identity. Point
+exports and search visual profiles use that identity to pair image/text towers;
+a renderer update never requires rewriting preplaced Point manifests. Legacy
+mesh-view inference uses `space()`, whose identity includes the rasterizer.
+Thumbnail and multiview search vectors additionally carry their `VisualRecipe`,
+so changed rendered inputs cannot reuse older derived vectors. Rebuild a search
+generation after its rendering recipe changes; an incompatible generation is
+not silently relabelled or reused.
+
 Historical verifier calibration remains tied to its original fingerprint and
-verification versions; it is not relabelled as a new measurement.
+verification versions; it is not relabelled as a new measurement. Fingerprint
+preparation already compacts referenced vertices, so unused-vertex rendering
+does not change its contents, descriptor recipe or algorithm identity.
 
 ## Mesh volume measurements
 
@@ -110,11 +126,40 @@ released after analysis, and a failed full STL render releases its loaded mesh
 before the streaming strategy starts. Sample preparation has its own scope so
 construction errors also release temporary arrays before recovery begins.
 
-The metadata and thumbnail recipes advance to recover terminal resource-limit
+Metadata recipe 7 and thumbnail recipe 5 recover terminal resource-limit
 refusals produced by the earlier coupled admission policy. The derivative source
 finds missing current-recipe outputs, including when an earlier fingerprint
 failure remains cached. Successful content algorithms and the fingerprint
 algorithm version stay unchanged.
+## Bounded STL measurements
+
+Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the
+full mesh/render cap can still supply exact bounding
+coordinates and facet count to a metadata-only request. The scanner reads bounded
+binary or ASCII blocks independently of thumbnail rendering, preserves ASCII
+coordinates in float64, and accepts measurements only after a complete read of a
+stable source. It does not validate closed topology, so volume remains unknown.
+
+Binary STL requires exactly its declared records; trailing bytes, truncation and
+non-finite vertices are rejected. ASCII accepts complete facets without an
+`endsolid` line, ignores blank/comment lines, and rejects incomplete facets or
+content after `endsolid`. Byte, facet, line and line-length limits still apply;
+read errors, changed sources and budget refusals publish no complete measurements.
+The preview worker shares this parser while retaining its existing float32
+coordinate interpretation. Its temporary read-pass adapter remains
+local to `stl_preview_worker`; fallback sampling and full mesh loading migrate to
+the block iterator separately.
+
+## Measurement precision
+
+Mesh metadata recipe 5 stores dimensions and valid volume without rounding them
+to two decimal places. Values remain in millimeters and cubic millimeters;
+display formatting is a consumer concern. This preserves small parts and the
+precision available from each source, including bounds obtained by complete STL
+streaming and fallback scans. Existing rounded metadata is eligible for backfill.
+Binary STL still carries float32 coordinates; removing output rounding cannot
+recover precision already absent from the input. Volume retains the closure,
+winding, finite-value and positive-orientation requirements of recipe 4.
 
 ## Bumping a recipe
 
@@ -163,6 +208,30 @@ and restarts for the same bytes and recipe. Explicit retry, changed content or a
 new recipe makes work eligible; timeout backoff keeps the configured maximum.
 Original downloads and signed slicer downloads continue to use Artifact bytes.
 
+
+## On-demand 3D viewer STL
+
+`viewer_stl` recipe 1 is produced by `derivatives.viewer_stl` in `derive.native`.
+Only 3MF, OBJ and STEP Artifacts with `files.viewer_requested_at` set are eligible;
+uploads, scans and card hover do not request conversion. The first authorized
+`GET /api/v1/files/{id}/stl` (or the scoped share endpoint) persists this demand
+and nudges the source. Reconciliation recovers it after a lost nudge or restart.
+The active-Subject constraint shares work across requests.
+
+Original STL is served directly. Other formats return 202 with `DerivativeRead`
+and `Retry-After: 1` until publication, 200 with the stored representation when
+ready, or 422 with the recorded failure `detail`. Preparation responses use
+`private, no-store`. Resource and invalid-input refusals are terminal for the
+recipe; timeouts/storage failures use bounded derivative backoff. Explicit retry
+uses the existing derivative retry endpoint. Mesh processing policy gates new
+work; published previews remain readable while disabled.
+
+Ready STL objects use immutable owned publication and `storage_key`, so backup,
+Vault migration and trash retain their existing ownership contracts. A missing
+published object becomes eligible for repair. Legacy STL caches are regenerated
+once on access. Original downloads and signed slicer handoff never depend on STL
+preparation. The browser waits for STL bytes, displays persisted failures, and
+refreshes authenticated previews after derivative completion or policy changes.
 
 ## Live processing policy
 

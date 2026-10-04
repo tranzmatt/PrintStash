@@ -59,7 +59,7 @@ class TestPending:
         make_derivative(
             artifact,
             DerivativeKind.METADATA,
-            recipe_version=4,
+            recipe_version=6,
             state=DerivativeState.FAILED,
             exhausted=True,
             failure_reason="resource_limit",
@@ -67,7 +67,7 @@ class TestPending:
         make_derivative(
             artifact,
             DerivativeKind.THUMBNAIL,
-            recipe_version=3,
+            recipe_version=4,
             state=DerivativeState.FAILED,
             exhausted=True,
             failure_reason="resource_limit",
@@ -76,6 +76,14 @@ class TestPending:
         subjects = _subjects(db_session)
 
         assert subjects == [subject_key(artifact.id)]
+    def test_rederives_thumbnails_from_the_unfiltered_vertex_recipe(
+        self, db_session, mesh, make_derivative
+    ):
+        artifact = mesh()
+        make_derivative(artifact, DerivativeKind.METADATA)
+        make_derivative(artifact, DerivativeKind.THUMBNAIL, recipe_version=3)
+
+        assert _subjects(db_session) == [subject_key(artifact.id)]
 
     def test_rederives_thumbnails_from_the_world_float32_recipe(
         self, db_session, mesh, make_derivative
