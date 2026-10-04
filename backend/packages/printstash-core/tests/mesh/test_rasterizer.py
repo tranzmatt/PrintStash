@@ -447,6 +447,82 @@ class TestRasteriseTriangles:
         )
         return int(painted or 0), img
 
+    @pytest.mark.parametrize("copies", [2, 1000])
+    def test_expands_exact_duplicate_triangles_once(self, copies: int) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        expected_work, expected = self.paint(tri)
+
+        actual_work, actual = self.paint(np.repeat(tri, copies, axis=0))
+
+        assert actual_work == expected_work
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_preserves_duplicate_work_under_a_raster_budget(self) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        single_work, _ = self.paint(tri)
+        budget = RasterBudget(limit=1000)
+
+        actual_work, _ = self.paint(np.repeat(tri, 3, axis=0), budget=budget)
+
+        assert actual_work == budget.used == single_work * 3
+
+    def test_preserves_triangle_corner_order(self) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        single_work, _ = self.paint(tri)
+        reordered = np.concatenate([tri, np.roll(tri, 1, axis=1), tri[:, ::-1]])
+
+        actual_work, _ = self.paint(reordered)
+
+        assert actual_work == single_work * 3
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    @pytest.mark.parametrize("chunk_size", [1, 3, 8])
+    def test_keeps_the_first_duplicate_normals(
+        self, reverse: bool, chunk_size: int
+    ) -> None:
+        # Distinct overlapping triangles must keep input order too: the smaller
+        # X coordinate sorts first but must not steal a depth tie from its peer.
+        first = [[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]
+        second = [[1.0, 2.0, 0.0], [11.0, 2.0, 0.0], [1.0, 12.0, 0.0]]
+        tri = np.array([first, second, first, second])
+        colors = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [1.0, 1.0, 0]])
+        normals = np.repeat(colors[:, None, :], 3, axis=1)
+        if reverse:
+            tri, normals = tri[::-1], normals[::-1]
+        original_tri, original_normals = tri.copy(), normals.copy()
+        tri.flags.writeable = False
+        normals.flags.writeable = False
+
+        expected_img = np.zeros((16, 16, 3), dtype=np.uint8)
+        expected_z = np.full((16, 16), np.inf)
+        actual_img, actual_z = expected_img.copy(), expected_z.copy()
+        rasterizer._rasterise_triangles(
+            expected_img,
+            expected_z,
+            tri[:2],
+            normals[:2],
+            lambda n: n,
+            np.full(3, 255),
+            16,
+            16,
+        )
+        for start in range(0, len(tri), chunk_size):
+            rasterizer._rasterise_triangles(
+                actual_img,
+                actual_z,
+                tri[start : start + chunk_size],
+                normals[start : start + chunk_size],
+                lambda n: n,
+                np.full(3, 255),
+                16,
+                16,
+            )
+
+        np.testing.assert_array_equal(actual_img, expected_img)
+        np.testing.assert_array_equal(actual_z, expected_z)
+        np.testing.assert_array_equal(tri, original_tri)
+        np.testing.assert_array_equal(normals, original_normals)
+
     def test_paints_the_pixels_a_triangle_covers(self) -> None:
         tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
 
