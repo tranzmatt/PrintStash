@@ -9,7 +9,9 @@ import trimesh
 
 from app.core.config import _overlay
 from app.modules.media import stl_worker
+from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.stl_isolation import decode_reply
+from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from tests.factories.geometry import three_mf
 
 
@@ -75,8 +77,8 @@ class TestMain:
         source = tmp_path / "plate.3mf"
         source.write_bytes(three_mf(build=placements))
 
-        status, size, _ = run_worker(source, file_type="3mf")
+        with pytest.raises(MeshWorkerError) as raised:
+            run_worker(source, file_type="3mf")
 
-        assert status == 0
-        assert size is None
+        assert raised.value.reason is ThumbnailFailureReason.RESOURCE_LIMIT
         assert calls == []

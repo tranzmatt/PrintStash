@@ -21,6 +21,7 @@ class SettingName(StrEnum):
 
 SETTINGS = {
     JobKind.DERIVATIVES_MESH: SettingName.MESH,
+    JobKind.DERIVATIVES_VIEWER_STL: SettingName.MESH,
     JobKind.DERIVATIVES_GCODE: SettingName.GCODE,
     JobKind.DERIVATIVES_TOOLPATH: SettingName.TOOLPATH,
 }

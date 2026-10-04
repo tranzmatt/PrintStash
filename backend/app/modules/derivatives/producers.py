@@ -34,7 +34,8 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.db.session import get_session_factory
-from app.modules.media import gcode_parser, mesh_isolation, thumbnail
+from app.modules.media import gcode_parser, mesh_isolation, stl_isolation, thumbnail
+from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.thumbnail_engine import (
     GeometryReady,
     GeometryRefused,
@@ -48,8 +49,10 @@ from app.modules.media.thumbnail_publication import (
 )
 from app.modules.storage.artifact_content import ArtifactContentError, resolve
 from app.modules.storage.capacity import CapacityManager, CapacityResource
+from app.modules.storage.capacity_estimates import vault_allocation
+from app.modules.storage.storage_backend.contracts import StorageCollisionError
 from app.modules.storage.storage_backend.runtime import get_backend
-from app.modules.storage.storage_ownership import publish_file
+from app.modules.storage.storage_ownership import publish_bytes, publish_file
 from app.modules.work.contracts import JobExecution
 
 from . import records
@@ -240,9 +243,7 @@ def _thumbnail_failure(
     return DerivativeState.FAILED
 
 
-def _derive_mesh(
-    file_id: int, *, execution: JobExecution | None = None
-) -> Outcome:
+def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outcome:
     """Geometry and a rendered thumbnail from one mesh load."""
     begun = _begin(file_id, JobKind.DERIVATIVES_MESH, execution=execution)
     if begun is None:
@@ -406,9 +407,7 @@ def _replace_material_requirements(
         )
 
 
-def _derive_gcode(
-    file_id: int, *, execution: JobExecution | None = None
-) -> Outcome:
+def _derive_gcode(file_id: int, *, execution: JobExecution | None = None) -> Outcome:
     """Slicer metadata and the embedded thumbnail from one header read."""
     begun = _begin(file_id, JobKind.DERIVATIVES_GCODE, execution=execution)
     if begun is None:
@@ -493,9 +492,7 @@ def _derive_gcode(
     return Outcome(outcome)
 
 
-def _derive_toolpath(
-    file_id: int, *, execution: JobExecution | None = None
-) -> Outcome:
+def _derive_toolpath(file_id: int, *, execution: JobExecution | None = None) -> Outcome:
     """A converted ASCII toolpath for a binary G-code Artifact."""
     from app.modules.media import toolpath
 
@@ -582,3 +579,79 @@ def _announced(produce):
 derive_mesh = _announced(_derive_mesh)
 derive_gcode = _announced(_derive_gcode)
 derive_toolpath = _announced(_derive_toolpath)
+
+
+def _derive_viewer_stl(
+    file_id: int, *, execution: JobExecution | None = None
+) -> Outcome:
+    begun = _begin(file_id, JobKind.DERIVATIVES_VIEWER_STL, execution=execution)
+    if begun is None or DerivativeKind.VIEWER_STL not in begun[1]:
+        return Outcome({})
+    file, attempts = begun
+    attempt = attempts[DerivativeKind.VIEWER_STL]
+    started = time.monotonic()
+
+    def failed(reason: ThumbnailFailureReason, *, deterministic: bool) -> Outcome:
+        _fail(
+            attempt,
+            reason.value,
+            deterministic=deterministic,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+        return Outcome({DerivativeKind.VIEWER_STL: DerivativeState.FAILED})
+
+    estimate = max(file.size_bytes * 3, 16 * 1024**2)
+    try:
+        with CapacityManager(get_session_factory()).hold(
+            f"derive:viewer-stl:{file_id}:{time.monotonic_ns()}",
+            [
+                CapacityResource.for_path(
+                    Path(tempfile.gettempdir()), estimate, role="mesh conversion"
+                ),
+                vault_allocation(estimate, role="derived STL publication"),
+            ],
+        ):
+            with resolve(file).materialize(capacity_claimed=True) as source:
+                data = stl_isolation.to_stl_bytes(
+                    source, file_type=file.file_type.value
+                )
+            if data is None:
+                return failed(ThumbnailFailureReason.INVALID_SOURCE, deterministic=True)
+            backend = get_backend()
+            key = backend.blob_key(
+                "_derivatives",
+                0,
+                f"{file.sha256}-viewer-stl-r{attempt.recipe}-{attempt.token}.stl",
+            )
+            with get_session_factory().scoped_session() as session:
+                receipt = publish_bytes(
+                    session, backend, key, data, object_kind="viewer_stl"
+                )
+                records.mark_ready(
+                    session,
+                    attempt,
+                    now=utcnow(),
+                    storage_key=receipt.key,
+                    output={"size": receipt.size},
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+                session.commit()
+    except MeshWorkerError as exc:
+        return failed(
+            exc.reason,
+            deterministic=exc.reason
+            in {
+                ThumbnailFailureReason.RESOURCE_LIMIT,
+                ThumbnailFailureReason.INVALID_SOURCE,
+                ThumbnailFailureReason.UNSUPPORTED_FORMAT,
+                ThumbnailFailureReason.NO_GEOMETRY,
+            },
+        )
+    except ArtifactContentError:
+        return failed(ThumbnailFailureReason.INVALID_SOURCE, deterministic=True)
+    except (OSError, StorageCollisionError):
+        return failed(ThumbnailFailureReason.STORAGE, deterministic=False)
+    return Outcome({DerivativeKind.VIEWER_STL: DerivativeState.READY})
+
+
+derive_viewer_stl = _announced(_derive_viewer_stl)

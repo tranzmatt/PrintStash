@@ -83,16 +83,31 @@ class TestDerivativeAttemptUpgrade:
                 failure_reason=None,
                 output_json='{"triangle_count":12}',
             )
+            seed_schema_row(
+                connection,
+                "artifact_derivatives",
+                id=3,
+                file_id=1,
+                kind="viewer_stl",
+                recipe_version=1,
+                state="ready",
+                attempts=1,
+                storage_key="existing-viewer.stl",
+                output_json='{"size":20}',
+            )
             for job_id, attempts, state in [
                 ("waiting", 0, "queued"),
                 ("legacy", 4, "running"),
                 ("done", 2, "completed"),
+                ("viewer", 1, "completed"),
             ]:
                 seed_schema_row(
                     connection,
                     "jobs",
                     id=job_id,
-                    kind="derivatives.mesh",
+                    kind="derivatives.viewer_stl"
+                    if job_id == "viewer"
+                    else "derivatives.mesh",
                     subject_key=f"file/{job_id}",
                     state=state,
                     attempts=attempts,
@@ -100,7 +115,7 @@ class TestDerivativeAttemptUpgrade:
                     resubmits=0,
                     status_json="{}",
                 )
-        command.stamp(config, "a1d9da54fb03")
+        command.stamp(config, "f1e72b50f1cc")
 
         command.upgrade(config, "67494831ae72")
 
@@ -124,14 +139,20 @@ class TestDerivativeAttemptUpgrade:
             ).one() == ("ready", '{"triangle_count":12}', None)
             assert connection.execute(
                 text(
+                    "SELECT state, storage_key, output_json, attempt_token FROM artifact_derivatives WHERE id=3"
+                )
+            ).one() == ("ready", "existing-viewer.stl", '{"size":20}', None)
+            assert connection.execute(
+                text(
                     "SELECT id, attempts, execution_epoch, submitted_epoch FROM jobs ORDER BY id"
                 )
             ).all() == [
                 ("done", 2, "done", "done"),
                 ("legacy", 4, "legacy", "legacy"),
+                ("viewer", 1, "viewer", "viewer"),
                 ("waiting", 0, "waiting", None),
             ]
-        command.downgrade(config, "a1d9da54fb03")
+        command.downgrade(config, "f1e72b50f1cc")
         command.upgrade(config, "67494831ae72")
         with engine.connect() as connection:
             assert (

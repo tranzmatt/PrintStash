@@ -999,3 +999,151 @@ class TestAttemptPublication:
         assert len(announced) == 1
         assert announced[0]["kind"] == "metadata"
         assert announced[0]["state"] == "ready"
+
+
+class TestDeriveViewerStl:
+    def test_cancelled_conversion_retains_only_pending_ownership(
+        self, db_session, stored, monkeypatch
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored(
+            "cancel.obj",
+            b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+            viewer_requested_at=utcnow(),
+        )
+
+        def converted(_path, *, file_type):
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_VIEWER_STL).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            return content.binary_stl()
+
+        monkeypatch.setattr(producers.stl_isolation, "to_stl_bytes", converted)
+
+        assert producers.derive_viewer_stl(artifact.id).kinds == {}
+
+        row = _rows(db_session, artifact.id)[DerivativeKind.VIEWER_STL]
+        assert (row.state, row.storage_key) == (DerivativeState.CANCELLED, None)
+        proof = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "viewer_stl"
+            )
+        ).one()
+        assert proof.state is StorageObjectState.PENDING
+        assert get_backend().read_bytes(proof.key) == content.binary_stl()
+
+    def test_superseded_conversion_preserves_the_new_viewer_bytes(
+        self, db_session, stored, monkeypatch
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored(
+            "replace.obj",
+            b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+            viewer_requested_at=utcnow(),
+        )
+        published_key = None
+        fresh_bytes = b"new viewer generation"
+
+        def converted(_path, *, file_type):
+            nonlocal published_key
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_VIEWER_STL).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            records.reset(
+                db_session, artifact, group(JobKind.DERIVATIVES_VIEWER_STL).kinds
+            )
+            db_session.commit()
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    producers.stl_isolation,
+                    "to_stl_bytes",
+                    lambda *_args, **_kwargs: fresh_bytes,
+                )
+                assert producers.derive_viewer_stl(artifact.id).kinds == {
+                    DerivativeKind.VIEWER_STL: DerivativeState.READY
+                }
+            published_key = _rows(db_session, artifact.id)[
+                DerivativeKind.VIEWER_STL
+            ].storage_key
+            db_session.rollback()
+            return content.binary_stl()
+
+        monkeypatch.setattr(producers.stl_isolation, "to_stl_bytes", converted)
+
+        assert producers.derive_viewer_stl(artifact.id).kinds == {}
+
+        row = _rows(db_session, artifact.id)[DerivativeKind.VIEWER_STL]
+        assert (row.state, row.storage_key) == (DerivativeState.READY, published_key)
+        assert get_backend().read_bytes(published_key) == fresh_bytes
+        pending = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "viewer_stl",
+                OwnedStorageObject.state == StorageObjectState.PENDING,
+            )
+        ).one()
+        assert pending.key != published_key
+        assert get_backend().read_bytes(pending.key) == content.binary_stl()
+
+    def test_superseded_failure_preserves_the_new_ready_viewer(
+        self, db_session, stored, monkeypatch
+    ):
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+        from app.modules.media.thumbnail_engine import ThumbnailFailureReason
+
+        artifact = stored(
+            "failed.obj",
+            b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+            viewer_requested_at=utcnow(),
+        )
+        fresh_bytes = b"new viewer generation"
+
+        def failed(_path, *, file_type):
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_VIEWER_STL).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            records.reset(
+                db_session, artifact, group(JobKind.DERIVATIVES_VIEWER_STL).kinds
+            )
+            db_session.commit()
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    producers.stl_isolation,
+                    "to_stl_bytes",
+                    lambda *_args, **_kwargs: fresh_bytes,
+                )
+                assert producers.derive_viewer_stl(artifact.id).kinds == {
+                    DerivativeKind.VIEWER_STL: DerivativeState.READY
+                }
+            db_session.rollback()
+            raise mesh_isolation.MeshWorkerError(ThumbnailFailureReason.RESOURCE_LIMIT)
+
+        monkeypatch.setattr(producers.stl_isolation, "to_stl_bytes", failed)
+
+        assert producers.derive_viewer_stl(artifact.id).kinds == {}
+
+        row = _rows(db_session, artifact.id)[DerivativeKind.VIEWER_STL]
+        assert row.state is DerivativeState.READY
+        assert row.failure_reason is None
+        assert get_backend().read_bytes(row.storage_key) == fresh_bytes

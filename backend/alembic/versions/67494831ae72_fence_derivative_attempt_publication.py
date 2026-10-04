@@ -1,8 +1,8 @@
 """fence derivative attempt publication
 
 Revision ID: 67494831ae72
-Revises: a1d9da54fb03
-Create Date: 2026-10-04 13:03:31.452840
+Revises: f1e72b50f1cc
+Create Date: 2026-10-04 14:11:53.687870
 
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "67494831ae72"
-down_revision: Union[str, Sequence[str], None] = "a1d9da54fb03"
+down_revision: Union[str, Sequence[str], None] = "f1e72b50f1cc"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

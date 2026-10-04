@@ -71,6 +71,14 @@ afterEach(() => {
 });
 
 describe("ModelCard", () => {
+  it("does not convert on hover", async () => {
+    const user = userEvent.setup();
+    const { requests } = renderCard({ mesh_file_id: 7 });
+
+    await user.hover(screen.getByText("Cam Holder v4"));
+
+    expect(requests().filter((request) => request.url.includes("/stl"))).toEqual([]);
+  });
   describe("collection badge", () => {
     it("shows the exact folder name instead of its slug", () => {
       renderApp(
