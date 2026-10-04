@@ -69,6 +69,35 @@ class TestPreviewCoverage:
         assert np.any(alpha[:, -128:])
         assert not np.any(alpha[:, 192:320])
 
+    def test_preserves_long_appendage(self, tmp_path: Path) -> None:
+        import io
+
+        import numpy as np
+        import trimesh
+        from PIL import Image
+
+        body = trimesh.creation.icosphere(subdivisions=4, radius=5.0)
+        appendage = trimesh.creation.box(extents=(100.0, 2.0, 2.0))
+        appendage.apply_translation((50.0, 0.0, 0.0))
+        source = tmp_path / "long-appendage.stl"
+        source.write_bytes(
+            trimesh.util.concatenate([body, appendage]).export(file_type="stl")
+        )
+
+        result = stl_streaming.render_stl_preview_isolated(
+            source, width=512, height=512
+        )
+
+        assert result is not None
+        assert result.triangle_count == 5132
+        assert result.bounds_min == pytest.approx((-5.0, -5.0, -5.0))
+        assert result.bounds_max == pytest.approx((100.0, 5.0, 5.0))
+        with Image.open(io.BytesIO(result.png)) as image:
+            alpha = np.asarray(image.getchannel("A"))
+        assert np.any(alpha[:, :128])
+        assert np.any(alpha[:, 192:320])
+        assert np.any(alpha[:, -128:])
+
     def test_preserves_ascii_render_after_translation(self, tmp_path: Path) -> None:
         import trimesh
 
