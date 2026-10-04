@@ -16,6 +16,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Added
 
+- Mesh workers retain bounded phase costs and parent-observed resource usage in structured process logs and local Prometheus counters, including metadata-only work and failed or cancelled native processes.
+
 - Deep CI exercises the production mesh pipeline under 1 GiB and 4 GiB
   limits on amd64 and arm64, publishing memory, failure and cleanup evidence.
 - Job details show retained ingest capacity and provide a confirmed, identity-checked
@@ -36,6 +38,10 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Fixed
 - Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
+- Ingest acceptance keeps the API event loop responsive while staging files,
+  recording work and notifying the background engine.
+
+- The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
 - Meshes with inconsistent triangle winding now report unknown volume while
   retaining dimensions and triangle counts. Existing metadata is recalculated
   automatically.
