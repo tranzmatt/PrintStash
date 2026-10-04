@@ -16,12 +16,13 @@ from PIL import Image
 
 from app.core.config import _overlay
 from app.modules.media import mesh_isolation
-from app.modules.media.thumbnail_engine import (
-    ThumbnailEngine,
+from app.modules.media.fingerprints import FingerprintResultState
+from app.modules.media.mesh_contracts import (
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailStrategy,
 )
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 from tests.factories import content
 from tests.factories.geometry import three_mf
 
@@ -57,7 +58,7 @@ class TestGenerate:
         assert isolated.failure_reason == direct.failure_reason
         assert isolated.fingerprint_result == direct.fingerprint_result
         assert isolated.fingerprint_result is not None
-        assert isolated.fingerprint_result.state == "ready"
+        assert isolated.fingerprint_result.state is FingerprintResultState.READY
 
     def test_finds_a_source_given_as_a_path_relative_to_the_caller(
         self, tmp_path, monkeypatch
@@ -292,7 +293,7 @@ class TestGeometryMeasurements:
         assert values["volume_reason"] == "inconsistent_winding"
 
     def test_open_mesh_keeps_unknown_volume_without_refusing_geometry(self, tmp_path):
-        from app.modules.media.thumbnail_engine import GeometryReady
+        from app.modules.media.mesh_contracts import GeometryReady
 
         path = tmp_path / "open.obj"
         path.write_text("v 0 0 1\nv 10 0 1\nv 0 10 1\nf 1 2 3\n")
@@ -304,7 +305,7 @@ class TestGeometryMeasurements:
         assert result.geometry["volume_mm3"] is None
 
     def test_closed_stl_retains_its_solid_volume(self, tmp_path):
-        from app.modules.media.thumbnail_engine import GeometryReady
+        from app.modules.media.mesh_contracts import GeometryReady
         from tests.factories.geometry import tetrahedron
 
         path = tmp_path / "closed.stl"
@@ -333,7 +334,7 @@ class TestStepCapacityOwnership:
         )
         assert result.geometry["triangle_count"] > 0
         assert result.fingerprint_result is not None
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         assert db_session.exec(select(CapacityReservation)).all() == []
 
     def test_parent_releases_capacity_after_worker_refusal(

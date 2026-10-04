@@ -37,13 +37,13 @@ from app.db.models import (
 from app.db.scopes import live
 from app.db.session import get_session_factory
 from app.modules.media import gcode_parser, mesh_isolation, stl_isolation, thumbnail
-from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import (
+from app.modules.media.mesh_contracts import (
     GeometryReady,
     GeometryRefused,
     ThumbnailFailureReason,
     ThumbnailRequest,
 )
+from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.thumbnail_publication import (
     ThumbnailPublicationError,
     point_at,

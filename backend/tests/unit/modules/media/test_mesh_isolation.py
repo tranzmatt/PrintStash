@@ -19,19 +19,23 @@ from pathlib import Path
 import pytest
 
 from app.modules.media import mesh_isolation
-from app.modules.media.fingerprints import FingerprintRecord, FingerprintResult
-from app.modules.media.mesh_isolation import (
-    MeshWorkerError,
-    decode_reply,
-    encode_reply,
-    supervise,
+from app.modules.media.fingerprints import (
+    FingerprintRecord,
+    FingerprintResult,
+    FingerprintResultState,
 )
-from app.modules.media.thumbnail_engine import (
+from app.modules.media.mesh_contracts import (
     GeometryReady,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailResult,
     ThumbnailStrategy,
+)
+from app.modules.media.mesh_isolation import (
+    MeshWorkerError,
+    decode_reply,
+    encode_reply,
+    supervise,
 )
 
 MB = 1024 * 1024
@@ -306,9 +310,20 @@ class TestReplyFrame:
 
         assert decode_reply(encode_reply(result)).image == b""
 
+    @pytest.mark.parametrize("state", list(FingerprintResultState))
+    def test_round_trips_each_fingerprint_state_as_a_wire_string(self, state):
+        fingerprint = FingerprintResult(state=state)
+        frame = encode_reply(_result(fingerprint_result=fingerprint))
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+
+        assert header["fingerprint"]["state"] == state.value
+        assert type(header["fingerprint"]["state"]) is str
+        assert decode_reply(frame).fingerprint_result.state is state
+
     def test_round_trips_a_fingerprint_with_its_instances(self):
         fingerprint = FingerprintResult(
-            state="ready",
+            state=FingerprintResultState.READY,
             records=(
                 FingerprintRecord(
                     component_index=1,
@@ -328,6 +343,46 @@ class TestReplyFrame:
 
         assert decode_reply(encode_reply(result)).fingerprint_result == fingerprint
 
+    @pytest.mark.parametrize("state", ["unknown", "pending", "", None, True, 1, [], {}])
+    def test_rejects_an_invalid_fingerprint_state(self, state):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["fingerprint"] = {
+            "state": state,
+            "failure_code": None,
+            "algorithm_version": "x",
+            "records": [],
+        }
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    def test_rejects_a_fingerprint_without_its_state(self):
+        frame = encode_reply(_result())
+        header_length = int.from_bytes(frame[4:8], "big")
+        header = json.loads(frame[8 : 8 + header_length])
+        header["fingerprint"] = {
+            "failure_code": None,
+            "algorithm_version": "x",
+            "records": [],
+        }
+        body = json.dumps(header).encode()
+        forged = (
+            b"MSH1" + len(body).to_bytes(4, "big") + body + frame[8 + header_length :]
+        )
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(forged)
+
+        assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
     def test_preserves_the_type_of_every_fingerprint_value(self):
         """A descriptor blob must stay bytes and a tuple must stay a tuple."""
         record = FingerprintRecord(
@@ -337,7 +392,9 @@ class TestReplyFrame:
             instances=(),
         )
         result = _result(
-            fingerprint_result=FingerprintResult(state="ready", records=(record,))
+            fingerprint_result=FingerprintResult(
+                state=FingerprintResultState.READY, records=(record,)
+            )
         )
 
         values = decode_reply(encode_reply(result)).fingerprint_result.records[0].values
@@ -350,7 +407,9 @@ class TestReplyFrame:
             component_index=0, instance_count=1, values={"bad": object()}, instances=()
         )
         result = _result(
-            fingerprint_result=FingerprintResult(state="ready", records=(record,))
+            fingerprint_result=FingerprintResult(
+                state=FingerprintResultState.READY, records=(record,)
+            )
         )
 
         with pytest.raises(TypeError):
@@ -364,7 +423,9 @@ class TestReplyFrame:
             instances=(),
         )
         result = _result(
-            fingerprint_result=FingerprintResult(state="ready", records=(record,))
+            fingerprint_result=FingerprintResult(
+                state=FingerprintResultState.READY, records=(record,)
+            )
         )
 
         with pytest.raises(TypeError):
@@ -427,7 +488,7 @@ class TestReplyFrame:
 
 class TestGeometryOutcome:
     def test_refusal_survives_a_successful_preview_reply(self):
-        from app.modules.media.thumbnail_engine import GeometryRefused
+        from app.modules.media.mesh_contracts import GeometryRefused
 
         result = _result(
             geometry_outcome=GeometryRefused(ThumbnailFailureReason.RESOURCE_LIMIT)

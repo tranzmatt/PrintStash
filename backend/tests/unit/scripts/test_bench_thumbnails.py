@@ -7,11 +7,8 @@ from pathlib import Path
 import pytest
 import trimesh
 
-from app.modules.media.thumbnail_engine import (
-    ThumbnailEngine,
-    ThumbnailRequest,
-    ThumbnailResult,
-)
+from app.modules.media.mesh_contracts import ThumbnailRequest, ThumbnailResult
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.storage.storage_backend.local import LocalStorageBackend
 from scripts.bench_thumbnails import benchmark_file
 

@@ -102,6 +102,11 @@ welded in a measurement copy; this does not repair winding or change the source
 Artifact. Open or inconsistently wound surfaces retain their bounding dimensions
 and triangle counts, with unknown (`null`) volume. A globally reversed surface
 also retains unknown metadata volume under the positive-orientation policy.
+Fingerprint extraction results use the closed `FingerprintResultState` set: `ready`,
+`partial`, `failed`, and `unsupported`. Worker frames and persisted rows retain
+these literal strings; an unknown worker state is rejected as a malformed reply.
+`pending` belongs to the persistence lease lifecycle, not an extraction result.
+
 Similarity fingerprints have a separate established policy: they report the
 magnitude for consistently wound closed surfaces, including a global reversal,
 and retain `volume_reason = inconsistent_winding` when winding is inconsistent.
@@ -112,6 +117,25 @@ are assumed to be millimetres. Metadata recipe 4 recalculates existing measureme
 to remove volumes previously published for inconsistently wound surfaces; the
 fingerprint algorithm is unchanged.
 
+## Optional fingerprint budgets
+
+Similarity's triangle cap admits fingerprint analysis using the actual loaded
+face count, including expanded 3MF instances. It does not reduce the separate
+mesh load or rendering limits. A mesh admitted for measurements and preview
+therefore retains those outputs even when its fingerprint is refused with
+`geometry_work_limit`. Sources exceeding the mesh load limit still use the
+existing bounded strategies, including explicitly partial STL fingerprints.
+
+Fingerprint results contain serialized descriptors. Prepared scene buffers are
+released after analysis, and a failed full STL render releases its loaded mesh
+before the streaming strategy starts. Sample preparation has its own scope so
+construction errors also release temporary arrays before recovery begins.
+
+Metadata recipe 7 and thumbnail recipe 5 recover terminal resource-limit
+refusals produced by the earlier coupled admission policy. The derivative source
+finds missing current-recipe outputs, including when an earlier fingerprint
+failure remains cached. Successful content algorithms and the fingerprint
+algorithm version stay unchanged.
 ## Bounded STL measurements
 
 Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the
@@ -177,7 +201,9 @@ replacement is ready.
 
 ## Mesh geometry outcomes
 
-Mesh replies carry a geometry outcome independently from thumbnail status.
+Mesh replies use the request/result types and tagged geometry codec owned by
+`modules/media/mesh_contracts.py`, independently from thumbnail strategy
+selection. Replies carry a geometry outcome independently from thumbnail status.
 A validated embedded preview can remain ready when geometry is refused. Refused
 geometry records a failed metadata derivative, with terminal resource/malformed
 input reasons; it does not publish a successful all-unknown measurement row.

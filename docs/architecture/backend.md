@@ -18,7 +18,7 @@ HTTP endpoint or persisted archive format.
 | `printing` | Printers, provider adapters, fleet scheduling, materials and print history | `dispatch`, `costing`, `printer_provider`, `printer_hub`, `fleet`, `materials`, `printer_files`, `printer_jobs`, `print_results`, `multipart_builds` |
 | `similarity` | Versioned geometric evidence, indexed retrieval, durable analysis runs and explicit review | `fingerprints`, `retrieval`, `processing`, `candidates`, `review`, `composition` |
 | `inference` | Shared provider contracts, model identity and inference runtimes | `local`, `manifest`, `onnx_cpu` |
-| `media` | Mesh processing, thumbnail rendering and publication, source covers and toolpath conversion | `thumbnail_engine`, `thumbnail_publication`, `toolpath`, `source_cover_processing` |
+| `media` | Mesh processing, thumbnail rendering and publication, source covers and toolpath conversion | `mesh_contracts`, `thumbnail_engine`, `thumbnail_publication`, `toolpath`, `source_cover_processing` |
 | `derivatives` | What each Artifact owes (metadata, thumbnail, toolpath), found by anti-join and produced by Jobs | `kinds`, `records`, `source`, `producers`, `repair`, `jobs` |
 | `work` | The engine-agnostic background work model: Jobs, definitions, sources, the reconciler, fences and realtime notices | `contracts`, `catalog`, `jobs`, `sources`, `reconciler`, `submission`, `runner`, `service`, `fences`, `executors`, `events` |
 | `identity` | Product identity, collection/printer authorization, sharing and tickets | `auth`, `oidc`, `rbac`, `printer_rbac`, `share`, `ws_tickets` |
@@ -40,6 +40,13 @@ Routes import configuration, filesystem utilities and provider contracts from
 their actual owners; they must not reach them through an operation such as
 `inbox.settings` or `inbox.staging_leases`. A deliberate public re-export must
 be named in `__all__`. The architecture check enforces this boundary for HTTP.
+
+Mesh request/result types and tagged geometry codecs belong to
+`media.mesh_contracts`. Workers, supervisors, producers and tests import those
+data contracts directly; `thumbnail_engine` owns strategy selection and cleanup.
+Primitive mesh and scene owners cannot import an orchestrator, including solely
+for annotations. The contract module imports no loader or analysis owner at
+runtime, so importing a request type cannot initialize those execution paths.
 
 ## Dependency rules
 

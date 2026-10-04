@@ -15,8 +15,8 @@ import trimesh
 
 from app.core.config import _overlay
 from app.modules.media import mesh_isolation, mesh_processing, stl_isolation
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from tests.factories.geometry import three_mf
 
 

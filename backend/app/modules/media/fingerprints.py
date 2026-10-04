@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from enum import Enum
 from typing import Any
 
 from printstash_core.mesh.similarity import GeometryError, fingerprint_mesh
@@ -29,12 +30,23 @@ class FingerprintRecord:
     instances: tuple[dict[str, Any], ...]
 
 
+class FingerprintResultState(Enum):
+    READY = "ready"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    UNSUPPORTED = "unsupported"
+
+
 @dataclass(frozen=True)
 class FingerprintResult:
-    state: str
+    state: FingerprintResultState
     records: tuple[FingerprintRecord, ...] = ()
     failure_code: str | None = None
     algorithm_version: str = ALGORITHM_VERSION
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.state, FingerprintResultState):
+            raise TypeError("invalid_fingerprint_state")
 
 
 class GeometryMetadata(dict[str, float | None]):
@@ -93,14 +105,18 @@ def extract(prepared: PreparedMesh) -> FingerprintResult:
                     FingerprintRecord(index, len(instances), described, instances)
                 )
         return FingerprintResult(
-            "ready" if prepared.complete else "partial",
+            FingerprintResultState.READY
+            if prepared.complete
+            else FingerprintResultState.PARTIAL,
             tuple(records),
             prepared.failure_code,
         )
     except GeometryError as exc:
-        return FingerprintResult("failed", failure_code=exc.code)
+        return FingerprintResult(FingerprintResultState.FAILED, failure_code=exc.code)
     except (ValueError, OverflowError, MemoryError):
-        return FingerprintResult("failed", failure_code="analysis_failed")
+        return FingerprintResult(
+            FingerprintResultState.FAILED, failure_code="analysis_failed"
+        )
 
 
 def _describe(vertices: Any, faces: Any, *, partial: bool) -> dict[str, Any]:
