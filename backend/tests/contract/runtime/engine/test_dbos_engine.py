@@ -135,6 +135,27 @@ class TestPersistentTick:
         assert "tick/missed-nudge" not in RECORD.discover
 
 
+def _recover_legacy_job(harness):
+    from datetime import timedelta
+
+    from app.core.config import settings
+    from app.core.time import utcnow
+    from app.modules.work.reconciler import PassResult, _repair
+
+    # Legacy persisted arguments cannot prove current execution ownership.
+    DBOS.retrieve_workflow("dbos-231-job:1").get_result()
+    assert harness.state("dbos-231-job") is JobState.QUEUED
+    assert RECORD.steps == []
+    result = PassResult()
+    _repair(
+        harness.catalog.definition(PLAIN),
+        now=utcnow() + timedelta(seconds=settings.jobs_submit_grace_seconds + 1),
+        result=result,
+    )
+    assert result.submitted == 1
+    harness.settle()
+
+
 class TestSdkUpgrade:
     def test_saved_result_remains_readable(self, upgraded):
         assert DBOS.retrieve_workflow("dbos-231-result:1").get_result() == {
@@ -142,9 +163,9 @@ class TestSdkUpgrade:
             "attempt": 1,
         }
 
-    def test_saved_queued_job_resumes(self, upgraded):
+    def test_saved_queued_job_recovers_with_current_execution_authority(self, upgraded):
         upgraded.relaunch(app_version=VERSION, listen_lanes=None)
-        upgraded.settle()
+        _recover_legacy_job(upgraded)
 
         assert upgraded.state("dbos-231-job") == JobState.COMPLETED
         assert RECORD.steps == [
@@ -163,11 +184,12 @@ class TestSdkUpgrade:
                 routing=Deduplicated("wrong-input"),
                 lane=upgraded.catalog.definitions[PLAIN].lane,
                 priority=WorkPriority.INTERACTIVE,
+                execution_epoch="test-epoch",
             )
         )
         assert outcome == SubmitOutcome.EXISTING
         upgraded.relaunch(app_version=VERSION, listen_lanes=None)
-        upgraded.settle()
+        _recover_legacy_job(upgraded)
 
         assert upgraded.state("dbos-231-job") == JobState.COMPLETED
         assert RECORD.firsts() == ["upgrade/queued"]

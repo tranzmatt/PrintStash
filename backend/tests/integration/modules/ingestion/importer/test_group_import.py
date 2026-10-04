@@ -20,6 +20,7 @@ from app.modules.ingestion import importer
 from app.modules.ingestion.importer import ResolvedGroup
 from app.modules.work.jobs import jobs
 from tests.factories import build_job, build_user
+from tests.factories.ops import build_job_context
 
 
 def _run(session: Session, owner: User, groups: list[ResolvedGroup]) -> object:
@@ -31,7 +32,7 @@ def _run(session: Session, owner: User, groups: list[ResolvedGroup]) -> object:
     """
     job = build_job(session, kind=JobKind.INGESTION_COLLECTION, owner=owner)
     importer.import_resolved_groups(
-        job_id=job.id,
+        job_context=build_job_context(job.id),
         groups=groups,
         collection="Test",
         tags=None,

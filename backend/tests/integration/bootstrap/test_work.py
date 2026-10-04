@@ -340,6 +340,7 @@ class TestStart:
                 priority=WorkPriority.INTERACTIVE,
                 attempt=1,
                 routing=Deduplicated("ingestion.upload|ingest_request/old-job"),
+                execution_epoch="test-epoch",
             )
         )
         work_engine.app_version = settings.app_version

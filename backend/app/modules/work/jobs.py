@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import Any, Optional, cast
 
@@ -31,6 +31,7 @@ from app.db.models import (
     WorkPriority,
 )
 from app.db.session import get_session_factory
+from app.db.transactions import begin_write
 from app.schemas.jobs import JobFailedItem, JobStatus
 
 from .contracts import JobOutcome
@@ -273,43 +274,226 @@ class JobStore:
         with get_session_factory().scoped_session() as session:
             return self._active_id(session, definition, subject_key)
 
+    @staticmethod
+    def lock_execution(
+        session: Session,
+        job_id: str,
+        *,
+        epoch: str | None = None,
+        attempt: int | None = None,
+        states: Iterable[JobState] | None = None,
+    ) -> Job | None:
+        """Lock and validate execution authority in the caller's transaction."""
+        begin_write(session, immediate=True)
+        row = session.exec(
+            select(Job)
+            .where(Job.id == job_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+        if (
+            row is None
+            or (epoch is not None and row.execution_epoch != epoch)
+            or (attempt is not None and row.attempts != attempt)
+            or (states is not None and row.state not in states)
+        ):
+            return None
+        return row
+
     # -- status -------------------------------------------------------------
 
-    def update(self, job_id: str, **fields: Any) -> None:
+    def update(
+        self,
+        job_id: str,
+        *,
+        expected_attempt: int | None = None,
+        expected_epoch: str | None = None,
+        **fields: Any,
+    ) -> None:
         """Merge progress into an active Job.
 
         A terminal Job is immutable: a step still reporting after its Job was
         cancelled (the cancel races the running step) changes nothing.
         """
-        self._write(job_id, None, fields)
+        self._write(
+            job_id,
+            None,
+            fields,
+            expected_attempt=expected_attempt,
+            expected_epoch=expected_epoch,
+        )
 
-    def finish(self, job_id: str, outcome: JobOutcome, **fields: Any) -> None:
+    def finish(
+        self,
+        job_id: str,
+        outcome: JobOutcome,
+        *,
+        expected_attempt: int | None = None,
+        expected_epoch: str | None = None,
+        **fields: Any,
+    ) -> None:
         """The single terminal transition for every Job; the first one wins.
 
         A failure always says why: ``error`` is required with ``FAILED``.
         """
         if outcome is JobOutcome.FAILED and not fields.get("error"):
             raise ValueError("failed_job_requires_error")
-        self._write(job_id, outcome, fields)
+        self._write(
+            job_id,
+            outcome,
+            fields,
+            expected_attempt=expected_attempt,
+            expected_epoch=expected_epoch,
+        )
+
+    def cancel_attempt(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        execution_epoch: str,
+        expected_state: JobState,
+        withdraw: Callable[[Session, str], None],
+    ) -> JobStatus | None:
+        """Withdraw intent and cancel atomically; a withdrawal error aborts both."""
+        return self._write(
+            job_id,
+            JobOutcome.CANCELLED,
+            {"error": "cancelled_by_user"},
+            expected_attempt=attempt,
+            expected_epoch=execution_epoch,
+            expected_state=expected_state,
+            before_transition=withdraw,
+        )
+
+    def settle_attempt(
+        self,
+        job_id: str,
+        attempt: int,
+        outcome: JobOutcome,
+        *,
+        execution_epoch: str,
+        on_failure: Callable[[Session, str, str], None],
+        error: str | None = None,
+        expected_state: JobState | None = None,
+        **fields: Any,
+    ) -> JobStatus | None:
+        """Atomically settle matching engine evidence and its subject failure hook.
+
+        Workers omit expected_state, which excludes a queued retry. Reconciliation
+        supplies the state it observed, so evidence for a queued Job is explicit.
+        """
+        if outcome is JobOutcome.FAILED and error is None:
+            raise ValueError("failed_job_requires_error")
+        if error is not None:
+            fields["error"] = error
+            fields.setdefault("retryable", outcome is JobOutcome.FAILED)
+        return self._write(
+            job_id,
+            outcome,
+            fields,
+            expected_attempt=attempt,
+            expected_epoch=execution_epoch,
+            expected_state=expected_state,
+            failure_hook=on_failure,
+        )
+
+    def reconcile_settled_attempt(
+        self,
+        job_id: str,
+        attempt: int,
+        hook: Callable[[Session, str], None],
+        *,
+        execution_epoch: str,
+    ) -> None:
+        """Replay cleanup only while the same attempt remains terminal.
+
+        Retry takes this Job lock too. The staging hook may reclaim only exact
+        receipts and is idempotent; holding the lock keeps its reads and cleanup
+        from crossing into a new attempt that reuses this Job's leases.
+        """
+        with get_session_factory().scoped_session() as session:
+            row = self.lock_execution(
+                session,
+                job_id,
+                epoch=execution_epoch,
+                attempt=attempt,
+                states=TERMINAL_STATES,
+            )
+            if row is None:
+                return
+            try:
+                hook(session, row.subject_key)
+                session.commit()
+            except Exception:  # noqa: BLE001 - startup retries exact-receipt cleanup
+                session.rollback()
+                logger.exception(
+                    "job settlement cleanup failed", extra={"job_id": job_id}
+                )
 
     def _write(
-        self, job_id: str, outcome: JobOutcome | None, fields: dict[str, Any]
-    ) -> None:
+        self,
+        job_id: str,
+        outcome: JobOutcome | None,
+        fields: dict[str, Any],
+        *,
+        expected_attempt: int | None,
+        expected_epoch: str | None,
+        expected_state: JobState | None = None,
+        failure_hook: Callable[[Session, str, str], None] | None = None,
+        before_transition: Callable[[Session, str], None] | None = None,
+    ) -> JobStatus | None:
         with get_session_factory().scoped_session() as session:
-            row = session.get(Job, job_id)
-            if row is None or row.state in TERMINAL_STATES:
-                return
-            payload = _merge(json.loads(row.status_json), fields)
-            now = utcnow()
-            if outcome is not None:
-                self._apply_terminal(row, payload, outcome, now)
-            row.status_json = json.dumps(payload, separators=(",", ":"))
-            row.updated_at = now
-            session.add(row)
-            session.commit()
-            session.refresh(row)
+            if expected_attempt is not None and expected_epoch is None:
+                raise ValueError("execution_epoch_required")
+            row = self.lock_execution(
+                session, job_id, epoch=expected_epoch, attempt=expected_attempt
+            )
+            if row is None or (
+                expected_attempt is not None
+                and (
+                    (row.state is JobState.QUEUED and expected_state is None)
+                    or (expected_state is not None and row.state is not expected_state)
+                )
+            ):
+                return None
+            terminal = row.state in TERMINAL_STATES
+            if terminal and failure_hook is None:
+                return None
+            if not terminal:
+                if before_transition is not None:
+                    before_transition(session, row.subject_key)
+                payload = _merge(json.loads(row.status_json), fields)
+                now = utcnow()
+                if outcome is not None:
+                    self._apply_terminal(row, payload, outcome, now)
+                row.status_json = json.dumps(payload, separators=(",", ":"))
+                row.updated_at = now
+                session.add(row)
+                session.flush()
             status = status_of(row)
-        self._changed(status)
+            if (
+                not terminal
+                and failure_hook is not None
+                and row.state
+                in {
+                    JobState.FAILED,
+                    JobState.CANCELLED,
+                }
+            ):
+                if status.error is None:
+                    raise RuntimeError(f"failed_job_without_error:{job_id}")
+                try:
+                    with session.begin_nested():
+                        failure_hook(session, row.subject_key, status.error)
+                except Exception:  # noqa: BLE001 - settlement survives a broken hook
+                    logger.exception(
+                        "job failure hook failed", extra={"job_id": job_id}
+                    )
+            session.commit()
+        if not terminal:
+            self._changed(status)
+        return status
 
     @staticmethod
     def _apply_terminal(

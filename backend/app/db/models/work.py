@@ -8,6 +8,7 @@ serialized: every attempt rebuilds what it needs from the subject row.
 
 from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
 from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, Integer, Text, text
 from sqlmodel import Field
@@ -51,6 +52,11 @@ class Job(SQLModel, table=True):
         enum_check("kind", JobKind),
         enum_check("priority", WorkPriority),
         enum_check("state", JobState),
+        CheckConstraint("length(execution_epoch) > 0", name="execution_epoch_present"),
+        CheckConstraint(
+            "submitted_epoch IS NULL OR length(submitted_epoch) > 0",
+            name="submitted_epoch_present",
+        ),
     )
 
     id: str = Field(primary_key=True, max_length=64)
@@ -72,7 +78,11 @@ class Job(SQLModel, table=True):
     )
     # Display-safe progress, counts and result. Never replayed as input.
     status_json: str = Field(default="{}", sa_column=Column(Text, nullable=False))
-    # Executions submitted so far; the engine execution id is ``<id>:<attempts>``.
+    # Retry invalidates callbacks without counting an execution that never ran.
+    execution_epoch: str = Field(default_factory=lambda: uuid4().hex, max_length=64)
+    # Last epoch accepted by the engine; None means never submitted.
+    submitted_epoch: Optional[str] = Field(default=None, max_length=64)
+    # Executions submitted so far, across explicit retries.
     attempts: int = Field(default=0)
     # Consecutive interrupted executions; bounded by ``jobs_max_resubmits``.
     resubmits: int = Field(default=0)

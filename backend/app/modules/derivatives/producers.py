@@ -25,7 +25,6 @@ from app.core.errors import OperationError
 from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.db.models import (
-    ArtifactDerivative,
     ArtifactMaterialRequirement,
     DerivativeKind,
     DerivativeState,
@@ -51,6 +50,7 @@ from app.modules.storage.artifact_content import ArtifactContentError, resolve
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_ownership import publish_file
+from app.modules.work.contracts import JobExecution
 
 from . import records
 from .kinds import group
@@ -107,13 +107,15 @@ def _live_file(session: Session, file_id: int) -> File:
 
 
 def _begin(
-    file_id: int, definition: JobKind
-) -> tuple[File, set[DerivativeKind]] | None:
+    file_id: int, definition: JobKind, *, execution: JobExecution | None = None
+) -> tuple[File, dict[DerivativeKind, records.DerivativeAttempt]] | None:
     from . import policy
 
     now = utcnow()
     kinds = group(definition).kinds
     with get_session_factory().scoped_session() as session:
+        if execution is not None:
+            records.require_execution(session, execution)
         policy.lock(session)
         policy.require_enabled(session, definition)
         try:
@@ -121,27 +123,16 @@ def _begin(
         except ArtifactGone:
             return None
         needed = records.needed(session, file_row, kinds, now=now)
+        attempts = {}
         for kind in needed:
-            records.begin(session, file_row, kind, kinds[kind], now=now)
+            row = records.begin(session, file_row, kind, kinds[kind], now=now)
+            attempts[kind] = records.attempt(
+                session, file_row, row, execution=execution
+            )
         session.commit()
         session.refresh(file_row)
         session.expunge(file_row)
-    return file_row, needed
-
-
-def _row(
-    session: Session, file_id: int, kind: DerivativeKind, recipe: int
-) -> ArtifactDerivative:
-    row = session.exec(
-        select(ArtifactDerivative).where(
-            ArtifactDerivative.file_id == file_id,
-            ArtifactDerivative.kind == kind,
-            ArtifactDerivative.recipe_version == recipe,
-        )
-    ).first()
-    if row is None:
-        raise RuntimeError("derivative_row_missing")
-    return row
+    return file_row, attempts
 
 
 def _metadata_row(session: Session, file_id: int) -> Metadata:
@@ -153,9 +144,7 @@ def _metadata_row(session: Session, file_id: int) -> Metadata:
 
 
 def _fail(
-    file_id: int,
-    kind: DerivativeKind,
-    recipe: int,
+    attempt: records.DerivativeAttempt,
     reason: str,
     *,
     deterministic: bool,
@@ -163,10 +152,9 @@ def _fail(
     peak_rss_bytes: int | None = None,
 ) -> None:
     with get_session_factory().scoped_session() as session:
-        row = _row(session, file_id, kind, recipe)
         records.mark_failed(
             session,
-            row,
+            attempt,
             reason,
             now=utcnow(),
             deterministic=deterministic,
@@ -180,7 +168,7 @@ def _publish_thumbnail(
     file_row: File,
     image: bytes,
     *,
-    kind_recipe: int,
+    attempt: records.DerivativeAttempt,
     normalize: bool,
     strategy: str,
     complete: bool,
@@ -192,42 +180,35 @@ def _publish_thumbnail(
         encoded = thumbnail.to_webp(image, normalize=normalize)
     except ValueError:
         _fail(
-            file_row.id,
-            DerivativeKind.THUMBNAIL,
-            kind_recipe,
+            attempt,
             "invalid_source",
             deterministic=True,
         )
         return DerivativeState.FAILED
     backend = get_backend()
     with get_session_factory().scoped_session() as session:
-        fresh = _live_file(session, file_row.id)
-        assert fresh.id is not None
         try:
             published = publish_thumbnail(
                 session,
                 backend,
-                fresh,
+                file_row,
                 encoded,
-                recipe_tag=f"{DerivativeKind.THUMBNAIL}:{kind_recipe}:w{settings.model_thumbnail_width}",
+                recipe_tag=f"{DerivativeKind.THUMBNAIL}:{attempt.recipe}:{attempt.token}:w{settings.model_thumbnail_width}",
             )
         except (ThumbnailPublicationError, OperationError, OSError):
             session.rollback()
             logger.exception(
-                "thumbnail publication failed", extra={"file_id": fresh.id}
+                "thumbnail publication failed", extra={"file_id": file_row.id}
             )
             _fail(
-                fresh.id,
-                DerivativeKind.THUMBNAIL,
-                kind_recipe,
+                attempt,
                 "storage",
                 deterministic=False,
             )
             return DerivativeState.FAILED
-        point_at(session, fresh, published.key)
-        records.mark_ready(
+        fresh = records.mark_ready(
             session,
-            _row(session, fresh.id, DerivativeKind.THUMBNAIL, kind_recipe),
+            attempt,
             now=utcnow(),
             storage_key=published.key,
             output={
@@ -242,31 +223,32 @@ def _publish_thumbnail(
             duration_ms=duration_ms,
             peak_rss_bytes=peak_rss_bytes,
         )
+        point_at(session, fresh, published.key)
         session.commit()
     return DerivativeState.READY
 
 
 def _thumbnail_failure(
-    file_id: int, recipe: int, reason: str | None
+    attempt: records.DerivativeAttempt, reason: str | None
 ) -> DerivativeState:
     value = reason or ThumbnailFailureReason.RENDERER_NO_OUTPUT.value
     _fail(
-        file_id,
-        DerivativeKind.THUMBNAIL,
-        recipe,
+        attempt,
         value,
         deterministic=value in _DETERMINISTIC,
     )
     return DerivativeState.FAILED
 
 
-def _derive_mesh(file_id: int) -> Outcome:
+def _derive_mesh(
+    file_id: int, *, execution: JobExecution | None = None
+) -> Outcome:
     """Geometry and a rendered thumbnail from one mesh load."""
-    begun = _begin(file_id, JobKind.DERIVATIVES_MESH)
+    begun = _begin(file_id, JobKind.DERIVATIVES_MESH, execution=execution)
     if begun is None:
         return Outcome({})
-    file_row, needed = begun
-    kinds = group(JobKind.DERIVATIVES_MESH).kinds
+    file_row, attempts = begun
+    needed = attempts.keys()
     outcome: dict[DerivativeKind, DerivativeState] = {}
     if not needed:
         return Outcome(outcome)
@@ -308,7 +290,7 @@ def _derive_mesh(file_id: int) -> Outcome:
             )
     except ArtifactContentError:
         for kind in needed:
-            _fail(file_id, kind, kinds[kind], "invalid_source", deterministic=False)
+            _fail(attempts[kind], "invalid_source", deterministic=False)
             outcome[kind] = DerivativeState.FAILED
         return Outcome(outcome)
     except mesh_isolation.MeshWorkerError as exc:
@@ -322,9 +304,7 @@ def _derive_mesh(file_id: int) -> Outcome:
         )
         for kind in needed:
             _fail(
-                file_id,
-                kind,
-                kinds[kind],
+                attempts[kind],
                 reason,
                 deterministic=reason in _DETERMINISTIC,
             )
@@ -336,9 +316,7 @@ def _derive_mesh(file_id: int) -> Outcome:
         if isinstance(result.geometry_outcome, GeometryRefused):
             reason = result.geometry_outcome.reason.value
             _fail(
-                file_id,
-                DerivativeKind.METADATA,
-                kinds[DerivativeKind.METADATA],
+                attempts[DerivativeKind.METADATA],
                 reason,
                 deterministic=reason in _DETERMINISTIC,
                 duration_ms=result.duration_ms,
@@ -347,23 +325,18 @@ def _derive_mesh(file_id: int) -> Outcome:
             outcome[DerivativeKind.METADATA] = DerivativeState.FAILED
         elif isinstance(result.geometry_outcome, GeometryReady):
             with get_session_factory().scoped_session() as session:
-                meta = _metadata_row(session, file_id)
-                for name in _GEOMETRY_FIELDS:
-                    setattr(meta, name, result.geometry.get(name))
-                session.add(meta)
                 records.mark_ready(
                     session,
-                    _row(
-                        session,
-                        file_id,
-                        DerivativeKind.METADATA,
-                        kinds[DerivativeKind.METADATA],
-                    ),
+                    attempts[DerivativeKind.METADATA],
                     now=utcnow(),
                     output={"triangle_count": result.geometry.get("triangle_count")},
                     duration_ms=duration_ms,
                     peak_rss_bytes=result.peak_rss_bytes,
                 )
+                meta = _metadata_row(session, file_id)
+                for name in _GEOMETRY_FIELDS:
+                    setattr(meta, name, result.geometry.get(name))
+                session.add(meta)
                 session.commit()
             outcome[DerivativeKind.METADATA] = DerivativeState.READY
         else:
@@ -371,31 +344,39 @@ def _derive_mesh(file_id: int) -> Outcome:
         if result.fingerprint_result is not None:
             try:
                 after_commit(
-                    get_session_factory(), file_id, None, result.fingerprint_result
+                    get_session_factory(),
+                    file_id,
+                    None,
+                    result.fingerprint_result,
+                    source_sha256=file_row.sha256,
+                    execution=execution,
                 )
             except Exception:  # noqa: BLE001 - similarity evidence is re-derivable
                 logger.warning(
                     "fingerprint publication failed", extra={"file_id": file_id}
                 )
 
-    if DerivativeKind.THUMBNAIL in needed:
-        if result.image is None:
-            outcome[DerivativeKind.THUMBNAIL] = _thumbnail_failure(
-                file_id,
-                kinds[DerivativeKind.THUMBNAIL],
-                result.failure_reason.value if result.failure_reason else None,
-            )
-        else:
-            outcome[DerivativeKind.THUMBNAIL] = _publish_thumbnail(
-                file_row,
-                result.image,
-                kind_recipe=kinds[DerivativeKind.THUMBNAIL],
-                normalize=True,
-                strategy=result.strategy.value,
-                complete=result.complete,
-                duration_ms=duration_ms,
-                peak_rss_bytes=result.peak_rss_bytes,
-            )
+    try:
+        if DerivativeKind.THUMBNAIL in needed:
+            if result.image is None:
+                outcome[DerivativeKind.THUMBNAIL] = _thumbnail_failure(
+                    attempts[DerivativeKind.THUMBNAIL],
+                    result.failure_reason.value if result.failure_reason else None,
+                )
+            else:
+                outcome[DerivativeKind.THUMBNAIL] = _publish_thumbnail(
+                    file_row,
+                    result.image,
+                    attempt=attempts[DerivativeKind.THUMBNAIL],
+                    normalize=True,
+                    strategy=result.strategy.value,
+                    complete=result.complete,
+                    duration_ms=duration_ms,
+                    peak_rss_bytes=result.peak_rss_bytes,
+                )
+    except records.AttemptSuperseded:
+        # Earlier kinds committed independently and still deserve their notice.
+        pass
     return Outcome(outcome)
 
 
@@ -425,13 +406,15 @@ def _replace_material_requirements(
         )
 
 
-def _derive_gcode(file_id: int) -> Outcome:
+def _derive_gcode(
+    file_id: int, *, execution: JobExecution | None = None
+) -> Outcome:
     """Slicer metadata and the embedded thumbnail from one header read."""
-    begun = _begin(file_id, JobKind.DERIVATIVES_GCODE)
+    begun = _begin(file_id, JobKind.DERIVATIVES_GCODE, execution=execution)
     if begun is None:
         return Outcome({})
-    file_row, needed = begun
-    kinds = group(JobKind.DERIVATIVES_GCODE).kinds
+    file_row, attempts = begun
+    needed = attempts.keys()
     outcome: dict[DerivativeKind, DerivativeState] = {}
     if not needed:
         return Outcome(outcome)
@@ -446,7 +429,7 @@ def _derive_gcode(file_id: int) -> Outcome:
                 image = thumbnail.extract(source)
     except ArtifactContentError:
         for kind in needed:
-            _fail(file_id, kind, kinds[kind], "invalid_source", deterministic=False)
+            _fail(attempts[kind], "invalid_source", deterministic=False)
             outcome[kind] = DerivativeState.FAILED
         return Outcome(outcome)
     duration_ms = int((time.monotonic() - started) * 1000)
@@ -455,6 +438,13 @@ def _derive_gcode(file_id: int) -> Outcome:
         from app.modules.printing.profile_detection import upsert_detected_profiles
 
         with get_session_factory().scoped_session() as session:
+            records.mark_ready(
+                session,
+                attempts[DerivativeKind.METADATA],
+                now=utcnow(),
+                output={"slicer": meta.get("slicer_name")},
+                duration_ms=duration_ms,
+            )
             row = _metadata_row(session, file_id)
             for name, value in meta.items():
                 if name in Metadata.model_fields and name not in {
@@ -467,18 +457,6 @@ def _derive_gcode(file_id: int) -> Outcome:
             _replace_material_requirements(
                 session, file_id, meta.get("material_requirements")
             )
-            records.mark_ready(
-                session,
-                _row(
-                    session,
-                    file_id,
-                    DerivativeKind.METADATA,
-                    kinds[DerivativeKind.METADATA],
-                ),
-                now=utcnow(),
-                output={"slicer": meta.get("slicer_name")},
-                duration_ms=duration_ms,
-            )
             session.commit()
             try:
                 upsert_detected_profiles(session, meta)
@@ -487,43 +465,45 @@ def _derive_gcode(file_id: int) -> Outcome:
                 logger.exception("profile detection failed", extra={"file_id": file_id})
         outcome[DerivativeKind.METADATA] = DerivativeState.READY
 
-    if DerivativeKind.THUMBNAIL in needed:
-        if image is None:
-            with get_session_factory().scoped_session() as session:
-                records.mark_skipped(
-                    session,
-                    _row(
+    try:
+        if DerivativeKind.THUMBNAIL in needed:
+            if image is None:
+                with get_session_factory().scoped_session() as session:
+                    records.mark_skipped(
                         session,
-                        file_id,
-                        DerivativeKind.THUMBNAIL,
-                        kinds[DerivativeKind.THUMBNAIL],
-                    ),
-                    "no_embedded_thumbnail",
-                    now=utcnow(),
+                        attempts[DerivativeKind.THUMBNAIL],
+                        "no_embedded_thumbnail",
+                        now=utcnow(),
+                    )
+                    session.commit()
+                outcome[DerivativeKind.THUMBNAIL] = DerivativeState.SKIPPED
+            else:
+                outcome[DerivativeKind.THUMBNAIL] = _publish_thumbnail(
+                    file_row,
+                    image,
+                    attempt=attempts[DerivativeKind.THUMBNAIL],
+                    normalize=False,
+                    strategy="embedded",
+                    complete=True,
+                    duration_ms=duration_ms,
                 )
-                session.commit()
-            outcome[DerivativeKind.THUMBNAIL] = DerivativeState.SKIPPED
-        else:
-            outcome[DerivativeKind.THUMBNAIL] = _publish_thumbnail(
-                file_row,
-                image,
-                kind_recipe=kinds[DerivativeKind.THUMBNAIL],
-                normalize=False,
-                strategy="embedded",
-                complete=True,
-                duration_ms=duration_ms,
-            )
+    except records.AttemptSuperseded:
+        # Earlier kinds committed independently and still deserve their notice.
+        pass
     return Outcome(outcome)
 
 
-def _derive_toolpath(file_id: int) -> Outcome:
+def _derive_toolpath(
+    file_id: int, *, execution: JobExecution | None = None
+) -> Outcome:
     """A converted ASCII toolpath for a binary G-code Artifact."""
     from app.modules.media import toolpath
 
-    begun = _begin(file_id, JobKind.DERIVATIVES_TOOLPATH)
+    begun = _begin(file_id, JobKind.DERIVATIVES_TOOLPATH, execution=execution)
     if begun is None:
         return Outcome({})
-    file_row, needed = begun
+    file_row, attempts = begun
+    needed = attempts.keys()
     recipe = group(JobKind.DERIVATIVES_TOOLPATH).kinds[DerivativeKind.TOOLPATH]
     if DerivativeKind.TOOLPATH not in needed:
         return Outcome({})
@@ -538,25 +518,23 @@ def _derive_toolpath(file_id: int) -> Outcome:
                 "not_found",
             }
             _fail(
-                file_id,
-                DerivativeKind.TOOLPATH,
-                recipe,
+                attempts[DerivativeKind.TOOLPATH],
                 exc.code,
                 deterministic=deterministic,
             )
             return Outcome({DerivativeKind.TOOLPATH: DerivativeState.FAILED})
         except ArtifactContentError:
             _fail(
-                file_id,
-                DerivativeKind.TOOLPATH,
-                recipe,
+                attempts[DerivativeKind.TOOLPATH],
                 "invalid_source",
                 deterministic=False,
             )
             return Outcome({DerivativeKind.TOOLPATH: DerivativeState.FAILED})
         backend = get_backend()
         key = backend.blob_key(
-            "_derivatives", 0, f"{file_row.sha256}-toolpath-r{recipe}.gcode"
+            "_derivatives",
+            0,
+            f"{file_row.sha256}-toolpath-r{recipe}-{attempts[DerivativeKind.TOOLPATH].token}.gcode",
         )
         with get_session_factory().scoped_session() as session:
             receipt = publish_file(
@@ -570,7 +548,7 @@ def _derive_toolpath(file_id: int) -> Outcome:
             )
             records.mark_ready(
                 session,
-                _row(session, file_id, DerivativeKind.TOOLPATH, recipe),
+                attempts[DerivativeKind.TOOLPATH],
                 now=utcnow(),
                 storage_key=receipt.key,
                 output={"size": receipt.size},
@@ -581,8 +559,13 @@ def _derive_toolpath(file_id: int) -> Outcome:
 
 
 def _announced(produce):
-    def run(file_id: int) -> Outcome:
-        outcome = produce(file_id)
+    def run(file_id: int, *, execution: JobExecution | None = None) -> Outcome:
+        try:
+            outcome = produce(file_id, execution=execution)
+        except records.AttemptSuperseded:
+            # A newer intent owns the row. The scoped session rolled back all
+            # output SQL, retaining durable byte receipts for reconciliation.
+            return Outcome({})
         if outcome.kinds:
             with get_session_factory().scoped_session() as session:
                 file_row = session.get(File, file_id)

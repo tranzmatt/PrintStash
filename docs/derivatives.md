@@ -15,6 +15,7 @@ renderer crash never loses an upload.
 | `file_id`, `kind`, `recipe_version` | Unique together; a row at an older recipe does not count |
 | `state` | `running`, `ready`, `skipped`, `failed` or `cancelled` |
 | `attempts`, `next_attempt_at`, `failure_reason` | Retry bookkeeping |
+| `attempt_token` | Unique publication authority while the attempt is running |
 | `storage_key`, `output_json` | Where the output lives and a small summary |
 | `duration_ms`, `peak_rss_bytes` | What producing it cost |
 
@@ -146,3 +147,40 @@ After commit, the event publisher emits a payload-free `derivative_policy`
 notice on the authenticated `derivatives:policy` channel. Views refetch through
 their authorized endpoints. Periodic reconciliation recovers lost notices or
 nudges.
+
+
+## Attempt publication
+
+Every producer captures an immutable attempt token with its Artifact source,
+recipe and regeneration marker. Completion checks that authority inside the
+same transaction that publishes metadata, material requirements or thumbnail
+pointers. Cancellation, retry, regeneration, trash and source replacement cannot
+be overwritten by a late result, including a late failure or skipped outcome.
+Job executions also retain their Job attempt identity; stale progress and engine
+settlement cannot change a retry or run its failure and staging cleanup hooks.
+
+Publication locks the Job (when present), generation policy, Model, Artifact and
+derivative in that order. PostgreSQL publishers share the generation policy lock;
+regeneration takes it exclusively. SQLite reserves its writer before reading.
+These short transactions contain no renderer, parser or storage publication I/O.
+Byte outputs are created first under an attempt-specific immutable key with the
+normal durable ownership receipt. Rejection rolls back the domain pointers and
+ownership promotion; the exact pending receipt remains for orphan reconciliation.
+An uncertain commit never authorizes deleting an output by pathname.
+
+A regeneration makes an older in-flight derivative discoverable immediately. The
+existing active-Job uniqueness rule still prevents overlapping Jobs for the same
+producer and Artifact; after the old execution settles, discovery starts the new
+attempt. Earlier kinds that already committed still notify Model viewers if a
+later kind is superseded. Fingerprints carry the original source hash into their
+separate content-and-algorithm-versioned publication contract.
+
+The attempt-token migration preserves existing outputs and retry history. Legacy
+running attempts cannot prove ownership, so they become retryable interrupted
+attempts without charging that interrupted attempt against their retry limit.
+
+The optional similarity cache is keyed by source SHA and algorithm version.
+A retired execution may supply that immutable evidence, but cannot overwrite a
+ready entry or relabel an old result with the current Artifact's SHA. Creating
+a similarity run additionally requires the originating Job's current epoch and
+attempt under the Job lock; cancellation/retry therefore creates no new work.

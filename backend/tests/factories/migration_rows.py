@@ -361,3 +361,30 @@ def create_pre_derivative_controls_schema(connection) -> None:
     ):
         config._columns.remove(config.c[column])
     metadata.create_all(connection)
+
+
+def create_pre_derivative_attempt_schema(connection) -> None:
+    """The previous schema, without execution ownership on derivative rows."""
+    from sqlmodel import SQLModel
+
+    metadata = MetaData(naming_convention=SQLModel.metadata.naming_convention)
+    for table in SQLModel.metadata.tables.values():
+        table.to_metadata(metadata)
+    derivatives = metadata.tables["artifact_derivatives"]
+    derivatives._columns.remove(derivatives.c.attempt_token)
+    constraint = next(
+        c
+        for c in derivatives.constraints
+        if c.name == "ck_artifact_derivatives_attempt_token_iff_running"
+    )
+    derivatives.constraints.remove(constraint)
+    jobs = metadata.tables["jobs"]
+    for name in ("execution_epoch", "submitted_epoch"):
+        jobs._columns.remove(jobs.c[name])
+    for constraint in list(jobs.constraints):
+        if constraint.name in {
+            "ck_jobs_execution_epoch_present",
+            "ck_jobs_submitted_epoch_present",
+        }:
+            jobs.constraints.remove(constraint)
+    metadata.create_all(connection)

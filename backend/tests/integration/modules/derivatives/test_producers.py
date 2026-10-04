@@ -71,7 +71,9 @@ class FingerprintSink:
     def extraction_options(self, _sessions):
         return {"include_fingerprint": True}
 
-    def after_commit(self, _sessions, file_id, _actor_id, _result):
+    def after_commit(
+        self, _sessions, file_id, _actor_id, _result, *, source_sha256, execution=None
+    ):
         if self.broken:
             raise RuntimeError("similarity store unavailable")
         self.received.append(file_id)
@@ -801,3 +803,158 @@ class TestMeshCancellation:
             producers.derive_mesh(healthy.id).kinds[DerivativeKind.METADATA]
             is DerivativeState.READY
         )
+
+
+class TestAttemptPublication:
+    def test_cancelled_thumbnail_keeps_unpublished_bytes_receipted(
+        self, db_session, stored
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("cancel.gcode", content.gcode())
+        file, attempts = producers._begin(artifact.id, JobKind.DERIVATIVES_GCODE)
+        records.cancel(
+            db_session, artifact, group(JobKind.DERIVATIVES_GCODE).kinds, now=utcnow()
+        )
+        db_session.commit()
+
+        with pytest.raises(records.AttemptSuperseded):
+            producers._publish_thumbnail(
+                file,
+                content.png(),
+                attempt=attempts[DerivativeKind.THUMBNAIL],
+                normalize=False,
+                strategy="embedded",
+                complete=True,
+            )
+
+        db_session.expire_all()
+        assert db_session.get(File, artifact.id).thumbnail_path is None
+        assert db_session.get(Model, artifact.model_id).thumbnail_path is None
+        receipt = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "thumbnail"
+            )
+        ).one()
+        assert receipt.state is StorageObjectState.PENDING
+        assert get_backend().exists(receipt.key)
+        assert receipt.token is not None
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.THUMBNAIL].state
+            is DerivativeState.CANCELLED
+        )
+
+    def test_cancelled_metadata_does_not_publish_slicer_facts(
+        self, db_session, stored, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("cancel.gcode", content.gcode())
+        backend = get_backend()
+        original = backend.local_path
+
+        @contextmanager
+        def cancelled_read(key):
+            with original(key) as path:
+                yield path
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_GCODE).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+
+        monkeypatch.setattr(backend, "local_path", cancelled_read)
+
+        assert producers.derive_gcode(artifact.id).kinds == {}
+
+        db_session.expire_all()
+        assert (
+            db_session.exec(
+                select(Metadata).where(Metadata.file_id == artifact.id)
+            ).first()
+            is None
+        )
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.METADATA].state
+            is DerivativeState.CANCELLED
+        )
+
+    def test_cancelled_toolpath_retains_only_pending_ownership(
+        self, db_session, stored, monkeypatch, tmp_path
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("cancel.bgcode", b"GCDE")
+
+        def converted(_file, directory):
+            output = directory / "output.gcode"
+            output.write_bytes(content.gcode())
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_TOOLPATH).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            return output
+
+        monkeypatch.setattr(toolpath, "convert", converted)
+
+        assert producers.derive_toolpath(artifact.id).kinds == {}
+
+        db_session.expire_all()
+        row = _rows(db_session, artifact.id)[DerivativeKind.TOOLPATH]
+        assert (row.state, row.storage_key) == (DerivativeState.CANCELLED, None)
+        receipt = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "toolpath"
+            )
+        ).one()
+        assert receipt.state is StorageObjectState.PENDING
+        assert get_backend().exists(receipt.key)
+
+    def test_announces_committed_metadata_when_thumbnail_is_superseded(
+        self, db_session, stored, monkeypatch, announced
+    ):
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored(
+            "spatula.gcode",
+            (FIXTURES_DIR / "real_prusa_mk4_spatula.gcode").read_bytes(),
+        )
+        backend = get_backend()
+        create = backend.create_bytes
+
+        def cancel_after_bytes(data, key):
+            receipt = create(data, key)
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_GCODE).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            return receipt
+
+        monkeypatch.setattr(backend, "create_bytes", cancel_after_bytes)
+
+        outcome = producers.derive_gcode(artifact.id)
+
+        assert outcome.kinds == {DerivativeKind.METADATA: DerivativeState.READY}
+        assert len(announced) == 1
+        assert announced[0]["kind"] == "metadata"
+        assert announced[0]["state"] == "ready"

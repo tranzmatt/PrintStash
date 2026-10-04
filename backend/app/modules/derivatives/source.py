@@ -25,7 +25,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, exists, func, not_, or_
+from sqlalchemy import and_, exists, func, not_, or_, true
 from sqlmodel import Session, col, select
 
 from app.core.config import settings
@@ -76,6 +76,9 @@ def _satisfied(
                     [DerivativeState.QUEUED.value, DerivativeState.RUNNING.value]
                 ),
                 col(d.updated_at) > now - STALE_IN_FLIGHT,
+                true()
+                if regenerated_at is None
+                else col(d.updated_at) >= regenerated_at,
             ),
         ),
     )

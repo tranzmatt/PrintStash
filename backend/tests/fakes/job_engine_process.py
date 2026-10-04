@@ -267,7 +267,7 @@ def _diagnostics() -> dict:
 
     with get_session_factory().scoped_session() as session:
         jobs = session.exec(select(Job)).all()
-        ids = [execution_id(job.id, job.attempts) for job in jobs if job.attempts]
+        ids = [execution_id(job.id, job.attempts, job.execution_epoch) for job in jobs if job.attempts]
         evidence = get_engine().evidence(ids) if ids else {}
         return {
             "jobs": [
