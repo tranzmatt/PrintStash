@@ -52,6 +52,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+
+- Bounded STL previews report whether all source triangles are represented independently from a complete source scan. Mesh processing now uses separate admission, loading, measurement and preview owners with validated geometry and fingerprint contracts.
 - Mesh workers reject unknown or malformed fingerprint result states before publication.
 - Capture and similarity commands keep the API event loop responsive through database writes, background-engine notification and response projection.
 - Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.

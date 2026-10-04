@@ -14,30 +14,29 @@ from pathlib import Path
 
 from printstash_core.mesh.similarity import GeometryError
 
-from app.modules.media import mesh_processing
+from app.modules.media import mesh_policy
 from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError, read_spec
+from app.modules.media.mesh_loading import load_step_mesh, to_stl_bytes
 from app.modules.media.mesh_resources import load_3mf
 from app.modules.media.stl_isolation import FAILURE_MAGIC, encode_reply
 
 
 def convert(path: Path, file_type: str | None) -> bytes | None:
     """Preserve resource refusal reasons instead of collapsing them into no output."""
-    file_type = mesh_processing._canonical_suffix(path, file_type).lstrip(".")
-    if mesh_processing._exceeds_cap(path, file_type=file_type):
+    file_type = mesh_policy.canonical_suffix(path, file_type).lstrip(".")
+    if mesh_policy.exceeds_cap(path, file_type=file_type):
         raise MeshWorkerError(ThumbnailFailureReason.RESOURCE_LIMIT)
     if file_type not in {"3mf", "step", "stp"}:
-        return mesh_processing.to_stl_bytes(path, file_type=file_type)
-    with mesh_processing._render_semaphore():
+        return to_stl_bytes(path, file_type=file_type)
+    with mesh_policy.render_admission():
         try:
             mesh = (
                 load_3mf(
-                    path, max_faces=mesh_processing._load_face_budget(".3mf")
+                    path, max_faces=mesh_policy.load_face_budget(".3mf")
                 ).whole_mesh
                 if file_type == "3mf"
-                else mesh_processing._load_step_mesh_isolated(
-                    path, strict_failures=True
-                )
+                else load_step_mesh(path, strict_failures=True)
             )
         except GeometryError as exc:
             reason = (

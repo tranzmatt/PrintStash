@@ -43,7 +43,11 @@ from app.modules.ingestion import extensions
 from app.modules.library.volume_metadata import apply_volume, read_volume
 from app.modules.media import mesh_isolation, toolpath
 from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
     GeometryReady,
+    MeshCoverage,
+    PreviewCoverage,
+    SourceScanState,
     ThumbnailResult,
     ThumbnailStrategy,
 )
@@ -89,7 +93,9 @@ def stale_mesh_measurement_reply() -> ThumbnailResult:
         geometry_outcome=GeometryReady(),
         volume=VolumeMeasured(2.0),
         strategy=ThumbnailStrategy.NONE,
-        complete=True,
+        coverage=MeshCoverage(
+            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.COMPLETE
+        ),
         failure_reason=None,
         duration_ms=1,
         peak_rss_bytes=None,
@@ -126,6 +132,50 @@ def _rows(session: Session, file_id: int) -> dict[str, ArtifactDerivative]:
 
 
 class TestDeriveMesh:
+    @pytest.mark.parametrize(
+        "preview, expected_complete",
+        [
+            (PreviewCoverage.COMPLETE, True),
+            (PreviewCoverage.PARTIAL, False),
+            (PreviewCoverage.DOCUMENT_SUPPLIED, True),
+        ],
+    )
+    def test_publishes_preview_completeness_independently_of_source_scan(
+        self, db_session, stored, monkeypatch, preview, expected_complete
+    ):
+        artifact = stored("preview.stl", content.binary_stl())
+        from printstash_core.mesh.measurements import (
+            VolumeNotCalculated,
+            VolumeNotCalculatedCause,
+        )
+
+        reply = ThumbnailResult(
+            image=content.png(),
+            geometry={"volume_mm3": None},
+            geometry_outcome=GeometryReady(),
+            volume=VolumeNotCalculated(VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED),
+            strategy=(
+                ThumbnailStrategy.EMBEDDED
+                if preview is PreviewCoverage.DOCUMENT_SUPPLIED
+                else ThumbnailStrategy.FALLBACK
+            ),
+            coverage=MeshCoverage(
+                SourceScanState.COMPLETE, GeometryNotLoaded(), preview
+            ),
+            failure_reason=None,
+            duration_ms=1,
+            peak_rss_bytes=None,
+        )
+        monkeypatch.setattr(mesh_isolation, "generate", lambda request: reply)
+
+        result = producers.derive_mesh(artifact.id)
+
+        assert result.kinds[DerivativeKind.THUMBNAIL] is DerivativeState.READY
+        row = _rows(db_session, artifact.id)[DerivativeKind.THUMBNAIL]
+        assert json.loads(row.output_json)["complete"] is expected_complete
+        db_session.refresh(artifact)
+        assert get_backend().exists(artifact.thumbnail_path)
+
     @pytest.mark.parametrize("failure_code", ["geometry_work_limit", "resource_limit"])
     def test_replaces_terminal_fingerprint_cap_refusals(
         self,
@@ -1038,7 +1088,12 @@ class TestAttemptPublication:
         )
 
     def test_cancelled_mesh_metadata_preserves_published_volume(
-        self, db_session, stored, make_metadata, make_derivative, monkeypatch,
+        self,
+        db_session,
+        stored,
+        make_metadata,
+        make_derivative,
+        monkeypatch,
         stale_mesh_measurement_reply,
     ):
         from app.core.time import utcnow
@@ -1053,7 +1108,10 @@ class TestAttemptPublication:
 
         def cancelled_measurement(_request):
             records.cancel(
-                db_session, artifact, group(JobKind.DERIVATIVES_MESH).kinds, now=utcnow()
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_MESH).kinds,
+                now=utcnow(),
             )
             db_session.commit()
             return stale_mesh_measurement_reply
@@ -1065,16 +1123,28 @@ class TestAttemptPublication:
         db_session.refresh(metadata)
         assert outcome.kinds == {}
         assert read_volume(metadata) == published
-        assert _rows(db_session, artifact.id)[DerivativeKind.METADATA].state is DerivativeState.CANCELLED
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.METADATA].state
+            is DerivativeState.CANCELLED
+        )
 
     @pytest.mark.parametrize(
         "replacement",
-        [VolumeMeasured(1e-9), VolumeUnavailable(VolumeUnavailableCause.NOT_WATERTIGHT)],
+        [
+            VolumeMeasured(1e-9),
+            VolumeUnavailable(VolumeUnavailableCause.NOT_WATERTIGHT),
+        ],
         ids=["small-measured-volume", "unavailable-volume"],
     )
     def test_superseded_mesh_metadata_preserves_replacement_volume(
-        self, db_session, stored, make_metadata, make_derivative, monkeypatch,
-        stale_mesh_measurement_reply, replacement,
+        self,
+        db_session,
+        stored,
+        make_metadata,
+        make_derivative,
+        monkeypatch,
+        stale_mesh_measurement_reply,
+        replacement,
     ):
         from app.core.time import utcnow
         from app.modules.derivatives import records
@@ -1087,11 +1157,18 @@ class TestAttemptPublication:
 
         def superseded_measurement(_request):
             records.cancel(
-                db_session, artifact, group(JobKind.DERIVATIVES_MESH).kinds, now=utcnow()
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_MESH).kinds,
+                now=utcnow(),
             )
             db_session.commit()
             fresh = records.begin(
-                db_session, artifact, DerivativeKind.METADATA, kinds.MESH_GEOMETRY_RECIPE, now=utcnow()
+                db_session,
+                artifact,
+                DerivativeKind.METADATA,
+                kinds.MESH_GEOMETRY_RECIPE,
+                now=utcnow(),
             )
             attempt = records.attempt(db_session, artifact, fresh)
             records.mark_ready(db_session, attempt, now=utcnow())
@@ -1107,10 +1184,18 @@ class TestAttemptPublication:
         db_session.refresh(metadata)
         assert outcome.kinds == {}
         assert read_volume(metadata) == replacement
-        assert _rows(db_session, artifact.id)[DerivativeKind.METADATA].state is DerivativeState.READY
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.METADATA].state
+            is DerivativeState.READY
+        )
 
     def test_replaced_mesh_source_preserves_published_volume(
-        self, db_session, stored, make_metadata, make_derivative, monkeypatch,
+        self,
+        db_session,
+        stored,
+        make_metadata,
+        make_derivative,
+        monkeypatch,
         stale_mesh_measurement_reply,
     ):
         artifact = stored("replaced-source.stl", content.binary_stl())

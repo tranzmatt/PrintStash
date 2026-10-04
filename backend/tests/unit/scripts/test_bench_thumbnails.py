@@ -13,7 +13,11 @@ from printstash_core.mesh.measurements import (
 )
 
 from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
     GeometryNotRequested,
+    MeshCoverage,
+    PreviewCoverage,
+    SourceScanState,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailResult,
@@ -42,7 +46,9 @@ def rendered_result() -> ThumbnailResult:
         geometry_outcome=GeometryNotRequested(),
         volume=VolumeNotCalculated(VolumeNotCalculatedCause.NOT_REQUESTED),
         strategy=ThumbnailStrategy.FULL,
-        complete=True,
+        coverage=MeshCoverage(
+            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.COMPLETE
+        ),
         failure_reason=None,
         duration_ms=1,
         peak_rss_bytes=None,
@@ -78,6 +84,9 @@ class TestBenchmarkFile:
         refused = replace(
             rendered_result,
             image=None,
+            coverage=MeshCoverage(
+                SourceScanState.NOT_SCANNED, GeometryNotLoaded(), PreviewCoverage.NOT_PRODUCED
+            ),
             failure_reason=ThumbnailFailureReason.INVALID_SOURCE,
             strategy=ThumbnailStrategy.NONE,
             phase_stats=(

@@ -43,6 +43,7 @@ from app.modules.media import gcode_parser, mesh_isolation, stl_isolation, thumb
 from app.modules.media.mesh_contracts import (
     GeometryReady,
     GeometryRefused,
+    PreviewCoverage,
     ThumbnailFailureReason,
     ThumbnailRequest,
 )
@@ -377,7 +378,8 @@ def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outc
                     attempt=attempts[DerivativeKind.THUMBNAIL],
                     normalize=True,
                     strategy=result.strategy.value,
-                    complete=result.complete,
+                    complete=result.coverage.preview
+                    in (PreviewCoverage.COMPLETE, PreviewCoverage.DOCUMENT_SUPPLIED),
                     duration_ms=duration_ms,
                     peak_rss_bytes=result.peak_rss_bytes,
                 )

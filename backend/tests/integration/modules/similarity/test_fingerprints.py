@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 import pytest
+from printstash_core.mesh.similarity.components import ExpandedScene
 from sqlmodel import Session, select
 
 from app.core.time import utcnow
@@ -12,7 +13,8 @@ from app.modules.media.fingerprints import (
     FingerprintResultState,
     extract,
 )
-from app.modules.media.mesh_resources import prepare_loaded_mesh
+from app.modules.media.mesh_facts import FingerprintFailureCode, SampledGeometry
+from app.modules.media.mesh_resources import PreparedMesh, prepare_loaded_mesh
 from app.modules.similarity import fingerprints
 from tests.factories.geometry import tetrahedron
 
@@ -136,9 +138,21 @@ class TestFingerprintLeases:
     ):
         file = make_file(make_model())
         claimed = fingerprints.claim(db_session, file)
-        failed = FingerprintResult(
-            FingerprintResultState(state), failure_code="invalid_source"
+        failed = (
+            extract(
+                PreparedMesh(
+                    tetrahedron(),
+                    ExpandedScene((), ()),
+                    SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
+                )
+            )
+            if state == "partial"
+            else FingerprintResult(
+                FingerprintResultState(state),
+                failure_code=FingerprintFailureCode.INVALID_SOURCE,
+            )
         )
+        assert failed.state.value == state
         assert fingerprints.publish(
             db_session, file, failed, fingerprint_id=claimed[0], token=claimed[1]
         )

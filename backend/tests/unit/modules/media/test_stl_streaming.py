@@ -15,7 +15,8 @@ from typing import Any
 import pytest
 
 from app.core.config import _overlay
-from app.modules.media import mesh_processing, mesh_render, stl_streaming
+from app.modules.media import mesh_loading, mesh_policy, mesh_render, stl_streaming
+from app.modules.media.mesh_contracts import PreviewCoverage
 from app.modules.media.stl_streaming import (
     STLStreamingLimits,
     STLStreamingResult,
@@ -206,7 +207,7 @@ class TestWorkerMemoryBudget:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            mesh_processing, "_step_memory_budget_bytes", lambda: 64 * 1024 * 1024
+            mesh_policy, "step_memory_budget_bytes", lambda: 64 * 1024 * 1024
         )
 
         assert stl_streaming._worker_memory_budget() == 64 * 1024 * 1024
@@ -214,7 +215,7 @@ class TestWorkerMemoryBudget:
     def test_never_goes_below_a_floor_a_render_can_work_in(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(mesh_processing, "_step_memory_budget_bytes", lambda: 1)
+        monkeypatch.setattr(mesh_policy, "step_memory_budget_bytes", lambda: 1)
 
         # A budget below this cannot load Pillow, so the worker would die on
         # every file rather than on large ones.
@@ -223,7 +224,7 @@ class TestWorkerMemoryBudget:
     def test_falls_back_when_there_is_no_shared_budget(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(mesh_processing, "_step_memory_budget_bytes", lambda: None)
+        monkeypatch.setattr(mesh_policy, "step_memory_budget_bytes", lambda: None)
 
         assert stl_streaming._worker_memory_budget() > 0
 
@@ -701,10 +702,10 @@ class TestRenderStlPreviewIsolated:
     endfacet
     """
         path.write_text("solid ascii\n" + facet * 2 + "endsolid ascii\n")
-        monkeypatch.setattr(mesh_processing, "_exceeds_cap", lambda _path: True)
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda _path: True)
         monkeypatch.setattr(
-            mesh_processing,
-            "_load_mesh",
+            mesh_loading,
+            "load_mesh",
             lambda _path: (_ for _ in ()).throw(AssertionError("must not load")),
         )
 
@@ -712,7 +713,7 @@ class TestRenderStlPreviewIsolated:
         geometry = result.geometry
 
         assert is_partial_render(result)
-        assert result.complete is True
+        assert result.coverage.preview is PreviewCoverage.COMPLETE
         assert geometry["triangle_count"] == 2
 
     @pytest.mark.parametrize(
@@ -1092,7 +1093,7 @@ class TestMeshProcessing:
         geometry = result.geometry
 
         assert is_partial_render(result)
-        assert result.complete is True
+        assert result.coverage.preview is PreviewCoverage.COMPLETE
         assert geometry["triangle_count"] == 12
 
 
@@ -1137,8 +1138,8 @@ class TestRender:
         _binary_triangle_stl(path)
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1_000)
         monkeypatch.setattr(
-            mesh_processing,
-            "_load_mesh",
+            mesh_loading,
+            "load_mesh",
             lambda _path: SimpleNamespace(
                 vertices=np.zeros((3, 3)),
                 bounds=np.array([[0.0, 0.0, 0.0], [4.0, 3.0, 0.0]]),
@@ -1157,7 +1158,7 @@ class TestRender:
         result = analyze(path, width=96, height=72)
 
         assert is_partial_render(result)
-        assert result.complete is True
+        assert result.coverage.preview is PreviewCoverage.COMPLETE
 
 
 class TestDecode:
