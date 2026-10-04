@@ -23,6 +23,16 @@ def manifest():
 
 
 class TestLocalModelManifest:
+    def test_invalidates_vectors_from_the_unfiltered_vertex_recipe(self, manifest):
+        current = manifest.space()
+        previous_recipe = json.loads(current.render_recipe)
+        previous_recipe["rasterizer"] = "relative-f64-v1"
+        previous = replace(
+            current, render_recipe=json.dumps(previous_recipe, sort_keys=True)
+        )
+
+        assert current.config_hash != previous.config_hash
+
     def test_invalidates_vectors_from_the_world_float32_recipe(self, manifest):
         previous_recipe = json.dumps(
             {
