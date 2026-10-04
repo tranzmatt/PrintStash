@@ -13,6 +13,7 @@ from printstash_core.mesh.measurements import (
     VolumeUnavailableCause,
     decode_volume,
     encode_volume,
+    volume_value,
 )
 
 
@@ -55,7 +56,19 @@ class TestVolumeLegacyUnassessed:
         assert result.value_mm3 == value
 
 
+class TestVolumeValue:
+    @pytest.mark.parametrize("volume", [None, "measured", 1], ids=str)
+    def test_rejects_invalid_volume_measurement(self, volume):
+        with pytest.raises(TypeError, match="invalid volume measurement"):
+            volume_value(volume)
+
+
 class TestVolumeWire:
+    @pytest.mark.parametrize("volume", [None, "measured", 1], ids=str)
+    def test_rejects_invalid_volume_measurement(self, volume):
+        with pytest.raises(TypeError, match="invalid volume measurement"):
+            encode_volume(volume)
+
     @pytest.mark.parametrize(
         "volume",
         [

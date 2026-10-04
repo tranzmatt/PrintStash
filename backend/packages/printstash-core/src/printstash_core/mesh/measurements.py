@@ -1,7 +1,8 @@
 """Closed evidence for a mesh volume, independent of similarity fingerprints.
 
 All values use cubic millimetres. Unassessed geometry is distinct from an
-integral rejected by the metadata orientation/topology policy.
+integral rejected by the metadata orientation/topology policy. Runtime guards
+view typed inputs as objects where needed to reject callers that bypass typing.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import ClassVar
+from typing import ClassVar, cast
 
 
 class VolumeState(StrEnum):
@@ -68,7 +69,7 @@ class VolumeUnavailable:
     state: ClassVar[VolumeState] = VolumeState.UNAVAILABLE
 
     def __post_init__(self) -> None:
-        if not isinstance(self.cause, VolumeUnavailableCause):
+        if not isinstance(cast(object, self.cause), VolumeUnavailableCause):
             raise ValueError("invalid unavailable volume cause")
 
 
@@ -78,7 +79,7 @@ class VolumeNotCalculated:
     state: ClassVar[VolumeState] = VolumeState.NOT_CALCULATED
 
     def __post_init__(self) -> None:
-        if not isinstance(self.cause, VolumeNotCalculatedCause):
+        if not isinstance(cast(object, self.cause), VolumeNotCalculatedCause):
             raise ValueError("invalid not calculated volume cause")
 
 
@@ -107,7 +108,7 @@ VolumeMeasurement = (
 def volume_value(volume: VolumeMeasurement) -> float | None:
     if isinstance(volume, (VolumeMeasured, VolumeLegacyUnassessed)):
         return volume.value_mm3
-    if isinstance(volume, (VolumeUnavailable, VolumeNotCalculated)):
+    if isinstance(cast(object, volume), (VolumeUnavailable, VolumeNotCalculated)):
         return None
     raise TypeError("invalid volume measurement")
 
@@ -115,7 +116,9 @@ def volume_value(volume: VolumeMeasurement) -> float | None:
 def encode_volume(volume: VolumeMeasurement) -> dict[str, object]:
     if isinstance(volume, (VolumeMeasured, VolumeUnavailable)):
         method = VolumeMethod.MESH_SURFACE_INTEGRAL.value
-    elif isinstance(volume, (VolumeNotCalculated, VolumeLegacyUnassessed)):
+    elif isinstance(
+        cast(object, volume), (VolumeNotCalculated, VolumeLegacyUnassessed)
+    ):
         method = None
     else:
         raise TypeError("invalid volume measurement")

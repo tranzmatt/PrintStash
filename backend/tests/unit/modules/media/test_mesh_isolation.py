@@ -659,7 +659,15 @@ class TestGeometryOutcome:
         from app.modules.media.mesh_contracts import GeometryRefused
 
         result = _result(
-            geometry_outcome=GeometryRefused(ThumbnailFailureReason.RESOURCE_LIMIT)
+            geometry_outcome=GeometryRefused(ThumbnailFailureReason.RESOURCE_LIMIT),
+            volume=VolumeNotCalculated(VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE),
+            geometry={
+                "bbox_x_mm": None,
+                "bbox_y_mm": None,
+                "bbox_z_mm": None,
+                "volume_mm3": None,
+                "triangle_count": None,
+            },
         )
         assert (
             decode_reply(encode_reply(result)).geometry_outcome
