@@ -49,10 +49,12 @@ reason for unchanged bytes and recipe; repeated viewer requests do not restart
 conversion. Explicit retry or a new recipe can make work eligible again.
 
 The 3MF capability policy introduced interpretation cache version
-`geometry-v5-sh5f4577c4`; shared STL validation advances the current version to
-`geometry-v6-sh5f4577c4`. Previous fingerprints, candidate observations and human
-review decisions remain historical
-evidence. Candidates interpreted under an earlier version are stale and cannot
+`geometry-v5-sh5f4577c4`; shared STL validation introduced
+`geometry-v6-sh5f4577c4`, followed by the retained-scene eligibility policy.
+[Current recipe identities](derivatives.md#retained-3mf-measurements-and-previews)
+are recorded with the derivative contracts. Previous fingerprints, candidate
+observations and human review decisions remain historical evidence. Candidates interpreted under an earlier version
+are stale and cannot
 be confirmed or used to create a multipart Model; current-result filters exclude
 them. The mathematical fingerprint descriptors and SH basis are unchanged.
 

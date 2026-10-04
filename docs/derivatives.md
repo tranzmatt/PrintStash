@@ -155,8 +155,9 @@ than computing a Boolean union.
 Resources that need global welding produce an explicit topology decision. The
 engine attempts whole-scene materialization once within the load budget. If that
 evaluation cannot run within its budget, exact dimensions and counts remain
-available with volume not calculated and cause `topology_not_evaluated`. Unexpected failures confined to
-volume calculation retain the dimensions/counts with `measurement_failed`.
+available with volume not calculated and cause `topology_not_evaluated`.
+Unexpected failures confined to volume calculation retain the dimensions/counts
+with `measurement_failed`.
 Optional fingerprint admission uses the placed face count and can refuse analysis
 without withdrawing those measurements or a usable preview.
 
