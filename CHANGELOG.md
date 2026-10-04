@@ -40,6 +40,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Fixed
 - Active mesh workers can release their render admission while a queued worker checks durable cancellation state.
+- Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.
 - Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
 - Small meshes placed far from the coordinate origin retain their thumbnail
   geometry and shading. Visual recipes now refresh previews, view fingerprints,
@@ -59,6 +60,10 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Browser-local upload queues recover as interrupted after a reload, so stale
   tasks can be cleared. Resumable uploads retain their recovery controls, and
   queued browser work now asks users to keep the tab open (#336).
+- 3D viewer conversions run as durable, on-demand Jobs. Requests share preparation
+  and retain failure reasons; memory refusals show a clear message while original
+  downloads and slicer handoff stay available. Hovering a model card no longer
+  starts a mesh conversion (#259).
 - Containers start with read-only Library source mounts beneath `/data`. Startup
   ownership repair is limited to app-owned directories and preserves external
   sources, including bind mounts on the same filesystem (#330).

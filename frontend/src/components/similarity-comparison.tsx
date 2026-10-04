@@ -218,6 +218,7 @@ export function SimilarityComparison({
                 >
                   <STLViewer
                     url={getAssetUrl(`/api/v1/files/${file.id}/stl`)}
+                    modelId={modelRefs[index].id}
                     comparison={index === 0 ? left : right}
                     comparisonCamera={camera}
                     showGrid={false}

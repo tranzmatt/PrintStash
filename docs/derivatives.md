@@ -75,6 +75,15 @@ recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4` distinguish the new
 pixels from earlier cached evidence. Search visual recipe 2 and the derived
 embedding-space rasterizer token `relative-f64-v1` invalidate earlier rendered
 inputs and vectors. Encoder asset manifests and their digests are unchanged.
+Native encoder alignment has its own stable `encoder_space()` identity. Point
+exports and search visual profiles use that identity to pair image/text towers;
+a renderer update never requires rewriting preplaced Point manifests. Legacy
+mesh-view inference uses `space()`, whose identity includes the rasterizer.
+Thumbnail and multiview search vectors additionally carry their `VisualRecipe`,
+so changed rendered inputs cannot reuse older derived vectors. Rebuild a search
+generation after its rendering recipe changes; an incompatible generation is
+not silently relabelled or reused.
+
 Historical verifier calibration remains tied to its original fingerprint and
 verification versions; it is not relabelled as a new measurement.
 
@@ -154,6 +163,30 @@ and restarts for the same bytes and recipe. Explicit retry, changed content or a
 new recipe makes work eligible; timeout backoff keeps the configured maximum.
 Original downloads and signed slicer downloads continue to use Artifact bytes.
 
+
+## On-demand 3D viewer STL
+
+`viewer_stl` recipe 1 is produced by `derivatives.viewer_stl` in `derive.native`.
+Only 3MF, OBJ and STEP Artifacts with `files.viewer_requested_at` set are eligible;
+uploads, scans and card hover do not request conversion. The first authorized
+`GET /api/v1/files/{id}/stl` (or the scoped share endpoint) persists this demand
+and nudges the source. Reconciliation recovers it after a lost nudge or restart.
+The active-Subject constraint shares work across requests.
+
+Original STL is served directly. Other formats return 202 with `DerivativeRead`
+and `Retry-After: 1` until publication, 200 with the stored representation when
+ready, or 422 with the recorded failure `detail`. Preparation responses use
+`private, no-store`. Resource and invalid-input refusals are terminal for the
+recipe; timeouts/storage failures use bounded derivative backoff. Explicit retry
+uses the existing derivative retry endpoint. Mesh processing policy gates new
+work; published previews remain readable while disabled.
+
+Ready STL objects use immutable owned publication and `storage_key`, so backup,
+Vault migration and trash retain their existing ownership contracts. A missing
+published object becomes eligible for repair. Legacy STL caches are regenerated
+once on access. Original downloads and signed slicer handoff never depend on STL
+preparation. The browser waits for STL bytes, displays persisted failures, and
+refreshes authenticated previews after derivative completion or policy changes.
 
 ## Live processing policy
 

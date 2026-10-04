@@ -519,13 +519,15 @@ def native_memory_budget_bytes() -> int:
     )
 
 
-def _load_step_mesh_isolated(path: Path, *, include_brep: bool = False):
+def _load_step_mesh_isolated(
+    path: Path, *, include_brep: bool = False, strict_failures: bool = False
+):
     """Tessellate unknown-complexity STEP in a monitored child process (#72)."""
 
     import trimesh
 
     static_cap = int(settings.mesh_max_render_triangles)
-    if include_brep:
+    if include_brep or strict_failures:
         static_cap = min(static_cap, MAX_ANALYSIS_FACES)
     ram_cap = _ram_triangle_cap(path.suffix.lower())
     triangle_limit = min(static_cap, ram_cap) if ram_cap is not None else static_cap
@@ -602,7 +604,7 @@ def _load_step_mesh_isolated(path: Path, *, include_brep: bool = False):
             _stdout, stderr = process.communicate()
             returncode = process.returncode
         if failure or returncode != 0 or not output.is_file():
-            if include_brep:
+            if include_brep or strict_failures:
                 from printstash_core.mesh.similarity import GeometryError
 
                 raise GeometryError(
@@ -644,6 +646,8 @@ def _load_step_mesh_isolated(path: Path, *, include_brep: bool = False):
             return loaded
         try:
             loaded = trimesh.load_mesh(str(output), process=False)
+        except MemoryError:
+            raise
         except Exception:
             logger.warning(
                 "mesh_processing: failed to load isolated STEP result for %s",
@@ -1017,6 +1021,8 @@ def to_stl_bytes(path: Path, *, file_type: str | None = None) -> Optional[bytes]
             out = io.BytesIO()
             mesh.export(out, file_type="stl")
             return out.getvalue()
+        except MemoryError:
+            raise
         except Exception:
             logger.warning(
                 "mesh_processing: STL export failed for %s", path.name, exc_info=True
