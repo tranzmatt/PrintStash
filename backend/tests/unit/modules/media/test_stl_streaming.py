@@ -577,14 +577,6 @@ class TestRenderStlPreviewIsolated:
 
         path = tmp_path / "direct-resolution.stl"
         _binary_triangle_stl(path)
-        reservoir = stl_preview_worker._FramingReservoir()
-
-        def collect(vertices: object) -> None:
-            import numpy as np
-
-            values = np.asarray(vertices)
-            reservoir.add(values.mean(axis=1))
-
         limits = stl_preview_worker._Limits(
             max_triangles=1_000,
             max_source_bytes=1_000_000,
@@ -594,7 +586,7 @@ class TestRenderStlPreviewIsolated:
             max_line_bytes=64 * 1024,
             deadline=time.monotonic() + 5,
         )
-        first = stl_preview_worker._read_pass(path, limits, collect)
+        first = stl_preview_worker._read_pass(path, limits, lambda _vertices: None)
         observed: list[tuple[tuple[int, ...], tuple[int, ...], int, int]] = []
 
         def fake_rasterise(
@@ -630,7 +622,7 @@ class TestRenderStlPreviewIsolated:
         monkeypatch.setattr(mesh_render, "_rasterise_triangles", fake_rasterise)
         output = tmp_path / "direct-resolution.png"
         assert (
-            stl_preview_worker._render(path, output, 320, 240, limits, first, reservoir)
+            stl_preview_worker._render(path, output, 320, 240, limits, first)
             > 0
         )
         assert observed

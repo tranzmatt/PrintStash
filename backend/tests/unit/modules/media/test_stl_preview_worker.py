@@ -28,8 +28,6 @@ import pytest
 from app.modules.media import stl_preview_worker as worker
 from tests.paths import BACKEND_DIR
 
-RESERVOIR_SIZE = 4096
-
 
 def _binary_stl(triangles: list[tuple[tuple[float, float, float], ...]]) -> bytes:
     body = b"\0" * 80 + struct.pack("<I", len(triangles))
@@ -85,36 +83,6 @@ def stl(tmp_path: Path):
         return path
 
     return write
-
-
-class TestFramingReservoir:
-    def test_keeps_every_centroid_while_there_is_room(self) -> None:
-        reservoir = worker._FramingReservoir()
-
-        reservoir.add([(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)])
-
-        assert reservoir.values == [(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)]
-        assert reservoir.seen == 2
-
-    def test_stops_growing_at_the_reservoir_size(self) -> None:
-        reservoir = worker._FramingReservoir()
-
-        reservoir.add([(float(i), 0.0, 0.0) for i in range(RESERVOIR_SIZE + 500)])
-
-        # The whole point is a bounded footprint on an unbounded file.
-        assert len(reservoir.values) == RESERVOIR_SIZE
-        assert reservoir.seen == RESERVOIR_SIZE + 500
-
-    def test_samples_the_same_way_every_run(self) -> None:
-        centroids = [(float(i), 0.0, 0.0) for i in range(RESERVOIR_SIZE * 3)]
-        first, second = worker._FramingReservoir(), worker._FramingReservoir()
-
-        first.add(centroids)
-        second.add(centroids)
-
-        # A process-global RNG would make the same file frame differently on a
-        # retry, so the sampling uses its own LCG.
-        assert first.values == second.values
 
 
 class TestCheckDeadline:
@@ -384,39 +352,26 @@ class TestReadPass:
 
 
 class TestFrame:
-    def test_frames_a_mesh_around_its_sampled_centre(self, limits) -> None:
-        reservoir = worker._FramingReservoir()
-        reservoir.add([(0.5, 0.5, 0.5), (0.4, 0.6, 0.5)])
+    def test_frames_the_exact_source_bounds(self) -> None:
+        import numpy as np
 
-        center, rotation, robust_min, robust_max, _mid, extent_x, extent_y = (
-            worker._frame((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), reservoir)
+        center, rotation, _mid, extent_x, extent_y = worker._frame(
+            (0.0, 0.0, 0.0), (101.0, 2.0, 2.0)
         )
 
+        np.testing.assert_array_equal(center, (50.5, 1.0, 1.0))
         assert rotation.shape == (3, 3)
         assert extent_x > 0 and extent_y > 0
-        assert len(center) == 3
 
-    def test_falls_back_to_the_exact_bounds_when_nothing_was_sampled(self) -> None:
-        center, _rotation, robust_min, robust_max, _mid, _x, _y = worker._frame(
-            (0.0, 0.0, 0.0), (2.0, 2.0, 2.0), worker._FramingReservoir()
+    def test_keeps_camera_coordinates_in_float64(self) -> None:
+        import numpy as np
+
+        center, rotation, projected_mid, _x, _y = worker._frame(
+            (1e9, 1e9, 1e9), (1e9 + 10, 1e9 + 10, 1e9 + 10)
         )
 
-        # An empty reservoir must still frame something rather than divide by
-        # zero: the exact bounds stand in for the samples it never got.
-        assert all(abs(value - 0.0) < 0.05 for value in robust_min)
-        assert all(abs(value - 2.0) < 0.05 for value in robust_max)
-
-    def test_widens_a_degenerate_axis_back_to_the_exact_bounds(self) -> None:
-        reservoir = worker._FramingReservoir()
-        reservoir.add([(0.5, 0.5, 0.0), (0.5, 0.5, 0.0)])
-
-        _c, _r, robust_min, robust_max, _mid, _x, _y = worker._frame(
-            (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), reservoir
-        )
-
-        # A flat sample on an axis would frame the model edge-on and render a line.
-        assert robust_min[0] == 0.0
-        assert robust_max[0] == 1.0
+        assert center.dtype == rotation.dtype == projected_mid.dtype == np.float64
+        np.testing.assert_array_equal(center, (1e9 + 5, 1e9 + 5, 1e9 + 5))
 
 
 class TestWriteManifest:

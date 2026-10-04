@@ -3,7 +3,7 @@
 This module intentionally has no FastAPI or database dependencies.  The parent
 process supplies all budgets on the command line and accepts output only when
 the worker exits successfully and writes a complete manifest.  A pass keeps
-only bounded chunk arrays and a tiny deterministic framing reservoir.
+only bounded chunk arrays and exact source bounds.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ _BINARY_HEADER_BYTES = 84
 _BINARY_RECORD_BYTES = 50
 _FLOAT32_MAX = 3.4028234663852886e38
 _WORKER_VERSION = 1
-_RESERVOIR_SIZE = 4096
 _MAX_RENDER_DIMENSION = 2048
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _MAX_TRIANGLES = 20_000_000
@@ -99,28 +98,6 @@ class _PassStats:
     scanned_bytes: int
     bounds_min: tuple[float, float, float]
     bounds_max: tuple[float, float, float]
-
-
-class _FramingReservoir:
-    """Deterministic bounded reservoir of triangle centroids."""
-
-    def __init__(self) -> None:
-        self.values: list[tuple[float, float, float]] = []
-        self.seen = 0
-        self._state = 0x9E3779B9
-
-    def add(self, centers) -> None:
-        for center in centers:
-            self.seen += 1
-            value = (float(center[0]), float(center[1]), float(center[2]))
-            if len(self.values) < _RESERVOIR_SIZE:
-                self.values.append(value)
-                continue
-            # Deterministic LCG instead of the process-global random module.
-            self._state = (1664525 * self._state + 1013904223) & 0xFFFFFFFF
-            index = self._state % self.seen
-            if index < _RESERVOIR_SIZE:
-                self.values[index] = value
 
 
 def _check_deadline(limits: _Limits) -> None:
@@ -322,18 +299,18 @@ def _read_ascii(
             if parsed >= limits.max_triangles:
                 raise _BudgetExceeded("triangle budget")
             batch.append(facet)
-            vertices = np.asarray(facet, dtype=np.float32)
+            vertices = np.asarray(facet, dtype=np.float64)
             lower = np.minimum(lower, vertices.min(axis=0))
             upper = np.maximum(upper, vertices.max(axis=0))
             parsed += 1
             if len(batch) >= max(limits.chunk_triangles, 1):
-                chunk = np.asarray(batch, dtype=np.float32)
+                chunk = np.asarray(batch, dtype=np.float64)
                 if not np.isfinite(chunk).all():
                     raise _InvalidSTL("non-finite coordinate")
                 callback(chunk)
                 batch.clear()
         if batch:
-            chunk = np.asarray(batch, dtype=np.float32)
+            chunk = np.asarray(batch, dtype=np.float64)
             if not np.isfinite(chunk).all():
                 raise _InvalidSTL("non-finite coordinate")
             callback(chunk)
@@ -360,7 +337,6 @@ def _read_pass(
 def _frame(
     bounds_min: tuple[float, float, float],
     bounds_max: tuple[float, float, float],
-    reservoir: _FramingReservoir,
 ):
     from itertools import product
 
@@ -368,37 +344,18 @@ def _frame(
 
     from app.modules.media.mesh_render import _select_view_rotation
 
-    sampled = np.asarray(reservoir.values, dtype=np.float64)
     exact_min = np.asarray(bounds_min, dtype=np.float64)
     exact_max = np.asarray(bounds_max, dtype=np.float64)
-    if sampled.ndim != 2 or sampled.shape[0] == 0:
-        sampled = np.asarray([exact_min, exact_max], dtype=np.float64)
-    # Percentiles reject a tiny number of finite outliers while preserving the
-    # exact bounds separately for metadata.
-    robust_min = np.percentile(sampled, 0.5, axis=0)
-    robust_max = np.percentile(sampled, 99.5, axis=0)
-    exact_extent = exact_max - exact_min
-    robust_extent = robust_max - robust_min
-    for axis in range(3):
-        if robust_extent[axis] <= max(exact_extent[axis] * 0.01, 1e-9):
-            robust_min[axis] = exact_min[axis]
-            robust_max[axis] = exact_max[axis]
-    center = (robust_min + robust_max) * 0.5
-    corners = np.asarray(list(product(*zip(robust_min, robust_max, strict=True))))
+    center = exact_min + (exact_max - exact_min) * 0.5
+    corners = np.asarray(
+        list(product(*zip(exact_min, exact_max, strict=True))), dtype=np.float64
+    )
     rotation = _select_view_rotation(corners - center, np)
     view_corners = (corners - center) @ rotation.T
     extent_x = max(float(np.ptp(view_corners[:, 0])), 1e-6)
     extent_y = max(float(np.ptp(view_corners[:, 1])), 1e-6)
     projected_mid = (view_corners.max(axis=0) + view_corners.min(axis=0)) * 0.5
-    return (
-        center.astype(np.float32),
-        rotation.astype(np.float32),
-        robust_min,
-        robust_max,
-        projected_mid.astype(np.float32),
-        extent_x,
-        extent_y,
-    )
+    return center, rotation, projected_mid, extent_x, extent_y
 
 
 def _render(
@@ -408,7 +365,6 @@ def _render(
     height: int,
     limits: _Limits,
     first: _PassStats,
-    reservoir: _FramingReservoir,
 ) -> int:
     import io
 
@@ -426,15 +382,12 @@ def _render(
     (
         center,
         rotation,
-        robust_min,
-        robust_max,
         projected_mid,
         extent_x,
         extent_y,
-    ) = _frame(first.bounds_min, first.bounds_max, reservoir)
-    # The robust bounds already discard only the extreme centroid outliers and
-    # the render bounds below retain a 5% safety expansion.  A 10% frame margin
-    # gives small previews useful scale without clipping normal STL geometry.
+    ) = _frame(first.bounds_min, first.bounds_max)
+    # Every finite source facet contributes to the camera bounds. The standard
+    # margin accommodates the complete scene, including small remote components.
     from printstash_core.mesh.preview_profile import PREVIEW_PROFILE
 
     margin = PREVIEW_PROFILE.margin_fraction
@@ -456,12 +409,6 @@ def _render(
     def shade(normals):
         return np.ones_like(normals, dtype=np.float32)
 
-    robust_span = np.maximum(robust_max - robust_min, 1e-6)
-    # A triangle with an extreme vertex can otherwise expand to the whole frame
-    # and consume the candidate budget. Such facets are omitted from framing,
-    # while the exact source bounds remain available in the manifest.
-    expanded_min = robust_min - robust_span * 0.05
-    expanded_max = robust_max + robust_span * 0.05
     rendered = 0
 
     def draw(vertices) -> None:
@@ -469,8 +416,9 @@ def _render(
         _check_deadline(limits)
         import numpy as np
 
-        tri = np.asarray(vertices, dtype=np.float32)
-        view = (tri - center) @ rotation.T
+        tri = np.asarray(vertices, dtype=np.float64)
+        # Source coordinates remain float64 until translation is removed.
+        view = np.asarray((tri - center) @ rotation.T, dtype=np.float32)
         screen = np.empty_like(view)
         screen[:, :, 0] = (
             view[:, :, 0] - float(projected_mid[0])
@@ -480,12 +428,8 @@ def _render(
         )
         screen[:, :, 2] = view[:, :, 2]
         valid = np.isfinite(screen).all(axis=(1, 2))
-        valid &= (tri >= expanded_min).all(axis=(1, 2)) & (tri <= expanded_max).all(
-            axis=(1, 2)
-        )
         if not valid.any():
             return
-        tri = tri[valid]
         screen = screen[valid]
         raw = np.cross(
             view[valid, :, 1] - view[valid, :, 0], view[valid, :, 2] - view[valid, :, 0]
@@ -722,12 +666,7 @@ def main(argv: list[str] | None = None, *, apply_limits: bool = True) -> int:
         source_stat = args.source.stat()
         if source_stat.st_size > limits.max_source_bytes:
             raise _BudgetExceeded("source budget")
-        reservoir = _FramingReservoir()
-
-        def collect(vertices) -> None:
-            reservoir.add(vertices.mean(axis=1))
-
-        first = _read_pass(args.source, limits, collect)
+        first = _read_pass(args.source, limits, lambda _vertices: None)
         if first.triangle_count > limits.max_triangles:
             raise _BudgetExceeded("triangle budget")
         first_after = args.source.stat()
@@ -744,7 +683,6 @@ def main(argv: list[str] | None = None, *, apply_limits: bool = True) -> int:
             args.height,
             limits,
             first,
-            reservoir,
         )
         after = args.source.stat()
         if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
