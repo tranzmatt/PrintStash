@@ -98,7 +98,8 @@ fingerprint algorithm is unchanged.
 
 ## Bounded STL measurements
 
-An STL that exceeds the full mesh/render cap can still supply exact bounding
+Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the
+full mesh/render cap can still supply exact bounding
 coordinates and facet count to a metadata-only request. The scanner reads bounded
 binary or ASCII blocks independently of thumbnail rendering, preserves ASCII
 coordinates in float64, and accepts measurements only after a complete read of a

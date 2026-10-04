@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import os
 from collections.abc import Callable
-
-import io
 from pathlib import Path
 
 import numpy as np
