@@ -16,6 +16,7 @@ from PIL import Image
 
 from app.core.config import _overlay
 from app.modules.media import mesh_isolation
+from app.modules.media.fingerprints import ALGORITHM_VERSION
 from app.modules.media.mesh_contracts import (
     ThumbnailFailureReason,
     ThumbnailRequest,
@@ -156,7 +157,7 @@ class TestGeometryMeasurements:
 
         result = mesh_isolation.generate(_request(path))
 
-        assert result.fingerprint_result.algorithm_version == "geometry-v4-sh5f4577c4"
+        assert result.fingerprint_result.algorithm_version == ALGORITHM_VERSION
         values = result.fingerprint_result.records[0].values
         assert values["hull_ratio"] == pytest.approx(1)
         assert not any(name == "hull_ratio" for name, _ in values["unavailable"])

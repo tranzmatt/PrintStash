@@ -17,16 +17,9 @@ FACETS = [
 
 class TestSTLConsumers:
     @pytest.mark.parametrize("encoding", ["binary", "solid-binary", "ascii"])
-    def test_parses_stl_variants_consistently(self, tmp_path: Path, encoding: str):
+    def test_parses_stl_variants_consistently(self, tmp_path: Path, encode_stl_facets):
         source = tmp_path / "mesh.stl"
-        body = (
-            content.ascii_stl_facets(FACETS)
-            if encoding == "ascii"
-            else content.binary_stl_facets(FACETS)
-        )
-        if encoding == "solid-binary":
-            body = b"solid" + body[5:]
-        source.write_bytes(body)
+        source.write_bytes(encode_stl_facets(FACETS))
 
         measured = scan_stl(source)
         sampled = stl_fallback.sample_stl_geometry(source, max_triangles=2)
@@ -148,45 +141,18 @@ class TestSTLConsumers:
         ],
     )
     def test_rejects_malformed_stl_consistently(
-        self, tmp_path: Path, damage: str, consumer: str
+        self, malformed_stl_source, legacy_stl_consumer
     ):
-        source = tmp_path / "damaged.stl"
-        body = content.binary_stl_facets(FACETS)
-        if damage == "truncated":
-            body = body[:-1]
-        elif damage == "count-mismatch":
-            body = body[:80] + (3).to_bytes(4, "little") + body[84:]
-        elif damage == "trailing":
-            body += b"trailing"
-        elif damage == "unsampled-nonfinite":
-            body = body[:146] + b"\x00\x00\xc0\x7f" + body[150:]
-        elif damage == "incomplete-ascii":
-            body = content.ascii_stl_facets(FACETS).replace(b"endfacet", b"", 1)
-        elif damage == "malformed-ascii":
-            body = content.ascii_stl_facets(FACETS).replace(
-                b"outer loop", b"outer wrong", 1
-            )
-        else:
-            body = content.ascii_stl_facets(FACETS).replace(b"solid", b"sol\xffid", 1)
-        source.write_bytes(body)
         with pytest.raises(InvalidSTL):
-            scan_stl(source)
-
-        if consumer == "sample":
-            assert stl_fallback.sample_stl_geometry(source, max_triangles=1) is None
-        else:
-            assert mesh_processing._load_mesh(source) is None
+            scan_stl(malformed_stl_source)
+        assert legacy_stl_consumer(malformed_stl_source) is None
 
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
     def test_certifies_source_completion_for_partial_samples(
-        self, tmp_path: Path, encoding: str
+        self, tmp_path: Path, encode_stl_facets
     ):
         source = tmp_path / "partial.stl"
-        source.write_bytes(
-            content.binary_stl_facets(FACETS)
-            if encoding == "binary"
-            else content.ascii_stl_facets(FACETS)
-        )
+        source.write_bytes(encode_stl_facets(FACETS))
 
         sampled = stl_fallback.sample_stl_geometry(source, max_triangles=1)
 
@@ -284,17 +250,17 @@ class TestSTLBudgets:
 
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
     def test_materializes_with_bounded_complete_read_passes(
-        self, tmp_path: Path, count_source_reads, encoding: str
+        self,
+        tmp_path: Path,
+        count_source_reads,
+        encode_stl_facets,
+        expected_materialization_reads,
     ):
         import numpy as np
 
         from app.modules.media.stl_reader import STLReadLimits, materialize_stl
 
-        body = (
-            content.binary_stl_facets(FACETS)
-            if encoding == "binary"
-            else content.ascii_stl_facets(FACETS)
-        )
+        body = encode_stl_facets(FACETS)
         source = tmp_path / "materialize-cost.stl"
         source.write_bytes(body)
         reads = count_source_reads(source)
@@ -307,23 +273,14 @@ class TestSTLBudgets:
         assert materialized.measurements.triangle_count == 2
         # Binary count admits exact allocation directly; ASCII scans before its
         # allocation. Each parser probes84 bytes before ASCII rewind/read.
-        expected = (
-            [84, len(body)]
-            if encoding == "binary"
-            else [84, len(body) + 84, len(body) + 84]
-        )
-        assert reads == expected
+        assert reads == expected_materialization_reads(len(body))
 
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
-    def test_keeps_sample_independent_of_chunk(self, tmp_path: Path, encoding: str):
+    def test_keeps_sample_independent_of_chunk(self, tmp_path: Path, encode_stl_count):
         from app.modules.media.stl_reader import STLReadLimits
 
         source = tmp_path / "chunk-sample.stl"
-        source.write_bytes(
-            content.binary_stl(triangles=120)
-            if encoding == "binary"
-            else content.ascii_stl(triangles=120)
-        )
+        source.write_bytes(encode_stl_count(triangles=120))
 
         small = stl_fallback.sample_stl_geometry(
             source, max_triangles=17, limits=STLReadLimits(chunk_triangles=1)
@@ -340,7 +297,9 @@ class TestSTLBudgets:
 
 class TestSTLSourceSnapshots:
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
-    def test_holds_source_snapshot_across_passes(self, tmp_path: Path, encoding: str):
+    def test_holds_source_snapshot_across_passes(
+        self, tmp_path: Path, encode_stl_facets
+    ):
         import os
 
         from app.modules.media.stl_reader import (
@@ -350,11 +309,7 @@ class TestSTLSourceSnapshots:
         )
 
         source = tmp_path / "snapshot.stl"
-        source.write_bytes(
-            content.binary_stl_facets(FACETS)
-            if encoding == "binary"
-            else content.ascii_stl_facets(FACETS)
-        )
+        source.write_bytes(encode_stl_facets(FACETS))
         measured = scan_stl(source)
         before = source.stat()
         replacement = tmp_path / "replacement.stl"
@@ -371,68 +326,42 @@ class TestSTLSourceSnapshots:
 class TestSTLCompletionSnapshots:
     @pytest.mark.parametrize("consumer", ["sample", "materialize"])
     def test_refuses_change_after_validated_eof_before_completion(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, consumer: str
+        self, tmp_path: Path, canonical_stl_consumer, replace_source_after_eof
     ):
         from app.modules.media.stl_reader import (
             STLReadLimits,
             STLSourceChanged,
-            materialize_stl,
         )
 
         source = tmp_path / "completion-snapshot.stl"
         source.write_bytes(content.binary_stl_facets(FACETS))
-        real_stat = Path.stat
-        source_stats = 0
-
-        def replace_after_eof_stat(path, *args, **kwargs):
-            nonlocal source_stats
-            current = real_stat(path, *args, **kwargs)
-            if path == source:
-                source_stats += 1
-                if source_stats == 3:
-                    replacement = path.with_suffix(".replacement")
-                    replacement.write_bytes(path.read_bytes())
-                    replacement.replace(path)
-            return current
-
-        monkeypatch.setattr(Path, "stat", replace_after_eof_stat)
+        observed_stats = replace_source_after_eof(source)
 
         with pytest.raises(STLSourceChanged):
-            if consumer == "sample":
-                stl_fallback.read_stl_sample(source, max_triangles=2)
-            else:
-                materialize_stl(source, limits=STLReadLimits())
-        assert source_stats >= 4
+            canonical_stl_consumer(source, limits=STLReadLimits())
+        assert len(observed_stats) >= 4
 
 
 class TestSTLReadFailures:
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
-    @pytest.mark.parametrize("consumer", ["scan", "sample", "full-loader"])
+    @pytest.mark.parametrize("consumer", ["scan", "sample", "materialize"])
     def test_preserves_scan_bytes_on_read_failure(
-        self, tmp_path: Path, count_source_reads, encoding: str, consumer: str
+        self,
+        tmp_path: Path,
+        count_source_reads,
+        encode_stl_count,
+        canonical_stl_consumer,
     ):
         from app.modules.media.stl_reader import STLReadLimits
 
         source = tmp_path / "interrupted.stl"
-        source.write_bytes(
-            content.binary_stl(triangles=120)
-            if encoding == "binary"
-            else content.ascii_stl(triangles=120)
-        )
+        source.write_bytes(encode_stl_count(triangles=120))
         before = source.read_bytes()
         reads = count_source_reads(source, fail_after_bytes=134)
         limits = STLReadLimits(chunk_triangles=1)
 
-        if consumer == "scan":
-            with pytest.raises(OSError, match="injected source read failure"):
-                scan_stl(source, limits=limits)
-        elif consumer == "sample":
-            assert (
-                stl_fallback.sample_stl_geometry(source, max_triangles=1, limits=limits)
-                is None
-            )
-        else:
-            assert mesh_processing._load_mesh(source) is None
+        with pytest.raises(OSError, match="injected source read failure"):
+            canonical_stl_consumer(source, limits=limits)
 
         assert sum(reads) >= 134
         assert source.stat().st_size == len(before)
@@ -442,35 +371,65 @@ class TestCanonicalSTLRefusals:
     @pytest.mark.parametrize("consumer", ["sample", "materialize"])
     @pytest.mark.parametrize("failure", ["invalid", "budget", "changed"])
     def test_retains_canonical_refusal_category(
-        self, tmp_path: Path, monkeypatch, consumer: str, failure: str
+        self, canonical_stl_consumer, canonical_stl_refusal
     ):
         from app.modules.media import stl_reader
 
-        source = tmp_path / "canonical-refusal.stl"
-        body = content.binary_stl_facets(FACETS)
-        source.write_bytes(body + b"trailing" if failure == "invalid" else body)
-        limits = stl_reader.STLReadLimits(max_triangles=1 if failure == "budget" else 2)
-        expected = {
-            "invalid": stl_reader.STLReadFailure.INVALID_SOURCE,
-            "budget": stl_reader.STLReadFailure.RESOURCE_LIMIT,
-            "changed": stl_reader.STLReadFailure.SOURCE_CHANGED,
-        }[failure]
-        if failure == "changed":
-            real_snapshot = stl_reader.snapshot_stl
-
-            def replace_after_snapshot(path):
-                snapshot = real_snapshot(path)
-                replacement = tmp_path / "replacement.stl"
-                replacement.write_bytes(body)
-                replacement.replace(path)
-                return snapshot
-
-            owner = stl_fallback if consumer == "sample" else stl_reader
-            monkeypatch.setattr(owner, "snapshot_stl", replace_after_snapshot)
-
+        source, limits, expected = canonical_stl_refusal
         with pytest.raises(stl_reader.InvalidSTL) as caught:
-            if consumer == "sample":
-                stl_fallback.read_stl_sample(source, max_triangles=1, limits=limits)
-            else:
-                stl_reader.materialize_stl(source, limits=limits)
+            canonical_stl_consumer(source, limits=limits)
         assert caught.value.reason is expected
+
+
+class TestSampleFingerprintRecipe:
+    def test_preserves_measured_partial_fingerprint(self, tmp_path: Path):
+        import hashlib
+        import json
+
+        import trimesh
+
+        from app.modules.media.fingerprints import extract
+        from app.modules.media.thumbnail_engine import _prepare_sampled_stl
+        from tests.paths import FIXTURES_DIR
+
+        golden = json.loads(
+            (FIXTURES_DIR / "media" / "geometry-v5-stl-sample.json").read_text()
+        )
+        source = tmp_path / "sampled-sphere.stl"
+        source.write_bytes(
+            trimesh.creation.icosphere(subdivisions=3, radius=10).export(
+                file_type="stl"
+            )
+        )
+        sampled = stl_fallback.read_stl_sample(source, max_triangles=100)
+        prepared = _prepare_sampled_stl(source, triangle_cap=100)
+
+        result = extract(prepared)
+
+        assert sampled.source_complete is True
+        assert sampled.complete is False
+        assert sampled.triangle_count == golden["source_faces"] == 1280
+        assert sampled.sampled_triangles == golden["sample_faces"] == 100
+        assert result.state == "partial"
+        assert result.algorithm_version == golden["algorithm_version"]
+        assert (
+            hashlib.sha256(source.read_bytes()).hexdigest() == golden["source_sha256"]
+        )
+        assert (
+            hashlib.sha256(
+                np.asarray(prepared.whole_mesh.vertices, dtype="<f8").tobytes()
+            ).hexdigest()
+            == golden["retained_sha256"]
+        )
+        values = result.records[0].values
+        assert hashlib.sha256(values["d2_blob"]).hexdigest() == golden["d2_sha256"]
+        np.testing.assert_allclose(
+            values["surface_eigenvalue_ratios"],
+            golden["surface_eigenvalue_ratios"],
+            rtol=1e-10,
+            atol=1e-12,
+        )
+        assert values["radius"] == pytest.approx(golden["radius"], rel=1e-10)
+        assert values["eigen_ratio_0"] == pytest.approx(
+            golden["eigen_ratio_0"], rel=1e-10
+        )

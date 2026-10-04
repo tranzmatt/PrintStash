@@ -217,6 +217,7 @@ class TestSTLReadCost:
             source_bytes,
         ]
 
+
 class TestThumbnailEngine:
     def test_preserves_translated_3mf_preview(self, tmp_path):
         mesh = trimesh.creation.box(extents=[10, 10, 10])
@@ -534,6 +535,7 @@ class TestThumbnailEngine:
         assert references
         assert lifetimes == [(True,) * len(references)]
         assert reclaims == [True]
+
 
 class TestUnreferencedVertices:
     def test_preserves_3mf_preview(self, tmp_path):

@@ -53,6 +53,22 @@ def mesh(make_model, make_file):
 
 class TestPending:
     @pytest.mark.parametrize(
+        ("kind", "previous_recipe", "other_kind"),
+        [
+            (DerivativeKind.METADATA, 8, DerivativeKind.THUMBNAIL),
+            (DerivativeKind.THUMBNAIL, 7, DerivativeKind.METADATA),
+        ],
+    )
+    def test_rederives_outputs_from_the_previous_stl_reader_recipe(
+        self, db_session, mesh, make_derivative, kind, previous_recipe, other_kind
+    ):
+        artifact = mesh()
+        make_derivative(artifact, kind, recipe_version=previous_recipe)
+        make_derivative(artifact, other_kind)
+
+        assert _subjects(db_session) == [subject_key(artifact.id)]
+
+    @pytest.mark.parametrize(
         ("kind", "old_recipe", "other_kind"),
         [
             (DerivativeKind.METADATA, 7, DerivativeKind.THUMBNAIL),

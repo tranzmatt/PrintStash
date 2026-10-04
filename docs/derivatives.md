@@ -77,7 +77,7 @@ view and remaps faces inside each existing chunk; unused source vertices remain
 unchanged. Face indices must refer to the source vertex array.
 
 Mesh thumbnail recipe 4 refreshes existing previews. Similarity uses view-descriptor
-recipe 2 and fingerprint algorithm `geometry-v4-sh5f4577c4`. Search visual recipe 3
+recipe 2 and fingerprint algorithm `geometry-v5-sh5f4577c4`. Search visual recipe 3
 and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
 invalidate earlier rendered inputs and vectors. Encoder asset manifests and
 their digests are unchanged.
@@ -187,7 +187,13 @@ record seeks, source validation reads the full bounded source even for a tiny
 sample; this additional work detects malformed facets outside the retained set.
 Binary materialization needs one full pass after its header probe. ASCII scans
 for exact allocation size before a second full pass; both share one deadline
-and source snapshot. Preparation/pass reuse is a separate concern.
+and source snapshot. Preparation/pass reuse is a separate concern. Source
+validation is bounded by 1 GiB by default; it is not a timing improvement.
+
+Fingerprint algorithm `geometry-v5-sh5f4577c4` invalidates fingerprints from the
+former partial sampling policy. Historical v3/v4 measurements and verifier
+calibration remain unchanged. The final joint processing update uses metadata
+recipe 9 and thumbnail recipe 8 to refresh affected derived outputs.
 
 ## Measurement precision
 
