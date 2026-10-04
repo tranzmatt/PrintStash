@@ -73,7 +73,7 @@ def main():
     paired = LocalModelManifest.model_validate_json(
         (args.paired / "manifest.json").read_bytes()
     )
-    if paired.space().config_hash != PAIRED_HASH:
+    if paired.encoder_space().config_hash != PAIRED_HASH:
         raise ValueError("unreviewed_paired_tower")
     verify_assets(args.paired, paired)
     sys.path.insert(0, str(args.support))

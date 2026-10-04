@@ -147,7 +147,24 @@ def render_mesh_thumbnail(
         # World coordinates need float64 until their shared origin is removed:
         # casting first can collapse a small object placed far from the origin.
         verts = np.asarray(mesh.vertices, dtype=np.float64)
-        faces = np.asarray(mesh.faces, dtype=np.int64)
+        faces = np.asarray(mesh.faces)
+        if faces.ndim != 2 or faces.shape[1] != 3 or faces.dtype.kind not in "iu":
+            raise ValueError("invalid triangle indices")
+        if faces.min() < 0 or faces.max() >= len(verts):
+            raise ValueError("triangle index outside vertex array")
+        faces = faces.astype(np.int64, copy=False)
+
+        # Framing, view selection and normal welding describe the surface only.
+        # Mark its vertex domain without a sorted copy of every face corner, then
+        # remap face chunks below so compaction adds only vertex-scale storage.
+        referenced = np.zeros(len(verts), dtype=bool)
+        referenced[faces] = True
+        vertex_remap = None
+        if not referenced.all():
+            vertex_remap = np.cumsum(referenced, dtype=np.int64)
+            vertex_remap -= 1
+            verts = verts[referenced]
+        del referenced
 
         supersample = PREVIEW_PROFILE.supersample_for(width)
         ss_width = width * supersample
@@ -239,6 +256,8 @@ def render_mesh_thumbnail(
         vacc = np.zeros((n_pos, 3), dtype=np.float64)
         for s in range(0, n_faces, chunk):
             fc = faces[s : s + chunk]
+            if vertex_remap is not None:
+                fc = vertex_remap[fc]
             f_obj = verts[fc]  # (c, 3, 3)
             fn = np.cross(f_obj[:, 1] - f_obj[:, 0], f_obj[:, 2] - f_obj[:, 0])
             fn = fn / np.where(
@@ -367,6 +386,8 @@ def render_mesh_thumbnail(
         visible_total = 0
         for s in range(0, n_faces, chunk):
             fc = faces[s : s + chunk]
+            if vertex_remap is not None:
+                fc = vertex_remap[fc]
             tri = screen[fc]  # (c, 3, 3) screen-space
             view_tri = view[fc]  # (c, 3, 3) view-space
 
@@ -445,6 +466,8 @@ def render_mesh_thumbnail(
 
             for s in range(0, n_faces, chunk):
                 fc = faces[s : s + chunk]
+                if vertex_remap is not None:
+                    fc = vertex_remap[fc]
                 tri = screen[fc]
                 nrm = np.zeros((tri.shape[0], 3, 3), dtype=np.float32)
                 rasterise(
