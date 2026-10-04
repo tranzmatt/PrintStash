@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlmodel import Session, select
 from starlette.requests import Request
 
@@ -678,3 +680,265 @@ class TestFinalizeCaptureUpload:
         response = client.post(f"/api/v1/inbox/{item_id}/capture-upload-finalize")
 
         assert response.status_code == 401, response.text
+
+
+class TestCaptureUploadExecution:
+    @pytest.mark.asyncio
+    async def test_keeps_loop_responsive_during_capture_slot_lookup(
+        self, db_session, slots, user_headers, loop_handshake
+    ):
+        from app.api.v1 import inbox as inbox_api
+
+        _, opened = slots(user_headers("slot-responsive-sql"))
+        slot_id = opened[0]["id"]
+        owner = _slot_owner(db_session, slot_id)
+        wait_for_loop, observations = loop_handshake
+        engine = db_session.get_bind()
+
+        def delayed_query(connection, cursor, statement, parameters, context, many):
+            if "capture_upload_slots" in statement.lower():
+                wait_for_loop()
+
+        event.listen(engine, "before_cursor_execute", delayed_query)
+        try:
+            uploaded = await inbox_api.put_capture_upload_slot(
+                slot_id,
+                _put_request(slot_id, _receives(BODY), content_length=None),
+                current_user=owner,
+                session=db_session,
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", delayed_query)
+
+        assert uploaded.state == CaptureUploadSlotState.UPLOADED
+        assert observations
+        assert all(observations)
+
+    @pytest.mark.asyncio
+    async def test_keeps_loop_responsive_during_capture_spool_writes(
+        self, db_session, slots, user_headers, loop_handshake, monkeypatch
+    ):
+        from app.api.v1 import inbox as inbox_api
+        from app.modules.storage.storage_backend.runtime import get_backend
+
+        _, opened = slots(user_headers("slot-responsive-spool"))
+        slot_id = opened[0]["id"]
+        wait_for_loop, observations = loop_handshake
+        original_open = inbox.staging_leases.open_capture_slot_staging
+
+        @contextmanager
+        def delayed_open(*args, **kwargs):
+            with original_open(*args, **kwargs) as target:
+
+                class Writer:
+                    def write(self, chunk):
+                        if chunk:
+                            wait_for_loop()
+                        return target.write(chunk)
+
+                yield Writer()
+
+        monkeypatch.setattr(
+            inbox.staging_leases, "open_capture_slot_staging", delayed_open
+        )
+        uploaded = await inbox_api.put_capture_upload_slot(
+            slot_id,
+            _put_request(slot_id, _receives(b"slot-", b"owned"), content_length=None),
+            current_user=_slot_owner(db_session, slot_id),
+            session=db_session,
+        )
+        slot = db_session.get(CaptureUploadSlot, slot_id)
+        assert get_backend().read_bytes(slot.storage_key) == BODY
+        assert uploaded.state == CaptureUploadSlotState.UPLOADED
+        assert observations == [True, True]
+
+    @pytest.mark.asyncio
+    async def test_applies_backpressure_between_capture_chunks(
+        self, db_session, slots, user_headers, monkeypatch
+    ):
+        from app.api.v1 import inbox as inbox_api
+
+        _, opened = slots(user_headers("slot-bounded-chunks"))
+        slot_id = opened[0]["id"]
+        written = bytearray()
+        original_open = inbox.staging_leases.open_capture_slot_staging
+
+        @contextmanager
+        def observed_open(*args, **kwargs):
+            with original_open(*args, **kwargs) as target:
+
+                class Writer:
+                    def write(self, chunk):
+                        result = target.write(chunk)
+                        written.extend(chunk)
+                        return result
+
+                yield Writer()
+
+        messages = iter([b"slot-", b"owned"])
+
+        async def receive():
+            chunk = next(messages)
+            if chunk == b"owned":
+                assert written == b"slot-"
+            return {
+                "type": "http.request",
+                "body": chunk,
+                "more_body": chunk != b"owned",
+            }
+
+        monkeypatch.setattr(
+            inbox.staging_leases, "open_capture_slot_staging", observed_open
+        )
+        uploaded = await inbox_api.put_capture_upload_slot(
+            slot_id,
+            _put_request(slot_id, receive, content_length=None),
+            current_user=_slot_owner(db_session, slot_id),
+            session=db_session,
+        )
+        assert uploaded.state == CaptureUploadSlotState.UPLOADED
+        assert written == BODY
+
+    @pytest.mark.asyncio
+    async def test_cleans_capture_spool_after_disconnect(
+        self, db_session, slots, user_headers
+    ):
+        from starlette.requests import ClientDisconnect
+
+        from app.api.v1 import inbox as inbox_api
+        from app.modules.storage.storage_backend.runtime import get_backend
+
+        _, opened = slots(user_headers("slot-disconnected"))
+        slot_id = opened[0]["id"]
+        messages = iter(
+            [
+                {"type": "http.request", "body": b"slot-", "more_body": True},
+                {"type": "http.disconnect"},
+            ]
+        )
+
+        async def receive():
+            return next(messages)
+
+        with pytest.raises(ClientDisconnect):
+            await inbox_api.put_capture_upload_slot(
+                slot_id,
+                _put_request(slot_id, receive, content_length=None),
+                current_user=_slot_owner(db_session, slot_id),
+                session=db_session,
+            )
+        db_session.expire_all()
+        slot = db_session.get(CaptureUploadSlot, slot_id)
+        assert slot.state == CaptureUploadSlotState.PENDING
+        assert not get_backend().exists(slot.storage_key)
+        assert not inbox.staging_leases.capture_slot_staging_path(slot_id).exists()
+        assert db_session.exec(
+            select(StagingLease).where(StagingLease.capture_upload_slot_id == slot_id)
+        ).one()
+
+    @pytest.mark.asyncio
+    async def test_releases_worker_capacity_while_waiting_for_body(
+        self, db_session, slots, user_headers
+    ):
+        from anyio import to_thread
+        from fastapi.concurrency import run_in_threadpool
+
+        from app.api.v1 import inbox as inbox_api
+
+        _, opened = slots(user_headers("slot-idle-capacity"))
+        slot_id = opened[0]["id"]
+        owner = _slot_owner(db_session, slot_id)
+        limiter = to_thread.current_default_thread_limiter()
+        before = limiter.total_tokens
+
+        async def receive():
+            # With one available worker, unrelated synchronous work must finish
+            # while this request waits for its next network chunk.
+            marker = await asyncio.wait_for(
+                run_in_threadpool(lambda: "progressed"), timeout=1
+            )
+            assert marker == "progressed"
+            return {"type": "http.request", "body": BODY, "more_body": False}
+
+        limiter.total_tokens = 1
+        try:
+            uploaded = await inbox_api.put_capture_upload_slot(
+                slot_id,
+                _put_request(slot_id, receive, content_length=None),
+                current_user=owner,
+                session=db_session,
+            )
+        finally:
+            limiter.total_tokens = before
+        assert uploaded.state == CaptureUploadSlotState.UPLOADED
+
+    @pytest.mark.asyncio
+    async def test_closes_and_cleans_capture_spool_on_cancellation(
+        self, db_session, slots, user_headers, loop_handshake, monkeypatch
+    ):
+        import anyio
+        from fastapi.concurrency import run_in_threadpool
+
+        from app.api.v1 import inbox as inbox_api
+        from app.modules.storage.storage_backend.runtime import get_backend
+
+        _, opened = slots(user_headers("slot-cancelled-body"))
+        slot_id = opened[0]["id"]
+        owner = _slot_owner(db_session, slot_id)
+        wait_for_loop, observations = loop_handshake
+        original_open = inbox.staging_leases.open_capture_slot_staging
+        contexts = []
+        targets = []
+
+        @contextmanager
+        def observed_open(*args, **kwargs):
+            with original_open(*args, **kwargs) as target:
+                targets.append(target)
+                try:
+                    yield target
+                finally:
+                    wait_for_loop()
+
+        def retain_context(*args, **kwargs):
+            context = observed_open(*args, **kwargs)
+            contexts.append(context)
+            return context
+
+        first = True
+
+        async def receive():
+            nonlocal first
+            if first:
+                first = False
+                return {"type": "http.request", "body": b"slot-", "more_body": True}
+            scope.cancel()
+            await anyio.sleep(0)
+            raise AssertionError("cancelled receive must not continue")
+
+        monkeypatch.setattr(
+            inbox.staging_leases, "open_capture_slot_staging", retain_context
+        )
+        with anyio.CancelScope() as scope:
+            await inbox_api.put_capture_upload_slot(
+                slot_id,
+                _put_request(slot_id, receive, content_length=None),
+                current_user=owner,
+                session=db_session,
+            )
+        closed_before_cleanup = targets[0].closed
+        exit_progress = list(observations)
+        # Keep the context alive until observing closure; garbage collection
+        # must not make an unclosed descriptor look like explicit cleanup.
+        if not closed_before_cleanup:
+            await run_in_threadpool(contexts[0].__exit__, None, None, None)
+        assert scope.cancelled_caught
+        assert closed_before_cleanup
+        assert exit_progress == [True]
+        db_session.expire_all()
+        slot = db_session.get(CaptureUploadSlot, slot_id)
+        assert slot.state == CaptureUploadSlotState.PENDING
+        assert not get_backend().exists(slot.storage_key)
+        assert not inbox.staging_leases.capture_slot_staging_path(slot_id).exists()
+        assert db_session.exec(
+            select(StagingLease).where(StagingLease.capture_upload_slot_id == slot_id)
+        ).one()
