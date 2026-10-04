@@ -23,7 +23,7 @@ from app.modules.storage.storage_backend.runtime import bind_backend, get_backen
 from app.modules.work import catalog as catalog_module
 from app.modules.work.catalog import WorkCatalog
 from app.modules.work.jobs import jobs
-from app.modules.work.submission import execution_id, submit
+from app.modules.work.submission import submit
 from tests import factories
 from tests.contract.modules.work._harness import (
     DbosHarness,
@@ -113,7 +113,7 @@ class TestDerivativeAdmission:
                 with ThreadPoolExecutor(max_workers=1) as threads:
                     running = threads.submit(settle)
                     assert admitted.wait(20), (
-                        f"producer did not reach storage: {jobs.get(first)}; {harness.engine.evidence([execution_id(first, 1)])}"
+                        f"producer did not reach storage: {jobs.get(first)}; {harness.engine.active()}"
                     )
                     with factory.scoped_session() as session:
                         policy.update(session, {policy.SettingName.MESH: False})

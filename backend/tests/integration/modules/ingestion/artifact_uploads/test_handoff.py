@@ -41,6 +41,7 @@ from app.modules.work.submission import nudge, submit
 from app.runtime.engine.inline import InlineJobEngine
 from tests._env import use_local_storage
 from tests.factories import build_artifact_upload
+from tests.factories.ops import build_job_context
 from tests.factories.protocols import MakeJob, MakeModel, MakeUser
 
 RECOVERY, UPLOAD = handoff.definitions()
@@ -287,7 +288,9 @@ class TestRunVerifiedUploadIngestion:
         db_session.commit()
 
         handoff.run_verified_upload_ingestion(
-            upload_id=upload.id, job_id=job_id, session_factory=get_session_factory()
+            upload_id=upload.id,
+            job_context=build_job_context(job_id),
+            session_factory=get_session_factory(),
         )
 
         assert (
@@ -342,7 +345,11 @@ class TestFailure:
     ) -> None:
         upload, _job_id = _verified(db_session, make_job, owner)
 
-        UPLOAD.on_failure(db_session, handoff.subject_key(upload.id), "boom")
+        from app.modules.work.contracts import JobOutcome
+
+        build_job_context(_job_id).finish(
+            JobOutcome.FAILED, error="boom", retryable=True
+        )
         db_session.commit()
 
         db_session.expire_all()

@@ -51,6 +51,10 @@ class ArtifactDerivative(SQLModel, table=True):
         ),
         enum_check("kind", DerivativeKind),
         enum_check("state", DerivativeState),
+        CheckConstraint(
+            "(state = 'running') = (attempt_token IS NOT NULL)",
+            name="attempt_token_iff_running",
+        ),
         # A failed or skipped attempt says why, and nothing else carries a
         # reason; only a failure waits for a retry.
         CheckConstraint(
@@ -80,6 +84,8 @@ class ArtifactDerivative(SQLModel, table=True):
         default=DerivativeState.QUEUED,
         sa_column=Column(EnumText(DerivativeState), nullable=False),
     )
+    # Only the execution that captured this token may finish a running attempt.
+    attempt_token: Optional[str] = Field(default=None, max_length=36)
     attempts: int = Field(default=0)
     next_attempt_at: Optional[datetime] = None
     # Why the last attempt failed or was skipped: a code, or a sanitized error.

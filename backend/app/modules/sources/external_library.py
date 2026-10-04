@@ -70,9 +70,8 @@ from app.modules.storage.hashing import sha256_file
 from app.modules.storage.root_markers import (
     read_root_marker_fd,
 )
-from app.modules.work.contracts import JobOutcome
+from app.modules.work.contracts import JobContext, JobOutcome
 from app.modules.work.jobs import failure_of
-from app.modules.work.jobs import jobs as registry
 
 from .root_binding import (
     ExternalRootBindingError,
@@ -730,7 +729,7 @@ def _remote_checkpoint(
 def scan_remote_library(
     library_id: int,
     *,
-    job_id: str | None = None,
+    job_context: JobContext | None = None,
     session_factory: SessionFactory | None = None,
 ) -> dict:
     """Process one bounded remote page; absence is applied only at epoch end."""
@@ -940,8 +939,8 @@ def scan_remote_library(
                         retire_inventory(page.inventory_id)
                     except SQLAlchemyError:
                         logger.warning("remote discovery inventory cleanup deferred")
-                if job_id:
-                    registry.finish(job_id, JobOutcome.COMPLETED, result=result)
+                if job_context is not None:
+                    job_context.finish(JobOutcome.COMPLETED, result=result)
                 return result
             except asyncio.CancelledError as exc:
                 session.rollback()
@@ -980,8 +979,8 @@ def scan_remote_library(
                 session.add(checkpoint)
                 session.add(library)
                 session.commit()
-                if job_id:
-                    registry.finish(job_id, JobOutcome.FAILED, error=summary.error)
+                if job_context is not None:
+                    job_context.finish(JobOutcome.FAILED, error=summary.error)
                 return summary.as_dict()
     finally:
         budget.__exit__(None, None, None)
@@ -992,10 +991,11 @@ def scan_library(
     library_id: int,
     *,
     relative_path: str | None = None,
-    job_id: Optional[str] = None,
+    job_context: JobContext | None = None,
     session_factory: SessionFactory | None = None,
 ) -> dict:
     """Reconcile a library's index with its on-disk folder. Returns the summary."""
+    job_id = job_context.job_id if job_context is not None else None
     if session_factory is None:
         session_factory = get_session_factory()
 
@@ -1006,7 +1006,7 @@ def scan_library(
             and source_library.source_kind != LibrarySourceKind.MOUNTED
         ):
             return scan_remote_library(
-                library_id, job_id=job_id, session_factory=session_factory
+                library_id, job_context=job_context, session_factory=session_factory
             )
 
     summary = ScanSummary()
@@ -1028,8 +1028,8 @@ def scan_library(
             preflight.updated_at = utcnow()
             session.add(preflight)
             session.commit()
-            if job_id:
-                registry.finish(job_id, JobOutcome.FAILED, error=summary.error)
+            if job_context is not None:
+                job_context.finish(JobOutcome.FAILED, error=summary.error)
             return summary.as_dict()
         claim_token = uuid.uuid4().hex
         now = utcnow()
@@ -1057,8 +1057,8 @@ def scan_library(
                 "coalesced": True,
                 "job_id": current.scan_job_id if current is not None else None,
             }
-            if job_id:
-                registry.finish(job_id, JobOutcome.COMPLETED, result=result)
+            if job_context is not None:
+                job_context.finish(JobOutcome.COMPLETED, result=result)
             return result
         library = session.get(ExternalLibrary, library_id)
         if library is None:
@@ -1076,8 +1076,8 @@ def scan_library(
                 summary,
                 claim_token=claim_token,
             )
-            if job_id:
-                registry.finish(job_id, JobOutcome.FAILED, error=summary.error)
+            if job_context is not None:
+                job_context.finish(JobOutcome.FAILED, error=summary.error)
             return summary.as_dict()
 
         library.last_scan_status = ExternalLibraryScanStatus.RUNNING
@@ -1115,8 +1115,8 @@ def scan_library(
                     library_id,
                     root,
                 )
-                if job_id:
-                    registry.finish(job_id, JobOutcome.FAILED, error=summary.error)
+                if job_context is not None:
+                    job_context.finish(JobOutcome.FAILED, error=summary.error)
                 return summary.as_dict()
 
             # Refresh the detected filesystem class so the UI / watcher know
@@ -1194,13 +1194,12 @@ def scan_library(
                     root,
                     len(db_by_path),
                 )
-                if job_id:
-                    registry.finish(job_id, JobOutcome.FAILED, error=summary.error)
+                if job_context is not None:
+                    job_context.finish(JobOutcome.FAILED, error=summary.error)
                 return summary.as_dict()
 
-            if job_id:
-                registry.update(
-                    job_id,
+            if job_context is not None:
+                job_context.update(
                     stage="hashing",
                     total_steps=len(disk) or 1,
                     total=len(disk),
@@ -1210,9 +1209,8 @@ def scan_library(
 
             for index, (path, (size, mtime)) in enumerate(disk.items(), start=1):
                 assert_root_binding(library)
-                if job_id and progress_updates.should_flush(index):
-                    registry.update(
-                        job_id,
+                if job_context is not None and progress_updates.should_flush(index):
+                    job_context.update(
                         step=index,
                         total_steps=len(disk),
                         label="hashing",
@@ -1291,11 +1289,10 @@ def scan_library(
                 summary.skipped,
                 len(summary.errors),
             )
-            if job_id:
+            if job_context is not None:
                 # The job itself completed even with per-file errors; the PARTIAL
                 # signal lives on the library status and in result.errors.
-                registry.finish(
-                    job_id,
+                job_context.finish(
                     JobOutcome.COMPLETED,
                     result=summary.as_dict(),
                     processed=len(disk),
@@ -1329,8 +1326,8 @@ def scan_library(
                 summary,
                 claim_token=claim_token,
             )
-            if job_id:
-                registry.finish(job_id, JobOutcome.FAILED, error=summary.error)
+            if job_context is not None:
+                job_context.finish(JobOutcome.FAILED, error=summary.error)
 
     return summary.as_dict()
 
@@ -1540,7 +1537,7 @@ def _library_id(subject: str) -> int:
 def _scan_step(ctx) -> None:
     library_id = _library_id(ctx.subject_key)
     _requested, relative_path = _take_request(library_id)
-    scan_library(library_id, relative_path=relative_path, job_id=ctx.job_id)
+    scan_library(library_id, relative_path=relative_path, job_context=ctx)
 
 
 def _cancel_scan(session: Session, subject: str) -> None:

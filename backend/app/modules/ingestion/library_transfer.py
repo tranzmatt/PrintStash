@@ -48,7 +48,6 @@ from app.db.models import (
     PrintJob,
     ProvenanceCapture,
     SavedView,
-    StagingLease,
     Tag,
     User,
 )
@@ -66,7 +65,7 @@ from app.modules.storage import capacity_estimates, storage
 from app.modules.storage.artifact_content import ArtifactContentError, resolve
 from app.modules.storage.capacity import CapacityManager
 from app.modules.storage.storage_backend.runtime import get_backend
-from app.modules.work.contracts import JobOutcome
+from app.modules.work.contracts import JobContext, JobOutcome
 from app.modules.work.jobs import failure_of
 from app.modules.work.jobs import jobs as registry
 from app.schemas.models import PartGroupWrite, PartOptionWrite
@@ -2347,10 +2346,10 @@ def import_archive(
 
 
 def run_import_job(
-    *, job_id: str, archive_path: Path, user_id: int, session_factory
+    *, job_context: JobContext, archive_path: Path, user_id: int, session_factory
 ) -> None:
     """Durable job boundary for portable imports; partial progress remains visible."""
-    registry.update(job_id, stage="ingesting")
+    job_context.update(stage="ingesting")
 
     def report(
         processed: int,
@@ -2359,8 +2358,7 @@ def run_import_job(
         skipped: int,
         current_item: str | None,
     ) -> None:
-        registry.update(
-            job_id,
+        job_context.update(
             processed=processed,
             total=total,
             succeeded=succeeded,
@@ -2379,14 +2377,7 @@ def run_import_job(
                 user,
                 progress=report,
             )
-            lease = session.exec(
-                select(StagingLease).where(StagingLease.job_id == job_id)
-            ).first()
-            if lease is not None:
-                session.delete(lease)
-                session.commit()
-        registry.finish(
-            job_id,
+        job_context.finish(
             JobOutcome.COMPLETED,
             completion="complete",
             result=result,
@@ -2395,11 +2386,11 @@ def run_import_job(
             succeeded=result["created_files"],
             skipped=result["skipped_files"],
         )
-        archive_path.unlink(missing_ok=True)
+        from .ingestion import release_job_staging
+
+        release_job_staging(job_context)
     except Exception as exc:  # noqa: BLE001 - durable job boundary
-        registry.finish(
-            job_id, JobOutcome.FAILED, error=failure_of(exc), retryable=True
-        )
+        job_context.finish(JobOutcome.FAILED, error=failure_of(exc), retryable=True)
 
 
 def _import_step(ctx) -> None:
@@ -2412,10 +2403,10 @@ def _import_step(ctx) -> None:
         job = registry.row(session, job_id)
         owner = job.owner_user_id if job is not None else None
     if not leases or owner is None or not Path(leases[0].path).exists():
-        registry.finish(job_id, JobOutcome.FAILED, error="staging_expired")
+        ctx.finish(JobOutcome.FAILED, error="staging_expired")
         return
     run_import_job(
-        job_id=job_id,
+        job_context=ctx,
         archive_path=Path(leases[0].path),
         user_id=owner,
         session_factory=get_session_factory(),
