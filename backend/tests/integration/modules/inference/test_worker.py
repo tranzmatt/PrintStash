@@ -26,7 +26,7 @@ class TestManifest:
 
         contract = manifest.read_manifest(assets, "two-tower-contract")
         derived = VisualRecipe.space(
-            contract.space(), image_size=32, profile="multiview"
+            contract.encoder_space(), image_size=32, profile="multiview"
         )
         manifest.validate_space(contract, derived)
         changed = replace(derived, model_revision="another-tower")
@@ -120,6 +120,30 @@ class TestManifest:
 
 
 class TestNativeProtocol:
+    @pytest.mark.parametrize("profile", ["thumbnail", "multiview"])
+    def test_executes_visual_space_with_stable_encoder_alignment(self, assets, profile):
+        from dataclasses import asdict
+
+        from printstash_core.search.visual_inputs import VisualRecipe
+
+        contract = manifest.read_manifest(assets, "two-tower-contract")
+        space = VisualRecipe.space(
+            contract.encoder_space(), image_size=32, profile=profile
+        )
+        payload = {
+            "config_hash": space.config_hash,
+            "space_json": json.dumps(asdict(space)),
+            "inputs": [{"modality": "text", "text": "red"}],
+        }
+        result = json.loads(
+            worker.NativeWorker(assets, "two-tower-contract", 1).execute(
+                json.dumps(payload).encode()
+            )
+        )
+        assert result["config_hash"] == space.config_hash
+        np.testing.assert_allclose(result["vectors"], [[1, 0, 0]], atol=1e-6)
+        assert result["truncated"] == [False]
+
     @pytest.mark.parametrize("profile", ["cls", "mean", "point", "sparse"])
     def test_executes_every_supported_manifest_family(self, tmp_path, profile):
         import math

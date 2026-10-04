@@ -200,6 +200,7 @@ def build_file(
     overrides.setdefault("path", f"{model.slug}/v{version}/{name}")
     overrides.setdefault("size_bytes", 1)
     overrides.setdefault("sha256", unique_hash("file_sha"))
+    overrides.setdefault("viewer_requested_at", None)
     row = save(
         session,
         File(

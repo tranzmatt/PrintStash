@@ -36,6 +36,8 @@ function kindLabel(kind: string): string {
       return uiText("Preview");
     case "metadata":
       return uiText("Metadata");
+    case "viewer_stl":
+      return uiText("3D preview");
     case "toolpath":
       return uiText("Toolpath");
     default:
