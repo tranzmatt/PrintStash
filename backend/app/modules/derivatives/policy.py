@@ -70,6 +70,19 @@ def lock(session: Session) -> SystemConfig:
     return config
 
 
+def lock_generation(session: Session) -> SystemConfig:
+    """Share generation authority among publishers; regeneration takes it exclusively."""
+    begin_write(session, immediate=True)
+    config = session.exec(
+        select(SystemConfig).where(SystemConfig.id == 1).with_for_update(read=True)
+    ).first()
+    if config is None:
+        # Bootstrap normally creates it. The exceptional first writer must
+        # actually establish authority, never publish without a locked row.
+        return lock(session)
+    return config
+
+
 def admission(session: Session, definition: JobKind) -> SkipReason | None:
     return (
         None

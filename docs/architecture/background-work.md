@@ -52,7 +52,7 @@ The port (`work.contracts.JobEngine`) executes two kinds of submission, a
 `JobSubmission` (one attempt of one Job) and a `PassSubmission` (one reconcile
 pass over one source), and names exactly two guarantees, both provided by DBOS:
 
-- `execution_id = <job id>:<attempt>`: one execution per attempt, ever.
+- `execution_id = <job id>:<epoch>:<attempt>`: one execution per attempt and epoch, ever.
 - `dedupe_key = <definition>|<subject>`: at most one active execution per
   subject. A Job is routed either `Deduplicated` by that key or, on a
   partitioned lane, `Partitioned` by its definition's partition key (DBOS
@@ -271,3 +271,28 @@ is reset even when the step raises. Concurrent steps have independent probes.
 A forced check before accepting native output prevents a result finishing inside
 the normal 200 ms polling interval from publishing after observed withdrawal.
 The Job engine remains responsible for durable dispatch and settlement.
+
+
+### Execution authority across retry
+
+`Job.attempts` counts engine-accepted executions, including a worker that began
+before the submitter recorded acceptance. Explicit retry preserves this count
+and rotates `execution_epoch` atomically with the subject retry hook.
+`submitted_epoch` records the last accepted generation (null before the first
+submission). A mismatch is durable pending intent: reconciliation submits it
+immediately, even if the retry nudge was lost. It never treats that state as a
+lost execution or consumes the interruption budget.
+
+Engine identity is `Job ID:execution_epoch:attempt`. Both engines carry the epoch
+through begin, progress and settlement; legacy callbacks without an epoch are
+ignored. `JobStore.lock_execution` validates authority under the Job row lock.
+Failure hooks share the first terminal transaction; cleanup replay additionally
+checks epoch, attempt and terminal state, so it cannot reclaim retry-owned staging.
+Submission uses a snapshot, engine I/O, then a conditional database write. A late
+engine acknowledgement cannot overwrite a retry's count or timestamps.
+
+If the first submission of a new epoch is deduplicated, it checks the engine's
+active catalogue for obsolete executions of this subject's terminal Jobs or old
+epochs of the current Job, cancels those, and retries submission once. The engine
+port has no subject lookup; this catalogue read is limited to actual deduplication
+conflicts. Healthy submissions do not scan it. No database lock spans engine I/O.

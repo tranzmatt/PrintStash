@@ -73,6 +73,7 @@ class Reason(StrEnum):
     INTERRUPTED_REPEATEDLY = "interrupted_repeatedly"
     RESUBMIT = "resubmit"
     FIRST_ATTEMPT = "first_attempt"
+    RETRY_PENDING = "retry_pending"
     SUBMISSION_IN_FLIGHT = "submission_in_flight"
     EXECUTION_LOST = "execution_lost"
     TERMINAL_WRITE_LOST = "terminal_write_lost"
@@ -120,6 +121,8 @@ def decide(
         return Decision(Verdict.SUBMIT, Reason.RESUBMIT)
     if job.attempts == 0:
         return Decision(Verdict.SUBMIT, Reason.FIRST_ATTEMPT)
+    if job.submitted_epoch != job.execution_epoch:
+        return Decision(Verdict.SUBMIT, Reason.RETRY_PENDING)
     if evidence is None:
         if now - ensure_utc(job.updated_at) < grace:
             return Decision(Verdict.NONE, Reason.SUBMISSION_IN_FLIGHT)
@@ -161,20 +164,33 @@ class PassResult:
         self.outcomes[outcome] = self.outcomes.get(outcome, 0) + 1
 
 
-def _interrupt(job: Job, reason: Reason, *, now: datetime) -> None:
+def _interrupt(job: Job, reason: Reason, *, now: datetime) -> bool:
     from app.core.metrics import record_resubmit
 
     with get_session_factory().scoped_session() as session:
-        row = session.get(Job, job.id)
+        row = jobs.lock_execution(
+            session,
+            job.id,
+            epoch=job.execution_epoch,
+            attempt=job.attempts,
+            states=(job.state,),
+        )
         if row is None or row.state not in ACTIVE_JOB_STATES:
-            return
+            return False
         row.state = JobState.INTERRUPTED
         row.resubmits += 1
         row.updated_at = now
         session.add(row)
         session.commit()
-    jobs.update(job.id, error=reason, retryable=True)
+    jobs.update(
+        job.id,
+        expected_attempt=job.attempts,
+        expected_epoch=job.execution_epoch,
+        error=reason,
+        retryable=True,
+    )
     record_resubmit(job.kind)
+    return True
 
 
 def _repair(definition: JobDefinition, *, now: datetime, result: PassResult) -> None:
@@ -203,13 +219,19 @@ def _repair(definition: JobDefinition, *, now: datetime, result: PassResult) -> 
             session.expunge(row)
     if not rows:
         return
-    ids = [execution_id(row.id, row.attempts) for row in rows if row.attempts > 0]
+    ids = [
+        execution_id(row.id, row.attempts, row.execution_epoch)
+        for row in rows
+        if row.attempts > 0
+    ]
     evidence = engine.evidence(ids) if ids else {}
     stale = executors.stale_ids(now=now)
     grace = timedelta(seconds=settings.jobs_submit_grace_seconds)
     for row in rows:
         seen = (
-            evidence.get(execution_id(row.id, row.attempts)) if row.attempts else None
+            evidence.get(execution_id(row.id, row.attempts, row.execution_epoch))
+            if row.attempts
+            else None
         )
         decision = decide(
             row,
@@ -236,7 +258,10 @@ def _repair(definition: JobDefinition, *, now: datetime, result: PassResult) -> 
                     session.execute(
                         update(Job)
                         .where(
-                            col(Job.id) == row.id, col(Job.state) == JobState.RUNNING
+                            col(Job.id) == row.id,
+                            col(Job.state) == JobState.RUNNING,
+                            col(Job.execution_epoch) == row.execution_epoch,
+                            col(Job.attempts) == row.attempts,
                         )
                         .values(updated_at=utcnow())
                     )
@@ -244,13 +269,25 @@ def _repair(definition: JobDefinition, *, now: datetime, result: PassResult) -> 
                 continue
             if row.attempts and seen is not None:
                 try:
-                    engine.cancel(execution_id(row.id, row.attempts))
+                    engine.cancel(
+                        execution_id(row.id, row.attempts, row.execution_epoch)
+                    )
                 except Exception:  # noqa: BLE001 - admission blocks execution; next pass retries cancellation
                     logger.warning("engine cancel failed", extra={"job_id": row.id})
                     result.deferred += 1
                     continue
-            jobs.finish(row.id, JobOutcome.CANCELLED, error=refused, retryable=False)
-            _call_failure_hook(definition, row.subject_key, refused)
+            settled = jobs.settle_attempt(
+                row.id,
+                row.attempts,
+                JobOutcome.CANCELLED,
+                error=refused,
+                execution_epoch=row.execution_epoch,
+                expected_state=row.state,
+                on_failure=definition.on_failure,
+            )
+            if settled is None:
+                result.deferred += 1
+                continue
             result.skipped += 1
             result.count(refused)
             result.full = len(rows) == settings.jobs_reconcile_batch
@@ -260,52 +297,68 @@ def _repair(definition: JobDefinition, *, now: datetime, result: PassResult) -> 
             continue
         if decision.cancel_engine and row.attempts:
             try:
-                engine.cancel(execution_id(row.id, row.attempts))
+                engine.cancel(execution_id(row.id, row.attempts, row.execution_epoch))
             except Exception:  # noqa: BLE001 - the next pass retries the cancel
                 logger.warning("engine cancel failed", extra={"job_id": row.id})
                 result.deferred += 1
                 continue
         if decision.verdict is Verdict.COMPLETE:
-            jobs.finish(row.id, JobOutcome.COMPLETED)
+            settled = jobs.settle_attempt(
+                row.id,
+                row.attempts,
+                JobOutcome.COMPLETED,
+                execution_epoch=row.execution_epoch,
+                expected_state=row.state,
+                on_failure=definition.on_failure,
+            )
+            if settled is None:
+                result.deferred += 1
+                continue
             result.completed += 1
             continue
         if decision.verdict is Verdict.FAIL:
-            jobs.finish(row.id, JobOutcome.FAILED, error=decision.reason)
-            _call_failure_hook(definition, row.subject_key, decision.reason)
+            settled = jobs.settle_attempt(
+                row.id,
+                row.attempts,
+                JobOutcome.FAILED,
+                error=decision.reason,
+                execution_epoch=row.execution_epoch,
+                expected_state=row.state,
+                on_failure=definition.on_failure,
+            )
+            if settled is None:
+                result.deferred += 1
+                continue
             result.failed += 1
             continue
         if decision.verdict is Verdict.INTERRUPT:
-            _interrupt(row, decision.reason, now=now)
+            if not _interrupt(row, decision.reason, now=now):
+                result.deferred += 1
+                continue
             result.interrupted += 1
             with get_session_factory().scoped_session() as session:
                 fresh = session.get(Job, row.id)
                 exhausted = (
-                    fresh is not None and fresh.resubmits > settings.jobs_max_resubmits
+                    fresh is not None
+                    and fresh.execution_epoch == row.execution_epoch
+                    and fresh.attempts == row.attempts
+                    and fresh.state is JobState.INTERRUPTED
+                    and fresh.resubmits > settings.jobs_max_resubmits
                 )
             if exhausted:
-                jobs.finish(
-                    row.id, JobOutcome.FAILED, error=Reason.INTERRUPTED_REPEATEDLY
-                )
-                _call_failure_hook(
-                    definition, row.subject_key, Reason.INTERRUPTED_REPEATEDLY
+                assert fresh is not None
+                jobs.settle_attempt(
+                    fresh.id,
+                    fresh.attempts,
+                    JobOutcome.FAILED,
+                    error=Reason.INTERRUPTED_REPEATEDLY,
+                    execution_epoch=fresh.execution_epoch,
+                    expected_state=fresh.state,
+                    on_failure=definition.on_failure,
                 )
                 result.failed += 1
                 continue
         _submit(row.id, result)
-
-
-def _call_failure_hook(
-    definition: JobDefinition, subject_key: str, reason: str
-) -> None:
-    with get_session_factory().scoped_session() as session:
-        try:
-            definition.on_failure(session, subject_key, reason)
-            session.commit()
-        except Exception:  # noqa: BLE001 - the Job already records the failure
-            session.rollback()
-            logger.exception(
-                "job failure hook failed", extra={"kind": definition.name.value}
-            )
 
 
 def _submit(job_id: str, result: PassResult) -> None:

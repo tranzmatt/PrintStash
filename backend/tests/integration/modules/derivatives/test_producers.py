@@ -17,6 +17,11 @@ from pathlib import Path
 
 import pytest
 import trimesh
+from printstash_core.mesh.measurements import (
+    VolumeMeasured,
+    VolumeUnavailable,
+    VolumeUnavailableCause,
+)
 from sqlmodel import Session, select
 
 from app.core.config import _overlay, settings
@@ -33,9 +38,19 @@ from app.db.models import (
     Metadata,
     Model,
 )
-from app.modules.derivatives import producers
+from app.modules.derivatives import kinds, producers
 from app.modules.ingestion import extensions
+from app.modules.library.volume_metadata import apply_volume, read_volume
 from app.modules.media import mesh_isolation, toolpath
+from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
+    GeometryReady,
+    MeshCoverage,
+    PreviewCoverage,
+    SourceScanState,
+    ThumbnailResult,
+    ThumbnailStrategy,
+)
 from app.modules.media.thumbnail_publication import ThumbnailPublicationError
 from app.modules.media.worker_bootstrap import command
 from app.modules.similarity import ingestion as similarity_ingestion
@@ -64,6 +79,29 @@ def announced() -> Iterator[list[dict]]:
         events.bind(None)
 
 
+@pytest.fixture
+def stale_mesh_measurement_reply() -> ThumbnailResult:
+    return ThumbnailResult(
+        image=None,
+        geometry={
+            "bbox_x_mm": 10.0,
+            "bbox_y_mm": 10.0,
+            "bbox_z_mm": 10.0,
+            "triangle_count": 12,
+            "volume_mm3": 2.0,
+        },
+        geometry_outcome=GeometryReady(),
+        volume=VolumeMeasured(2.0),
+        strategy=ThumbnailStrategy.NONE,
+        coverage=MeshCoverage(
+            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.NOT_PRODUCED
+        ),
+        failure_reason=None,
+        duration_ms=1,
+        peak_rss_bytes=None,
+    )
+
+
 class FingerprintSink:
     """Similarity's side of the mesh load: asks for fingerprints, takes them."""
 
@@ -74,7 +112,9 @@ class FingerprintSink:
     def extraction_options(self, _sessions):
         return {"include_fingerprint": True}
 
-    def after_commit(self, _sessions, file_id, _actor_id, _result):
+    def after_commit(
+        self, _sessions, file_id, _actor_id, _result, *, source_sha256, execution=None
+    ):
         if self.broken:
             raise RuntimeError("similarity store unavailable")
         self.received.append(file_id)
@@ -92,6 +132,50 @@ def _rows(session: Session, file_id: int) -> dict[str, ArtifactDerivative]:
 
 
 class TestDeriveMesh:
+    @pytest.mark.parametrize(
+        "preview, expected_complete",
+        [
+            (PreviewCoverage.COMPLETE, True),
+            (PreviewCoverage.PARTIAL, False),
+            (PreviewCoverage.DOCUMENT_SUPPLIED, True),
+        ],
+    )
+    def test_publishes_preview_completeness_independently_of_source_scan(
+        self, db_session, stored, monkeypatch, preview, expected_complete
+    ):
+        artifact = stored("preview.stl", content.binary_stl())
+        from printstash_core.mesh.measurements import (
+            VolumeNotCalculated,
+            VolumeNotCalculatedCause,
+        )
+
+        reply = ThumbnailResult(
+            image=content.png(),
+            geometry={"volume_mm3": None},
+            geometry_outcome=GeometryReady(),
+            volume=VolumeNotCalculated(VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED),
+            strategy=(
+                ThumbnailStrategy.EMBEDDED
+                if preview is PreviewCoverage.DOCUMENT_SUPPLIED
+                else ThumbnailStrategy.FALLBACK
+            ),
+            coverage=MeshCoverage(
+                SourceScanState.COMPLETE, GeometryNotLoaded(), preview
+            ),
+            failure_reason=None,
+            duration_ms=1,
+            peak_rss_bytes=None,
+        )
+        monkeypatch.setattr(mesh_isolation, "generate", lambda request: reply)
+
+        result = producers.derive_mesh(artifact.id)
+
+        assert result.kinds[DerivativeKind.THUMBNAIL] is DerivativeState.READY
+        row = _rows(db_session, artifact.id)[DerivativeKind.THUMBNAIL]
+        assert json.loads(row.output_json)["complete"] is expected_complete
+        db_session.refresh(artifact)
+        assert get_backend().exists(artifact.thumbnail_path)
+
     @pytest.mark.parametrize("failure_code", ["geometry_work_limit", "resource_limit"])
     def test_replaces_terminal_fingerprint_cap_refusals(
         self,
@@ -139,8 +223,12 @@ class TestDeriveMesh:
         }
         db_session.expire_all()
         rows = _rows(db_session, artifact.id)
-        assert rows[DerivativeKind.METADATA].recipe_version == 7
-        assert rows[DerivativeKind.THUMBNAIL].recipe_version == 5
+        assert (
+            rows[DerivativeKind.METADATA].recipe_version == kinds.MESH_GEOMETRY_RECIPE
+        )
+        assert (
+            rows[DerivativeKind.THUMBNAIL].recipe_version == kinds.MESH_THUMBNAIL_RECIPE
+        )
         metadata = db_session.exec(
             select(Metadata).where(Metadata.file_id == artifact.id)
         ).one()
@@ -203,6 +291,7 @@ class TestDeriveMesh:
             (0.001, 0.002, 0.003), rel=1e-12, abs=0
         )
         assert meta.volume_mm3 == pytest.approx(6e-9, rel=1e-12, abs=0)
+        assert read_volume(meta) == VolumeMeasured(meta.volume_mm3)
 
     def test_replaces_stale_inconsistent_winding_volume(
         self, db_session, stored, make_derivative, make_metadata
@@ -222,6 +311,9 @@ class TestDeriveMesh:
         ).one()
         assert outcome.kinds[DerivativeKind.METADATA] == DerivativeState.READY
         assert meta.volume_mm3 is None
+        assert read_volume(meta) == VolumeUnavailable(
+            VolumeUnavailableCause.INCONSISTENT_WINDING
+        )
 
     def test_refused_geometry_is_terminal_with_an_embedded_preview(
         self, db_session, stored, monkeypatch
@@ -910,3 +1002,437 @@ class TestMeshCancellation:
             producers.derive_mesh(healthy.id).kinds[DerivativeKind.METADATA]
             is DerivativeState.READY
         )
+
+
+class TestAttemptPublication:
+    def test_cancelled_thumbnail_keeps_unpublished_bytes_receipted(
+        self, db_session, stored
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("cancel.gcode", content.gcode())
+        file, attempts = producers._begin(artifact.id, JobKind.DERIVATIVES_GCODE)
+        records.cancel(
+            db_session, artifact, group(JobKind.DERIVATIVES_GCODE).kinds, now=utcnow()
+        )
+        db_session.commit()
+
+        with pytest.raises(records.AttemptSuperseded):
+            producers._publish_thumbnail(
+                file,
+                content.png(),
+                attempt=attempts[DerivativeKind.THUMBNAIL],
+                normalize=False,
+                strategy="embedded",
+                complete=True,
+            )
+
+        db_session.expire_all()
+        assert db_session.get(File, artifact.id).thumbnail_path is None
+        assert db_session.get(Model, artifact.model_id).thumbnail_path is None
+        receipt = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "thumbnail"
+            )
+        ).one()
+        assert receipt.state is StorageObjectState.PENDING
+        assert get_backend().exists(receipt.key)
+        assert receipt.token is not None
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.THUMBNAIL].state
+            is DerivativeState.CANCELLED
+        )
+
+    def test_cancelled_metadata_does_not_publish_slicer_facts(
+        self, db_session, stored, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("cancel.gcode", content.gcode())
+        backend = get_backend()
+        original = backend.local_path
+
+        @contextmanager
+        def cancelled_read(key):
+            with original(key) as path:
+                yield path
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_GCODE).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+
+        monkeypatch.setattr(backend, "local_path", cancelled_read)
+
+        assert producers.derive_gcode(artifact.id).kinds == {}
+
+        db_session.expire_all()
+        assert (
+            db_session.exec(
+                select(Metadata).where(Metadata.file_id == artifact.id)
+            ).first()
+            is None
+        )
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.METADATA].state
+            is DerivativeState.CANCELLED
+        )
+
+    def test_cancelled_mesh_metadata_preserves_published_volume(
+        self,
+        db_session,
+        stored,
+        make_metadata,
+        make_derivative,
+        monkeypatch,
+        stale_mesh_measurement_reply,
+    ):
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("cancelled-volume.stl", content.binary_stl())
+        published = VolumeMeasured(6e-9)
+        metadata = make_metadata(artifact, volume=published)
+        make_derivative(artifact, DerivativeKind.METADATA, recipe_version=8)
+        make_derivative(artifact, DerivativeKind.THUMBNAIL)
+
+        def cancelled_measurement(_request):
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_MESH).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            return stale_mesh_measurement_reply
+
+        monkeypatch.setattr(mesh_isolation, "generate", cancelled_measurement)
+
+        outcome = producers.derive_mesh(artifact.id)
+
+        db_session.refresh(metadata)
+        assert outcome.kinds == {}
+        assert read_volume(metadata) == published
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.METADATA].state
+            is DerivativeState.CANCELLED
+        )
+
+    @pytest.mark.parametrize(
+        "replacement",
+        [
+            VolumeMeasured(1e-9),
+            VolumeUnavailable(VolumeUnavailableCause.NOT_WATERTIGHT),
+        ],
+        ids=["small-measured-volume", "unavailable-volume"],
+    )
+    def test_superseded_mesh_metadata_preserves_replacement_volume(
+        self,
+        db_session,
+        stored,
+        make_metadata,
+        make_derivative,
+        monkeypatch,
+        stale_mesh_measurement_reply,
+        replacement,
+    ):
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("superseded-volume.stl", content.binary_stl())
+        metadata = make_metadata(artifact, volume=VolumeMeasured(500.0))
+        make_derivative(artifact, DerivativeKind.METADATA, recipe_version=8)
+        make_derivative(artifact, DerivativeKind.THUMBNAIL)
+
+        def superseded_measurement(_request):
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_MESH).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            fresh = records.begin(
+                db_session,
+                artifact,
+                DerivativeKind.METADATA,
+                kinds.MESH_GEOMETRY_RECIPE,
+                now=utcnow(),
+            )
+            attempt = records.attempt(db_session, artifact, fresh)
+            records.mark_ready(db_session, attempt, now=utcnow())
+            apply_volume(metadata, replacement)
+            db_session.add(metadata)
+            db_session.commit()
+            return stale_mesh_measurement_reply
+
+        monkeypatch.setattr(mesh_isolation, "generate", superseded_measurement)
+
+        outcome = producers.derive_mesh(artifact.id)
+
+        db_session.refresh(metadata)
+        assert outcome.kinds == {}
+        assert read_volume(metadata) == replacement
+        assert (
+            _rows(db_session, artifact.id)[DerivativeKind.METADATA].state
+            is DerivativeState.READY
+        )
+
+    def test_replaced_mesh_source_preserves_published_volume(
+        self,
+        db_session,
+        stored,
+        make_metadata,
+        make_derivative,
+        monkeypatch,
+        stale_mesh_measurement_reply,
+    ):
+        artifact = stored("replaced-source.stl", content.binary_stl())
+        published = VolumeMeasured(6e-9)
+        metadata = make_metadata(artifact, volume=published)
+        make_derivative(artifact, DerivativeKind.METADATA, recipe_version=8)
+        make_derivative(artifact, DerivativeKind.THUMBNAIL)
+
+        def replaced_measurement(_request):
+            artifact.sha256 = "f" * 64
+            db_session.add(artifact)
+            db_session.commit()
+            return stale_mesh_measurement_reply
+
+        monkeypatch.setattr(mesh_isolation, "generate", replaced_measurement)
+
+        outcome = producers.derive_mesh(artifact.id)
+
+        db_session.refresh(metadata)
+        assert outcome.kinds == {}
+        assert read_volume(metadata) == published
+
+    def test_cancelled_toolpath_retains_only_pending_ownership(
+        self, db_session, stored, monkeypatch, tmp_path
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored("cancel.bgcode", b"GCDE")
+
+        def converted(_file, directory):
+            output = directory / "output.gcode"
+            output.write_bytes(content.gcode())
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_TOOLPATH).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            return output
+
+        monkeypatch.setattr(toolpath, "convert", converted)
+
+        assert producers.derive_toolpath(artifact.id).kinds == {}
+
+        db_session.expire_all()
+        row = _rows(db_session, artifact.id)[DerivativeKind.TOOLPATH]
+        assert (row.state, row.storage_key) == (DerivativeState.CANCELLED, None)
+        receipt = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "toolpath"
+            )
+        ).one()
+        assert receipt.state is StorageObjectState.PENDING
+        assert get_backend().exists(receipt.key)
+
+    def test_announces_committed_metadata_when_thumbnail_is_superseded(
+        self, db_session, stored, monkeypatch, announced
+    ):
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored(
+            "spatula.gcode",
+            (FIXTURES_DIR / "real_prusa_mk4_spatula.gcode").read_bytes(),
+        )
+        backend = get_backend()
+        create = backend.create_bytes
+
+        def cancel_after_bytes(data, key):
+            receipt = create(data, key)
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_GCODE).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            return receipt
+
+        monkeypatch.setattr(backend, "create_bytes", cancel_after_bytes)
+
+        outcome = producers.derive_gcode(artifact.id)
+
+        assert outcome.kinds == {DerivativeKind.METADATA: DerivativeState.READY}
+        assert len(announced) == 1
+        assert announced[0]["kind"] == "metadata"
+        assert announced[0]["state"] == "ready"
+
+
+class TestDeriveViewerStl:
+    def test_cancelled_conversion_retains_only_pending_ownership(
+        self, db_session, stored, monkeypatch
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored(
+            "cancel.obj",
+            b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+            viewer_requested_at=utcnow(),
+        )
+
+        def converted(_path, *, file_type):
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_VIEWER_STL).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            return content.binary_stl()
+
+        monkeypatch.setattr(producers.stl_isolation, "to_stl_bytes", converted)
+
+        assert producers.derive_viewer_stl(artifact.id).kinds == {}
+
+        row = _rows(db_session, artifact.id)[DerivativeKind.VIEWER_STL]
+        assert (row.state, row.storage_key) == (DerivativeState.CANCELLED, None)
+        proof = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "viewer_stl"
+            )
+        ).one()
+        assert proof.state is StorageObjectState.PENDING
+        assert get_backend().read_bytes(proof.key) == content.binary_stl()
+
+    def test_superseded_conversion_preserves_the_new_viewer_bytes(
+        self, db_session, stored, monkeypatch
+    ):
+        from app.core.time import utcnow
+        from app.db.models import OwnedStorageObject, StorageObjectState
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+
+        artifact = stored(
+            "replace.obj",
+            b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+            viewer_requested_at=utcnow(),
+        )
+        published_key = None
+        fresh_bytes = b"new viewer generation"
+
+        def converted(_path, *, file_type):
+            nonlocal published_key
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_VIEWER_STL).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            records.reset(
+                db_session, artifact, group(JobKind.DERIVATIVES_VIEWER_STL).kinds
+            )
+            db_session.commit()
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    producers.stl_isolation,
+                    "to_stl_bytes",
+                    lambda *_args, **_kwargs: fresh_bytes,
+                )
+                assert producers.derive_viewer_stl(artifact.id).kinds == {
+                    DerivativeKind.VIEWER_STL: DerivativeState.READY
+                }
+            published_key = _rows(db_session, artifact.id)[
+                DerivativeKind.VIEWER_STL
+            ].storage_key
+            db_session.rollback()
+            return content.binary_stl()
+
+        monkeypatch.setattr(producers.stl_isolation, "to_stl_bytes", converted)
+
+        assert producers.derive_viewer_stl(artifact.id).kinds == {}
+
+        row = _rows(db_session, artifact.id)[DerivativeKind.VIEWER_STL]
+        assert (row.state, row.storage_key) == (DerivativeState.READY, published_key)
+        assert get_backend().read_bytes(published_key) == fresh_bytes
+        pending = db_session.exec(
+            select(OwnedStorageObject).where(
+                OwnedStorageObject.object_kind == "viewer_stl",
+                OwnedStorageObject.state == StorageObjectState.PENDING,
+            )
+        ).one()
+        assert pending.key != published_key
+        assert get_backend().read_bytes(pending.key) == content.binary_stl()
+
+    def test_superseded_failure_preserves_the_new_ready_viewer(
+        self, db_session, stored, monkeypatch
+    ):
+        from app.core.time import utcnow
+        from app.modules.derivatives import records
+        from app.modules.derivatives.kinds import group
+        from app.modules.media.mesh_contracts import ThumbnailFailureReason
+
+        artifact = stored(
+            "failed.obj",
+            b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+            viewer_requested_at=utcnow(),
+        )
+        fresh_bytes = b"new viewer generation"
+
+        def failed(_path, *, file_type):
+            records.cancel(
+                db_session,
+                artifact,
+                group(JobKind.DERIVATIVES_VIEWER_STL).kinds,
+                now=utcnow(),
+            )
+            db_session.commit()
+            records.reset(
+                db_session, artifact, group(JobKind.DERIVATIVES_VIEWER_STL).kinds
+            )
+            db_session.commit()
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    producers.stl_isolation,
+                    "to_stl_bytes",
+                    lambda *_args, **_kwargs: fresh_bytes,
+                )
+                assert producers.derive_viewer_stl(artifact.id).kinds == {
+                    DerivativeKind.VIEWER_STL: DerivativeState.READY
+                }
+            db_session.rollback()
+            raise mesh_isolation.MeshWorkerError(ThumbnailFailureReason.RESOURCE_LIMIT)
+
+        monkeypatch.setattr(producers.stl_isolation, "to_stl_bytes", failed)
+
+        assert producers.derive_viewer_stl(artifact.id).kinds == {}
+
+        row = _rows(db_session, artifact.id)[DerivativeKind.VIEWER_STL]
+        assert row.state is DerivativeState.READY
+        assert row.failure_reason is None
+        assert get_backend().read_bytes(row.storage_key) == fresh_bytes

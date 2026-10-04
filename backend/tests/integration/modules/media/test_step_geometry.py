@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.modules.media import mesh_processing
+from app.modules.media import mesh_loading, mesh_policy
 from app.modules.media.fingerprints import FingerprintResultState
 from app.modules.media.mesh_contracts import ThumbnailRequest
 from app.modules.media.thumbnail_engine import ThumbnailEngine
@@ -33,16 +33,16 @@ class TestStepGeometry:
         from app.core.config import _overlay
 
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
-        native_popen = mesh_processing.subprocess.Popen
+        native_popen = mesh_loading.subprocess.Popen
         limits = []
 
         def observed_worker(command, **kwargs):
             limits.append(int(kwargs["env"]["PRINTSTASH_STEP_TRIANGLE_LIMIT"]))
             return native_popen(command, **kwargs)
 
-        monkeypatch.setattr(mesh_processing.subprocess, "Popen", observed_worker)
+        monkeypatch.setattr(mesh_loading.subprocess, "Popen", observed_worker)
 
-        mesh = mesh_processing._load_step_mesh_isolated(ocp_box, include_brep=True)
+        mesh = mesh_loading.load_step_mesh(ocp_box, include_brep=True)
 
         assert mesh.metadata["brep"]["volume_mm3"] == pytest.approx(6000)
         assert limits == [MAX_ANALYSIS_FACES]
@@ -63,7 +63,7 @@ class TestStepGeometry:
     def test_converts_source_metres_to_mm(
         self,
     ):
-        mesh = mesh_processing._load_step_mesh_isolated(
+        mesh = mesh_loading.load_step_mesh(
             FIXTURES_DIR / "cascadio_material.stp", include_brep=True
         )
         assert mesh.metadata["brep"]["source_units"] == ["metre"]
@@ -93,7 +93,7 @@ class TestStepGeometry:
         path = tmp_path / "assembly.step"
         writer.Write(str(path))
 
-        mesh = mesh_processing._load_step_mesh_isolated(path, include_brep=True)
+        mesh = mesh_loading.load_step_mesh(path, include_brep=True)
         assert mesh.extents.tolist() == pytest.approx([60, 20, 30])
         assert mesh.metadata["brep"]["counts"]["solids"] == 2
         assert mesh.metadata["brep"]["volume_mm3"] == pytest.approx(12000)
@@ -244,7 +244,7 @@ class TestStepWorkerContainment:
         from app.core.config import _overlay
         from app.db.models import CapacityReservation
 
-        native_popen = mesh_processing.subprocess.Popen
+        native_popen = mesh_loading.subprocess.Popen
         processes, directories = [], []
 
         # A real child supplies the native fault; the production watchdog owns
@@ -264,21 +264,19 @@ class TestStepWorkerContainment:
             processes.append(child)
             return child
 
-        monkeypatch.setattr(mesh_processing.subprocess, "Popen", faulty_worker)
+        monkeypatch.setattr(mesh_loading.subprocess, "Popen", faulty_worker)
         monkeypatch.setitem(
             _overlay, "mesh_step_timeout_seconds", 0.1 if failure == "timeout" else 5
         )
         if failure == "memory":
-            monkeypatch.setattr(
-                mesh_processing, "_step_memory_budget_bytes", lambda: 1024
-            )
+            monkeypatch.setattr(mesh_policy, "step_memory_budget_bytes", lambda: 1024)
         code = {
             "timeout": "tessellation_timeout",
             "memory": "worker_oom",
             "unavailable": "step_unavailable",
         }[failure]
         with pytest.raises(GeometryError, match=code):
-            mesh_processing._load_step_mesh_isolated(ocp_box, include_brep=True)
+            mesh_loading.load_step_mesh(ocp_box, include_brep=True)
         assert all(process.poll() is not None for process in processes)
         assert all(not path.exists() for path in directories)
         assert db_session.exec(select(CapacityReservation)).all() == []

@@ -19,6 +19,15 @@ import threading
 from pathlib import Path
 
 import pytest
+from printstash_core.mesh.measurements import (
+    VolumeLegacyUnassessed,
+    VolumeMeasured,
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+    VolumeUnavailable,
+    VolumeUnavailableCause,
+    encode_volume,
+)
 from sqlalchemy import Engine, event
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -326,6 +335,123 @@ class TestReserveNextVersion:
             engine.dispose()
 
 
+class TestIncomingDimensionEvidence:
+    @pytest.mark.parametrize("axis", ["bbox_x_mm", "bbox_y_mm", "bbox_z_mm"])
+    @pytest.mark.parametrize("value", [float("inf"), float("-inf"), -1.0, True])
+    def test_rejects_nonphysical_incoming_dimensions_before_publication(
+        self, db_session, storage, model, tmp_path, monkeypatch, axis, value
+    ):
+        calls = []
+        original_publish = ingestion.publish_file
+
+        def observe_publication(*args, **kwargs):
+            calls.append(kwargs)
+            return original_publish(*args, **kwargs)
+
+        monkeypatch.setattr(ingestion, "publish_file", observe_publication)
+        staged = _staged(tmp_path)
+        with pytest.raises(ValueError):
+            _persist(db_session, model, staged, meta={axis: value})
+        assert calls == []
+        assert staged.exists()
+        assert (
+            db_session.exec(select(File).where(File.model_id == model.id)).all() == []
+        )
+
+
+class TestIncomingVolumeEvidence:
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            {"volume_state": "measured"},
+            {"volume_method": "mesh_surface_integral"},
+            {"volume_unavailable_cause": "not_watertight"},
+            {"volume_not_calculated_cause": "enrichment_pending"},
+            {"volume_measurement": {}},
+            {"volume_mm3": True},
+            {"volume_mm3": float("inf")},
+            {"volume_mm3": 10**400},
+            {
+                "volume_measurement": encode_volume(VolumeMeasured(1.0)),
+                "volume_mm3": 2.0,
+            },
+        ],
+        ids=[
+            "internal-state",
+            "internal-method",
+            "internal-unavailable",
+            "internal-not-calculated",
+            "missing-wire-fields",
+            "bool-scalar",
+            "infinite-scalar",
+            "overflow-scalar",
+            "scalar-disagreement",
+        ],
+    )
+    def test_rejects_invalid_volume_before_artifact_side_effects(
+        self, db_session, storage, model, tmp_path, monkeypatch, meta
+    ):
+        publication_calls = []
+        original_publish = ingestion.publish_file
+
+        def observe_publication(*args, **kwargs):
+            publication_calls.append(kwargs)
+            return original_publish(*args, **kwargs)
+
+        monkeypatch.setattr(ingestion, "publish_file", observe_publication)
+        staged = _staged(tmp_path)
+        next_version = model.next_file_version
+        with pytest.raises(ValueError):
+            _persist(db_session, model, staged, meta=meta)
+        db_session.expire_all()
+        assert publication_calls == []
+        assert model.next_file_version == next_version
+        assert staged.exists()
+        assert (
+            db_session.exec(select(File).where(File.model_id == model.id)).all() == []
+        )
+        assert list(storage.walk_keys()) == []
+
+    @pytest.mark.parametrize(
+        "volume",
+        [
+            VolumeMeasured(1e-9),
+            VolumeUnavailable(VolumeUnavailableCause.NOT_WATERTIGHT),
+            VolumeNotCalculated(VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED),
+        ],
+    )
+    def test_persists_explicit_volume_evidence(
+        self, db_session, storage, model, tmp_path, volume
+    ):
+        from app.modules.library.volume_metadata import read_volume
+
+        artifact = _persist(
+            db_session,
+            model,
+            _staged(tmp_path),
+            meta={"volume_measurement": encode_volume(volume)},
+        )
+        metadata = db_session.exec(
+            select(Metadata).where(Metadata.file_id == artifact.id)
+        ).one()
+        assert read_volume(metadata) == volume
+
+    @pytest.mark.parametrize("value", [None, 0.0, -1.0, 1e-9, 500.0])
+    def test_preserves_scalar_only_payload_as_unassessed(
+        self, db_session, storage, model, tmp_path, value
+    ):
+        from app.modules.library.volume_metadata import read_volume
+
+        artifact = _persist(
+            db_session, model, _staged(tmp_path), meta={"volume_mm3": value}
+        )
+        metadata = db_session.exec(
+            select(Metadata).where(Metadata.file_id == artifact.id)
+        ).one()
+        assert read_volume(metadata) == VolumeLegacyUnassessed(value)
+        assert metadata.volume_mm3 == value
+
+
 class TestMetadata:
     def test_unknown_commit_resolution_keeps_the_published_blob(
         self,
@@ -599,3 +725,77 @@ class TestDerivativeHandoff:
 
         db_session.rollback()
         assert db_session.get(ReconcileCursor, JobKind.DERIVATIVES_MESH) is None
+
+
+class TestStagedAttemptPublication:
+    def test_late_upload_completion_preserves_retried_staging(
+        self, db_session, make_user, make_ingest_request, tmp_path, storage, monkeypatch
+    ):
+        from app.db.models import IngestRequestKind, Job, JobState, StagingLease
+        from app.modules.ingestion import staging_leases
+        from app.modules.work import service
+        from tests.factories.ops import build_job_context
+
+        owner = make_user()
+        request = make_ingest_request(owner, kind=IngestRequestKind.UPLOAD)
+        staged = tmp_path / "attempt.gcode"
+        original = b"; original source\nG1 X1 Y1\n"
+        replacement = b"; retry-owned bytes\nG1 X2 Y2\n"
+        staged.write_bytes(original)
+        staging_leases.create_job_lease(
+            db_session,
+            job_id=request.job_id,
+            owner_user_id=owner.id,
+            path=staged,
+            size_bytes=len(original),
+            sha256=hashlib.sha256(original).hexdigest(),
+        )
+        db_session.commit()
+        context = build_job_context(request.job_id)
+        monkeypatch.setattr(service, "nudge", lambda *_args, **_kwargs: None)
+        retried_leases = []
+
+        def retry_before_terminal(stage, job_id):
+            if stage != "before_terminal":
+                return
+            service.cancel(job_id, actor=owner)
+            staged.write_bytes(replacement)
+            lease = staging_leases.create_job_lease(
+                db_session,
+                job_id=job_id,
+                owner_user_id=owner.id,
+                path=staged,
+                size_bytes=len(replacement),
+                sha256=hashlib.sha256(replacement).hexdigest(),
+            )
+            db_session.commit()
+            retried_leases.append(lease.id)
+            service.retry(job_id, actor=owner)
+
+        monkeypatch.setattr(
+            ingestion, "_fault_injection_checkpoint", retry_before_terminal
+        )
+
+        outcome = ingestion.ingest_staged_file(
+            job_context=context,
+            artifact=ingestion.StagedArtifact(
+                staged_path=staged,
+                original_filename="attempt.gcode",
+                model_name="Attempt",
+                file_type=FileType.GCODE,
+            ),
+            actor_user_id=owner.id,
+        )
+
+        assert outcome is not None
+        db_session.expire_all()
+        job = db_session.get(Job, request.job_id)
+        assert job.state is JobState.QUEUED
+        assert job.attempts == context.attempt
+        assert job.execution_epoch != context.execution_epoch
+        assert staged.read_bytes() == replacement
+        assert db_session.get(StagingLease, retried_leases[0]) is not None
+        assert (
+            db_session.get(File, outcome.file_id).sha256
+            == hashlib.sha256(original).hexdigest()
+        )

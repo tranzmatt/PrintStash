@@ -31,7 +31,8 @@ from app.modules.ingestion.ingestion import (
     add_gcode_revision_to_model,
     ingest_staged_file,
 )
-from app.modules.work.contracts import JobOutcome
+from app.modules.work.contracts import JobContext, JobOutcome
+from app.modules.work.jobs import TERMINAL_STATES, status_of
 from app.modules.work.jobs import jobs as registry
 
 from .manager import SqlArtifactUploadManager
@@ -52,10 +53,11 @@ def _staged_path(session: Session, job_id: str) -> Path | None:
 def run_verified_upload_ingestion(
     *,
     upload_id: str,
-    job_id: str,
+    job_context: JobContext,
     session_factory: SessionFactory,
 ) -> None:
     """Run the commit for one verified upload, then mirror its terminal result."""
+    job_id = job_context.job_id
 
     with session_factory.scoped_session() as session:
         upload = session.get(ArtifactUploadSession, upload_id)
@@ -76,11 +78,9 @@ def run_verified_upload_ingestion(
         )
 
     if staged_path is None or not staged_path.exists():
-        registry.finish(
-            job_id, JobOutcome.FAILED, error="staging_expired", retryable=False
-        )
+        job_context.finish(JobOutcome.FAILED, error="staging_expired", retryable=False)
     elif purpose == "revision":
-        registry.update(job_id, label="Attaching revision")
+        job_context.update(label="Attaching revision")
         try:
             with session_factory.scoped_session() as session:
                 model = session.exec(
@@ -101,15 +101,13 @@ def run_verified_upload_ingestion(
                     revision_notes=options.get("revision_notes"),
                     is_recommended=bool(options.get("is_recommended", False)),
                 )
-                registry.finish(
-                    job_id,
+                job_context.finish(
                     JobOutcome.COMPLETED,
                     model_id=model.id,
                     file_id=file_row.id,
                 )
         except Exception:
-            registry.finish(
-                job_id,
+            job_context.finish(
                 JobOutcome.FAILED,
                 error="artifact_revision_ingestion_failed",
                 retryable=True,
@@ -122,15 +120,14 @@ def run_verified_upload_ingestion(
         elif purpose in {"model", "external_writeback"}:
             file_type = SUFFIX_TO_FILE_TYPE.get(suffix)
         if file_type is None:
-            registry.finish(
-                job_id,
+            job_context.finish(
                 JobOutcome.FAILED,
                 error="artifact_upload_purpose_not_supported",
                 retryable=False,
             )
         else:
             ingest_staged_file(
-                job_id=job_id,
+                job_context=job_context,
                 artifact=StagedArtifact(
                     staged_path=staged_path,
                     original_filename=filename,
@@ -149,6 +146,17 @@ def run_verified_upload_ingestion(
     result = registry.get(job_id)
     completed = result is not None and str(result.state) == "completed"
     with session_factory.scoped_session() as session:
+        if (
+            registry.lock_execution(
+                session,
+                job_context.job_id,
+                epoch=job_context.execution_epoch,
+                attempt=job_context.attempt,
+                states=TERMINAL_STATES,
+            )
+            is None
+        ):
+            return
         upload = session.get(ArtifactUploadSession, upload_id)
         if upload is None or upload.state != ArtifactUploadState.INGESTING:
             return
@@ -183,7 +191,7 @@ def _upload_id(subject: str) -> str:
 def _step(ctx) -> None:
     run_verified_upload_ingestion(
         upload_id=_upload_id(ctx.subject_key),
-        job_id=ctx.job_id,
+        job_context=ctx,
         session_factory=get_session_factory(),
     )
 
@@ -205,7 +213,10 @@ def _on_failure(session: Session, subject: str, reason: str) -> None:
         return
     upload.state = ArtifactUploadState.FAILED
     upload.error_code = "artifact_ingestion_failed"
-    upload.retryable = True
+    job = registry.row(session, upload.job_id) if upload.job_id is not None else None
+    if job is None:
+        raise RuntimeError("artifact_upload_job_missing")
+    upload.retryable = bool(status_of(job).retryable)
     upload.version += 1
     session.add(upload)
     del reason

@@ -36,10 +36,11 @@ from pathlib import Path
 import pytest
 
 from app.core.config import _overlay
-from app.modules.media import mesh_processing, mesh_render
-from tests.fixtures.mesh_analysis import analyze
+from app.modules.media import (
+    mesh_policy,
+)
 
-from .._meshes import _fake_mesh, _write_binary_stl
+from .._meshes import _write_binary_stl
 
 
 class TestDetectMemoryLimitBytes:
@@ -61,7 +62,7 @@ class TestDetectMemoryLimitBytes:
 
         monkeypatch.setattr(Path, "read_text", read)
 
-        assert mesh_processing._detect_memory_limit_bytes() == 8 * 1024**3
+        assert mesh_policy.detect_memory_limit_bytes() == 8 * 1024**3
 
     @pytest.mark.parametrize(
         "parent,child,expected",
@@ -87,10 +88,10 @@ class TestDetectMemoryLimitBytes:
 
         monkeypatch.setattr(Path, "read_text", read)
 
-        assert mesh_processing._detect_memory_limit_bytes() == expected
+        assert mesh_policy.detect_memory_limit_bytes() == expected
 
     def test_detect_memory_limit_is_positive_on_linux(self) -> None:
-        limit = mesh_processing._detect_memory_limit_bytes()
+        limit = mesh_policy.detect_memory_limit_bytes()
         # On Linux CI this reads /proc/meminfo or a cgroup; elsewhere it may be None.
         assert limit is None or limit > 0
 
@@ -105,7 +106,7 @@ class TestDetectMemoryLimitBytes:
             return real_read_text(self, *a, **k)
 
         monkeypatch.setattr(_Path, "read_text", fake_read_text)
-        limit = mesh_processing._detect_memory_limit_bytes()
+        limit = mesh_policy.detect_memory_limit_bytes()
         assert limit is not None
         assert limit <= 2147483648
 
@@ -122,7 +123,7 @@ class TestDetectMemoryLimitBytes:
             return real_read_text(self, *a, **k)
 
         monkeypatch.setattr(_Path, "read_text", fake_read_text)
-        limit = mesh_processing._detect_memory_limit_bytes()
+        limit = mesh_policy.detect_memory_limit_bytes()
         assert limit is not None
         assert limit <= 1073741824
 
@@ -140,7 +141,7 @@ class TestDetectMemoryLimitBytes:
 
         monkeypatch.setattr(_Path, "read_text", fake_read_text)
         # Falls through to /proc/meminfo (real, host-dependent) or None.
-        limit = mesh_processing._detect_memory_limit_bytes()
+        limit = mesh_policy.detect_memory_limit_bytes()
         assert limit is None or limit > 0
 
     def test_detect_memory_limit_survives_unreadable_sources(self, monkeypatch) -> None:
@@ -160,118 +161,73 @@ class TestDetectMemoryLimitBytes:
             return real_read_text(self, *a, **k)
 
         monkeypatch.setattr(_Path, "read_text", fake_read_text)
-        assert mesh_processing._detect_memory_limit_bytes() is None
+        assert mesh_policy.detect_memory_limit_bytes() is None
 
 
 class TestRamTriangleCap:
     def test_ram_triangle_cap_uses_cached_memory_limit(self, monkeypatch) -> None:
         # _MEMORY_LIMIT_BYTES already resolved (not None) -> _detect_memory_limit_bytes
         # is never called again.
-        monkeypatch.setattr(mesh_processing, "_MEMORY_LIMIT_BYTES", 4 * 1024**3)
+        monkeypatch.setattr(mesh_policy, "_MEMORY_LIMIT_BYTES", 4 * 1024**3)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0.5)
 
         def _boom():  # pragma: no cover - must never run
             raise AssertionError("must reuse cached limit")
 
-        monkeypatch.setattr(mesh_processing, "_detect_memory_limit_bytes", _boom)
-        assert mesh_processing._ram_triangle_cap(".stl") is not None
+        monkeypatch.setattr(mesh_policy, "detect_memory_limit_bytes", _boom)
+        assert mesh_policy.ram_triangle_cap(".stl") is not None
 
     def test_the_ram_cap_scales_per_format(self, monkeypatch) -> None:
         # Pin a 4 GB ceiling so the result is host-independent.
-        monkeypatch.setattr(mesh_processing, "_MEMORY_LIMIT_BYTES", 4 * 1024**3)
+        monkeypatch.setattr(mesh_policy, "_MEMORY_LIMIT_BYTES", 4 * 1024**3)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0.5)
-        stl_cap = mesh_processing._ram_triangle_cap(".stl")
-        mf_cap = mesh_processing._ram_triangle_cap(".3mf")
+        stl_cap = mesh_policy.ram_triangle_cap(".stl")
+        mf_cap = mesh_policy.ram_triangle_cap(".3mf")
         # 2 GB budget / per-triangle cost.
         assert stl_cap == int(
-            2 * 1024**3 / mesh_processing._DEFAULT_PEAK_BYTES_PER_TRIANGLE
+            2 * 1024**3 / mesh_policy._DEFAULT_PEAK_BYTES_PER_TRIANGLE
         )
-        assert mf_cap == int(
-            2 * 1024**3 / mesh_processing._PEAK_BYTES_PER_TRIANGLE[".3mf"]
-        )
+        assert mf_cap == int(2 * 1024**3 / mesh_policy._PEAK_BYTES_PER_TRIANGLE[".3mf"])
         # 3MF is the heavier format, so its cap is the lower of the two.
         assert mf_cap < stl_cap
 
     def test_ram_cap_divides_budget_by_max_render_jobs(self, monkeypatch) -> None:
         # Same RAM, same fraction — doubling the concurrent-job count halves the
         # per-job triangle cap.
-        monkeypatch.setattr(mesh_processing, "_MEMORY_LIMIT_BYTES", 4 * 1024**3)
+        monkeypatch.setattr(mesh_policy, "_MEMORY_LIMIT_BYTES", 4 * 1024**3)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0.5)
 
         monkeypatch.setitem(_overlay, "max_render_jobs", 1)
-        one = mesh_processing._ram_triangle_cap(".stl")
+        one = mesh_policy.ram_triangle_cap(".stl")
         monkeypatch.setitem(_overlay, "max_render_jobs", 2)
-        two = mesh_processing._ram_triangle_cap(".stl")
+        two = mesh_policy.ram_triangle_cap(".stl")
 
-        assert one == int(
-            2 * 1024**3 / mesh_processing._DEFAULT_PEAK_BYTES_PER_TRIANGLE
-        )
+        assert one == int(2 * 1024**3 / mesh_policy._DEFAULT_PEAK_BYTES_PER_TRIANGLE)
         assert two == one // 2
 
     def test_ram_cap_disabled_when_fraction_zero(self, monkeypatch) -> None:
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
-        assert mesh_processing._ram_triangle_cap(".stl") is None
+        assert mesh_policy.ram_triangle_cap(".stl") is None
 
     def test_ram_triangle_cap_none_when_detection_fails(self, monkeypatch) -> None:
-        monkeypatch.setattr(mesh_processing, "_MEMORY_LIMIT_BYTES", None)
+        monkeypatch.setattr(mesh_policy, "_MEMORY_LIMIT_BYTES", None)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0.5)
-        monkeypatch.setattr(mesh_processing, "_detect_memory_limit_bytes", lambda: None)
-        assert mesh_processing._ram_triangle_cap(".stl") is None
+        monkeypatch.setattr(mesh_policy, "detect_memory_limit_bytes", lambda: None)
+        assert mesh_policy.ram_triangle_cap(".stl") is None
 
 
 class TestRenderJobsLimit:
     def test_render_jobs_limit_floors_at_one(self, monkeypatch) -> None:
         monkeypatch.setitem(_overlay, "max_render_jobs", 0)
-        assert mesh_processing._render_jobs_limit() == 1
+        assert mesh_policy.render_jobs_limit() == 1
         monkeypatch.setitem(_overlay, "max_render_jobs", -5)
-        assert mesh_processing._render_jobs_limit() == 1
+        assert mesh_policy.render_jobs_limit() == 1
 
     def test_render_jobs_limit_falls_back_to_one_on_bad_config(
         self, monkeypatch
     ) -> None:
         monkeypatch.setitem(_overlay, "max_render_jobs", "not-a-number")
-        assert mesh_processing._render_jobs_limit() == 1
-
-
-class TestRenderSemaphore:
-    def test_render_semaphore_caps_concurrent_renders(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
-        import threading
-        import time
-
-        monkeypatch.setitem(_overlay, "max_render_jobs", 2)
-        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1_000_000)
-        monkeypatch.setitem(_overlay, "mesh_max_load_mb", 0)
-        # Drop any cached semaphore built at a different limit by an earlier test.
-        monkeypatch.setattr(mesh_processing, "_RENDER_SEMAPHORE", None)
-
-        p = tmp_path / "ok.stl"
-        _write_binary_stl(p, 500)
-        monkeypatch.setattr(mesh_processing, "_load_mesh", lambda _p: _fake_mesh(500))
-
-        state = {"current": 0, "peak": 0}
-        lock = threading.Lock()
-
-        def _slow_render(*_a, **_k):
-            with lock:
-                state["current"] += 1
-                state["peak"] = max(state["peak"], state["current"])
-            time.sleep(0.05)  # hold the slot so overlap is observable
-            with lock:
-                state["current"] -= 1
-            return b"PNG"
-
-        monkeypatch.setattr(mesh_render, "render_mesh_thumbnail", _slow_render)
-
-        threads = [threading.Thread(target=lambda: analyze(p)) for _ in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert state["peak"] >= 1  # work really ran
-        assert state["peak"] <= 2
+        assert mesh_policy.render_jobs_limit() == 1
 
 
 class TestExceedsCap:
@@ -289,7 +245,7 @@ class TestExceedsCap:
         monkeypatch.setattr(Path, "stat", fake_stat)
         # A failed stat is not evidence that the file is small enough for an
         # unrestricted trimesh load. Real stat is restored by teardown.
-        assert mesh_processing._exceeds_cap(p) is True
+        assert mesh_policy.exceeds_cap(p) is True
 
     def test_unknown_estimate_is_safe_when_the_byte_budget_is_proven(
         self, tmp_path: Path, monkeypatch
@@ -298,10 +254,10 @@ class TestExceedsCap:
         p = tmp_path / "small.ply"
         p.write_bytes(b"ply\nend_header\n")
         monkeypatch.setattr(
-            mesh_processing, "_estimate_triangle_count", lambda *_a, **_k: None
+            mesh_policy, "estimate_triangle_count", lambda *_a, **_k: None
         )
 
-        assert mesh_processing._exceeds_cap(p) is False
+        assert mesh_policy.exceeds_cap(p) is False
 
 
 class TestNativeMemoryBudget:
@@ -309,20 +265,20 @@ class TestNativeMemoryBudget:
 
     def test_is_capped_at_two_gibibytes(self, monkeypatch) -> None:
         monkeypatch.setattr(
-            mesh_processing, "_step_memory_budget_bytes", lambda: 64 * 1024**3
+            mesh_policy, "step_memory_budget_bytes", lambda: 64 * 1024**3
         )
 
-        assert mesh_processing.native_memory_budget_bytes() == 2 * 1024**3
+        assert mesh_policy.native_memory_budget_bytes() == 2 * 1024**3
 
     def test_an_undetectable_budget_falls_back_to_one_gibibyte(
         self, monkeypatch
     ) -> None:
-        monkeypatch.setattr(mesh_processing, "_step_memory_budget_bytes", lambda: None)
+        monkeypatch.setattr(mesh_policy, "step_memory_budget_bytes", lambda: None)
 
-        assert mesh_processing.native_memory_budget_bytes() == 1024**3
+        assert mesh_policy.native_memory_budget_bytes() == 1024**3
 
 
 class TestReclaimMemory:
     def test_reclaim_memory_is_safe_to_call(self) -> None:
         # Must never raise, regardless of libc/platform — it's best-effort cleanup.
-        mesh_processing._reclaim_memory()
+        mesh_policy.reclaim_memory()

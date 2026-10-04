@@ -568,6 +568,19 @@ class TestPut:
             )
             setup.add(slot)
             setup.commit()
+            from app.db.models import JobKind, JobState
+            from app.modules.work.contracts import JobExecution
+            from tests.factories.ops import build_job
+
+            stored_job = build_job(
+                setup, kind=JobKind.INGESTION_INBOX_IMPORT, state=JobState.COMPLETED
+            )
+            row.job_id = stored_job.id
+            setup.add(row)
+            setup.commit()
+            execution = JobExecution(
+                stored_job.id, stored_job.attempts, stored_job.execution_epoch
+            )
             row_id = row.id
             model_id = model.id
             source_id = source.id
@@ -594,7 +607,7 @@ class TestPut:
         monkeypatch.setattr(inbox, "_record_v2_results", lambda *_args: (True, 1, 0))
         monkeypatch.setattr(inbox, "_cleanup_capture_slots", lambda *_args: True)
 
-        inbox._finish_import(row_id, "finish-job", factory)
+        inbox._finish_import(row_id, execution, factory)
 
         # Cover, publication intent, proof finalization, then Inbox terminalization.
         assert len(commits) == 4

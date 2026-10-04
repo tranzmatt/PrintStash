@@ -186,7 +186,12 @@ Models settings and start a manual analysis to retry previously partial
 Artifacts. Ready fingerprints and human review decisions remain valid; no
 Artifact, Revision or canonical Model is replaced by this work.
 
-Verification evidence uses `surface-verification-v3`. An original-axis alignment
+Verification evidence uses `surface-verification-v4`. Exact sample-point distances
+use an owned SciPy KDTree index; alignment hypotheses share one bounded query.
+Power-of-two scaling protects finite numeric range, with explicit refusal when
+index coordinates or physical distances cannot be represented. Ties retain the
+first original target index. Native queries use one thread, with deadline checks
+between blocks and a hard outer worker timeout. An original-axis alignment
 hypothesis now proves equivalent exports whose PCA axes differ through rounding;
 the full correspondence proof remains mandatory. The previous calibration
 reference is retained, and the new reference records all 20 cases with their

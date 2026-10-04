@@ -19,6 +19,16 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Added
 
+- Measure mesh rendering, supervised native workers and upload-to-visible
+  production DBOS ingestion through separate reproducible benchmark paths.
+  Preserve phase costs, resource observations and failed samples, with an expanded
+  versioned corpus and opt-in large inputs and hash-pinned real slicer projects.
+- Publish explicit mesh volume state, method and cause independently of similarity
+  fingerprints. Preserve historical scalar provenance, keep small measurements
+  unrounded and evaluate signed volume accurately across large translations.
+  Reject nonphysical dimensions before publication and repair unusable historical
+  measurements during the additive upgrade.
+
 - Add a frozen synthetic mesh contract corpus and record benchmark environment, limits, versions and target expectations separately from observed render results.
 
 - Mesh workers retain bounded phase costs and parent-observed resource usage in structured process logs and local Prometheus counters, including metadata-only work and failed or cancelled native processes.
@@ -42,6 +52,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+
+- Bounded STL previews report whether all source triangles are represented independently from a complete source scan. Mesh processing now uses separate admission, loading, measurement and preview owners with validated geometry and fingerprint contracts.
 - Mesh workers reject unknown or malformed fingerprint result states before publication.
 - Capture and similarity commands keep the API event loop responsive through database writes, background-engine notification and response projection.
 - Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.
@@ -49,6 +61,9 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Small meshes placed far from the coordinate origin retain their thumbnail
   geometry and shading. Visual recipes now refresh previews, view fingerprints,
   and derived image vectors while preserving original files and encoder assets.
+- Geometric verification reuses an exact point index and preserves nearest-point
+  distances for models placed far from the origin. Previous pair proofs are
+  rechecked under the new verifier recipe while retaining review decisions.
 - Ingest acceptance keeps the API event loop responsive while staging files,
   recording work and notifying the background engine.
 
@@ -81,6 +96,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 - Background work starts on DBOS 3.0, with a persistent reconciler schedule
   that survives process restarts and is recreated after restore.
+- Late derivative results can no longer overwrite cancellation, retries, regeneration, trashed Artifacts or replaced source bytes. Stale Job executions also cannot settle a newer attempt or reclaim its staging files.
 
 
 - Removed the duplicate Wiki entry from the profile dropdown.
@@ -143,7 +159,9 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Restoring a backup no longer fails because a completed ZIP inspection is
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
+- Large STL previews frame every source component and preserve ASCII geometry after large translations.
 
+- Streamed STL previews preserve valid oblique facets that the degeneracy filter could discard.
 
 ### Performance
 

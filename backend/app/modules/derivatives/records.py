@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlmodel import Session, col, select
 
 from app.core.config import settings
@@ -34,8 +36,14 @@ from app.db.models import (
     DerivativeRegeneration,
     DerivativeState,
     File,
+    FileType,
     JobKind,
+    JobState,
+    Model,
 )
+from app.db.scopes import live
+from app.db.transactions import begin_write
+from app.modules.work.contracts import JobExecution
 from app.schemas.jobs import DerivativeRead, DerivativeStatus
 
 from . import policy
@@ -84,7 +92,9 @@ def satisfied(
         if row.attempts >= settings.derivative_max_attempts:
             return True
         return row.next_attempt_at is not None and ensure_utc(row.next_attempt_at) > now
-    return now - updated < STALE_IN_FLIGHT
+    return (
+        regenerated_at is None or updated >= regenerated_at
+    ) and now - updated < STALE_IN_FLIGHT
 
 
 def rows_for(session: Session, file: File) -> dict[DerivativeKind, ArtifactDerivative]:
@@ -128,6 +138,7 @@ def begin(
     if row is None:
         row = ArtifactDerivative(file_id=file.id, kind=kind, recipe_version=recipe)
     row.state = DerivativeState.RUNNING
+    row.attempt_token = str(uuid4())
     row.attempts += 1
     row.next_attempt_at = None
     row.failure_reason = None
@@ -137,16 +148,172 @@ def begin(
     return row
 
 
+@dataclass(frozen=True)
+class ArtifactSource:
+    sha256: str
+    file_type: FileType
+    original_filename: str
+    is_external: bool
+    path: str
+    size_bytes: int
+    model_id: int
+    external_library_id: int | None
+    source_key: str | None
+    source_mtime: float | None
+    source_etag: str | None
+    source_version_id: str | None
+
+    @classmethod
+    def of(cls, file: File) -> ArtifactSource:
+        return cls(
+            sha256=file.sha256,
+            file_type=file.file_type,
+            original_filename=file.original_filename,
+            is_external=file.is_external,
+            path=file.path,
+            size_bytes=file.size_bytes,
+            model_id=file.model_id,
+            external_library_id=file.external_library_id,
+            source_key=file.source_key,
+            source_mtime=file.source_mtime,
+            source_etag=file.source_etag,
+            source_version_id=file.source_version_id,
+        )
+
+
+def require_execution(session: Session, execution: JobExecution) -> None:
+    from app.modules.work.jobs import jobs
+
+    if (
+        jobs.lock_execution(
+            session,
+            execution.job_id,
+            epoch=execution.execution_epoch,
+            attempt=execution.attempt,
+            states=(JobState.RUNNING,),
+        )
+        is None
+    ):
+        raise AttemptSuperseded()
+
+
+@dataclass(frozen=True)
+class DerivativeAttempt:
+    file_id: int
+    kind: DerivativeKind
+    recipe: int
+    token: str
+    source: ArtifactSource
+    regenerated_at: datetime | None
+    execution: JobExecution | None
+
+
+class AttemptSuperseded(Exception):
+    """The execution no longer owns this Artifact's derivative output."""
+
+
+def attempt(
+    session: Session,
+    file: File,
+    row: ArtifactDerivative,
+    *,
+    execution: JobExecution | None = None,
+) -> DerivativeAttempt:
+    """Capture immutable publication authority immediately after ``begin``."""
+    if (
+        file.id is None
+        or row.attempt_token is None
+        or row.state is not DerivativeState.RUNNING
+    ):
+        raise ValueError("derivative_attempt_not_running")
+    regen = regenerations(session, definitions=[g.definition for g in groups_for(file)])
+    return DerivativeAttempt(
+        file.id,
+        row.kind,
+        row.recipe_version,
+        row.attempt_token,
+        ArtifactSource.of(file),
+        regen.get(row.kind),
+        execution,
+    )
+
+
+def _claim(
+    session: Session, attempt: DerivativeAttempt
+) -> tuple[File, ArtifactDerivative]:
+    """Fence the entire output transaction, after byte publication, before SQL output.
+
+    Lock order is Job -> generation -> Model -> File -> derivative. PostgreSQL shares
+    the generation lock across publishers; regenerate-all takes it exclusively.
+    SQLite reserves its writer before reading. Locks last until caller commit.
+    A rejected publication leaves its durable PENDING storage receipt for the
+    ownership sweep; it must never delete bytes by pathname.
+    """
+    begin_write(session, immediate=True)
+    with session.no_autoflush:
+        if attempt.execution is not None:
+            require_execution(session, attempt.execution)
+        policy.lock_generation(session)
+        model = session.exec(
+            select(Model)
+            .where(Model.id == attempt.source.model_id, live(Model))
+            .with_for_update()
+        ).first()
+        file = session.exec(
+            select(File)
+            .where(File.id == attempt.file_id, live(File))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+        if model is None or file is None or ArtifactSource.of(file) != attempt.source:
+            raise AttemptSuperseded()
+        regen = regenerations(
+            session, definitions=[g.definition for g in groups_for(file)]
+        )
+        if (
+            regen.get(attempt.kind) != attempt.regenerated_at
+            or recipes_for(file).get(attempt.kind) != attempt.recipe
+        ):
+            raise AttemptSuperseded()
+        changed = affected(
+            session,
+            update(ArtifactDerivative)
+            .where(
+                col(ArtifactDerivative.file_id) == attempt.file_id,
+                col(ArtifactDerivative.kind) == attempt.kind,
+                col(ArtifactDerivative.recipe_version) == attempt.recipe,
+                col(ArtifactDerivative.state) == DerivativeState.RUNNING,
+                col(ArtifactDerivative.attempt_token) == attempt.token,
+            )
+            .values(attempt_token=attempt.token)
+            .execution_options(synchronize_session=False),
+        )
+        if changed != 1:
+            raise AttemptSuperseded()
+        row = session.exec(
+            select(ArtifactDerivative)
+            .where(
+                ArtifactDerivative.file_id == attempt.file_id,
+                ArtifactDerivative.kind == attempt.kind,
+                ArtifactDerivative.recipe_version == attempt.recipe,
+            )
+            .execution_options(populate_existing=True)
+        ).one()
+    return file, row
+
+
 def mark_ready(
     session: Session,
-    row: ArtifactDerivative,
+    attempt: DerivativeAttempt,
     *,
     now: datetime,
     storage_key: str | None = None,
     output: dict[str, Any] | None = None,
     duration_ms: int | None = None,
     peak_rss_bytes: int | None = None,
-) -> None:
+) -> File:
+    file, row = _claim(session, attempt)
+    row.attempt_token = None
     row.state = DerivativeState.READY
     row.storage_key = storage_key if storage_key is not None else row.storage_key
     row.output_json = json.dumps(output or {}, separators=(",", ":"), default=str)
@@ -156,12 +323,15 @@ def mark_ready(
     row.peak_rss_bytes = peak_rss_bytes
     row.updated_at = now
     session.add(row)
+    return file
 
 
 def mark_skipped(
-    session: Session, row: ArtifactDerivative, reason: str, *, now: datetime
+    session: Session, attempt: DerivativeAttempt, reason: str, *, now: datetime
 ) -> None:
     """Nothing to produce for these bytes (G-code without an embedded image)."""
+    _, row = _claim(session, attempt)
+    row.attempt_token = None
     row.state = DerivativeState.SKIPPED
     row.failure_reason = reason
     row.next_attempt_at = None
@@ -170,6 +340,28 @@ def mark_skipped(
 
 
 def mark_failed(
+    session: Session,
+    attempt: DerivativeAttempt,
+    reason: str,
+    *,
+    now: datetime,
+    deterministic: bool,
+    duration_ms: int | None = None,
+    peak_rss_bytes: int | None = None,
+) -> None:
+    _, row = _claim(session, attempt)
+    _mark_failed(
+        session,
+        row,
+        reason,
+        now=now,
+        deterministic=deterministic,
+        duration_ms=duration_ms,
+        peak_rss_bytes=peak_rss_bytes,
+    )
+
+
+def _mark_failed(
     session: Session,
     row: ArtifactDerivative,
     reason: str,
@@ -180,6 +372,7 @@ def mark_failed(
     peak_rss_bytes: int | None = None,
 ) -> None:
     """Record a failure; a deterministic one exhausts the attempts at once."""
+    row.attempt_token = None
     row.state = DerivativeState.FAILED
     row.failure_reason = reason
     row.duration_ms = duration_ms
@@ -205,12 +398,15 @@ def fail_in_flight(
 ) -> int:
     """The job's failure hook: in-flight rows of ``file_id`` become failures."""
     rows = session.exec(
-        select(ArtifactDerivative).where(
+        select(ArtifactDerivative)
+        .where(
             ArtifactDerivative.file_id == file_id,
             col(ArtifactDerivative.state).in_(
                 [DerivativeState.QUEUED, DerivativeState.RUNNING]
             ),
         )
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).all()
     changed = 0
     for row in rows:
@@ -218,7 +414,7 @@ def fail_in_flight(
             row.kind not in kinds or row.recipe_version != kinds[row.kind]
         ):
             continue
-        mark_failed(session, row, reason, now=now, deterministic=False)
+        _mark_failed(session, row, reason, now=now, deterministic=False)
         changed += 1
     return changed
 
@@ -227,14 +423,25 @@ def cancel(
     session: Session, file: File, kinds: dict[DerivativeKind, int], *, now: datetime
 ) -> None:
     """Withdraw intent: every kind of the group is cancelled at its recipe."""
-    current = rows_for(session, file)
+    begin_write(session, immediate=True)
     assert file.id is not None
+    current = {
+        row.kind: row
+        for row in session.exec(
+            select(ArtifactDerivative)
+            .where(ArtifactDerivative.file_id == file.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).all()
+        if row.kind in kinds and row.recipe_version == kinds[row.kind]
+    }
     for kind, recipe in kinds.items():
         row = current.get(kind) or ArtifactDerivative(
             file_id=file.id, kind=kind, recipe_version=recipe
         )
         if row.state in {DerivativeState.READY, DerivativeState.SKIPPED}:
             continue
+        row.attempt_token = None
         row.state = DerivativeState.CANCELLED
         row.failure_reason = None
         row.next_attempt_at = None

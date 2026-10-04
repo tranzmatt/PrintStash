@@ -9,6 +9,7 @@ from pathlib import Path
 from app.db.models import JobKind
 from app.modules.ingestion import importer
 from app.modules.work.jobs import jobs
+from tests.factories.ops import build_job_context
 
 
 class TestImportAssets:
@@ -30,7 +31,7 @@ class TestImportAssets:
         monkeypatch.setattr(importer, "_ingest_one_file", ingest)
 
         importer.import_assets(
-            job_id=job.id,
+            job_context=build_job_context(job.id),
             staged_files=[
                 (tmp_path / "one.stl", "one.stl"),
                 (tmp_path / "two.stl", "two.stl"),
@@ -61,7 +62,7 @@ class TestImportAssets:
         monkeypatch.setattr(importer, "_ingest_one_file", ingest)
 
         importer.import_assets(
-            job_id=job.id,
+            job_context=build_job_context(job.id),
             staged_files=[
                 (tmp_path / "one.stl", "one.stl"),
                 (tmp_path / "two.stl", "two.stl"),
@@ -92,7 +93,7 @@ class TestImportAssets:
         monkeypatch.setattr(importer, "_ingest_one_file", ingest)
 
         importer.import_assets(
-            job_id=job.id,
+            job_context=build_job_context(job.id),
             staged_files=[
                 (tmp_path / "one.txt", "one.txt"),
                 (tmp_path / "two.stl", "two.stl"),

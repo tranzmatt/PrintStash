@@ -169,7 +169,9 @@ def publish(
             lease_token=None,
             lease_expires_at=None,
             state=result.state.value,
-            failure_code=result.failure_code,
+            failure_code=(
+                result.failure_code.value if result.failure_code is not None else None
+            ),
             duration_ms=duration_ms,
             peak_rss_bytes=peak_rss_bytes,
             updated_at=now,

@@ -18,7 +18,6 @@ import base64
 import binascii
 import json
 import os
-import re
 import secrets
 import selectors
 import signal
@@ -31,12 +30,13 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from printstash_core.mesh.measurements import decode_volume, encode_volume
 from printstash_core.mesh.similarity import GeometryError
 
 from app import __file__ as application_file
 from app.core.cancellation import OperationCancelled, checkpoint
 from app.core.config import _overlay, settings
-from app.modules.media import mesh_processing
+from app.modules.media import mesh_policy
 from app.modules.media.fingerprints import (
     FingerprintRecord,
     FingerprintResult,
@@ -47,9 +47,12 @@ from app.modules.media.mesh_contracts import (
     ThumbnailRequest,
     ThumbnailResult,
     ThumbnailStrategy,
+    decode_coverage,
     decode_geometry,
+    encode_coverage,
     encode_geometry,
 )
+from app.modules.media.mesh_facts import FingerprintFailureCode
 from app.modules.media.mesh_observability import record_phases, record_supervision
 from app.modules.media.mesh_telemetry import (
     SupervisedReply,
@@ -92,8 +95,8 @@ def memory_budget_bytes() -> int:
     The same budget the triangle caps are derived from, so a mesh the caps admit
     fits in it; a mesh the caps mis-sized is what the kill is for.
     """
-    return mesh_processing.step_memory_budget_bytes() or (
-        _FALLBACK_MEMORY_BUDGET // mesh_processing._render_jobs_limit()
+    return mesh_policy.step_memory_budget_bytes() or (
+        _FALLBACK_MEMORY_BUDGET // mesh_policy.render_jobs_limit()
     )
 
 
@@ -141,9 +144,10 @@ def encode_reply(result: ThumbnailResult) -> bytes:
         {
             "phase_stats": encode_phase_stats(result.phase_stats),
             "geometry": result.geometry,
+            "volume": encode_volume(result.volume),
             "geometry_outcome": encode_geometry(result.geometry_outcome),
             "strategy": result.strategy.value,
-            "complete": result.complete,
+            "coverage": encode_coverage(result.coverage),
             "failure_reason": (
                 result.failure_reason.value if result.failure_reason else None
             ),
@@ -156,7 +160,11 @@ def encode_reply(result: ThumbnailResult) -> bytes:
                 if fingerprint is None
                 else {
                     "state": fingerprint.state.value,
-                    "failure_code": fingerprint.failure_code,
+                    "failure_code": (
+                        fingerprint.failure_code.value
+                        if fingerprint.failure_code is not None
+                        else None
+                    ),
                     "algorithm_version": fingerprint.algorithm_version,
                     "records": [
                         {
@@ -194,7 +202,11 @@ def decode_reply(payload: bytes) -> ThumbnailResult:
             if raw is None
             else FingerprintResult(
                 state=FingerprintResultState(raw["state"]),
-                failure_code=raw["failure_code"],
+                failure_code=(
+                    None
+                    if raw["failure_code"] is None
+                    else FingerprintFailureCode(raw["failure_code"])
+                ),
                 algorithm_version=raw["algorithm_version"],
                 records=tuple(
                     FingerprintRecord(
@@ -213,9 +225,10 @@ def decode_reply(payload: bytes) -> ThumbnailResult:
         return ThumbnailResult(
             image=image if header["has_image"] else None,
             geometry=dict(header["geometry"]),
+            volume=decode_volume(header["volume"]),
             geometry_outcome=decode_geometry(header["geometry_outcome"]),
             strategy=ThumbnailStrategy(header["strategy"]),
-            complete=bool(header["complete"]),
+            coverage=decode_coverage(header["coverage"]),
             failure_reason=None if reason is None else ThumbnailFailureReason(reason),
             duration_ms=int(header["duration_ms"]),
             peak_rss_bytes=header["peak_rss_bytes"],
@@ -280,7 +293,7 @@ def supervise_result(
                 if time.monotonic() >= deadline:
                     cause = WorkerExitCause.DEADLINE
                     raise MeshWorkerError(ThumbnailFailureReason.TIMEOUT)
-                rss = mesh_processing.process_tree_rss_bytes(process.pid)
+                rss = mesh_policy.process_tree_rss_bytes(process.pid)
                 if rss is not None:
                     peak_rss = rss if peak_rss is None else max(peak_rss, rss)
                     if rss > memory_budget:
@@ -390,26 +403,25 @@ def runtime_overrides() -> dict[str, str | int | float | bool]:
 
 
 ERROR_MAGIC = b"ERR1"
-_ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 
 
 def encode_error(error: GeometryError) -> bytes:
     """The reply a worker sends for a failure that owns a stable code."""
-    return ERROR_MAGIC + error.code.encode("ascii")[:64]
+    return ERROR_MAGIC + FingerprintFailureCode(error.code).value.encode("ascii")
 
 
 def raise_reported_error(payload: bytes) -> None:
     """Raise the failure a worker reported; return if *payload* reports none.
 
-    A code that is not a plain identifier is not trusted to name a failure: it
-    came from a process that has just parsed a hostile file.
+    Only a known closed cause may cross the native worker boundary.
     """
     if not payload.startswith(ERROR_MAGIC):
         return
-    code = payload[len(ERROR_MAGIC) :].decode("ascii", errors="replace")
-    if _ERROR_CODE.fullmatch(code) is None:
-        raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
-    raise GeometryError(code)
+    try:
+        code = FingerprintFailureCode(payload[len(ERROR_MAGIC) :].decode("ascii"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED) from exc
+    raise GeometryError(code.value)
 
 
 def absolute(path: Path) -> str:
@@ -428,7 +440,7 @@ def _run_worker(module: str, spec: dict[str, Any]) -> SupervisedReply:
     overrides with its request, and it counts against the same local concurrency
     limit as the mesh derivatives it shares memory with.
     """
-    with mesh_processing._render_semaphore():
+    with mesh_policy.render_admission():
         budget = memory_budget_bytes()
         command = worker_command(
             module,
@@ -469,8 +481,8 @@ def generate(request: ThumbnailRequest) -> ThumbnailResult:
         "output_format": request.output_format,
         "reason": request.reason,
     }
-    with mesh_processing._render_semaphore(), ExitStack() as resources:
-        if request.include_fingerprint and mesh_processing._canonical_suffix(
+    with mesh_policy.render_admission(), ExitStack() as resources:
+        if request.include_fingerprint and mesh_policy.canonical_suffix(
             request.path, request.file_type
         ) in (".step", ".stp"):
             from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES

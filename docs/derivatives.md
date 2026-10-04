@@ -15,6 +15,7 @@ renderer crash never loses an upload.
 | `file_id`, `kind`, `recipe_version` | Unique together; a row at an older recipe does not count |
 | `state` | `running`, `ready`, `skipped`, `failed` or `cancelled` |
 | `attempts`, `next_attempt_at`, `failure_reason` | Retry bookkeeping |
+| `attempt_token` | Unique publication authority while the attempt is running |
 | `storage_key`, `output_json` | Where the output lives and a small summary |
 | `duration_ms`, `peak_rss_bytes` | What producing it cost |
 
@@ -136,6 +137,10 @@ refusals produced by the earlier coupled admission policy. The derivative source
 finds missing current-recipe outputs, including when an earlier fingerprint
 failure remains cached. Successful content algorithms and the fingerprint
 algorithm version stay unchanged.
+Mesh thumbnail recipe 6 refreshes streamed previews whose valid oblique facets
+were discarded by the former degeneracy filter. Collinear and repeated facets
+retain the same rejection threshold.
+
 ## Bounded STL measurements
 
 Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the
@@ -150,10 +155,17 @@ non-finite vertices are rejected. ASCII accepts complete facets without an
 `endsolid` line, ignores blank/comment lines, and rejects incomplete facets or
 content after `endsolid`. Byte, facet, line and line-length limits still apply;
 read errors, changed sources and budget refusals publish no complete measurements.
-The preview worker shares this parser while retaining its existing float32
-coordinate interpretation. Its temporary read-pass adapter remains
-local to `stl_preview_worker`; fallback sampling and full mesh loading migrate to
-the block iterator separately.
+The preview worker shares this parser. Streaming camera bounds cover every
+validated source facet, including small components far from a dense main part;
+percentile framing and spatial clipping no longer remove source geometry. ASCII
+coordinates remain float64 through centering and projection, then bounded screen
+coordinates and scaled depth convert to float32 for rasterization. Finite values
+near the float32 limit therefore remain renderable after rotation. Raster work
+budgets still determine whether a preview is complete.
+
+Mesh metadata recipe 8 and thumbnail recipe 7 refresh measurements and previews
+from the former streaming camera policy. Fallback sampling and full mesh loading
+migrate to the block iterator separately.
 
 ## Measurement precision
 
@@ -165,6 +177,20 @@ streaming and fallback scans. Existing rounded metadata is eligible for backfill
 Binary STL still carries float32 coordinates; removing output rounding cannot
 recover precision already absent from the input. Volume retains the closure,
 winding, finite-value and positive-orientation requirements of recipe 4.
+
+## Measurement evidence availability
+
+Mesh metadata recipe 9 publishes required volume provenance independently of
+optional similarity fingerprints. Complete bounded STL scans retain dimensions
+and counts with explicitly unassessed topology. G-code metadata recipe 2 marks
+mesh volume as not applicable. The additive migration preserves finite historical
+scalars as unassessed, and replaces unusable nonfinite volume or nonphysical
+dimensions with unknown values before enforcing the new constraints.
+
+The public variant, scalar compatibility, signed component-local integral,
+upgrade behavior, CSV additions and exact test matrix are described in
+[mesh measurement evidence](mesh-measurements.md). Thumbnail and fingerprint
+recipes retain their existing identities for this measurement change.
 
 ## Bumping a recipe
 
@@ -277,6 +303,43 @@ After commit, the event publisher emits a payload-free `derivative_policy`
 notice on the authenticated `derivatives:policy` channel. Views refetch through
 their authorized endpoints. Periodic reconciliation recovers lost notices or
 nudges.
+
+
+## Attempt publication
+
+Every producer captures an immutable attempt token with its Artifact source,
+recipe and regeneration marker. Completion checks that authority inside the
+same transaction that publishes metadata, material requirements or thumbnail
+pointers. Cancellation, retry, regeneration, trash and source replacement cannot
+be overwritten by a late result, including a late failure or skipped outcome.
+Job executions also retain their Job attempt identity; stale progress and engine
+settlement cannot change a retry or run its failure and staging cleanup hooks.
+
+Publication locks the Job (when present), generation policy, Model, Artifact and
+derivative in that order. PostgreSQL publishers share the generation policy lock;
+regeneration takes it exclusively. SQLite reserves its writer before reading.
+These short transactions contain no renderer, parser or storage publication I/O.
+Byte outputs are created first under an attempt-specific immutable key with the
+normal durable ownership receipt. Rejection rolls back the domain pointers and
+ownership promotion; the exact pending receipt remains for orphan reconciliation.
+An uncertain commit never authorizes deleting an output by pathname.
+
+A regeneration makes an older in-flight derivative discoverable immediately. The
+existing active-Job uniqueness rule still prevents overlapping Jobs for the same
+producer and Artifact; after the old execution settles, discovery starts the new
+attempt. Earlier kinds that already committed still notify Model viewers if a
+later kind is superseded. Fingerprints carry the original source hash into their
+separate content-and-algorithm-versioned publication contract.
+
+The attempt-token migration preserves existing outputs and retry history. Legacy
+running attempts cannot prove ownership, so they become retryable interrupted
+attempts without charging that interrupted attempt against their retry limit.
+
+The optional similarity cache is keyed by source SHA and algorithm version.
+A retired execution may supply that immutable evidence, but cannot overwrite a
+ready entry or relabel an old result with the current Artifact's SHA. Creating
+a similarity run additionally requires the originating Job's current epoch and
+attempt under the Job lock; cancellation/retry therefore creates no new work.
 
 ## Convex hull descriptor
 

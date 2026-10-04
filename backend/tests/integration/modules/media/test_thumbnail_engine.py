@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import weakref
 from collections.abc import Callable
@@ -12,17 +13,26 @@ import numpy as np
 import pytest
 import trimesh
 from PIL import Image
+from printstash_core.mesh.measurements import (
+    VolumeNotCalculated,
+    VolumeNotCalculatedCause,
+)
 
 from app.core.config import _overlay
-from app.modules.media import mesh_processing, thumbnail_engine
+from app.modules.media import mesh_policy, thumbnail_engine
 from app.modules.media.fingerprints import FingerprintResultState
 from app.modules.media.mesh_contracts import (
+    GeometryNotLoaded,
     GeometryReady,
     GeometryRefused,
+    MeshCoverage,
+    PreviewCoverage,
+    SourceScanState,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailStrategy,
 )
+from app.modules.media.mesh_facts import CompleteGeometry, SampledGeometry
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.media.worker_bootstrap import WORKER_MARKER
 from tests.factories import content
@@ -141,6 +151,9 @@ class TestMetadataOnly:
         )
         assert result.image is None
         assert result.strategy is ThumbnailStrategy.NONE
+        assert result.coverage == MeshCoverage(
+            SourceScanState.COMPLETE, GeometryNotLoaded(), PreviewCoverage.NOT_PRODUCED
+        )
         assert all(
             stat.phase.value not in {"render", "streaming", "fallback"}
             for stat in result.phase_stats
@@ -159,6 +172,9 @@ class TestMetadataOnly:
 
         assert isinstance(result.geometry_outcome, GeometryReady)
         assert result.geometry["volume_mm3"] is None
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+        )
 
     @pytest.mark.parametrize(
         "damage", ["truncated", "trailing", "nonfinite", "incomplete-ascii"], ids=str
@@ -217,6 +233,7 @@ class TestSTLReadCost:
             source_bytes,
             source_bytes,
         ]
+
 
 class TestThumbnailEngine:
     def test_preserves_translated_3mf_preview(self, tmp_path):
@@ -296,7 +313,7 @@ class TestThumbnailEngine:
             > 0
         )
         assert result.strategy is ThumbnailStrategy.FULL
-        assert result.complete is True
+        assert result.coverage.preview is PreviewCoverage.COMPLETE
         assert result.failure_reason is None
         assert result.fingerprint_result.state is FingerprintResultState.FAILED
         assert result.fingerprint_result.failure_code == "geometry_work_limit"
@@ -338,7 +355,9 @@ class TestThumbnailEngine:
         assert result.geometry["triangle_count"] == 320
         assert isinstance(result.geometry_outcome, GeometryReady)
         assert result.image is None
-        assert result.complete is True
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, CompleteGeometry)
         assert result.failure_reason is None
         assert result.fingerprint_result.failure_code == "geometry_work_limit"
 
@@ -362,13 +381,13 @@ class TestThumbnailEngine:
         references = []
         lifetimes = []
         reclaims = []
-        reclaim = mesh_processing._reclaim_memory
+        reclaim = mesh_policy.reclaim_memory
 
         def observe_reclaim():
             reclaims.append(True)
             reclaim()
 
-        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
+        monkeypatch.setattr(mesh_policy, "reclaim_memory", observe_reclaim)
         extract = thumbnail_engine.extract
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
@@ -404,9 +423,7 @@ class TestThumbnailEngine:
             "render_stl_preview_isolated",
             observe_stream,
         )
-        monkeypatch.setattr(
-            mesh_processing, "_exceeds_cap", lambda *args, **kwargs: sampled
-        )
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *args, **kwargs: sampled)
 
         result = ThumbnailEngine().generate(
             ThumbnailRequest(cube, width=64, include_fingerprint=True)
@@ -445,13 +462,13 @@ class TestThumbnailEngine:
         references = []
         lifetimes = []
         reclaims = []
-        reclaim = mesh_processing._reclaim_memory
+        reclaim = mesh_policy.reclaim_memory
 
         def observe_reclaim():
             reclaims.append(True)
             reclaim()
 
-        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
+        monkeypatch.setattr(mesh_policy, "reclaim_memory", observe_reclaim)
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
         def fail_construction(*, vertices, faces, process):
@@ -463,9 +480,7 @@ class TestThumbnailEngine:
             lifetimes.append(tuple(reference() is None for reference in references))
             return stream(*args, **kwargs)
 
-        monkeypatch.setattr(
-            mesh_processing, "_exceeds_cap", lambda *args, **kwargs: True
-        )
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *args, **kwargs: True)
         monkeypatch.setattr(trimesh, "Trimesh", fail_construction)
         monkeypatch.setattr(
             thumbnail_engine.stl_streaming,
@@ -490,13 +505,13 @@ class TestThumbnailEngine:
         references = []
         lifetimes = []
         reclaims = []
-        reclaim = mesh_processing._reclaim_memory
+        reclaim = mesh_policy.reclaim_memory
 
         def observe_reclaim():
             reclaims.append(True)
             reclaim()
 
-        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observe_reclaim)
+        monkeypatch.setattr(mesh_policy, "reclaim_memory", observe_reclaim)
         prepare = thumbnail_engine.prepare_loaded_mesh
         stream = thumbnail_engine.stl_streaming.render_stl_preview_isolated
 
@@ -537,6 +552,7 @@ class TestThumbnailEngine:
         assert references
         assert lifetimes == [(True,) * len(references)]
         assert reclaims == [True]
+
 
 class TestUnreferencedVertices:
     def test_preserves_3mf_preview(self, tmp_path):
@@ -581,3 +597,346 @@ class TestUnreferencedVertices:
                 "triangle_count": 12,
             }
         )
+
+
+class TestVolumeRequestOwnership:
+    @pytest.mark.parametrize(
+        "strategy", [ThumbnailStrategy.STREAMING, ThumbnailStrategy.FALLBACK], ids=str
+    )
+    def test_thumbnail_only_preview_preserves_unrequested_volume(
+        self, tmp_path, monkeypatch, strategy
+    ):
+        from printstash_core.mesh.measurements import (
+            VolumeNotCalculated,
+            VolumeNotCalculatedCause,
+        )
+
+        from app.modules.media import stl_streaming
+        from app.modules.media.mesh_contracts import GeometryNotRequested
+
+        mesh = trimesh.creation.box(extents=[10, 10, 10])
+        source = tmp_path / "thumbnail-only.stl"
+        source.write_bytes(mesh.export(file_type="stl"))
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+        preview = {
+            ThumbnailStrategy.STREAMING: stl_streaming.render_stl_preview_isolated,
+            ThumbnailStrategy.FALLBACK: lambda *a, **kw: None,
+        }[strategy]
+        monkeypatch.setattr(stl_streaming, "render_stl_preview_isolated", preview)
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_geometry=False, width=32, height=32)
+        )
+
+        assert result.image is not None
+        assert result.strategy is strategy
+        assert result.geometry_outcome == GeometryNotRequested()
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.NOT_REQUESTED
+        )
+
+
+class TestMeasurementNumericalValidity:
+    @pytest.mark.parametrize("suffix", ["stl", "3mf"])
+    def test_refuses_nonfinite_extents_from_finite_source_coordinates(
+        self, tmp_path, monkeypatch, suffix
+    ):
+        from printstash_core.mesh.measurements import (
+            VolumeNotCalculated,
+            VolumeNotCalculatedCause,
+        )
+
+        vertices = [[-1e308, 0, 0], [1e308, 0, 0], [0, 1, 0], [0, 0, 1]]
+        faces = [[0, 2, 1], [0, 1, 3], [1, 2, 3], [2, 0, 3]]
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+        facets = [tuple(tuple(vertices[index]) for index in face) for face in faces]
+        raw = {
+            "stl": content.ascii_stl_facets(facets),
+            "3mf": three_mf(meshes={1: mesh}),
+        }[suffix]
+        source = tmp_path / ("extent-overflow." + suffix)
+        source.write_bytes(raw)
+        monkeypatch.setenv("VAULT_MESH_MEMORY_BUDGET_FRACTION", "0")
+        assert np.isfinite(mesh.vertices).all()
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                source,
+                include_geometry=True,
+                include_thumbnail=False,
+                include_fingerprint=False,
+            )
+        )
+        assert result.geometry_outcome == GeometryRefused(
+            ThumbnailFailureReason.INVALID_SOURCE
+        )
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+        )
+        assert result.geometry == {
+            "bbox_x_mm": None,
+            "bbox_y_mm": None,
+            "bbox_z_mm": None,
+            "volume_mm3": None,
+            "triangle_count": None,
+        }
+        assert (
+            json.loads(json.dumps(result.geometry, allow_nan=False)) == result.geometry
+        )
+
+
+class TestVolumeTranslationPrecision:
+    @pytest.mark.parametrize("offset", [0.0, 1e15, -1e15])
+    def test_preserves_integral_for_large_translated_3mf(self, tmp_path, offset):
+        from printstash_core.mesh.measurements import VolumeMeasured
+
+        mesh = trimesh.creation.box(extents=[1, 2, 3])
+        mesh.apply_translation([offset, offset, offset])
+        vertices = mesh.vertices.copy()
+        source = tmp_path / "translated-volume.3mf"
+        source.write_bytes(three_mf(meshes={1: mesh}))
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_thumbnail=False, include_fingerprint=False)
+        )
+        assert result.geometry_outcome == GeometryReady()
+        assert result.geometry["bbox_x_mm"] == 1.0
+        assert result.geometry["bbox_y_mm"] == 2.0
+        assert result.geometry["bbox_z_mm"] == 3.0
+        assert result.volume == VolumeMeasured(6.0)
+        np.testing.assert_array_equal(mesh.vertices, vertices)
+
+    @pytest.mark.parametrize("offset", [1e15, -1e15])
+    def test_retains_negative_orientation_after_translation(self, tmp_path, offset):
+        from printstash_core.mesh.measurements import (
+            VolumeUnavailable,
+            VolumeUnavailableCause,
+        )
+
+        mesh = trimesh.creation.box(extents=[1, 2, 3])
+        mesh.vertices[:, 0] *= -1
+        mesh.apply_translation([offset, offset, offset])
+        faces = mesh.faces.copy()
+        vertices = mesh.vertices.copy()
+        source = tmp_path / "reflected-volume.3mf"
+        source.write_bytes(three_mf(meshes={1: mesh}))
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_thumbnail=False, include_fingerprint=False)
+        )
+        assert result.geometry_outcome == GeometryReady()
+        assert result.volume == VolumeUnavailable(
+            VolumeUnavailableCause.NON_POSITIVE_INTEGRAL
+        )
+        assert result.geometry["volume_mm3"] is None
+        np.testing.assert_array_equal(mesh.vertices, vertices)
+        np.testing.assert_array_equal(mesh.faces, faces)
+
+
+class TestDisconnectedVolumePrecision:
+    def test_preserves_far_separated_3mf_instance_integrals(self, tmp_path):
+        from printstash_core.mesh.measurements import VolumeMeasured
+
+        mesh = trimesh.creation.box(extents=[1, 2, 3])
+        source = tmp_path / "separated-instances.3mf"
+        source.write_bytes(
+            three_mf(
+                meshes={1: mesh},
+                build=(
+                    (
+                        1,
+                        "1 0 0 0 1 0 0 0 1 1000000000000000 1000000000000000 1000000000000000",
+                    ),
+                    (
+                        1,
+                        "1 0 0 0 1 0 0 0 1 -1000000000000000 -1000000000000000 -1000000000000000",
+                    ),
+                ),
+            )
+        )
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_thumbnail=False, include_fingerprint=False)
+        )
+        assert result.geometry_outcome == GeometryReady()
+        assert result.geometry["triangle_count"] == 24
+        assert result.volume == VolumeMeasured(12.0)
+
+    def test_retains_negative_inner_shell_contribution(self, tmp_path):
+        from printstash_core.mesh.measurements import VolumeMeasured
+
+        outer = trimesh.creation.box(extents=[1, 2, 3])
+        inner = trimesh.creation.box(extents=[0.5, 1, 2])
+        inner.invert()
+        outer.apply_translation([1e15, 1e15, 1e15])
+        inner.apply_translation([1e15, 1e15, 1e15])
+        source = tmp_path / "cavity.3mf"
+        source.write_bytes(
+            three_mf(meshes={1: outer, 2: inner}, build=((1, None), (2, None)))
+        )
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_thumbnail=False, include_fingerprint=False)
+        )
+        assert result.geometry_outcome == GeometryReady()
+        assert result.geometry["triangle_count"] == 24
+        assert result.volume == VolumeMeasured(5.0)
+
+
+class TestBoundedVolumeAuthority:
+    @pytest.mark.parametrize(
+        "strategy", [ThumbnailStrategy.STREAMING, ThumbnailStrategy.FALLBACK], ids=str
+    )
+    def test_complete_bounded_preview_exposes_unassessed_topology(
+        self, tmp_path, monkeypatch, strategy
+    ):
+        from app.modules.media import stl_streaming
+
+        source = tmp_path / "complete.stl"
+        source.write_bytes(
+            trimesh.creation.box(extents=[1, 2, 3]).export(file_type="stl")
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+        preview = {
+            ThumbnailStrategy.STREAMING: stl_streaming.render_stl_preview_isolated,
+            ThumbnailStrategy.FALLBACK: lambda *a, **kw: None,
+        }[strategy]
+        monkeypatch.setattr(stl_streaming, "render_stl_preview_isolated", preview)
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, width=32, height=32, include_fingerprint=False)
+        )
+        assert result.strategy is strategy
+        assert result.image is not None
+        assert result.geometry_outcome == GeometryReady()
+        assert result.geometry == {
+            "bbox_x_mm": 1.0,
+            "bbox_y_mm": 2.0,
+            "bbox_z_mm": 3.0,
+            "volume_mm3": None,
+            "triangle_count": 12,
+        }
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
+        )
+
+    def test_partial_fallback_cannot_publish_sampled_measurements(
+        self, tmp_path, monkeypatch
+    ):
+        from app.modules.media import stl_fallback, stl_streaming
+
+        source = tmp_path / "partial.stl"
+        source.write_bytes(
+            trimesh.creation.box(extents=[1, 2, 3]).export(file_type="stl")
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+        monkeypatch.setattr(
+            stl_streaming, "render_stl_preview_isolated", lambda *a, **kw: None
+        )
+        original_fallback = stl_fallback.render_stl_thumbnail
+        monkeypatch.setattr(
+            stl_fallback,
+            "render_stl_thumbnail",
+            lambda path, **kw: original_fallback(path, max_triangles=4, **kw),
+        )
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, width=32, height=32, include_fingerprint=False)
+        )
+        assert result.strategy is ThumbnailStrategy.FALLBACK
+        assert result.image is not None
+        assert result.coverage.preview is PreviewCoverage.PARTIAL
+        assert result.geometry_outcome == GeometryRefused(
+            ThumbnailFailureReason.RESOURCE_LIMIT
+        )
+        assert result.geometry == {
+            "bbox_x_mm": None,
+            "bbox_y_mm": None,
+            "bbox_z_mm": None,
+            "volume_mm3": None,
+            "triangle_count": None,
+        }
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+        )
+
+
+class TestCoverage:
+    def test_embedded_preview_does_not_certify_unread_source(self, tmp_path):
+        source = tmp_path / "embedded.3mf"
+        source.write_bytes(three_mf(extras={"Metadata/thumbnail.png": content.png()}))
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_geometry=False)
+        )
+
+        assert result.image is not None
+        assert result.coverage == MeshCoverage(
+            SourceScanState.NOT_SCANNED,
+            GeometryNotLoaded(),
+            PreviewCoverage.DOCUMENT_SUPPLIED,
+        )
+
+    def test_complete_source_scan_survives_partial_preview(self, tmp_path, monkeypatch):
+        from app.modules.media import mesh_render, stl_fallback, stl_streaming
+
+        source = tmp_path / "partial-preview.stl"
+        source.write_bytes(
+            trimesh.creation.box(extents=[10, 20, 30]).export(file_type="stl")
+        )
+        monkeypatch.setattr(
+            mesh_render, "render_mesh_thumbnail", lambda *args, **kwargs: None
+        )
+        monkeypatch.setattr(
+            stl_streaming, "render_stl_preview_isolated", lambda *args, **kwargs: None
+        )
+        render_fallback = stl_fallback.render_stl_thumbnail
+        monkeypatch.setattr(
+            stl_fallback,
+            "render_stl_thumbnail",
+            lambda path, **kwargs: render_fallback(path, max_triangles=4, **kwargs),
+        )
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, width=128, height=128, include_fingerprint=False)
+        )
+
+        assert result.image is not None
+        assert result.coverage == MeshCoverage(
+            SourceScanState.COMPLETE, CompleteGeometry(), PreviewCoverage.PARTIAL
+        )
+        assert result.geometry["triangle_count"] == 12
+
+    def test_complete_source_scan_survives_sampled_analysis(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "sampled-analysis.stl"
+        source.write_bytes(
+            trimesh.creation.icosphere(subdivisions=2, radius=5).export(file_type="stl")
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, include_thumbnail=False, include_fingerprint=True)
+        )
+
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, SampledGeometry)
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
+        assert result.geometry["triangle_count"] == 320
+        assert result.fingerprint_result.state is FingerprintResultState.PARTIAL
+
+    def test_analysis_only_preserves_complete_source_scan(self, tmp_path, monkeypatch):
+        source = tmp_path / "analysis-only.stl"
+        source.write_bytes(
+            trimesh.creation.icosphere(subdivisions=2, radius=5).export(file_type="stl")
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                source,
+                include_geometry=False,
+                include_thumbnail=False,
+                include_fingerprint=True,
+            )
+        )
+
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, SampledGeometry)
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
+        assert result.fingerprint_result.state is FingerprintResultState.PARTIAL
+        assert all(value is None for value in result.geometry.values())
