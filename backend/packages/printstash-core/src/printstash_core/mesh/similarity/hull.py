@@ -31,7 +31,12 @@ def hull_volume(
     input ceiling; it cannot meaningfully bound a different native algorithm.
     """
     import numpy as np
-    from scipy.spatial import ConvexHull, QhullError
+
+    # SciPy 1.17 ships no typing metadata; keep the untyped API inside this owner.
+    from scipy.spatial import (  # pyright: ignore[reportMissingTypeStubs]
+        ConvexHull,
+        QhullError,
+    )
 
     if type(max_points) is not int or not 1 <= max_points <= MAX_ANALYSIS_VERTICES:
         raise GeometryError("invalid_hull_budget")
