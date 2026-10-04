@@ -131,6 +131,10 @@ refusals produced by the earlier coupled admission policy. The derivative source
 finds missing current-recipe outputs, including when an earlier fingerprint
 failure remains cached. Successful content algorithms and the fingerprint
 algorithm version stay unchanged.
+Mesh thumbnail recipe 6 refreshes streamed previews whose valid oblique facets
+were discarded by the former degeneracy filter. Collinear and repeated facets
+retain the same rejection threshold.
+
 ## Bounded STL measurements
 
 Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the

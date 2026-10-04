@@ -140,7 +140,7 @@ class TestDeriveMesh:
         db_session.expire_all()
         rows = _rows(db_session, artifact.id)
         assert rows[DerivativeKind.METADATA].recipe_version == 7
-        assert rows[DerivativeKind.THUMBNAIL].recipe_version == 5
+        assert rows[DerivativeKind.THUMBNAIL].recipe_version == 6
         metadata = db_session.exec(
             select(Metadata).where(Metadata.file_id == artifact.id)
         ).one()
