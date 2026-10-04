@@ -83,16 +83,6 @@ def expected_materialization_reads(encoding):
 
 
 @pytest.fixture
-def legacy_stl_consumer(consumer):
-    from app.modules.media import mesh_processing, stl_fallback
-
-    return {
-        "sample": partial(stl_fallback.sample_stl_geometry, max_triangles=1),
-        "full-loader": mesh_processing._load_mesh,
-    }[consumer]
-
-
-@pytest.fixture
 def canonical_stl_consumer(consumer):
     from app.modules.media import stl_fallback, stl_reader
 

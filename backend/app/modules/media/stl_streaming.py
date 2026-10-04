@@ -114,9 +114,9 @@ def _worker_memory_budget() -> int:
     """Use the existing per-job RAM share when it is lower than our hard target."""
 
     try:
-        from app.modules.media.mesh_processing import _step_memory_budget_bytes
+        from app.modules.media.mesh_policy import step_memory_budget_bytes
 
-        budget = _step_memory_budget_bytes()
+        budget = step_memory_budget_bytes()
     except Exception:  # pragma: no cover - defensive import boundary
         budget = None
     if budget is None:

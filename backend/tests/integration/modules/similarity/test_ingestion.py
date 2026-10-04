@@ -5,7 +5,12 @@ from sqlmodel import select
 
 from app.db.models import GeometryFingerprint, JobKind, SimilarityRun
 from app.db.session import get_session_factory
-from app.modules.media.fingerprints import FingerprintResult, extract
+from app.modules.media.fingerprints import (
+    FingerprintResult,
+    FingerprintResultState,
+    extract,
+)
+from app.modules.media.mesh_facts import FingerprintFailureCode
 from app.modules.media.mesh_resources import prepare_loaded_mesh
 from app.modules.similarity import configuration, ingestion
 from tests.factories.geometry import tetrahedron
@@ -24,7 +29,10 @@ class TestIngestDerivative:
                 get_session_factory(),
                 999,
                 None,
-                FingerprintResult("failed"),
+                FingerprintResult(
+                    FingerprintResultState.FAILED,
+                    failure_code=FingerprintFailureCode.SOURCE_UNAVAILABLE,
+                ),
                 source_sha256="a" * 64,
             )
             == "stale"
@@ -40,7 +48,10 @@ class TestIngestDerivative:
             get_session_factory(),
             file.id,
             actor.id,
-            FingerprintResult("failed", failure_code="invalid_geometry"),
+            FingerprintResult(
+                FingerprintResultState.FAILED,
+                failure_code=FingerprintFailureCode.INVALID_GEOMETRY,
+            ),
             source_sha256=file.sha256,
         )
         assert state == "failed"
@@ -189,7 +200,10 @@ class TestIngestDerivative:
             get_session_factory(),
             file.id,
             actor.id,
-            FingerprintResult("failed", failure_code="old-result")
+            FingerprintResult(
+                FingerprintResultState.FAILED,
+                failure_code=FingerprintFailureCode.ANALYSIS_FAILED,
+            )
             if cached
             else result,
             source_sha256=file.sha256,

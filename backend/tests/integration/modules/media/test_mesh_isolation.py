@@ -16,7 +16,7 @@ from PIL import Image
 
 from app.core.config import _overlay
 from app.modules.media import mesh_isolation
-from app.modules.media.fingerprints import ALGORITHM_VERSION
+from app.modules.media.fingerprints import ALGORITHM_VERSION, FingerprintResultState
 from app.modules.media.mesh_contracts import (
     ThumbnailFailureReason,
     ThumbnailRequest,
@@ -54,11 +54,11 @@ class TestGenerate:
         assert isolated.image is not None
         assert isolated.geometry == direct.geometry
         assert isolated.strategy == direct.strategy
-        assert isolated.complete == direct.complete
+        assert isolated.coverage == direct.coverage
         assert isolated.failure_reason == direct.failure_reason
         assert isolated.fingerprint_result == direct.fingerprint_result
         assert isolated.fingerprint_result is not None
-        assert isolated.fingerprint_result.state == "ready"
+        assert isolated.fingerprint_result.state is FingerprintResultState.READY
 
     def test_finds_a_source_given_as_a_path_relative_to_the_caller(
         self, tmp_path, monkeypatch
@@ -334,7 +334,7 @@ class TestStepCapacityOwnership:
         )
         assert result.geometry["triangle_count"] > 0
         assert result.fingerprint_result is not None
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         assert db_session.exec(select(CapacityReservation)).all() == []
 
     def test_parent_releases_capacity_after_worker_refusal(

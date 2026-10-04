@@ -682,9 +682,18 @@ class TestIngestModel:
         Image.new("RGB", (12, 10), (220, 30, 20)).save(replacement_buffer, format="PNG")
         replacement = replacement_buffer.getvalue()
 
+        from printstash_core.mesh.measurements import (
+            VolumeNotCalculated,
+            VolumeNotCalculatedCause,
+        )
+
         from app.modules.derivatives import producers
         from app.modules.media.mesh_contracts import (
+            GeometryNotLoaded,
             GeometryNotRequested,
+            MeshCoverage,
+            PreviewCoverage,
+            SourceScanState,
             ThumbnailResult,
             ThumbnailStrategy,
         )
@@ -697,6 +706,7 @@ class TestIngestModel:
             lambda _request: ThumbnailResult(
                 image=replacement,
                 geometry_outcome=GeometryNotRequested(),
+                volume=VolumeNotCalculated(VolumeNotCalculatedCause.NOT_REQUESTED),
                 geometry={
                     "bbox_x_mm": None,
                     "bbox_y_mm": None,
@@ -705,7 +715,11 @@ class TestIngestModel:
                     "triangle_count": None,
                 },
                 strategy=ThumbnailStrategy.FULL,
-                complete=True,
+                coverage=MeshCoverage(
+                    SourceScanState.COMPLETE,
+                    GeometryNotLoaded(),
+                    PreviewCoverage.COMPLETE,
+                ),
                 failure_reason=None,
                 duration_ms=0,
                 peak_rss_bytes=None,

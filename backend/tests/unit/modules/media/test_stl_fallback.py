@@ -1,6 +1,6 @@
 """Drawing a recognisable thumbnail of a mesh far too big to load.
 
-When `mesh_processing` refuses a mesh — a 40-million-triangle lattice, a gyroid,
+When full mesh loading refuses a mesh — a 40-million-triangle lattice, a gyroid,
 a scan — the alternative to "no thumbnail" is this: stream the file, sample a
 bounded number of facets, and rasterise those. It never builds a mesh object, so
 its memory cost is a function of the sample size rather than the file size, and
@@ -20,10 +20,10 @@ project to less than a pixel, so naive sampling paints scattered dots. The
 microfaceted tests assert both that enough of the frame is covered *and* that the
 covered pixels form one component, because coverage alone is satisfied by noise.
 
-**Partial is reported as partial.** Every budget — sampled facets, scanned bytes,
-candidate pixels — is finite, and when one is spent the result carries
-`complete=False` so the UI can say the preview is incomplete rather than imply it
-is the whole model.
+**Partial is reported as partial.** Retained facets and candidate pixels are
+bounded; exhausting those budgets produces `complete=False`. Source validation
+also has finite byte, facet and line budgets, but exhausting those refuses the
+source instead of accepting a partially validated preview.
 
 The input is untrusted and often malformed: ASCII STLs from hand-written
 exporters, a facet with a 10 MB "comment" line, vertices at `1e308`, a truncated
@@ -80,8 +80,9 @@ def _sampled_stl(
 def _write_hostile_ascii(path: Path) -> Path:
     """An ASCII STL whose one good facet is preceded by everything that can go wrong.
 
-    An unparseable vertex, a NaN vertex, and a line past `_MAX_ASCII_LINE_BYTES` —
-    the iterator has to skip all three and still yield the facet that follows.
+    An unparseable vertex, a NaN vertex, and an oversized line precede valid
+    geometry. The canonical reader must refuse the source rather than skip the
+    malformed content and certify the later facet.
     """
     valid = b"vertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\n"
     path.write_bytes(

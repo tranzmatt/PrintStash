@@ -69,7 +69,7 @@ class TestVerifyPaths:
     def test_refuses_malformed_mesh(self, mesh_path):
         mesh_path.write_bytes(b"not a mesh")
 
-        with pytest.raises(GeometryError, match="invalid_geometry"):
+        with pytest.raises(GeometryError, match="invalid_source"):
             geometry_analysis.verify_paths(
                 mesh_path, mesh_path, first_type="stl", second_type="stl"
             )
@@ -234,3 +234,41 @@ class TestEmbeddingViews:
                 image_size=32,
                 triangle_cap=100,
             )
+
+
+class TestSharedSTLSampleRefusals:
+    @pytest.mark.parametrize(
+        "cause",
+        ["invalid_source", "resource_limit", "source_changed", "source_unavailable"],
+    )
+    def test_verification_preserves_the_shared_reader_refusal(
+        self, tmp_path, monkeypatch, cause
+    ):
+        from app.modules.media import mesh_policy, stl_fallback
+        from app.modules.media.stl_reader import (
+            InvalidSTL,
+            STLBudgetExceeded,
+            STLSourceChanged,
+        )
+
+        source = tmp_path / "refused.stl"
+        source.write_bytes(b"source")
+        failures = {
+            "invalid_source": InvalidSTL,
+            "resource_limit": STLBudgetExceeded,
+            "source_changed": STLSourceChanged,
+            "source_unavailable": OSError,
+        }
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *a, **kw: True)
+
+        def refused(*args, **kwargs):
+            raise failures[cause]()
+
+        monkeypatch.setattr(stl_fallback, "read_stl_sample", refused)
+
+        with pytest.raises(GeometryError) as caught:
+            geometry_analysis.verify_paths(
+                source, source, first_type="stl", second_type="stl", triangle_cap=100
+            )
+
+        assert caught.value.code == cause

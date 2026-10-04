@@ -168,8 +168,10 @@ def publish(
         .values(
             lease_token=None,
             lease_expires_at=None,
-            state=result.state,
-            failure_code=result.failure_code,
+            state=result.state.value,
+            failure_code=(
+                result.failure_code.value if result.failure_code is not None else None
+            ),
             duration_ms=duration_ms,
             peak_rss_bytes=peak_rss_bytes,
             updated_at=now,
@@ -224,7 +226,7 @@ def publish(
                     and key not in ("recipe", "unavailable", "keys")
                 }
             )
-            row.state = result.state
+            row.state = result.state.value
             row.failure_code = result.failure_code
             row.updated_at = now
             session.add(row)
@@ -243,7 +245,7 @@ def publish_precomputed(session: Session, file: File, result: FingerprintResult)
         row = _row(session, file, 0, ALGORITHM_VERSION)
         return row.state
     return (
-        result.state
+        result.state.value
         if publish(session, file, result, fingerprint_id=claimed[0], token=claimed[1])
         else "stale"
     )

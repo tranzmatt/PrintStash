@@ -103,6 +103,11 @@ welded in a measurement copy; this does not repair winding or change the source
 Artifact. Open or inconsistently wound surfaces retain their bounding dimensions
 and triangle counts, with unknown (`null`) volume. A globally reversed surface
 also retains unknown metadata volume under the positive-orientation policy.
+Fingerprint extraction results use the closed `FingerprintResultState` set: `ready`,
+`partial`, `failed`, and `unsupported`. Worker frames and persisted rows retain
+these literal strings; an unknown worker state is rejected as a malformed reply.
+`pending` belongs to the persistence lease lifecycle, not an extraction result.
+
 Similarity fingerprints have a separate established policy: they report the
 magnitude for consistently wound closed surfaces, including a global reversal,
 and retain `volume_reason = inconsistent_winding` when winding is inconsistent.
@@ -159,8 +164,8 @@ near the float32 limit therefore remain renderable after rotation. Raster work
 budgets still determine whether a preview is complete.
 
 Mesh metadata recipe 8 and thumbnail recipe 7 refresh measurements and previews
-from the former streaming camera policy. Fallback sampling and full mesh loading
-migrate to the block iterator separately.
+from the former streaming camera policy. Fallback sampling and full mesh loading now share the block iterator described
+below.
 
 ## Shared STL source validation
 
@@ -190,10 +195,13 @@ for exact allocation size before a second full pass; both share one deadline
 and source snapshot. Preparation/pass reuse is a separate concern. Source
 validation is bounded by 1 GiB by default; it is not a timing improvement.
 
-Fingerprint algorithm `geometry-v5-sh5f4577c4` invalidates fingerprints from the
-former partial sampling policy. Historical v3/v4 measurements and verifier
-calibration remain unchanged. The final joint processing update uses metadata
-recipe 9 and thumbnail recipe 8 to refresh affected derived outputs.
+Fingerprint interpretation version `geometry-v6-sh5f4577c4` invalidates eligibility
+receipts from the former partial sampling policy. Historical descriptor evidence
+and human review decisions remain retained; descriptor math, the SH basis and
+verifier calibration are unchanged. Metadata recipe 11 and thumbnail recipe 10
+refresh affected outputs; viewer STL remains recipe 2. The earlier 3MF capability
+policy and independent embedded previews remain in force. The
+[STL reader contract](stl-reader.md) specifies completion, sampling and refusals.
 
 ## Measurement precision
 
@@ -205,6 +213,20 @@ streaming and fallback scans. Existing rounded metadata is eligible for backfill
 Binary STL still carries float32 coordinates; removing output rounding cannot
 recover precision already absent from the input. Volume retains the closure,
 winding, finite-value and positive-orientation requirements of recipe 4.
+
+## Measurement evidence availability
+
+Mesh metadata recipe 9 publishes required volume provenance independently of
+optional similarity fingerprints. Complete bounded STL scans retain dimensions
+and counts with explicitly unassessed topology. G-code metadata recipe 2 marks
+mesh volume as not applicable. The additive migration preserves finite historical
+scalars as unassessed, and replaces unusable nonfinite volume or nonphysical
+dimensions with unknown values before enforcing the new constraints.
+
+The public variant, scalar compatibility, signed component-local integral,
+upgrade behavior, CSV additions and exact test matrix are described in
+[mesh measurement evidence](mesh-measurements.md). Thumbnail and fingerprint
+recipes retain their existing identities for this measurement change.
 
 ## Bumping a recipe
 
@@ -256,9 +278,22 @@ new recipe makes work eligible; timeout backoff keeps the configured maximum.
 Original downloads and signed slicer downloads continue to use Artifact bytes.
 
 
+## 3MF required capabilities
+
+The [3MF capability policy](3mf-capabilities.md) applies to reached Core model
+parts and the supported Production external-reference subset. Unknown required
+namespaces produce `unsupported_capability` metadata/viewer refusals and
+`unsupported_3mf_capability` fingerprint refusals. No incomplete geometry is
+published as successful. Original downloads remain usable, and a validated
+embedded preview can independently become ready. Mesh metadata recipe 10,
+thumbnail recipe 9 and viewer STL recipe 2 refresh outputs under this policy;
+the fingerprint mathematical algorithm is unchanged. Its interpretation cache
+version advances to `geometry-v5-sh5f4577c4`, so earlier candidate evidence remains
+historical rather than actionable as a current interpretation.
+
 ## On-demand 3D viewer STL
 
-`viewer_stl` recipe 1 is produced by `derivatives.viewer_stl` in `derive.native`.
+`viewer_stl` recipe 2 is produced by `derivatives.viewer_stl` in `derive.native`.
 Only 3MF, OBJ and STEP Artifacts with `files.viewer_requested_at` set are eligible;
 uploads, scans and card hover do not request conversion. The first authorized
 `GET /api/v1/files/{id}/stl` (or the scoped share endpoint) persists this demand

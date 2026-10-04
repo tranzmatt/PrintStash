@@ -1,5 +1,5 @@
 {
-  "algorithm_version": "geometry-v5-sh5f4577c4",
+  "algorithm_version": "geometry-v6-sh5f4577c4",
   "fixture": "trimesh.icosphere(subdivisions=3,radius=10), binary STL",
   "source_faces": 1280,
   "sample_faces": 100,

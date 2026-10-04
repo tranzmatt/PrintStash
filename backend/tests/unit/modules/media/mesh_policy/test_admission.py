@@ -4,12 +4,14 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from app.core.config import _overlay
-from app.modules.media import mesh_processing
+from app.modules.media import (
+    mesh_policy,
+)
 
 
 class TestRenderAdmission:
     def test_release_progresses_during_waiter_checkpoint(self, monkeypatch) -> None:
-        gate = mesh_processing._RenderAdmission()
+        gate = mesh_policy.RenderAdmission()
         admitted = threading.Event()
         release = threading.Event()
         released = threading.Event()
@@ -44,7 +46,7 @@ class TestRenderAdmission:
         active.start()
         try:
             assert admitted.wait(5)
-            monkeypatch.setattr(mesh_processing, "checkpoint", checkpoint)
+            monkeypatch.setattr(mesh_policy, "checkpoint", checkpoint)
             waiter.start()
             assert checkpoint_entered.wait(5)
             release.set()
@@ -63,16 +65,16 @@ class TestRenderAdmission:
         assert gate.active == 0
 
     def test_config_change_waits_for_old_admissions_to_settle(self, monkeypatch):
-        monkeypatch.setattr(mesh_processing, "_RENDER_SEMAPHORE", None)
+        monkeypatch.setattr(mesh_policy, "_RENDER_SEMAPHORE", None)
         monkeypatch.setitem(_overlay, "max_render_jobs", 1)
-        old_gate = mesh_processing._render_semaphore()
+        old_gate = mesh_policy.render_admission()
         old_gate.__enter__()
         entered = threading.Event()
         waiting = threading.Event()
         monkeypatch.setitem(_overlay, "max_render_jobs", 2)
 
         def new_work():
-            gate = mesh_processing._render_semaphore()
+            gate = mesh_policy.render_admission()
             waiting.set()
             with gate:
                 entered.set()
@@ -95,15 +97,13 @@ class TestRenderAdmission:
 
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
         monkeypatch.setitem(_overlay, "max_render_jobs", 2)
-        monkeypatch.setattr(
-            mesh_processing, "_detect_memory_limit_bytes", lambda: 1024**3
-        )
+        monkeypatch.setattr(mesh_policy, "detect_memory_limit_bytes", lambda: 1024**3)
         assert mesh_isolation.memory_budget_bytes() == 256 * 1024**2
 
     def test_native_fallback_is_divided_by_concurrency(self, monkeypatch):
         monkeypatch.setitem(_overlay, "max_render_jobs", 4)
-        monkeypatch.setattr(mesh_processing, "_detect_memory_limit_bytes", lambda: None)
-        assert mesh_processing.native_memory_budget_bytes() == 256 * 1024**2
+        monkeypatch.setattr(mesh_policy, "detect_memory_limit_bytes", lambda: None)
+        assert mesh_policy.native_memory_budget_bytes() == 256 * 1024**2
 
     def test_cancelled_waiter_releases_without_admission(self):
         import pytest
@@ -113,7 +113,7 @@ class TestRenderAdmission:
             cancellation_scope,
         )
 
-        gate = mesh_processing._RenderAdmission()
+        gate = mesh_policy.RenderAdmission()
         entered = threading.Event()
         stopped = threading.Event()
 

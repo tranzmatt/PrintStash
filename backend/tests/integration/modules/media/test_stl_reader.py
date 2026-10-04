@@ -4,8 +4,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from printstash_core.mesh.similarity import GeometryError
 
-from app.modules.media import mesh_processing, stl_fallback, stl_streaming
+from app.modules.media import mesh_loading, stl_fallback, stl_streaming
 from app.modules.media.stl_reader import InvalidSTL, scan_stl
 from tests.factories import content
 
@@ -23,7 +24,7 @@ class TestSTLConsumers:
 
         measured = scan_stl(source)
         sampled = stl_fallback.sample_stl_geometry(source, max_triangles=2)
-        loaded = mesh_processing._load_mesh(source)
+        loaded = mesh_loading.load_mesh(source)
         streamed = stl_streaming.render_stl_preview_isolated(
             source, width=96, height=72
         )
@@ -75,7 +76,7 @@ class TestSTLConsumers:
 
         measured = scan_stl(source)
         sampled = stl_fallback.read_stl_sample(source, max_triangles=2)
-        loaded = mesh_processing._load_mesh(source)
+        loaded = mesh_loading.load_mesh(source)
         streamed = stl_streaming.render_stl_preview_isolated(
             source, width=96, height=72
         )
@@ -105,7 +106,8 @@ class TestSTLConsumers:
         with pytest.raises(InvalidSTL):
             scan_stl(source)
         assert stl_fallback.sample_stl_geometry(source, max_triangles=1) is None
-        assert mesh_processing._load_mesh(source) is None
+        with pytest.raises(GeometryError, match="invalid_source"):
+            mesh_loading.load_mesh(source)
         assert (
             stl_streaming.render_stl_preview_isolated(source, width=96, height=72)
             is None
@@ -125,9 +127,9 @@ class TestSTLConsumers:
         with pytest.raises(InvalidSTL):
             scan_stl(source)
         assert stl_fallback.sample_stl_geometry(source, max_triangles=1) is None
-        assert mesh_processing._load_mesh(source) is None
+        with pytest.raises(GeometryError, match="invalid_source"):
+            mesh_loading.load_mesh(source)
 
-    @pytest.mark.parametrize("consumer", ["sample", "full-loader"])
     @pytest.mark.parametrize(
         "damage",
         [
@@ -140,12 +142,29 @@ class TestSTLConsumers:
             "nonascii",
         ],
     )
-    def test_rejects_malformed_stl_consistently(
-        self, malformed_stl_source, legacy_stl_consumer
-    ):
+    def test_rejects_malformed_stl_before_materialization(self, malformed_stl_source):
+        with pytest.raises(GeometryError, match="invalid_source"):
+            mesh_loading.load_mesh(malformed_stl_source)
+
+    @pytest.mark.parametrize(
+        "damage",
+        [
+            "truncated",
+            "count-mismatch",
+            "trailing",
+            "unsampled-nonfinite",
+            "incomplete-ascii",
+            "malformed-ascii",
+            "nonascii",
+        ],
+    )
+    def test_declines_malformed_stl_in_optional_samples(self, malformed_stl_source):
         with pytest.raises(InvalidSTL):
             scan_stl(malformed_stl_source)
-        assert legacy_stl_consumer(malformed_stl_source) is None
+        assert (
+            stl_fallback.sample_stl_geometry(malformed_stl_source, max_triangles=1)
+            is None
+        )
 
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
     def test_certifies_source_completion_for_partial_samples(
@@ -173,7 +192,7 @@ class TestSTLConsumers:
         source.write_bytes(content.ascii_stl_facets(facets))
 
         sampled = stl_fallback.sample_stl_geometry(source, max_triangles=2)
-        loaded = mesh_processing._load_mesh(source)
+        loaded = mesh_loading.load_mesh(source)
 
         assert sampled is not None
         assert loaded is not None
@@ -389,11 +408,13 @@ class TestSampleFingerprintRecipe:
         import trimesh
 
         from app.modules.media.fingerprints import extract
+        from app.modules.media.mesh_contracts import SourceScanState
+        from app.modules.media.mesh_facts import FingerprintResultState, SampledGeometry
         from app.modules.media.thumbnail_engine import _prepare_sampled_stl
         from tests.paths import FIXTURES_DIR
 
         golden = json.loads(
-            (FIXTURES_DIR / "media" / "geometry-v5-stl-sample.json").read_text()
+            (FIXTURES_DIR / "media" / "geometry-v6-stl-sample.json").read_text()
         )
         source = tmp_path / "sampled-sphere.stl"
         source.write_bytes(
@@ -402,7 +423,9 @@ class TestSampleFingerprintRecipe:
             )
         )
         sampled = stl_fallback.read_stl_sample(source, max_triangles=100)
-        prepared = _prepare_sampled_stl(source, triangle_cap=100)
+        preparation = _prepare_sampled_stl(source, triangle_cap=100)
+        assert preparation is not None
+        prepared, source_scan = preparation
 
         result = extract(prepared)
 
@@ -410,7 +433,9 @@ class TestSampleFingerprintRecipe:
         assert sampled.complete is False
         assert sampled.triangle_count == golden["source_faces"] == 1280
         assert sampled.sampled_triangles == golden["sample_faces"] == 100
-        assert result.state == "partial"
+        assert source_scan is SourceScanState.COMPLETE
+        assert isinstance(prepared.geometry, SampledGeometry)
+        assert result.state is FingerprintResultState.PARTIAL
         assert result.algorithm_version == golden["algorithm_version"]
         assert (
             hashlib.sha256(source.read_bytes()).hexdigest() == golden["source_sha256"]

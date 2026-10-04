@@ -9,8 +9,8 @@ import pytest
 from printstash_core.mesh.similarity import fingerprint_mesh
 
 from app.core.config import _overlay
-from app.modules.media import mesh_processing
-from app.modules.media.fingerprints import SH_BASIS_DIGEST
+from app.modules.media import mesh_loading, mesh_policy
+from app.modules.media.fingerprints import SH_BASIS_DIGEST, FingerprintResultState
 from app.modules.media.mesh_contracts import ThumbnailRequest
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from tests.factories import content
@@ -37,14 +37,14 @@ class TestFingerprintExtraction:
             )
         )
 
-        assert original.fingerprint_result.state == "ready"
+        assert original.fingerprint_result.state is FingerprintResultState.READY
         assert padded.fingerprint_result == original.fingerprint_result
 
     def test_releases_loaded_mesh_before_reclaim(self, tmp_path, monkeypatch):
         path = tmp_path / "single.stl"
         path.write_bytes(tetrahedron().export(file_type="stl"))
-        original_load = mesh_processing._load_mesh
-        original_reclaim = mesh_processing._reclaim_memory
+        original_load = mesh_loading.load_mesh
+        original_reclaim = mesh_policy.reclaim_memory
         loaded = []
         released = []
 
@@ -57,14 +57,14 @@ class TestFingerprintExtraction:
             original_reclaim()
             released.append(all(reference() is None for reference in loaded))
 
-        monkeypatch.setattr(mesh_processing, "_load_mesh", observed_load)
-        monkeypatch.setattr(mesh_processing, "_reclaim_memory", observed_reclaim)
+        monkeypatch.setattr(mesh_loading, "load_mesh", observed_load)
+        monkeypatch.setattr(mesh_policy, "reclaim_memory", observed_reclaim)
 
         result = ThumbnailEngine().generate(
             ThumbnailRequest(path, include_fingerprint=True, include_thumbnail=False)
         )
 
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         assert loaded
         assert released[-1] is True
 
@@ -107,7 +107,7 @@ class TestFingerprintExtraction:
             )
         )
 
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         assert result.image is None
         assert result.failure_reason is None
         assert "rendering_thumbnail" not in progress
@@ -126,7 +126,7 @@ class TestFingerprintExtraction:
         )
 
         assert result.image is not None
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         whole, component = result.fingerprint_result.records
         assert whole.component_index == 0
         assert component.component_index == 1
@@ -172,7 +172,7 @@ class TestFingerprintExtraction:
             ThumbnailRequest(path, width=64, include_fingerprint=True)
         )
 
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         assert len(calls) == 1
 
     def test_embedded_preview_still_computes_geometry(self, tmp_path):
@@ -185,20 +185,20 @@ class TestFingerprintExtraction:
         )
 
         assert result.image == preview
-        assert result.fingerprint_result.state == "ready"
+        assert result.fingerprint_result.state is FingerprintResultState.READY
         assert result.fingerprint_result.records[0].values["face_count"] == 4
 
     def test_large_stl_remains_explicitly_partial(self, tmp_path, monkeypatch):
         path = tmp_path / "large.stl"
         path.write_bytes(tetrahedron().export(file_type="stl"))
-        monkeypatch.setattr(mesh_processing, "_exceeds_cap", lambda *a, **k: True)
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *a, **k: True)
         monkeypatch.setitem(_overlay, "mesh_stream_timeout_seconds", 5)
 
         result = ThumbnailEngine().generate(
             ThumbnailRequest(path, width=64, include_fingerprint=True)
         )
 
-        assert result.fingerprint_result.state == "partial"
+        assert result.fingerprint_result.state is FingerprintResultState.PARTIAL
         assert len(result.fingerprint_result.records) == 1
         values = result.fingerprint_result.records[0].values
         assert (
@@ -221,5 +221,5 @@ class TestFingerprintExtraction:
         )
 
         assert result.image == preview
-        assert result.fingerprint_result.state == "failed"
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
         assert result.fingerprint_result.failure_code == "nonfinite_geometry"

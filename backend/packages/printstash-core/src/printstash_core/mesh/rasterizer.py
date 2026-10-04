@@ -28,14 +28,11 @@ O(chunk_size) rather than O(total_faces) — a million-triangle mesh no longer
 materialises several ~70 MB float32 arrays at once (#29). Only the vertex-scale
 arrays (the projected vertices and the welded smooth-normal table) are held whole.
 
-Future architecture (not yet implemented): ``render_mesh_thumbnail`` is a pure
-function — it takes an already-loaded mesh and returns PNG bytes, touching no
-shared state — so it can be moved wholesale into a separate thumbnail worker
-process. The intended split is: the API process accepts the upload; a worker
-renders one job at a time under a timeout and the memory-aware cap; on failure or
-over-cap it falls back to the embedded preview; and an OOM kills only the worker,
-never the API. Keeping this function isolatable is what makes that move a
-drop-in later.
+The backend invokes ``render_mesh_thumbnail`` in a disposable mesh worker through
+its bounded isolation seam. This function takes an already-loaded mesh and
+returns PNG bytes; process admission, deadlines, memory limits and embedded
+preview selection belong to backend owners. An OOM therefore terminates the
+worker rather than the API process.
 """
 
 from __future__ import annotations
