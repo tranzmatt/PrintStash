@@ -34,6 +34,7 @@ from app.modules.media.mesh_telemetry import (
     PhaseStats,
     SupervisionStats,
 )
+from app.modules.media.stl_reader import InvalidSTL, STLReadFailure, scan_stl
 
 logger = get_logger(__name__)
 
@@ -311,7 +312,34 @@ class ThumbnailEngine:
                     report("extracting_geometry")
                     if request.include_geometry:
                         phases.start(MeshPhase.MEASUREMENTS)
-                        geometry = mesh_processing._geometry_from_mesh(mesh)
+                        if (
+                            over_cap
+                            and suffix == ".stl"
+                            and not request.include_thumbnail
+                        ):
+                            try:
+                                measured = scan_stl(request.path)
+                            except (InvalidSTL, OSError) as exc:
+                                geometry_outcome = GeometryRefused(
+                                    ThumbnailFailureReason.RESOURCE_LIMIT
+                                    if isinstance(exc, InvalidSTL)
+                                    and exc.reason is STLReadFailure.RESOURCE_LIMIT
+                                    else ThumbnailFailureReason.INVALID_SOURCE
+                                )
+                            else:
+                                geometry.update(
+                                    {
+                                        "bbox_x_mm": measured.bounds_max[0]
+                                        - measured.bounds_min[0],
+                                        "bbox_y_mm": measured.bounds_max[1]
+                                        - measured.bounds_min[1],
+                                        "bbox_z_mm": measured.bounds_max[2]
+                                        - measured.bounds_min[2],
+                                        "triangle_count": measured.triangle_count,
+                                    }
+                                )
+                        else:
+                            geometry = mesh_processing._geometry_from_mesh(mesh)
                         phases.finish(
                             triangle_count=int(geometry["triangle_count"])
                             if geometry["triangle_count"] is not None
@@ -322,7 +350,9 @@ class ThumbnailEngine:
                         )
                         if geometry["triangle_count"] is not None:
                             geometry_outcome = GeometryReady()
-                        elif over_cap:
+                        elif over_cap and (
+                            suffix != ".stl" or request.include_thumbnail
+                        ):
                             geometry_outcome = GeometryRefused(
                                 ThumbnailFailureReason.RESOURCE_LIMIT
                             )

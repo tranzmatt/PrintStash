@@ -102,9 +102,11 @@ class _RenderAdmission:
         if depth:
             self.local.depth = depth + 1
             return self
-        with self.condition:
-            while True:
-                checkpoint()
+        while True:
+            # A checkpoint may consult durable job state. Never hold the
+            # admission lock while that external operation blocks.
+            checkpoint()
+            with self.condition:
                 if self.active == 0:
                     self.limit = self.requested
                 if self.limit == self.requested and self.active < self.limit:
