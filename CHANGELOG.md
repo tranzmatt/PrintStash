@@ -37,13 +37,18 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+- Small meshes placed far from the coordinate origin retain their thumbnail
+  geometry and shading. Visual recipes now refresh previews, view fingerprints,
+  and derived image vectors while preserving original files and encoder assets.
 - Ingest acceptance keeps the API event loop responsive while staging files,
   recording work and notifying the background engine.
 
-- Meshes with repeated identical faces no longer expand the same thumbnail pixels
-  repeatedly, avoiding unnecessary rasterization work during ingestion.
+- Keep mesh-worker memory limits and cancellation active after the child closes its reply stream.
+
 
 - The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
+- Meshes with repeated identical faces no longer expand the same thumbnail pixels
+  repeatedly, avoiding unnecessary rasterization work during ingestion.
 - Meshes with inconsistent triangle winding now report unknown volume while
   retaining dimensions and triangle counts. Existing metadata is recalculated
   automatically.
