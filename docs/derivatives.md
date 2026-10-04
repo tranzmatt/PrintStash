@@ -86,6 +86,11 @@ welded in a measurement copy; this does not repair winding or change the source
 Artifact. Open or inconsistently wound surfaces retain their bounding dimensions
 and triangle counts, with unknown (`null`) volume. A globally reversed surface
 also retains unknown metadata volume under the positive-orientation policy.
+Fingerprint extraction results use the closed `FingerprintResultState` set: `ready`,
+`partial`, `failed`, and `unsupported`. Worker frames and persisted rows retain
+these literal strings; an unknown worker state is rejected as a malformed reply.
+`pending` belongs to the persistence lease lifecycle, not an extraction result.
+
 Similarity fingerprints have a separate established policy: they report the
 magnitude for consistently wound closed surfaces, including a global reversal,
 and retain `volume_reason = inconsistent_winding` when winding is inconsistent.

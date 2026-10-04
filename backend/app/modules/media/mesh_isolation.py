@@ -37,7 +37,11 @@ from app import __file__ as application_file
 from app.core.cancellation import OperationCancelled, checkpoint
 from app.core.config import _overlay, settings
 from app.modules.media import mesh_processing
-from app.modules.media.fingerprints import FingerprintRecord, FingerprintResult
+from app.modules.media.fingerprints import (
+    FingerprintRecord,
+    FingerprintResult,
+    FingerprintResultState,
+)
 from app.modules.media.mesh_contracts import (
     ThumbnailFailureReason,
     ThumbnailRequest,
@@ -151,7 +155,7 @@ def encode_reply(result: ThumbnailResult) -> bytes:
                 None
                 if fingerprint is None
                 else {
-                    "state": fingerprint.state,
+                    "state": fingerprint.state.value,
                     "failure_code": fingerprint.failure_code,
                     "algorithm_version": fingerprint.algorithm_version,
                     "records": [
@@ -189,7 +193,7 @@ def decode_reply(payload: bytes) -> ThumbnailResult:
             None
             if raw is None
             else FingerprintResult(
-                state=raw["state"],
+                state=FingerprintResultState(raw["state"]),
                 failure_code=raw["failure_code"],
                 algorithm_version=raw["algorithm_version"],
                 records=tuple(
