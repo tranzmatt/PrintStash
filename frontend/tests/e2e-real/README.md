@@ -153,3 +153,5 @@ Search clarity: the AI-search flow verifies that Enter preserves the live librar
 AI Search settings: the Settings browser flow waits for loaded AI data, visits guided setup, search types, AI servers and technical options, captures desktop and mobile views, and checks visible choices and horizontal fit.
 
 - ZIP uploads: a failed preparation retains input capacity; Tasks confirms and discards it safely.
+
+`viewer-stl.spec.ts`: an adversarial 3MF displays a persisted memory refusal across browser reloads while its original remains downloadable.

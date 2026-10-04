@@ -360,4 +360,19 @@ def create_pre_derivative_controls_schema(connection) -> None:
         "derivatives_toolpath_enabled",
     ):
         config._columns.remove(config.c[column])
+    files = metadata.tables["files"]
+    files.indexes = {
+        index for index in files.indexes if "viewer_requested_at" not in index.columns
+    }
+    files._columns.remove(files.c.viewer_requested_at)
+    from sqlalchemy import CheckConstraint, text
+
+    for table in metadata.tables.values():
+        for constraint in table.constraints:
+            if isinstance(constraint, CheckConstraint):
+                constraint.sqltext = text(
+                    str(constraint.sqltext)
+                    .replace(", 'viewer_stl'", "")
+                    .replace(", 'derivatives.viewer_stl'", "")
+                )
     metadata.create_all(connection)

@@ -150,6 +150,18 @@ class TestGenerate:
 
 
 class TestGeometryMeasurements:
+    def test_preserves_native_hull_descriptor(self, tmp_path):
+        mesh = trimesh.creation.box(extents=[10, 10, 10])
+        path = tmp_path / "hull.stl"
+        path.write_bytes(mesh.export(file_type="stl"))
+
+        result = mesh_isolation.generate(_request(path))
+
+        assert result.fingerprint_result.algorithm_version == "geometry-v4-sh5f4577c4"
+        values = result.fingerprint_result.records[0].values
+        assert values["hull_ratio"] == pytest.approx(1)
+        assert not any(name == "hull_ratio" for name, _ in values["unavailable"])
+
     @pytest.mark.parametrize(
         "strategy", [ThumbnailStrategy.STREAMING, ThumbnailStrategy.FALLBACK]
     )

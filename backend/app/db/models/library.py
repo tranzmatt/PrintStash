@@ -158,6 +158,8 @@ class File(SQLModel, table=True):
         default=None, max_length=64, unique=True, index=True
     )
     thumbnail_path: Optional[str] = Field(default=None, max_length=2048)
+    # Durable demand: scans never convert unopened mesh previews.
+    viewer_requested_at: Optional[datetime] = Field(default=None, index=True)
 
     uploaded_at: datetime = Field(default_factory=utcnow, index=True)
     deleted_at: Optional[datetime] = Field(default=None, index=True)

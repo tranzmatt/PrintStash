@@ -245,7 +245,12 @@ print(json.dumps({'rss':rss,'workers':workers,'oom_kill':int(events['oom_kill'])
         if metadata["state"] == "ready" and name.endswith(
             (".3mf", ".obj", ".stp", ".step")
         ):
-            converted = self.request(f"/api/v1/files/{file_id}/stl")
+
+            def ready_stl():
+                response = self.request(f"/api/v1/files/{file_id}/stl")
+                return response if isinstance(response, bytes) else None
+
+            converted = self.wait(ready_stl)
             assert len(converted) > 84, (name, "empty viewer STL")
         original = self.request(f"/api/v1/files/{file_id}/download")
         assert hashlib.sha256(original).digest() == hashlib.sha256(data).digest()

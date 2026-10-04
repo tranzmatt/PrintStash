@@ -84,6 +84,11 @@ class TestFrontendNginxConf:
         assert 'Referrer-Policy "strict-origin-when-cross-origin"' in conf
         assert "Permissions-Policy" in conf
 
+    def test_preview_blobs_are_allowed_by_frontend_csp(self) -> None:
+        conf = (_root() / "frontend" / "security-headers.conf").read_text()
+
+        assert "connect-src 'self' blob:;" in conf
+
 
 def _default_request_ceiling_mb() -> int:
     """What the backend will accept for a whole request, in whole MiB.
