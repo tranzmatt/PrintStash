@@ -165,7 +165,7 @@ class TestLoadMesh:
         self, tmp_path: Path, monkeypatch
     ) -> None:
 
-        p = tmp_path / "cloud.stl"
+        p = tmp_path / "cloud.obj"
         p.write_bytes(b"placeholder")
         # A loader may return a PointCloud (or other non-mesh geometry) for some
         # inputs; _load_mesh must decline rather than mishandle it.
@@ -188,7 +188,7 @@ class TestLoadMesh:
             return expected
 
         monkeypatch.setattr(trimesh, "load_scene", typed_loader)
-        path = tmp_path / "typed.stl"
+        path = tmp_path / "typed.obj"
         path.write_bytes(b"placeholder")
 
         assert mesh_processing._load_mesh(path) is expected

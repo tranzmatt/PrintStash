@@ -111,12 +111,15 @@ class TestAnalyzeMesh:
         _geometry, thumb = result.geometry, result.image
         assert thumb == png
 
-    def test_reports_an_incomplete_fallback_thumbnail_as_incomplete(
+    def test_refuses_thumbnail_when_source_validation_exceeds_budget(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from app.modules.media import stl_fallback
+        from app.modules.media.stl_reader import STLReadLimits
 
-        monkeypatch.setattr(stl_fallback, "_MAX_ASCII_BYTES", 500)
+        monkeypatch.setattr(
+            stl_fallback, "STLReadLimits", lambda: STLReadLimits(max_source_bytes=500)
+        )
         path = tmp_path / "ascii-truncated.stl"
         facet = (
             "facet normal 0 0 1\n"
@@ -135,18 +138,18 @@ class TestAnalyzeMesh:
 
         result = analyze(path)
 
-        # The fallback ran out of scan budget, so the thumbnail shows part of the
-        # model. Passing `complete=False` up is what lets the UI say so instead
-        # of presenting a partial render as the whole thing.
-        assert is_partial_render(result)
-        assert result.complete is False
+        # Source validation must finish before any retained sample is published.
+        assert result.image is None
 
     def test_measures_no_geometry_from_a_file_it_could_not_load(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from app.modules.media import stl_fallback
+        from app.modules.media.stl_reader import STLReadLimits
 
-        monkeypatch.setattr(stl_fallback, "_MAX_ASCII_BYTES", 500)
+        monkeypatch.setattr(
+            stl_fallback, "STLReadLimits", lambda: STLReadLimits(max_source_bytes=500)
+        )
         path = tmp_path / "ascii-truncated.stl"
         facet = (
             "facet normal 0 0 1\n"
@@ -166,9 +169,7 @@ class TestAnalyzeMesh:
         result = analyze(path)
         geometry, _thumbnail = result.geometry, result.image
 
-        # A thumbnail sampled from part of a file says nothing about the model's
-        # real dimensions, so no measurement is reported rather than one derived
-        # from the sample.
+        # A source whose validation exceeded its budget supplies no measurements.
         assert geometry["triangle_count"] is None
         assert geometry["bbox_x_mm"] is None
 

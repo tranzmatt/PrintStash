@@ -215,6 +215,7 @@ class TestSTLReadCost:
             source_bytes,
         ]
 
+
 class TestThumbnailEngine:
     def test_preserves_translated_3mf_preview(self, tmp_path):
         mesh = trimesh.creation.box(extents=[10, 10, 10])
@@ -262,3 +263,41 @@ class TestThumbnailEngine:
                 "triangle_count": 12,
             }
         )
+
+
+class TestFallbackMeasurements:
+    def test_keeps_global_bounds_when_remote_facet_is_not_retained(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.modules.media import stl_fallback, stl_streaming
+
+        source = tmp_path / "partial-preview.stl"
+        source.write_bytes(
+            content.binary_stl_facets(
+                [
+                    ((0, 0, 0), (2, 0, 1), (0, 2, 1)),
+                    ((100, 3, 4), (101, 3, 4), (100, 4, 5)),
+                ]
+            )
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+        monkeypatch.setattr(
+            stl_streaming, "render_stl_preview_isolated", lambda *_args, **_kwargs: None
+        )
+        monkeypatch.setattr(stl_fallback, "_MAX_SAMPLED_TRIANGLES", 1)
+        monkeypatch.setenv(WORKER_MARKER, str(os.getpid()))
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, width=128, height=128)
+        )
+
+        assert result.image is not None
+        assert result.complete is False
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "bbox_x_mm": 101.0,
+            "bbox_y_mm": 4.0,
+            "bbox_z_mm": 5.0,
+            "triangle_count": 2,
+            "volume_mm3": None,
+        }

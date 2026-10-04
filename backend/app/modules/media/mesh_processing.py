@@ -187,15 +187,14 @@ def _estimate_triangle_count(
     suffix = _canonical_suffix(path, file_type)
     try:
         if suffix == ".stl":
+            from app.modules.media.stl_reader import binary_stl_info
+
             size = path.stat().st_size
+            info = binary_stl_info(path)
+            if info is not None:
+                return info[0]
             with path.open("rb") as fh:
                 sample = fh.read(1024)
-            if len(sample) >= 84:
-                count = struct.unpack("<I", sample[80:84])[0]
-                # Binary STL is exactly 84 + 50 bytes per triangle; if the math
-                # checks out we trust the header count exactly.
-                if size == 84 + count * 50:
-                    return count
             # The exact binary check failed. Now disambiguate a true ASCII STL
             # from a binary STL with trailing bytes (which also fails the check).
             # Guessing wrong toward ASCII is dangerous: ASCII is ~250 B/triangle
@@ -683,6 +682,35 @@ def _load_3mf_mesh(path: Path, suffix: str):
         return None
 
 
+def _load_stl_mesh(path: Path):
+    """Materialize only admitted facets using the canonical bounded source reader."""
+    import numpy as np
+    import trimesh
+
+    from app.modules.media.stl_reader import InvalidSTL, STLReadLimits, materialize_stl
+
+    size_limit = (
+        min(1 << 30, int(settings.mesh_max_load_mb * 1024 * 1024))
+        if settings.mesh_max_load_mb > 0
+        else 1 << 30
+    )
+    limits = STLReadLimits(
+        max_triangles=_load_face_budget(".stl"),
+        max_source_bytes=size_limit,
+    )
+    try:
+        loaded = materialize_stl(path, limits=limits)
+    except (InvalidSTL, OSError):
+        # Legacy loader adapter. Typed callers migrate to materialize_stl.
+        return None
+    count, facets = loaded.measurements.triangle_count, loaded.triangles
+    return trimesh.Trimesh(
+        vertices=facets.reshape(-1, 3),
+        faces=np.arange(count * 3, dtype=np.int64).reshape(-1, 3),
+        process=False,
+    )
+
+
 def _load_mesh(path: Path, *, file_type: str | None = None):
     """Return a single `trimesh.Trimesh` for *path*, or None on failure."""
     import trimesh
@@ -692,6 +720,8 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
         return _load_step_mesh_isolated(path)
     if suffix == ".3mf":
         return _load_3mf_mesh(path, suffix)
+    if suffix == ".stl":
+        return _load_stl_mesh(path)
 
     try:
         # Load the scene rather than asking trimesh for a mesh directly. 3MF

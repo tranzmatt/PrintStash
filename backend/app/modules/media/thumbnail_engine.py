@@ -547,7 +547,7 @@ class ThumbnailEngine:
                             image = fallback.png
                             strategy = ThumbnailStrategy.FALLBACK
                             complete = fallback.complete
-                            if fallback.complete and geometry["triangle_count"] is None:
+                            if fallback.source_complete and geometry["triangle_count"] is None:
                                 geometry.update(
                                     {
                                         "bbox_x_mm": fallback.bounds_max[0]

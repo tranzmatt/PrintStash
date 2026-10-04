@@ -283,8 +283,12 @@ class TestExceedsCap:
         p = tmp_path / "ghost.stl"
         _write_binary_stl(p, 10)
 
-        def fake_stat(self):
-            raise OSError("gone")
+        original_stat = Path.stat
+
+        def fake_stat(self, *args, **kwargs):
+            if self == p:
+                raise OSError("gone")
+            return original_stat(self, *args, **kwargs)
 
         monkeypatch.setattr(Path, "stat", fake_stat)
         # A failed stat is not evidence that the file is small enough for an

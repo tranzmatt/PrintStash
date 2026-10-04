@@ -115,6 +115,33 @@ coordinate interpretation. Its temporary read-pass adapter remains
 local to `stl_preview_worker`; fallback sampling and full mesh loading migrate to
 the block iterator separately.
 
+## Shared STL source validation
+
+STL scanning, retained fallback sampling and full mesh materialization share one
+bounded binary/ASCII reader. The reader validates all source facet coordinates
+through EOF before certifying completion. A successful sample reports exact
+source bounds and facet count even when its retained representation is partial.
+`source_complete` certifies that source read; `complete` additionally requires
+all source facets to be retained and the raster budget to complete. Neither flag
+certifies closed topology. Binary stored normals are ignored because normals
+are derived from vertices; ASCII normal tokens retain the finite syntax rule.
+
+Sources are pinned by device, inode, size, modification time and change time
+across scan/materialization/render passes. A replaced source is refused even if
+its size and modification time are restored. The canonical reader and sampler
+raise distinct invalid-source, resource-limit and source-changed failures;
+legacy preview/analysis adapters retain their existing refusal result until their
+outcome contracts migrate together.
+
+Retained fallback facets use fixed vectorized index priorities and source order,
+with the first and last facet retained when the cap permits. The subset is
+independent of block size and binary/ASCII encoding. Unlike selective binary
+record seeks, source validation reads the full bounded source even for a tiny
+sample; this additional work detects malformed facets outside the retained set.
+Binary materialization needs one full pass after its header probe. ASCII scans
+for exact allocation size before a second full pass; both share one deadline
+and source snapshot. Preparation/pass reuse is a separate concern.
+
 ## Measurement precision
 
 Mesh metadata recipe 5 stores dimensions and valid volume without rounding them
