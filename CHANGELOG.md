@@ -39,7 +39,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
-- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
+- Capture and similarity commands keep the API event loop responsive through database writes, background-engine notification and response projection.
 - Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.
 - Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
 - Small meshes placed far from the coordinate origin retain their thumbnail
@@ -60,6 +60,10 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Browser-local upload queues recover as interrupted after a reload, so stale
   tasks can be cleared. Resumable uploads retain their recovery controls, and
   queued browser work now asks users to keep the tab open (#336).
+- 3D viewer conversions run as durable, on-demand Jobs. Requests share preparation
+  and retain failure reasons; memory refusals show a clear message while original
+  downloads and slicer handoff stay available. Hovering a model card no longer
+  starts a mesh conversion (#259).
 - Containers start with read-only Library source mounts beneath `/data`. Startup
   ownership repair is limited to app-owned directories and preserves external
   sources, including bind mounts on the same filesystem (#330).
@@ -131,6 +135,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 - Restoring a backup no longer fails because a completed ZIP inspection is
   waiting for file selection. Its staged archive remains available; unfinished
   uploads and imports still block restore until they are settled.
+
+- Convex hull descriptors use normalized SciPy/Qhull geometry, preserving dense convex surfaces and finite extreme scales while rejecting invalid coordinates. Existing fingerprints are recalculated.
 
 ### Performance
 

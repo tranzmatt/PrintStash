@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from io import BytesIO
 from pathlib import Path
+from typing import AsyncIterator, BinaryIO
 
+from anyio import CancelScope, CapacityLimiter, to_thread
 from fastapi import (
     APIRouter,
     Depends,
@@ -20,7 +24,13 @@ from sqlmodel import Session
 from app.core.browser_device_auth import require_user_or_browser_import_user
 from app.core.config import settings
 from app.core.security import require_auth, require_user
-from app.db.models import InboxItemState, InboxSourceKind, JobKind, User
+from app.db.models import (
+    CaptureUploadSlot,
+    InboxItemState,
+    InboxSourceKind,
+    JobKind,
+    User,
+)
 from app.db.session import get_session
 from app.modules.ingestion import importer, inbox, staging_leases
 from app.modules.storage import storage
@@ -44,7 +54,7 @@ router = APIRouter(prefix="/inbox", tags=["pending imports"])
     response_model=InboxItemRead,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def capture(
+def capture(
     payload: InboxItemCreate,
     current_user: User = Depends(require_user_or_browser_import_user),
     session: Session = Depends(get_session),
@@ -95,7 +105,9 @@ async def put_capture_upload_slot(
     current_user: User = Depends(require_user_or_browser_import_user),
     session: Session = Depends(get_session),
 ) -> CaptureUploadSlotRead:
-    slot = inbox.require_capture_slot(session, current_user, slot_id)
+    slot = await run_in_threadpool(
+        inbox.require_capture_slot, session, current_user, slot_id
+    )
     content_length = request.headers.get("content-length")
     if content_length is not None:
         try:
@@ -114,22 +126,22 @@ async def put_capture_upload_slot(
         staged_path = await run_in_threadpool(
             staging_leases.prepare_capture_slot_staging,
             session,
-            slot_id=slot.id,
+            slot_id=slot_id,
         )
         received = 0
-        with staging_leases.open_capture_slot_staging(
-            session, slot_id=slot.id
-        ) as target:
+        # Each blocking operation borrows the pool only while doing I/O. A
+        # slow sender holds neither a worker thread nor its admission token.
+        # Session operations are awaited sequentially, never used concurrently.
+        async with _capture_slot_writer(session, slot_id) as target:
             async for chunk in request.stream():
                 received += len(chunk)
                 if received > settings.max_upload_bytes:
                     raise HTTPException(status_code=413, detail="upload_too_large")
-                target.write(chunk)
+                await run_in_threadpool(target.write, chunk)
         uploaded = await run_in_threadpool(
-            inbox.upload_capture_slot,
+            _publish_capture_slot,
             session,
             slot,
-            stream=iter(()),
             media_type=request.headers.get("content-type"),
             staged_path=staged_path,
         )
@@ -146,12 +158,69 @@ async def put_capture_upload_slot(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     finally:
         if staged_path is not None:
-            try:
-                if staging_leases.remove_capture_slot_staging(session, slot_id=slot.id):
-                    session.commit()
-            except Exception:
-                session.rollback()
-    return inbox.slot_read(uploaded)
+            with CancelScope(shield=True):
+                await to_thread.run_sync(
+                    _cleanup_capture_slot_staging,
+                    session,
+                    slot_id,
+                    limiter=CapacityLimiter(1),
+                )
+    return uploaded
+
+
+@asynccontextmanager
+async def _capture_slot_writer(
+    session: Session, slot_id: str
+) -> AsyncIterator[BinaryIO]:
+    context = staging_leases.open_capture_slot_staging(session, slot_id=slot_id)
+    # Closing releases resources even when request cancellation is active or
+    # other pool users are waiting for database connections held by this request.
+    exit_limiter = CapacityLimiter(1)
+    with CancelScope(shield=True):
+        target = await run_in_threadpool(context.__enter__)
+    try:
+        yield target
+    except BaseException as exc:
+        with CancelScope(shield=True):
+            await to_thread.run_sync(
+                context.__exit__,
+                type(exc),
+                exc,
+                exc.__traceback__,
+                limiter=exit_limiter,
+            )
+        raise
+    else:
+        with CancelScope(shield=True):
+            await to_thread.run_sync(
+                context.__exit__, None, None, None, limiter=exit_limiter
+            )
+
+
+def _publish_capture_slot(
+    session: Session,
+    slot: CaptureUploadSlot,
+    *,
+    media_type: str | None,
+    staged_path: Path,
+) -> CaptureUploadSlotRead:
+    with BytesIO() as empty_stream:
+        uploaded = inbox.upload_capture_slot(
+            session,
+            slot,
+            stream=empty_stream,
+            media_type=media_type,
+            staged_path=staged_path,
+        )
+        return inbox.slot_read(uploaded)
+
+
+def _cleanup_capture_slot_staging(session: Session, slot_id: str) -> None:
+    try:
+        if staging_leases.remove_capture_slot_staging(session, slot_id=slot_id):
+            session.commit()
+    except Exception:
+        session.rollback()
 
 
 @router.post("/{item_id}/capture-upload-finalize", response_model=InboxItemRead)
@@ -189,7 +258,7 @@ def cancel_capture_upload(
     response_model=InboxItemRead,
     status_code=status.HTTP_201_CREATED,
 )
-async def capture_browser_upload(
+def capture_browser_upload(
     file: UploadFile = File(...),
     source_url: str = Form(..., min_length=1, max_length=2048),
     title: str | None = Form(None, max_length=255),
@@ -201,8 +270,7 @@ async def capture_browser_upload(
     if not file.filename:
         raise HTTPException(status_code=400, detail="filename_required")
     try:
-        row = await run_in_threadpool(
-            inbox.create_browser_upload,
+        row = inbox.create_browser_upload(
             session,
             current_user,
             source_url=source_url,
