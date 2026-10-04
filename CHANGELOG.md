@@ -40,6 +40,7 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Fixed
 - Preserve existing paired Point model manifests and native encoder alignment when mesh rendering recipes change. Visual vector caches still track their rendering recipe.
+- Mesh metadata preserves measurement precision, including submillimeter dimensions and small positive volumes; existing rounded measurements are recalculated.
 - Small meshes placed far from the coordinate origin retain their thumbnail
   geometry and shading. Visual recipes now refresh previews, view fingerprints,
   and derived image vectors while preserving original files and encoder assets.
@@ -50,6 +51,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 
 - The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
+- Meshes with repeated identical faces no longer expand the same thumbnail pixels
+  repeatedly, avoiding unnecessary rasterization work during ingestion.
 - Meshes with inconsistent triangle winding now report unknown volume while
   retaining dimensions and triangle counts. Existing metadata is recalculated
   automatically.

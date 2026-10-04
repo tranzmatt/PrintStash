@@ -105,6 +105,17 @@ are assumed to be millimetres. Metadata recipe 4 recalculates existing measureme
 to remove volumes previously published for inconsistently wound surfaces; the
 fingerprint algorithm is unchanged.
 
+## Measurement precision
+
+Mesh metadata recipe 5 stores dimensions and valid volume without rounding them
+to two decimal places. Values remain in millimeters and cubic millimeters;
+display formatting is a consumer concern. This preserves small parts and the
+precision available from each source, including bounds obtained by complete STL
+streaming and fallback scans. Existing rounded metadata is eligible for backfill.
+Binary STL still carries float32 coordinates; removing output rounding cannot
+recover precision already absent from the input. Volume retains the closure,
+winding, finite-value and positive-orientation requirements of recipe 4.
+
 ## Bumping a recipe
 
 The recipe constants in `app/modules/derivatives/kinds.py` are the code's

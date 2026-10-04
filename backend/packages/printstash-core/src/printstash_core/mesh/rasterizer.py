@@ -587,6 +587,17 @@ def _rasterise_triangles(
     if tri.shape[0] == 0:
         return 0
 
+    if budget is None and len(tri) > 1:
+        # Identical oriented triangles cover the same pixels at identical depths.
+        # Depth ties already keep the first fragment, including its normals. Keep
+        # that input order while avoiding repeated candidate expansion. This is
+        # local to the caller's face chunk; budgeted fallback retains its existing
+        # candidate accounting and coverage policy.
+        _, first = np.unique(tri.reshape(len(tri), -1), axis=0, return_index=True)
+        if len(first) != len(tri):
+            first.sort()
+            tri, vert_nrm = tri[first], vert_nrm[first]
+
     xs = tri[:, :, 0]
     ys = tri[:, :, 1]
     x0 = np.clip(np.floor(xs.min(axis=1)).astype(np.int64), 0, width - 1)
