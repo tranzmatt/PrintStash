@@ -769,10 +769,11 @@ def _geometry_from_mesh(mesh) -> Dict[str, Optional[float]]:
         return out
 
     if mesh.vertices.shape[0] > 0:
+        # Persist source precision; display formatting belongs to consumers.
         extents = mesh.bounds[1] - mesh.bounds[0]
-        out["bbox_x_mm"] = round(float(extents[0]), 2)
-        out["bbox_y_mm"] = round(float(extents[1]), 2)
-        out["bbox_z_mm"] = round(float(extents[2]), 2)
+        out["bbox_x_mm"] = float(extents[0])
+        out["bbox_y_mm"] = float(extents[1])
+        out["bbox_z_mm"] = float(extents[2])
 
     if mesh.faces is not None and len(mesh.faces) > 0:
         out["triangle_count"] = len(mesh.faces)
@@ -793,7 +794,7 @@ def _geometry_from_mesh(mesh) -> Dict[str, Optional[float]]:
             else None
         )
         if vol is not None and math.isfinite(vol) and vol > 0:
-            out["volume_mm3"] = round(float(vol), 2)
+            out["volume_mm3"] = float(vol)
     except MemoryError:
         raise
     except Exception:

@@ -46,12 +46,24 @@ class TestMain:
     def test_executes_real_benchmark_cli(self, benchmark_report: dict) -> None:
         cube = benchmark_report["measurements"][0]
 
-        assert benchmark_report["schema_version"] == 2
+        assert benchmark_report["schema_version"] == 3
         assert cube["name"] == "cube.stl"
         assert cube["render_median_ms"] > 0
         assert [sample["error"] for sample in cube["renders"]] == [None, None]
         assert [sample["strategy"] for sample in cube["renders"]] == ["full", "full"]
         assert cube["renders"][0]["output_bytes"] > 0
+
+    def test_reports_environment_without_certifying_latency(
+        self, benchmark_report: dict
+    ) -> None:
+        environment = benchmark_report["environment"]
+        assert len(environment["commit"]) == 40
+        assert environment["versions"]["trimesh"]
+        assert environment["performance_gate_qualified"] is False
+        assert "cpu_limit_read" in environment["cgroup"]
+        assert benchmark_report["output_dimensions"]["width"] > 0
+        assert benchmark_report["cold_runs"] == 2
+        assert benchmark_report["warm_runs"] == 2
 
     def test_reads_persisted_representation(self, benchmark_report: dict) -> None:
         cube = benchmark_report["measurements"][0]
@@ -108,6 +120,25 @@ class TestMain:
         assert result.returncode == 2
         assert "run counts must be positive" in result.stderr
 
+    def test_rejects_conflicting_corpus_profiles(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "scripts.bench_thumbnails",
+                "--quick",
+                "--contract-corpus",
+            ],
+            cwd=BACKEND_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        assert result.returncode == 2
+        assert "not allowed with argument" in result.stderr
+
     def test_rejects_missing_external_model(self, tmp_path: Path) -> None:
         result = subprocess.run(
             [
@@ -126,3 +157,43 @@ class TestMain:
 
         assert result.returncode == 2
         assert "external model must be an existing file" in result.stderr
+
+
+class TestContractCorpus:
+    def test_reports_target_contract_separately_from_observed_renders(
+        self, tmp_path: Path
+    ) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "scripts.bench_thumbnails",
+                "--contract-corpus",
+                "--cold-runs",
+                "1",
+                "--warm-runs",
+                "1",
+            ],
+            cwd=BACKEND_DIR,
+            env={**os.environ, "VAULT_DATA_ROOT": str(tmp_path)},
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        report = json.loads(result.stdout)
+        manifest = report["corpus_manifest"]
+        assert (
+            manifest["expectation_scope"] == "target_contract_not_observed_compliance"
+        )
+        fixtures = {entry["filename"]: entry for entry in manifest["fixtures"]}
+        assert len(report["measurements"]) == len(fixtures) == 14
+        for measurement in report["measurements"]:
+            assert (
+                measurement["input_sha256"] == fixtures[measurement["name"]]["sha256"]
+            )
+            assert len(measurement["renders"]) == 1
+        cycle = fixtures["cyclic-components.3mf"]
+        assert cycle["expectation"]["outcome"] == "refuse"
+        assert report["environment"]["performance_gate_qualified"] is False
