@@ -52,6 +52,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 
 - The thumbnail benchmark now runs the real engine, measures persisted local thumbnail reads, and preserves failed attempts with their costs instead of reporting misleading cache timings.
+- Mesh previews and image embeddings ignore vertices unused by any face when
+  framing the surface. Existing visual derivatives are regenerated.
 - Meshes with repeated identical faces no longer expand the same thumbnail pixels
   repeatedly, avoiding unnecessary rasterization work during ingestion.
 - Meshes with inconsistent triangle winding now report unknown volume while
