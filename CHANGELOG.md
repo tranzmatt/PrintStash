@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Share bounded STL source validation across measurements, full loading, fallback
+  samples and streamed previews. Validate complete source facets and stable EOF
+  before reporting coverage, retain exact full-source bounds and counts for
+  partial samples, and refuse malformed or changed sources consistently.
 - Interpret reachable Core 3MF geometry and Production external model references
   through an explicit bounded scene reader. Refuse unsupported required
   capabilities with typed metadata, similarity and viewer reasons while retaining

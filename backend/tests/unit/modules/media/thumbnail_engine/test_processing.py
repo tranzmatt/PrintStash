@@ -80,12 +80,15 @@ class TestAnalyzeMesh:
         _geometry, thumb = result.geometry, result.image
         assert thumb == png
 
-    def test_reports_an_incomplete_fallback_thumbnail_as_incomplete(
+    def test_refuses_thumbnail_when_source_validation_exceeds_budget(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from app.modules.media import stl_fallback
+        from app.modules.media.stl_reader import STLReadLimits
 
-        monkeypatch.setattr(stl_fallback, "_MAX_ASCII_BYTES", 500)
+        monkeypatch.setattr(
+            stl_fallback, "STLReadLimits", lambda: STLReadLimits(max_source_bytes=500)
+        )
         path = tmp_path / "ascii-truncated.stl"
         facet = (
             "facet normal 0 0 1\n"
@@ -102,19 +105,20 @@ class TestAnalyzeMesh:
 
         result = analyze(path)
 
-        # The fallback ran out of scan budget, so the thumbnail shows part of the
-        # model. Explicit preview coverage lets the UI say so instead of
-        # presenting a partial render as the whole thing.
-        assert is_partial_render(result)
-        assert result.coverage.preview is PreviewCoverage.PARTIAL
-        assert result.coverage.source_scan is SourceScanState.PARTIAL
+        # Source validation must finish before a retained preview is published.
+        assert result.image is None
+        assert result.coverage.preview is PreviewCoverage.NOT_PRODUCED
+        assert result.coverage.source_scan is SourceScanState.NOT_SCANNED
 
     def test_measures_no_geometry_from_a_file_it_could_not_load(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from app.modules.media import stl_fallback
+        from app.modules.media.stl_reader import STLReadLimits
 
-        monkeypatch.setattr(stl_fallback, "_MAX_ASCII_BYTES", 500)
+        monkeypatch.setattr(
+            stl_fallback, "STLReadLimits", lambda: STLReadLimits(max_source_bytes=500)
+        )
         path = tmp_path / "ascii-truncated.stl"
         facet = (
             "facet normal 0 0 1\n"

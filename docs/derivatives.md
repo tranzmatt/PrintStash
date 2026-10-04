@@ -77,7 +77,7 @@ view and remaps faces inside each existing chunk; unused source vertices remain
 unchanged. Face indices must refer to the source vertex array.
 
 Mesh thumbnail recipe 4 refreshes existing previews. Similarity uses view-descriptor
-recipe 2 and fingerprint algorithm `geometry-v4-sh5f4577c4`. Search visual recipe 3
+recipe 2 and fingerprint algorithm `geometry-v5-sh5f4577c4`. Search visual recipe 3
 and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
 invalidate earlier rendered inputs and vectors. Encoder asset manifests and
 their digests are unchanged.
@@ -164,8 +164,44 @@ near the float32 limit therefore remain renderable after rotation. Raster work
 budgets still determine whether a preview is complete.
 
 Mesh metadata recipe 8 and thumbnail recipe 7 refresh measurements and previews
-from the former streaming camera policy. Fallback sampling and full mesh loading
-migrate to the block iterator separately.
+from the former streaming camera policy. Fallback sampling and full mesh loading now share the block iterator described
+below.
+
+## Shared STL source validation
+
+STL scanning, retained fallback sampling and full mesh materialization share one
+bounded binary/ASCII reader. The reader validates all source facet coordinates
+through EOF before certifying completion. A successful sample reports exact
+source bounds and facet count even when its retained representation is partial.
+`source_complete` certifies that source read; `complete` additionally requires
+all source facets to be retained and the raster budget to complete. Neither flag
+certifies closed topology. Binary stored normals are ignored because normals
+are derived from vertices; ASCII normal tokens retain the finite syntax rule.
+
+Sources are pinned by device, inode, size, modification time and change time
+across scan/materialization/render passes. A replaced source is refused even if
+its size and modification time are restored. The canonical reader and sampler
+raise distinct invalid-source, resource-limit and source-changed failures;
+legacy preview/analysis adapters retain their existing refusal result until their
+outcome contracts migrate together.
+
+Retained fallback facets use fixed vectorized index priorities and source order,
+with the first and last facet retained when the cap permits. The subset is
+independent of block size and binary/ASCII encoding. Unlike selective binary
+record seeks, source validation reads the full bounded source even for a tiny
+sample; this additional work detects malformed facets outside the retained set.
+Binary materialization needs one full pass after its header probe. ASCII scans
+for exact allocation size before a second full pass; both share one deadline
+and source snapshot. Preparation/pass reuse is a separate concern. Source
+validation is bounded by 1 GiB by default; it is not a timing improvement.
+
+Fingerprint interpretation version `geometry-v6-sh5f4577c4` invalidates eligibility
+receipts from the former partial sampling policy. Historical descriptor evidence
+and human review decisions remain retained; descriptor math, the SH basis and
+verifier calibration are unchanged. Metadata recipe 11 and thumbnail recipe 10
+refresh affected outputs; viewer STL remains recipe 2. The earlier 3MF capability
+policy and independent embedded previews remain in force. The
+[STL reader contract](stl-reader.md) specifies completion, sampling and refusals.
 
 ## Measurement precision
 

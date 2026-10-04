@@ -48,8 +48,10 @@ separate from unsupported capabilities. Failed outputs retain their terminal
 reason for unchanged bytes and recipe; repeated viewer requests do not restart
 conversion. Explicit retry or a new recipe can make work eligible again.
 
-The geometry interpretation cache version is `geometry-v5-sh5f4577c4`. Previous
-fingerprints, candidate observations and human review decisions remain historical
+The 3MF capability policy introduced interpretation cache version
+`geometry-v5-sh5f4577c4`; shared STL validation advances the current version to
+`geometry-v6-sh5f4577c4`. Previous fingerprints, candidate observations and human
+review decisions remain historical
 evidence. Candidates interpreted under an earlier version are stale and cannot
 be confirmed or used to create a multipart Model; current-result filters exclude
 them. The mathematical fingerprint descriptors and SH basis are unchanged.
@@ -152,7 +154,7 @@ Every row names an implemented assertion. Focused local checks verify changed be
 | 77 | Restores instrumentation of the current reader | Edge | Valid Core mesh or expanded-budget refusal through pilot adapter | Original parser/expander/materializer functions restored after measurement | Integration | ✅ `integration/scripts/test_pilot_lib3mf.py::TestCurrentInstrumentation::test_restores_current_reader_seams` |
 | 78 | Preserves placement-budget refusal through the legacy facade | Error | Instanced 3MF exceeds load face budget | Typed scene_resource_limit raised without unbounded Trimesh scene load | Unit | ✅ `unit/modules/media/mesh_processing/test_entry_points.py::TestExtractGeometry::test_extract_geometry_refuses_a_3mf_whose_placements_exceed_the_budget` |
 | 79 | Source measurement retains unavailable geometry evidence | Edge | No mesh is available | Dimensions, count and volume remain unknown with GEOMETRY_UNAVAILABLE evidence | Unit | ✅ `unit/modules/media/mesh_measurements/test_measurements.py::TestGeometryFromMesh::test_reports_missing_geometry_volume_evidence` |
-| 80 | Interpretation version controls actionable evidence freshness | Edge | Previous v4 or current v5 candidate and matching READY fingerprints | Previous evidence is stale with no confirmation action; current evidence remains actionable; history is preserved | Integration | ✅ `integration/modules/similarity/candidates/test_candidates.py::TestInterpretationVersion::test_version_controls_current_evidence` |
+| 80 | Interpretation version controls actionable evidence freshness | Edge | Previous v4 or current interpretation candidate and matching READY fingerprints | Previous evidence is stale with no confirmation action; current evidence remains actionable; history is preserved | Integration | ✅ `integration/modules/similarity/candidates/test_candidates.py::TestInterpretationVersion::test_version_controls_current_evidence` |
 | 81 | preserves human review history after interpretation changes | Edge | Previously confirmed evidence now belongs to old interpretation | Prior decision, confirmed annotation and historical fingerprints remain; new confirmation rejected as stale without adding a decision | Integration | ✅ `integration/modules/similarity/candidates/test_candidates.py::TestInterpretationVersion::test_version_change_preserves_review_history` |
 | 82 | excludes obsolete interpretation from current API results | Edge | Live v4 candidate retains matching v4 fingerprints | HTTP current filter omits candidate; stale filter and unfiltered Model list retain historical evidence without confirmation action | Integration | ✅ `integration/api/v1/test_similarity.py::TestPersistedResults::test_obsolete_interpretation_is_excluded_from_current_results` |
 | 83 | preserves embedded preview beyond source byte cap | Edge | 3MF exceeds1MiB raw source ceiling; default embedded preview enabled | No loaded geometry; exact validated PNG retained | Unit | ✅ `unit/modules/media/thumbnail_engine/test_processing.py::TestAnalyzeMesh::test_over_cap_3mf_still_gets_embedded_preview` |

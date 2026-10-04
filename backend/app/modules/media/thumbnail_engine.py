@@ -115,10 +115,10 @@ def _prepare_sampled_stl(
     import numpy as np
     import trimesh
 
-    sampled = stl_fallback.sample_stl_geometry(
+    sampled = stl_fallback.read_stl_sample(
         path, max_triangles=min(10_000, triangle_cap)
     )
-    if sampled is None or not sampled.sampled_triangles:
+    if not sampled.sampled_triangles:
         return None
     points = np.array(sampled.coordinates, dtype=np.float64).reshape((-1, 3))
     mesh = trimesh.Trimesh(
@@ -132,7 +132,7 @@ def _prepare_sampled_stl(
         geometry=SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
     )
     return prepared, (
-        SourceScanState.COMPLETE if sampled.complete else SourceScanState.PARTIAL
+        SourceScanState.COMPLETE if sampled.source_complete else SourceScanState.PARTIAL
     )
 
 
@@ -289,12 +289,30 @@ class ThumbnailEngine:
                                     else FingerprintResultState.FAILED,
                                     failure_code=FingerprintFailureCode(exc.code),
                                 )
-                        elif request.file_type is None:
-                            mesh = mesh_loading.load_mesh(request.path)
                         else:
-                            mesh = mesh_loading.load_mesh(
-                                request.path, file_type=suffix
-                            )
+                            try:
+                                mesh = (
+                                    mesh_loading.load_mesh(request.path)
+                                    if request.file_type is None
+                                    else mesh_loading.load_mesh(
+                                        request.path, file_type=suffix
+                                    )
+                                )
+                            except GeometryError as exc:
+                                over_cap = exc.code == "resource_limit"
+                                refusal = (
+                                    ThumbnailFailureReason.RESOURCE_LIMIT
+                                    if over_cap
+                                    else ThumbnailFailureReason.INVALID_SOURCE
+                                )
+                                failure = refusal
+                                if request.include_geometry:
+                                    geometry_outcome = GeometryRefused(refusal)
+                                if request.include_fingerprint:
+                                    fingerprint_result = FingerprintResult(
+                                        FingerprintResultState.FAILED,
+                                        failure_code=FingerprintFailureCode(exc.code),
+                                    )
 
                         phases.finish(
                             outcome=PhaseOutcome.COMPLETED
@@ -414,11 +432,21 @@ class ThumbnailEngine:
                                     else FingerprintFailureCode.INVALID_SOURCE,
                                 )
                             )
-                        except (GeometryError, ValueError, MemoryError) as exc:
+                        except (
+                            GeometryError,
+                            InvalidSTL,
+                            OSError,
+                            ValueError,
+                            MemoryError,
+                        ) as exc:
                             fingerprint_result = FingerprintResult(
                                 FingerprintResultState.FAILED,
                                 failure_code=FingerprintFailureCode(exc.code)
                                 if isinstance(exc, GeometryError)
+                                else FingerprintFailureCode(exc.reason.value)
+                                if isinstance(exc, InvalidSTL)
+                                else FingerprintFailureCode.SOURCE_UNAVAILABLE
+                                if isinstance(exc, OSError)
                                 else FingerprintFailureCode.ANALYSIS_FAILED,
                             )
 
@@ -570,17 +598,15 @@ class ThumbnailEngine:
                             preview_coverage = (
                                 PreviewCoverage.COMPLETE
                                 if fallback.complete
-                                and fallback.sampled_triangles
-                                == fallback.triangle_count
                                 else PreviewCoverage.PARTIAL
                             )
-                            if fallback.complete:
+                            if fallback.source_complete:
                                 source_scan = SourceScanState.COMPLETE
                             elif source_scan is SourceScanState.NOT_SCANNED:
                                 source_scan = SourceScanState.PARTIAL
                             if (
                                 request.include_geometry
-                                and fallback.complete
+                                and fallback.source_complete
                                 and geometry["triangle_count"] is None
                             ):
                                 volume = VolumeNotCalculated(

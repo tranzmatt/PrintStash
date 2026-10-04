@@ -52,15 +52,59 @@ def mesh(make_model, make_file):
 
 
 class TestPending:
+    @pytest.mark.parametrize(
+        ("kind", "old_recipe", "other_kind"),
+        [
+            (DerivativeKind.METADATA, 10, DerivativeKind.THUMBNAIL),
+            (DerivativeKind.THUMBNAIL, 9, DerivativeKind.METADATA),
+        ],
+    )
+    @pytest.mark.parametrize("state", [DerivativeState.READY, DerivativeState.FAILED])
+    def test_rederives_stl_outputs_from_the_previous_reader_recipe(
+        self, db_session, mesh, make_derivative, kind, old_recipe, other_kind, state
+    ):
+        artifact = mesh()
+        make_derivative(
+            artifact,
+            kind,
+            recipe_version=old_recipe,
+            state=state,
+            exhausted=state is DerivativeState.FAILED,
+            failure_reason="invalid_source"
+            if state is DerivativeState.FAILED
+            else None,
+        )
+        make_derivative(artifact, other_kind)
+
+        assert _subjects(db_session) == [subject_key(artifact.id)]
+
     def test_rederives_previews_with_ambiguous_completeness(
         self, db_session, mesh, make_derivative
     ):
         artifact = mesh()
         make_derivative(artifact, DerivativeKind.METADATA)
         make_derivative(
-            artifact, DerivativeKind.THUMBNAIL, recipe_version=7,
+            artifact,
+            DerivativeKind.THUMBNAIL,
+            recipe_version=7,
             output_json='{"strategy":"fallback","complete":true}',
         )
+
+        assert _subjects(db_session) == [subject_key(artifact.id)]
+
+    @pytest.mark.parametrize(
+        ("kind", "previous_recipe", "other_kind"),
+        [
+            (DerivativeKind.METADATA, 8, DerivativeKind.THUMBNAIL),
+            (DerivativeKind.THUMBNAIL, 7, DerivativeKind.METADATA),
+        ],
+    )
+    def test_rederives_outputs_from_the_previous_stl_reader_recipe(
+        self, db_session, mesh, make_derivative, kind, previous_recipe, other_kind
+    ):
+        artifact = mesh()
+        make_derivative(artifact, kind, recipe_version=previous_recipe)
+        make_derivative(artifact, other_kind)
 
         assert _subjects(db_session) == [subject_key(artifact.id)]
 

@@ -16,7 +16,7 @@ from PIL import Image
 
 from app.core.config import _overlay
 from app.modules.media import mesh_isolation
-from app.modules.media.fingerprints import FingerprintResultState
+from app.modules.media.fingerprints import ALGORITHM_VERSION, FingerprintResultState
 from app.modules.media.mesh_contracts import (
     ThumbnailFailureReason,
     ThumbnailRequest,
@@ -156,8 +156,6 @@ class TestGeometryMeasurements:
         path.write_bytes(mesh.export(file_type="stl"))
 
         result = mesh_isolation.generate(_request(path))
-
-        from app.modules.media.fingerprints import ALGORITHM_VERSION
 
         assert result.fingerprint_result.algorithm_version == ALGORITHM_VERSION
         values = result.fingerprint_result.records[0].values

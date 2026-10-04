@@ -190,9 +190,13 @@ class TestDeriveMesh:
             VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
         )
         rows = _rows(db_session, artifact.id)
-        assert rows[DerivativeKind.METADATA].recipe_version == 10
+        assert (
+            rows[DerivativeKind.METADATA].recipe_version == kinds.MESH_GEOMETRY_RECIPE
+        )
         assert rows[DerivativeKind.METADATA].failure_reason == "unsupported_capability"
-        assert rows[DerivativeKind.THUMBNAIL].recipe_version == 9
+        assert (
+            rows[DerivativeKind.THUMBNAIL].recipe_version == kinds.MESH_THUMBNAIL_RECIPE
+        )
         assert (
             json.loads(rows[DerivativeKind.THUMBNAIL].output_json)["strategy"]
             == "embedded"
@@ -205,7 +209,7 @@ class TestDeriveMesh:
                 GeometryFingerprint.algorithm_version == ALGORITHM_VERSION,
             )
         ).one()
-        assert ALGORITHM_VERSION == "geometry-v5-sh5f4577c4"
+        assert ALGORITHM_VERSION == "geometry-v6-sh5f4577c4"
         assert cached.state == "unsupported"
         assert cached.failure_code == "unsupported_3mf_capability"
         db_session.refresh(old)

@@ -13,6 +13,7 @@ from printstash_core.mesh.measurements import (
     VolumeNotCalculated,
     VolumeNotCalculatedCause,
 )
+from printstash_core.mesh.similarity import GeometryError
 
 from app.modules.media import (
     mesh_loading,
@@ -30,6 +31,8 @@ from app.modules.media.mesh_contracts import (
     ThumbnailRequest,
     ThumbnailStrategy,
 )
+from app.modules.media.mesh_facts import FingerprintFailureCode, FingerprintResultState
+from app.modules.media.stl_reader import InvalidSTL, STLBudgetExceeded, STLSourceChanged
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 
 
@@ -170,7 +173,11 @@ class TestPreviewCoverage:
             bounds_max=(10.0, 20.0, 30.0),
             triangle_count=12,
             sampled_triangles=4,
-            complete=True,
+            source_complete=True,
+            scanned_bytes=684,
+            parsed_triangles=12,
+            complete=False,
+            raster_candidates=4,
         )
         monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *args, **kwargs: True)
         monkeypatch.setattr(
@@ -186,3 +193,85 @@ class TestPreviewCoverage:
         assert result.coverage.source_scan is SourceScanState.COMPLETE
         assert isinstance(result.coverage.geometry, GeometryNotLoaded)
         assert result.coverage.preview is PreviewCoverage.PARTIAL
+
+
+class TestSampledFingerprintRefusals:
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (InvalidSTL(), FingerprintFailureCode.INVALID_SOURCE),
+            (STLBudgetExceeded(), FingerprintFailureCode.RESOURCE_LIMIT),
+            (STLSourceChanged(), FingerprintFailureCode.SOURCE_CHANGED),
+            (OSError(), FingerprintFailureCode.SOURCE_UNAVAILABLE),
+        ],
+    )
+    def test_preserves_the_shared_reader_refusal(
+        self, tmp_path, monkeypatch, error, expected
+    ):
+        source = tmp_path / "sampled.stl"
+        source.write_bytes(b"source")
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *a, **kw: True)
+
+        def refused(*args, **kwargs):
+            raise error
+
+        monkeypatch.setattr(stl_fallback, "read_stl_sample", refused)
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                source,
+                include_geometry=False,
+                include_thumbnail=False,
+                include_fingerprint=True,
+            )
+        )
+
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
+        assert result.fingerprint_result.failure_code is expected
+        assert result.fingerprint_result.records == ()
+        assert result.image is None
+        assert result.coverage.source_scan is SourceScanState.NOT_SCANNED
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.NOT_REQUESTED
+        )
+
+
+class TestSharedReaderLoadRefusals:
+    @pytest.mark.parametrize(
+        "cause",
+        [
+            FingerprintFailureCode.INVALID_SOURCE,
+            FingerprintFailureCode.RESOURCE_LIMIT,
+            FingerprintFailureCode.SOURCE_CHANGED,
+            FingerprintFailureCode.SOURCE_UNAVAILABLE,
+        ],
+    )
+    def test_preserves_the_shared_loader_refusal(self, tmp_path, monkeypatch, cause):
+        source = tmp_path / "refused.stl"
+        source.write_bytes(b"source")
+        monkeypatch.setattr(mesh_policy, "exceeds_cap", lambda *a, **kw: False)
+
+        def refused(*args, **kwargs):
+            raise GeometryError(cause.value)
+
+        monkeypatch.setattr(mesh_loading, "load_mesh", refused)
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                source,
+                include_geometry=False,
+                include_thumbnail=False,
+                include_fingerprint=True,
+            )
+        )
+
+        assert result.fingerprint_result.state is FingerprintResultState.FAILED
+        assert result.fingerprint_result.failure_code is cause
+        assert result.fingerprint_result.records == ()
+        assert result.image is None
+        assert result.coverage.source_scan is SourceScanState.NOT_SCANNED
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.volume == VolumeNotCalculated(
+            VolumeNotCalculatedCause.NOT_REQUESTED
+        )

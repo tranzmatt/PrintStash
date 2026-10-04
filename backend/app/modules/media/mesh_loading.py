@@ -195,8 +195,40 @@ def _load_3mf_mesh(path: Path, suffix: str) -> Trimesh:
     return load_3mf(path, max_faces=mesh_policy.load_face_budget(suffix)).whole_mesh
 
 
+def _load_stl_mesh(path: Path) -> Trimesh:
+    """Materialize admitted STL facets through the canonical bounded reader."""
+    import numpy as np
+    import trimesh
+    from printstash_core.mesh.similarity import GeometryError
+
+    from app.modules.media.mesh_facts import FingerprintFailureCode
+    from app.modules.media.stl_reader import InvalidSTL, STLReadLimits, materialize_stl
+
+    size_limit = (
+        min(1 << 30, int(settings.mesh_max_load_mb * 1024 * 1024))
+        if settings.mesh_max_load_mb > 0
+        else 1 << 30
+    )
+    limits = STLReadLimits(
+        max_triangles=mesh_policy.load_face_budget(".stl"),
+        max_source_bytes=size_limit,
+    )
+    try:
+        loaded = materialize_stl(path, limits=limits)
+    except InvalidSTL as exc:
+        raise GeometryError(exc.reason.value) from exc
+    except OSError as exc:
+        raise GeometryError(FingerprintFailureCode.SOURCE_UNAVAILABLE.value) from exc
+    count, facets = loaded.measurements.triangle_count, loaded.triangles
+    return trimesh.Trimesh(
+        vertices=facets.reshape(-1, 3),
+        faces=np.arange(count * 3, dtype=np.int64).reshape(-1, 3),
+        process=False,
+    )
+
+
 def load_mesh(path: Path, *, file_type: str | None = None) -> Trimesh | None:
-    """Load a placed mesh; 3MF source refusals propagate as `GeometryError`."""
+    """Load a placed mesh; STL/3MF source refusals remain typed `GeometryError`."""
     import trimesh
 
     suffix = mesh_policy.canonical_suffix(path, file_type)
@@ -204,6 +236,8 @@ def load_mesh(path: Path, *, file_type: str | None = None) -> Trimesh | None:
         return load_step_mesh(path)
     if suffix == ".3mf":
         return _load_3mf_mesh(path, suffix)
+    if suffix == ".stl":
+        return _load_stl_mesh(path)
 
     try:
         # Load the scene rather than asking trimesh for a mesh directly. 3MF

@@ -28,7 +28,10 @@ from app.modules.media.stl_reader import (
 )
 from app.modules.media.stl_reader import (
     STLReadLimits,
+    STLSourceChanged,
+    STLSourceSnapshot,
     iter_stl_blocks,
+    snapshot_stl,
 )
 
 if TYPE_CHECKING:
@@ -99,6 +102,7 @@ class _Limits:
 
 @dataclass(frozen=True)
 class _PassStats:
+    snapshot: STLSourceSnapshot
     triangle_count: int
     scanned_bytes: int
     bounds_min: tuple[float, float, float]
@@ -125,21 +129,25 @@ def _read_pass(
     path: Path,
     limits: _Limits,
     callback: Callable[[object], None],
+    *,
+    snapshot: STLSourceSnapshot | None = None,
 ) -> _PassStats:
     import numpy as np
 
     lower = np.full(3, np.inf, dtype=np.float64)
     upper = np.full(3, -np.inf, dtype=np.float64)
     parsed = 0
-    for vertices in iter_stl_blocks(path, _reader_limits(limits)):
+    source = snapshot if snapshot is not None else snapshot_stl(path)
+    for vertices in iter_stl_blocks(path, _reader_limits(limits), snapshot=source):
         # Preserve source precision until the relative visual projection.
         callback(vertices)
         lower = np.minimum(lower, vertices.min(axis=(0, 1)))
         upper = np.maximum(upper, vertices.max(axis=(0, 1)))
         parsed += len(vertices)
     return _PassStats(
+        source,
         parsed,
-        path.stat().st_size,
+        source.size,
         (float(lower[0]), float(lower[1]), float(lower[2])),
         (float(upper[0]), float(upper[1]), float(upper[2])),
     )
@@ -283,7 +291,7 @@ def _render(
         ):
             raise _BudgetExceeded("candidate budget")
 
-    second = _read_pass(path, limits, draw)
+    second = _read_pass(path, limits, draw, snapshot=first.snapshot)
     if second.triangle_count != first.triangle_count:
         raise _InvalidSTL("source changed between passes")
     if not np.allclose(first.bounds_min, second.bounds_min, rtol=0, atol=0):
@@ -482,19 +490,14 @@ def main(argv: list[str] | None = None, *, apply_limits: bool = True) -> int:
         deadline=time.monotonic() + args.timeout_seconds,
     )
     try:
-        source_stat = args.source.stat()
-        if source_stat.st_size > limits.max_source_bytes:
+        source = snapshot_stl(args.source)
+        if source.size > limits.max_source_bytes:
             raise _BudgetExceeded("source budget")
-        first = _read_pass(args.source, limits, lambda _vertices: None)
+        first = _read_pass(
+            args.source, limits, lambda _vertices: None, snapshot=source
+        )
         if first.triangle_count > limits.max_triangles:
             raise _BudgetExceeded("triangle budget")
-        first_after = args.source.stat()
-        if (
-            first_after.st_size != source_stat.st_size
-            or first_after.st_mtime_ns != source_stat.st_mtime_ns
-        ):
-            raise _InvalidSTL("source changed during first pass")
-        before = first_after
         candidates = _render(
             args.source,
             args.output,
@@ -503,9 +506,8 @@ def main(argv: list[str] | None = None, *, apply_limits: bool = True) -> int:
             limits,
             first,
         )
-        after = args.source.stat()
-        if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
-            raise _InvalidSTL("source changed during render")
+        if snapshot_stl(args.source) != source:
+            raise STLSourceChanged("source changed before publication")
         _write_manifest(
             args.manifest,
             {

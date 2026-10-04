@@ -21,6 +21,7 @@ from app.modules.media.mesh_facts import (
     SampledGeometry,
 )
 from app.modules.media.mesh_resources import PreparedMesh, load_3mf, prepare_loaded_mesh
+from app.modules.media.stl_reader import InvalidSTL
 
 MAX_VERIFICATION_SECONDS = 180.0
 
@@ -42,11 +43,16 @@ def _load(
     if over_cap:
         if file_type != "stl":
             raise GeometryError("geometry_work_limit")
-        sampled = stl_fallback.sample_stl_geometry(
-            path, max_triangles=min(10_000, triangle_cap)
-        )
-        if sampled is None:
-            raise GeometryError("invalid_geometry")
+        try:
+            sampled = stl_fallback.read_stl_sample(
+                path, max_triangles=min(10_000, triangle_cap)
+            )
+        except InvalidSTL as exc:
+            raise GeometryError(exc.reason.value) from exc
+        except OSError as exc:
+            raise GeometryError(
+                FingerprintFailureCode.SOURCE_UNAVAILABLE.value
+            ) from exc
         mesh = trimesh.Trimesh(
             vertices=np.asarray(sampled.coordinates, dtype=np.float64).reshape(-1, 3),
             faces=np.arange(sampled.sampled_triangles * 3).reshape(-1, 3),

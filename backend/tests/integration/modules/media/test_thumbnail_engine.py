@@ -604,6 +604,45 @@ class TestUnreferencedVertices:
         )
 
 
+class TestFallbackMeasurements:
+    def test_keeps_global_bounds_when_remote_facet_is_not_retained(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.modules.media import stl_fallback, stl_streaming
+
+        source = tmp_path / "partial-preview.stl"
+        source.write_bytes(
+            content.binary_stl_facets(
+                [
+                    ((0, 0, 0), (2, 0, 1), (0, 2, 1)),
+                    ((100, 3, 4), (101, 3, 4), (100, 4, 5)),
+                ]
+            )
+        )
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+        monkeypatch.setattr(
+            stl_streaming, "render_stl_preview_isolated", lambda *_args, **_kwargs: None
+        )
+        monkeypatch.setattr(stl_fallback, "_MAX_SAMPLED_TRIANGLES", 1)
+        monkeypatch.setenv(WORKER_MARKER, str(os.getpid()))
+
+        result = ThumbnailEngine().generate(
+            ThumbnailRequest(source, width=128, height=128)
+        )
+
+        assert result.image is not None
+        assert result.coverage.preview is PreviewCoverage.PARTIAL
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.geometry_outcome, GeometryReady)
+        assert result.geometry == {
+            "bbox_x_mm": 101.0,
+            "bbox_y_mm": 4.0,
+            "bbox_z_mm": 5.0,
+            "triangle_count": 2,
+            "volume_mm3": None,
+        }
+
+
 class TestVolumeRequestOwnership:
     @pytest.mark.parametrize(
         "strategy", [ThumbnailStrategy.STREAMING, ThumbnailStrategy.FALLBACK], ids=str
@@ -819,7 +858,7 @@ class TestBoundedVolumeAuthority:
             VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
         )
 
-    def test_partial_fallback_cannot_publish_sampled_measurements(
+    def test_complete_source_with_partial_preview_preserves_unknown_volume(
         self, tmp_path, monkeypatch
     ):
         from app.modules.media import stl_fallback, stl_streaming
@@ -844,18 +883,18 @@ class TestBoundedVolumeAuthority:
         assert result.strategy is ThumbnailStrategy.FALLBACK
         assert result.image is not None
         assert result.coverage.preview is PreviewCoverage.PARTIAL
-        assert result.geometry_outcome == GeometryRefused(
-            ThumbnailFailureReason.RESOURCE_LIMIT
-        )
+        assert result.coverage.source_scan is SourceScanState.COMPLETE
+        assert isinstance(result.coverage.geometry, GeometryNotLoaded)
+        assert result.geometry_outcome == GeometryReady()
         assert result.geometry == {
-            "bbox_x_mm": None,
-            "bbox_y_mm": None,
-            "bbox_z_mm": None,
+            "bbox_x_mm": 1.0,
+            "bbox_y_mm": 2.0,
+            "bbox_z_mm": 3.0,
             "volume_mm3": None,
-            "triangle_count": None,
+            "triangle_count": 12,
         }
         assert result.volume == VolumeNotCalculated(
-            VolumeNotCalculatedCause.GEOMETRY_UNAVAILABLE
+            VolumeNotCalculatedCause.TOPOLOGY_NOT_EVALUATED
         )
 
 
