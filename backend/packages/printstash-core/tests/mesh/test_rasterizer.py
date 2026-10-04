@@ -130,6 +130,85 @@ class RecordingLogger:
 
 
 class TestRenderMeshThumbnail:
+    @pytest.mark.parametrize(
+        ("half_size", "offset"),
+        [(5.0, 1e6), (5.0, 1e9), (0.125, 1e9), (512.0, 1e12), (1 / 2048, 1e8)],
+        ids=[
+            "ordinary-offset",
+            "billion-offset",
+            "small-cube",
+            "trillion-offset",
+            "tiny-cube",
+        ],
+    )
+    def test_preserves_pixels_after_large_translations(self, half_size, offset):
+        mesh = box_mesh()
+        mesh.vertices *= half_size
+        translated = SimpleNamespace(vertices=mesh.vertices + offset, faces=mesh.faces)
+
+        original = render_mesh_thumbnail(mesh, "origin", width=128, height=128)
+        shifted = render_mesh_thumbnail(translated, "translated", width=128, height=128)
+
+        assert original is not None and shifted is not None
+        assert np.count_nonzero(pixels(original)[..., 3]) > 0
+        np.testing.assert_array_equal(pixels(shifted), pixels(original))
+
+    @pytest.mark.parametrize(
+        "camera",
+        [None, np.eye(3), np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]])],
+        ids=["hero", "front", "side"],
+    )
+    def test_preserves_camera_rendering_after_translation(self, camera):
+        mesh = box_mesh()
+        mesh.vertices *= [8, 4, 3]
+        translated = SimpleNamespace(
+            vertices=mesh.vertices + [1e9, -1e9, 1e9], faces=mesh.faces
+        )
+
+        original = render_mesh_thumbnail(
+            mesh, "origin", width=64, height=64, view_rotation=camera
+        )
+        shifted = render_mesh_thumbnail(
+            translated, "translated", width=64, height=64, view_rotation=camera
+        )
+
+        assert original is not None and shifted is not None
+        np.testing.assert_array_equal(pixels(shifted), pixels(original))
+
+    @pytest.mark.parametrize("thin_axis", [0, 1, 2], ids=["x", "y", "z"])
+    def test_preserves_thin_mesh_rendering_after_translation(self, thin_axis):
+        mesh = box_mesh()
+        scale = np.full(3, 8.0)
+        scale[thin_axis] = 0.125
+        mesh.vertices *= scale
+        translated = SimpleNamespace(vertices=mesh.vertices + 1e9, faces=mesh.faces)
+
+        original = render_mesh_thumbnail(mesh, "origin", width=64, height=64)
+        shifted = render_mesh_thumbnail(translated, "translated", width=64, height=64)
+
+        assert original is not None and shifted is not None
+        np.testing.assert_array_equal(pixels(shifted), pixels(original))
+
+    def test_preserves_source_coordinates(self):
+        mesh = box_mesh()
+        mesh.vertices += 1e9
+        original = mesh.vertices.copy()
+        mesh.vertices.flags.writeable = False
+
+        rendered = render_mesh_thumbnail(mesh, "immutable-source", width=64, height=64)
+
+        assert rendered is not None
+        np.testing.assert_array_equal(mesh.vertices, original)
+
+    def test_does_not_invent_detail_lost_from_float32_source(self):
+        mesh = box_mesh()
+        mesh.vertices = (mesh.vertices * 5 + 1e9).astype(np.float32)
+
+        rendered = render_mesh_thumbnail(mesh, "quantized-source", width=64, height=64)
+
+        assert rendered is not None
+        assert np.count_nonzero(pixels(rendered)[..., 3]) == 0
+
     def test_renders_an_explicit_orthographic_view(self) -> None:
         mesh = box_mesh()
         mesh.vertices[:, 0] *= 2
@@ -446,6 +525,82 @@ class TestRasteriseTriangles:
             budget=budget,
         )
         return int(painted or 0), img
+
+    @pytest.mark.parametrize("copies", [2, 1000])
+    def test_expands_exact_duplicate_triangles_once(self, copies: int) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        expected_work, expected = self.paint(tri)
+
+        actual_work, actual = self.paint(np.repeat(tri, copies, axis=0))
+
+        assert actual_work == expected_work
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_preserves_duplicate_work_under_a_raster_budget(self) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        single_work, _ = self.paint(tri)
+        budget = RasterBudget(limit=1000)
+
+        actual_work, _ = self.paint(np.repeat(tri, 3, axis=0), budget=budget)
+
+        assert actual_work == budget.used == single_work * 3
+
+    def test_preserves_triangle_corner_order(self) -> None:
+        tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
+        single_work, _ = self.paint(tri)
+        reordered = np.concatenate([tri, np.roll(tri, 1, axis=1), tri[:, ::-1]])
+
+        actual_work, _ = self.paint(reordered)
+
+        assert actual_work == single_work * 3
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    @pytest.mark.parametrize("chunk_size", [1, 3, 8])
+    def test_keeps_the_first_duplicate_normals(
+        self, reverse: bool, chunk_size: int
+    ) -> None:
+        # Distinct overlapping triangles must keep input order too: the smaller
+        # X coordinate sorts first but must not steal a depth tie from its peer.
+        first = [[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]
+        second = [[1.0, 2.0, 0.0], [11.0, 2.0, 0.0], [1.0, 12.0, 0.0]]
+        tri = np.array([first, second, first, second])
+        colors = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [1.0, 1.0, 0]])
+        normals = np.repeat(colors[:, None, :], 3, axis=1)
+        if reverse:
+            tri, normals = tri[::-1], normals[::-1]
+        original_tri, original_normals = tri.copy(), normals.copy()
+        tri.flags.writeable = False
+        normals.flags.writeable = False
+
+        expected_img = np.zeros((16, 16, 3), dtype=np.uint8)
+        expected_z = np.full((16, 16), np.inf)
+        actual_img, actual_z = expected_img.copy(), expected_z.copy()
+        rasterizer._rasterise_triangles(
+            expected_img,
+            expected_z,
+            tri[:2],
+            normals[:2],
+            lambda n: n,
+            np.full(3, 255),
+            16,
+            16,
+        )
+        for start in range(0, len(tri), chunk_size):
+            rasterizer._rasterise_triangles(
+                actual_img,
+                actual_z,
+                tri[start : start + chunk_size],
+                normals[start : start + chunk_size],
+                lambda n: n,
+                np.full(3, 255),
+                16,
+                16,
+            )
+
+        np.testing.assert_array_equal(actual_img, expected_img)
+        np.testing.assert_array_equal(actual_z, expected_z)
+        np.testing.assert_array_equal(tri, original_tri)
+        np.testing.assert_array_equal(normals, original_normals)
 
     def test_paints_the_pixels_a_triangle_covers(self) -> None:
         tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])

@@ -24,6 +24,7 @@ from pathlib import Path
 import trimesh
 from trimesh.exchange.stl import export_stl
 
+from app.core.config import settings
 from app.modules.derivatives.kinds import MESH_THUMBNAIL_RECIPE
 from app.modules.media.thumbnail import to_webp
 from app.modules.media.thumbnail_engine import (
@@ -40,6 +41,8 @@ from app.modules.storage.storage_backend.local import (
     LocalStorageBackend,
     enroll_legacy_local_root,
 )
+from scripts.benchmark_environment import collect_environment
+from scripts.mesh_benchmark_corpus import build_contract_corpus
 
 
 def _peak_rss_bytes() -> int:
@@ -272,7 +275,13 @@ def main() -> int:
     )
     parser.add_argument("--label", default="working-tree")
     parser.add_argument("--external-model", type=Path)
-    parser.add_argument("--quick", action="store_true")
+    profile = parser.add_mutually_exclusive_group()
+    profile.add_argument("--quick", action="store_true")
+    profile.add_argument(
+        "--contract-corpus",
+        action="store_true",
+        help="use frozen contract inputs; target expectations do not imply parser compliance",
+    )
     args = parser.parse_args()
     if args.cold_runs < 1 or args.warm_runs < 1:
         parser.error("run counts must be positive")
@@ -285,8 +294,14 @@ def main() -> int:
         if isinstance(handler, logging.StreamHandler) and handler.stream is sys.stdout:
             handler.setStream(sys.stderr)
 
+    environment = collect_environment()
     with tempfile.TemporaryDirectory(prefix="printstash-thumbnail-bench-") as raw:
-        corpus = build_corpus(Path(raw), quick=args.quick)
+        manifest = build_contract_corpus(Path(raw)) if args.contract_corpus else None
+        corpus = (
+            [Path(raw) / entry.filename for entry in manifest.fixtures]
+            if manifest is not None
+            else build_corpus(Path(raw), quick=args.quick)
+        )
         if args.external_model is not None:
             corpus.append(args.external_model.resolve())
         measurements = [
@@ -294,7 +309,13 @@ def main() -> int:
             for path in corpus
         ]
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "environment": asdict(environment),
+        "corpus_manifest": asdict(manifest) if manifest is not None else None,
+        "output_dimensions": {
+            "width": settings.model_thumbnail_width,
+            "height": round(settings.model_thumbnail_width * 3 / 4),
+        },
         "label": args.label,
         "mesh_thumbnail_recipe": MESH_THUMBNAIL_RECIPE,
         "cold_runs": args.cold_runs,

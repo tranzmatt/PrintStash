@@ -229,6 +229,16 @@ class TestLoadStepMeshIsolated:
 
 
 class TestGeometryFromMesh:
+    @pytest.mark.parametrize("edge", [0.001, 0.123456789, 123.456789])
+    def test_preserves_measurement_precision(self, edge):
+        mesh = trimesh.creation.box(extents=[edge, edge, edge])
+
+        geometry = mesh_processing._geometry_from_mesh(mesh)
+
+        for axis in ("x", "y", "z"):
+            assert geometry[f"bbox_{axis}_mm"] == pytest.approx(edge, rel=1e-12, abs=0)
+        assert geometry["volume_mm3"] == pytest.approx(edge**3, rel=1e-12, abs=0)
+
     @pytest.mark.parametrize(
         "volume", [float("inf"), float("nan")], ids=["infinite", "nan"]
     )

@@ -144,12 +144,9 @@ def render_mesh_thumbnail(
         return None
 
     try:
-        # float32 throughout the per-face geometry/shading pipeline halves the
-        # peak RSS of the arrays that scale with triangle count — and the render
-        # is ~3/4 of a dense mesh's memory cost (#29). Screen-space thumbnail
-        # rendering doesn't need float64 precision; the view-selection and weld
-        # quantisation below are unaffected at this scale.
-        verts = np.asarray(mesh.vertices, dtype=np.float32)
+        # World coordinates need float64 until their shared origin is removed:
+        # casting first can collapse a small object placed far from the origin.
+        verts = np.asarray(mesh.vertices, dtype=np.float64)
         faces = np.asarray(mesh.faces, dtype=np.int64)
 
         supersample = PREVIEW_PROFILE.supersample_for(width)
@@ -160,7 +157,9 @@ def render_mesh_thumbnail(
         # 1. Centre and normalise the mesh to a unit-ish bounding sphere.
         # ------------------------------------------------------------------
         center = (verts.max(axis=0) + verts.min(axis=0)) * 0.5
-        verts = verts - center
+        # Keep the existing half-width per-face geometry/shading pipeline. The
+        # subtraction allocates a render copy; source coordinates stay intact.
+        verts = (verts - center).astype(np.float32)
 
         # ------------------------------------------------------------------
         # 2. Pick a camera view.
@@ -587,6 +586,17 @@ def _rasterise_triangles(
 
     if tri.shape[0] == 0:
         return 0
+
+    if budget is None and len(tri) > 1:
+        # Identical oriented triangles cover the same pixels at identical depths.
+        # Depth ties already keep the first fragment, including its normals. Keep
+        # that input order while avoiding repeated candidate expansion. This is
+        # local to the caller's face chunk; budgeted fallback retains its existing
+        # candidate accounting and coverage policy.
+        _, first = np.unique(tri.reshape(len(tri), -1), axis=0, return_index=True)
+        if len(first) != len(tri):
+            first.sort()
+            tri, vert_nrm = tri[first], vert_nrm[first]
 
     xs = tri[:, :, 0]
     ys = tri[:, :, 1]

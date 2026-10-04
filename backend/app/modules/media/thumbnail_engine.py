@@ -517,21 +517,12 @@ class ThumbnailEngine:
                             if geometry["triangle_count"] is None:
                                 geometry.update(
                                     {
-                                        "bbox_x_mm": round(
-                                            streamed.bounds_max[0]
-                                            - streamed.bounds_min[0],
-                                            2,
-                                        ),
-                                        "bbox_y_mm": round(
-                                            streamed.bounds_max[1]
-                                            - streamed.bounds_min[1],
-                                            2,
-                                        ),
-                                        "bbox_z_mm": round(
-                                            streamed.bounds_max[2]
-                                            - streamed.bounds_min[2],
-                                            2,
-                                        ),
+                                        "bbox_x_mm": streamed.bounds_max[0]
+                                        - streamed.bounds_min[0],
+                                        "bbox_y_mm": streamed.bounds_max[1]
+                                        - streamed.bounds_min[1],
+                                        "bbox_z_mm": streamed.bounds_max[2]
+                                        - streamed.bounds_min[2],
                                         "triangle_count": streamed.triangle_count,
                                     }
                                 )
@@ -559,21 +550,12 @@ class ThumbnailEngine:
                             if fallback.complete and geometry["triangle_count"] is None:
                                 geometry.update(
                                     {
-                                        "bbox_x_mm": round(
-                                            fallback.bounds_max[0]
-                                            - fallback.bounds_min[0],
-                                            2,
-                                        ),
-                                        "bbox_y_mm": round(
-                                            fallback.bounds_max[1]
-                                            - fallback.bounds_min[1],
-                                            2,
-                                        ),
-                                        "bbox_z_mm": round(
-                                            fallback.bounds_max[2]
-                                            - fallback.bounds_min[2],
-                                            2,
-                                        ),
+                                        "bbox_x_mm": fallback.bounds_max[0]
+                                        - fallback.bounds_min[0],
+                                        "bbox_y_mm": fallback.bounds_max[1]
+                                        - fallback.bounds_min[1],
+                                        "bbox_z_mm": fallback.bounds_max[2]
+                                        - fallback.bounds_min[2],
                                         "triangle_count": fallback.triangle_count,
                                     }
                                 )

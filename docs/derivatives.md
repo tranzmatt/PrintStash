@@ -61,6 +61,23 @@ A producer derives only the kinds still owed, records every outcome on the
 kind's row, and tells viewers of the Model on `model:<id>` so an open page
 refreshes when a thumbnail lands.
 
+## Rendering distant geometry
+
+The software renderer subtracts the mesh's bounding-box center in float64 before
+converting relative coordinates to float32 for camera projection and shading.
+Small geometry far from the origin therefore retains the precision provided by
+3MF coordinates and transforms or other float64 sources. This does not restore
+detail already lost when binary STL coordinates were written as float32. Source
+Artifact coordinates and physical metadata are unchanged by rendering.
+
+Mesh thumbnail recipe 3 refreshes existing previews. Similarity view-descriptor
+recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4` distinguish the new
+pixels from earlier cached evidence. Search visual recipe 2 and the derived
+embedding-space rasterizer token `relative-f64-v1` invalidate earlier rendered
+inputs and vectors. Encoder asset manifests and their digests are unchanged.
+Historical verifier calibration remains tied to its original fingerprint and
+verification versions; it is not relabelled as a new measurement.
+
 ## Mesh volume measurements
 
 Mesh metadata publishes a volume only for a closed surface with consistent
@@ -96,6 +113,17 @@ The preview worker shares this parser while retaining its existing float32
 coordinate interpretation. Its temporary read-pass adapter remains
 local to `stl_preview_worker`; fallback sampling and full mesh loading migrate to
 the block iterator separately.
+
+## Measurement precision
+
+Mesh metadata recipe 5 stores dimensions and valid volume without rounding them
+to two decimal places. Values remain in millimeters and cubic millimeters;
+display formatting is a consumer concern. This preserves small parts and the
+precision available from each source, including bounds obtained by complete STL
+streaming and fallback scans. Existing rounded metadata is eligible for backfill.
+Binary STL still carries float32 coordinates; removing output rounding cannot
+recover precision already absent from the input. Volume retains the closure,
+winding, finite-value and positive-orientation requirements of recipe 4.
 
 ## Bumping a recipe
 
