@@ -30,6 +30,7 @@ import {
   visibleCanvasBackground,
 } from "@/lib/thumbnail-camera";
 import { useViewerReadiness } from "@/lib/use-viewer-readiness";
+import { useStlPreview, stlPreviewMessage } from "@/lib/use-stl-preview";
 
 export type ViewerDisplayMode = "solid" | "xray" | "wireframe";
 
@@ -43,6 +44,7 @@ export interface STLViewerControls {
 
 export interface STLViewerProps {
   url: string;
+  modelId?: number;
   onControlsReady?: (api: STLViewerControls) => void;
   onReadyChange?: (ready: boolean) => void;
   /** Largest loaded dimension, before viewer normalization, in source units. */
@@ -86,6 +88,8 @@ function Mesh({
   const geometry = useLoader(STLLoader, url, (loader) => {
     loader.setRequestHeader(authHeaders());
   });
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => useLoader.clear(STLLoader, url), [url]);
   const meshRef = useRef<THREE.Mesh>(null);
   const geometrySizeRef = useRef(onGeometrySize);
   useEffect(() => {
@@ -157,6 +161,7 @@ function Scene({
 }: Required<
   Omit<
     STLViewerProps,
+    | "modelId"
     | "onControlsReady"
     | "onReadyChange"
     | "onGeometrySize"
@@ -416,6 +421,7 @@ class MeshErrorBoundary extends React.Component<MeshErrorBoundaryProps, MeshErro
 
 export function STLViewer({
   url,
+  modelId,
   onControlsReady,
   onReadyChange,
   onGeometrySize,
@@ -429,12 +435,44 @@ export function STLViewer({
   useUiLocale();
   // Tracking *which* url has loaded, rather than a bare boolean, makes the url
   // swap reset the overlay during render instead of through a reset effect.
-  const { loaded: meshLoaded, setLoaded: setMeshLoaded } = useViewerReadiness(url);
   const previewPreferences = usePreviewPreferences();
+  const preview = useStlPreview(url, modelId);
+  const { loaded: meshLoaded, setLoaded: setMeshLoaded } = useViewerReadiness(
+    preview.state === "ready" ? preview.url : url,
+  );
+  const overlayPreview = useStlPreview(overlay?.url ?? null);
 
   useEffect(() => {
-    onReadyChange?.(meshLoaded);
-  }, [meshLoaded, onReadyChange]);
+    onReadyChange?.(meshLoaded && preview.state === "ready");
+  }, [meshLoaded, onReadyChange, preview.state]);
+
+  const failure =
+    preview.state === "failed"
+      ? preview
+      : overlay !== undefined && overlayPreview.state === "failed"
+        ? overlayPreview
+        : null;
+  if (failure !== null)
+    return (
+      <div
+        role="status"
+        className="flex h-full flex-col items-center justify-center gap-2 text-on-surface-variant"
+      >
+        <AlertTriangle className="h-8 w-8" aria-hidden />
+        <span className="text-xs">{stlPreviewMessage(failure.reason)}</span>
+      </div>
+    );
+  if (preview.state !== "ready" || (overlay !== undefined && overlayPreview.state !== "ready"))
+    return (
+      <div
+        role="status"
+        aria-label={uiText("Preparing 3D preview…")}
+        className="flex h-full items-center justify-center gap-2 text-on-surface-variant"
+      >
+        <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+        <span className="text-xs">{uiText("Preparing 3D preview…")}</span>
+      </div>
+    );
 
   return (
     <div className="relative h-full w-full touch-none overscroll-contain">
@@ -446,7 +484,7 @@ export function STLViewer({
           frameloop="demand"
         >
           <Scene
-            url={url}
+            url={preview.url}
             onControlsReady={onControlsReady}
             onLoadedChange={setMeshLoaded}
             onGeometrySize={onGeometrySize}
@@ -456,7 +494,11 @@ export function STLViewer({
             screenshotScale={previewPreferences.screenshotScale}
             comparison={comparison}
             comparisonCamera={comparisonCamera}
-            overlay={overlay}
+            overlay={
+              overlay !== undefined && overlayPreview.state === "ready"
+                ? { ...overlay, url: overlayPreview.url }
+                : undefined
+            }
           />
         </Canvas>
         {/* Overlay while the mesh downloads/parses — the canvas mounts

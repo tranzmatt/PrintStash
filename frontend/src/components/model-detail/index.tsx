@@ -725,6 +725,7 @@ export function ModelDetail({ model: initialModel }: { model: ModelRead }) {
               <Suspense fallback={ViewerFallback}>
                 <STLViewer
                   url={getAssetUrl(`/api/v1/files/${meshFile.id}/stl`)}
+                  modelId={model.id}
                   onControlsReady={(api) => {
                     viewerControls.current = api;
                   }}

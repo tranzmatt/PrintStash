@@ -599,3 +599,12 @@ def _announced(produce):
 derive_mesh = _announced(_derive_mesh)
 derive_gcode = _announced(_derive_gcode)
 derive_toolpath = _announced(_derive_toolpath)
+
+
+def _derive_viewer_stl(file_id: int) -> Outcome:
+    from .viewer_stl import produce
+
+    return produce(file_id)
+
+
+derive_viewer_stl = _announced(_derive_viewer_stl)

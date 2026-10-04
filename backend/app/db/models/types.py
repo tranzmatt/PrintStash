@@ -188,6 +188,7 @@ class JobKind(StrEnum):
     DERIVATIVES_GCODE = "derivatives.gcode"
     DERIVATIVES_MESH = "derivatives.mesh"
     DERIVATIVES_TOOLPATH = "derivatives.toolpath"
+    DERIVATIVES_VIEWER_STL = "derivatives.viewer_stl"
     IDENTITY_RETENTION = "identity.retention"
     INFERENCE_MODEL_DOWNLOAD = "inference.model_download"
     INGESTION_ARCHIVE_INSPECT = "ingestion.archive_inspect"
@@ -242,6 +243,7 @@ class DerivativeKind(StrEnum):
     METADATA = "metadata"
     THUMBNAIL = "thumbnail"
     TOOLPATH = "toolpath"
+    VIEWER_STL = "viewer_stl"
 
 
 class DerivativeState(StrEnum):
