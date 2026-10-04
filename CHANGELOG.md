@@ -19,6 +19,11 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
 
 ### Added
 
+- Measure mesh rendering, supervised native workers and upload-to-visible
+  production DBOS ingestion through separate reproducible benchmark paths.
+  Preserve phase costs, resource observations and failed samples, with an expanded
+  versioned corpus and opt-in large inputs and hash-pinned real slicer projects.
+
 - Add a frozen synthetic mesh contract corpus and record benchmark environment, limits, versions and target expectations separately from observed render results.
 
 - Mesh workers retain bounded phase costs and parent-observed resource usage in structured process logs and local Prometheus counters, including metadata-only work and failed or cancelled native processes.

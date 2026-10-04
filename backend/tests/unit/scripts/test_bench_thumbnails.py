@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import trimesh
 
-from app.modules.media.mesh_contracts import ThumbnailRequest, ThumbnailResult
+from app.modules.media.mesh_contracts import (
+    GeometryNotRequested,
+    ThumbnailFailureReason,
+    ThumbnailRequest,
+    ThumbnailResult,
+    ThumbnailStrategy,
+)
+from app.modules.media.mesh_telemetry import MeshPhase, PhaseOutcome, PhaseStats
 from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.storage.storage_backend.local import LocalStorageBackend
+from scripts import bench_thumbnails
 from scripts.bench_thumbnails import benchmark_file
+from tests.factories import content
 
 
 @pytest.fixture
@@ -20,7 +30,84 @@ def cube(tmp_path: Path) -> Path:
     return source
 
 
+@pytest.fixture
+def rendered_result() -> ThumbnailResult:
+    return ThumbnailResult(
+        image=content.png(),
+        geometry={},
+        geometry_outcome=GeometryNotRequested(),
+        strategy=ThumbnailStrategy.FULL,
+        complete=True,
+        failure_reason=None,
+        duration_ms=1,
+        peak_rss_bytes=None,
+        phase_stats=(
+            PhaseStats(MeshPhase.LOAD, 123, 684, None, 12, PhaseOutcome.COMPLETED),
+            PhaseStats(MeshPhase.RENDER, 456, None, 37, 12, PhaseOutcome.COMPLETED),
+        ),
+    )
+
+
 class TestBenchmarkFile:
+    def test_retains_returned_stage_statistics(
+        self,
+        cube: Path,
+        rendered_result: ThumbnailResult,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            ThumbnailEngine, "generate", lambda self, request: rendered_result
+        )
+
+        result = benchmark_file(cube, cold_runs=1, warm_runs=1)
+
+        assert result.renders[0].phase_stats == rendered_result.phase_stats
+        assert result.renders[0].error is None
+
+    def test_retains_refusal_stage_statistics(
+        self,
+        cube: Path,
+        rendered_result: ThumbnailResult,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        refused = replace(
+            rendered_result,
+            image=None,
+            failure_reason=ThumbnailFailureReason.INVALID_SOURCE,
+            strategy=ThumbnailStrategy.NONE,
+            phase_stats=(
+                PhaseStats(MeshPhase.LOAD, 321, 684, None, None, PhaseOutcome.FAILED),
+            ),
+        )
+        monkeypatch.setattr(ThumbnailEngine, "generate", lambda self, request: refused)
+
+        result = benchmark_file(cube, cold_runs=1, warm_runs=1)
+
+        assert result.renders[0].phase_stats == refused.phase_stats
+        assert result.renders[0].error == "invalid_source"
+        assert result.representation_reads == []
+
+    def test_retains_stages_after_encoding_failure(
+        self,
+        cube: Path,
+        rendered_result: ThumbnailResult,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            ThumbnailEngine, "generate", lambda self, request: rendered_result
+        )
+
+        def fail(data: bytes) -> bytes:
+            raise ValueError("encoding failed")
+
+        monkeypatch.setattr(bench_thumbnails, "to_webp", fail)
+
+        result = benchmark_file(cube, cold_runs=1, warm_runs=1)
+
+        assert result.renders[0].phase_stats == rendered_result.phase_stats
+        assert result.renders[0].error == "ValueError: encoding failed"
+        assert result.representation_reads == []
+
     def test_retains_unexpected_engine_failure(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -40,6 +127,7 @@ class TestBenchmarkFile:
         ]
         assert result.renders[0].elapsed_ms > 0
         assert result.renders[0].peak_rss_bytes > 0
+        assert result.renders[0].phase_stats == ()
         assert result.render_median_ms is None
         assert result.representation_reads == []
 
