@@ -26,21 +26,22 @@ algorithm-specific operation counter is removed; callers may set a lower
 
 ## Evidence
 
-Local microbench, three repetitions after import, Python 3.12.3, NumPy 2.5.2,
+Local microbench, two sets of three repetitions after import, Python 3.12.3, NumPy 2.5.2,
 SciPy 1.17.1, one OpenBLAS/OpenMP thread. Points use NumPy seed 20261004, normal
 vectors normalized onto the unit sphere. Peak RSS covers the whole subprocess,
-including Python, imports and point preparation. Other work was running on this
+including Python, imports and point preparation. A repeat reads Linux VmHWM
+directly to exclude inherited rusage high-water marks. Other work was running on this
 host, so these figures are diagnostic observations, not a throughput guarantee.
 
 | Input | Python hull | Native hull | Native process peak RSS |
 | --- | --- | --- | --- |
-| 20,000 exterior points | All 3 attempts refused after 6.20–8.08 s | 0.174–0.203 s; volume 4.186268511528313 | 82.3 MiB |
-| 200,000 exterior points | Not run | 3.29–3.38 s; volume 4.188537727143043 | 201.3 MiB |
+| 20,000 exterior points | All 3 attempts refused after 6.20–8.44 s | 0.174–0.203 s; volume 4.186268511528313 | 81.5–82.3 MiB |
+| 200,000 exterior points | Not run | 2.52–3.38 s; volume 4.188537727143043 | 201.1–201.3 MiB |
 
 The analytic enclosing sphere has volume 4π/3. The lower polyhedral volumes
 converge to it as the sample grows. New-process SciPy import cost was
-0.347–0.418 s; the former hull import was 0.007 s and its process peak was
-48.5 MiB. The native implementation trades a larger dependency/startup footprint
+0.347–0.607 s; the former hull import was 0.007–0.025 s and its process peak was
+48.0–48.5 MiB. The native implementation trades a larger dependency/startup footprint
 for a usable result and shorter kernel execution. Worker-level measurements
 remain required before claiming end-to-end ingestion gains.
 
@@ -48,7 +49,8 @@ Regression evidence covers dense exterior and interior sets, physical cube and
 tetrahedron volumes, translations/reordering, scales from 1e-100 to 1e100,
 coplanar/collinear/duplicate/empty inputs, NaN/Inf, input ceilings and immutable
 source arrays. The whole core similarity suite passes (255 cases); backend
-fingerprint and lease checks pass (30 cases). Historical fingerprint states
+fingerprint and lease checks pass (30 cases), as do isolated worker/processor checks
+(59 cases) and the final added precision edges (29 hull cases). Historical fingerprint states
 ready/partial/failed at geometry-v3 acquire a new geometry-v4 analysis row;
 historical rows and verifier calibration are retained.
 
