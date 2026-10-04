@@ -621,10 +621,7 @@ class TestRenderStlPreviewIsolated:
 
         monkeypatch.setattr(mesh_render, "_rasterise_triangles", fake_rasterise)
         output = tmp_path / "direct-resolution.png"
-        assert (
-            stl_preview_worker._render(path, output, 320, 240, limits, first)
-            > 0
-        )
+        assert stl_preview_worker._render(path, output, 320, 240, limits, first) > 0
         assert observed
         assert all(
             image_shape == (240, 320, 3)

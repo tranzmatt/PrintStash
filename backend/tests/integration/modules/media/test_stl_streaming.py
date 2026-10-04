@@ -102,7 +102,9 @@ class TestPreviewCoverage:
         source = tmp_path / "extreme.stl"
         source.write_text(trimesh.exchange.stl.export_stl_ascii(cube), encoding="ascii")
 
-        result = stl_streaming.render_stl_preview_isolated(source, width=128, height=128)
+        result = stl_streaming.render_stl_preview_isolated(
+            source, width=128, height=128
+        )
 
         assert result is not None
         assert result.triangle_count == 12
@@ -141,6 +143,7 @@ class TestPreviewCoverage:
         assert small.png == large.png
         assert small.bounds_min == large.bounds_min
         assert small.bounds_max == large.bounds_max
+
 
 class TestValidTriangle:
     def test_renders_valid_oblique_facet(self, tmp_path: Path) -> None:

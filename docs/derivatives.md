@@ -150,10 +150,17 @@ non-finite vertices are rejected. ASCII accepts complete facets without an
 `endsolid` line, ignores blank/comment lines, and rejects incomplete facets or
 content after `endsolid`. Byte, facet, line and line-length limits still apply;
 read errors, changed sources and budget refusals publish no complete measurements.
-The preview worker shares this parser while retaining its existing float32
-coordinate interpretation. Its temporary read-pass adapter remains
-local to `stl_preview_worker`; fallback sampling and full mesh loading migrate to
-the block iterator separately.
+The preview worker shares this parser. Streaming camera bounds cover every
+validated source facet, including small components far from a dense main part;
+percentile framing and spatial clipping no longer remove source geometry. ASCII
+coordinates remain float64 through centering and projection, then bounded screen
+coordinates and scaled depth convert to float32 for rasterization. Finite values
+near the float32 limit therefore remain renderable after rotation. Raster work
+budgets still determine whether a preview is complete.
+
+Mesh metadata recipe 8 and thumbnail recipe 7 refresh measurements and previews
+from the former streaming camera policy. Fallback sampling and full mesh loading
+migrate to the block iterator separately.
 
 ## Measurement precision
 
