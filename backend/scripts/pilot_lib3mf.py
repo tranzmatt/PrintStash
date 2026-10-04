@@ -19,10 +19,16 @@ import sys
 import tempfile
 import time
 from importlib import import_module
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
 BACKENDS = ("current", "lib3mf-public", "lib3mf-buffer")
+
+
+def enabled_backends() -> tuple[str, ...]:
+    """Current source is unconditional; native probes need their optional package."""
+    return BACKENDS if find_spec("lib3mf") is not None else ("current",)
 
 
 def _proc_rss(field: str) -> int:
@@ -351,6 +357,14 @@ def main() -> None:
     run.add_argument("--external-directory", type=Path)
     run.add_argument("--strict", action="store_true")
     args = parser.parse_args()
+    available = enabled_backends()
+    requested = [args.backend] if args.mode == "worker" else args.backend or available
+    missing = [backend for backend in requested if backend not in available]
+    if missing:
+        parser.error(
+            "native backend requested but optional lib3mf package is unavailable: "
+            + ", ".join(missing)
+        )
     if args.mode == "worker":
         resource.setrlimit(resource.RLIMIT_AS, (1024**3, 1024**3))
         print(
@@ -395,7 +409,7 @@ def main() -> None:
             for case in cases:
                 path = Path(directory) / (case.name + ".3mf")
                 path.write_bytes(case.payload)
-                backends = args.backend or list(BACKENDS)
+                backends = list(requested)
                 if repeat % 2:
                     backends = list(reversed(backends))
                 for backend in backends:

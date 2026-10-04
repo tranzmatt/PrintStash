@@ -1,7 +1,7 @@
 {
   "date": "2026-10-04",
   "samples": 434,
-  "harness_sha256": "b57a3bead5fee5a0135f08ce0d8c5d55c670967639df708de9d6af4605128d3d",
+  "harness_sha256": "c254d915dc2c62aa8b0f58c1a03c822267f89a07907f6025a059762184550400",
   "generator_sha256": "722bda8426adab564ea15008b54dda28eecc1447775f8ffbf2946ca8c891fa29",
   "environments": {
     "corpus": {
@@ -9,7 +9,7 @@
       "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
       "machine": "x86_64",
       "cpu_count": 12,
-      "source_sha": "fa643b5e380efb2b0267c0d7090b6889989ab38c",
+      "source_sha": "91e018898648f40114fac2dde71b5729b1cd8971",
       "cache": "fresh process, warm OS file cache",
       "address_space_limit_bytes": 1073741824
     },
@@ -18,7 +18,7 @@
       "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
       "machine": "x86_64",
       "cpu_count": 12,
-      "source_sha": "fa643b5e380efb2b0267c0d7090b6889989ab38c",
+      "source_sha": "91e018898648f40114fac2dde71b5729b1cd8971",
       "cache": "fresh process, warm OS file cache",
       "address_space_limit_bytes": 1073741824
     },
@@ -27,7 +27,7 @@
       "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
       "machine": "x86_64",
       "cpu_count": 12,
-      "source_sha": "fa643b5e380efb2b0267c0d7090b6889989ab38c",
+      "source_sha": "91e018898648f40114fac2dde71b5729b1cd8971",
       "cache": "fresh process, warm OS file cache",
       "address_space_limit_bytes": 1073741824
     },
@@ -36,7 +36,7 @@
       "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
       "machine": "x86_64",
       "cpu_count": 12,
-      "source_sha": "fa643b5e380efb2b0267c0d7090b6889989ab38c",
+      "source_sha": "91e018898648f40114fac2dde71b5729b1cd8971",
       "cache": "fresh process, warm OS file cache",
       "address_space_limit_bytes": 1073741824
     },
@@ -45,7 +45,7 @@
       "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
       "machine": "x86_64",
       "cpu_count": 12,
-      "source_sha": "fa643b5e380efb2b0267c0d7090b6889989ab38c",
+      "source_sha": "91e018898648f40114fac2dde71b5729b1cd8971",
       "cache": "fresh process, warm OS file cache",
       "address_space_limit_bytes": 1073741824
     }
@@ -59,5 +59,19 @@
     "Peak RSS is per-exec VmHWM; inherited ru_maxrss is diagnostic only.",
     "Face count and scene limits in native traversal happen after ReadFromFile.",
     "No ARM runtime execution performed."
-  ]
+  ],
+  "measurement_baseline_revision": "fa643b5e380efb2b0267c0d7090b6889989ab38c",
+  "harness_recheck": {
+    "prior_harness_sha256": "b57a3bead5fee5a0135f08ce0d8c5d55c670967639df708de9d6af4605128d3d",
+    "reason": "Added optional-backend registry and explicit unavailable-native configuration errors; recollected all samples with final harness.",
+    "unchanged_measured_functions": [
+      "measure",
+      "run_case",
+      "_native_scene",
+      "_arrays",
+      "_transform",
+      "_proc_rss",
+      "check_expectations"
+    ]
+  }
 }

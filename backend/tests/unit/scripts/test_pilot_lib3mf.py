@@ -5,7 +5,8 @@ import zipfile
 
 import pytest
 
-from scripts.pilot_lib3mf import check_expectations
+from scripts import pilot_lib3mf
+from scripts.pilot_lib3mf import BACKENDS, check_expectations
 from tests.factories.three_mf_pilot import corpus, load_mesh
 
 
@@ -61,3 +62,38 @@ class TestExpectations:
     )
     def test_reports_mismatched_evidence(self, actual):
         assert check_expectations({"bbox": actual}, {"bbox": [10, 20, 30]}) == ["bbox"]
+
+
+class TestBackendRegistry:
+    def test_always_registers_current_without_native_package(self, monkeypatch):
+        monkeypatch.setattr(pilot_lib3mf, "find_spec", lambda name: None)
+
+        assert pilot_lib3mf.enabled_backends() == ("current",)
+
+    def test_registers_native_when_package_exists(self, monkeypatch):
+        monkeypatch.setattr(pilot_lib3mf, "find_spec", lambda name: object())
+
+        assert pilot_lib3mf.enabled_backends() == BACKENDS
+
+    @pytest.mark.parametrize("mode", ["run", "worker"])
+    @pytest.mark.parametrize("backend", ["lib3mf-public", "lib3mf-buffer"])
+    def test_refuses_requested_unavailable_native_backend(
+        self, monkeypatch, capsys, mode, backend
+    ):
+        monkeypatch.setattr(pilot_lib3mf, "find_spec", lambda name: None)
+        arguments = (
+            ["--output", "/tmp/unused-pilot.json"]
+            if mode == "run"
+            else ["/tmp/unused-pilot.3mf"]
+        )
+        monkeypatch.setattr(
+            pilot_lib3mf.sys,
+            "argv",
+            ["pilot", mode, *arguments, "--backend", backend],
+        )
+
+        with pytest.raises(SystemExit) as error:
+            pilot_lib3mf.main()
+
+        assert error.value.code == 2
+        assert "optional lib3mf package is unavailable" in capsys.readouterr().err

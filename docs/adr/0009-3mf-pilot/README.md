@@ -19,6 +19,11 @@ python -m scripts.pilot_lib3mf run --case core-basic --faces 5000 --instances 64
 pytest -q tests/unit/scripts/test_pilot_lib3mf.py tests/integration/scripts/test_pilot_lib3mf.py
 ```
 
+Without the optional package, the default registry contains the current reader
+and its cases always run. Installing the package registers the two native routes
+and their array comparison. Explicitly requesting a native backend without the
+package is a configuration error before any samples are produced; no tests skip.
+
 The harness runs a fresh child for every cell, with a 1 GiB address-space limit
 and one BLAS thread, and reverses backend order on alternate repetitions. Inputs
 have fixed archive metadata, analytic expectations and recorded hashes. OS file
@@ -39,7 +44,9 @@ their exact geometry expectations from another parser.
 - [cases.json](cases.json): package hashes, decoded workload limits and independent
   synthetic expectations.
 - [environment.json](environment.json): base revision, Python/kernel, cache/thread/
-  address-space policy and frozen harness/generator hashes.
+  address-space policy and frozen harness/generator hashes. All 434 samples were
+  recollected after the backend registry/configuration fix; measured functions
+  stayed identical to the first preparation, as recorded in the environment.
 - [packaging.json](packaging.json): pinned wheel hashes, common binding digest,
   helpers, license notices and native symbol/version requirements.
 - [attestation.json](attestation.json): retrieved ARM PyPI subject statements,
@@ -63,15 +70,15 @@ retain the same normalized array types at the consumer boundary.
 
 | Input | Backend | n | Import | Read | Arrays | Total | Peak RSS MiB |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| core-basic | current | 30 | 563.2 | 1.6 | 0.14 | 565.8 | 100.8 |
-| core-basic | lib3mf-public | 30 | 142.6 | 1.7 | 0.24 | 152.6 | 46.8 |
-| core-basic | lib3mf-buffer | 30 | 142.7 | 1.7 | 0.19 | 152.7 | 46.8 |
-| load-5000-copies-1 | current | 30 | 562.1 | 20.3 | 13.62 | 602.3 | 110.2 |
-| load-5000-copies-1 | lib3mf-public | 30 | 143.0 | 8.6 | 16.90 | 178.5 | 49.1 |
-| load-5000-copies-1 | lib3mf-buffer | 30 | 142.2 | 8.5 | 0.59 | 160.3 | 47.0 |
-| load-20000-copies-1 | current | 30 | 568.9 | 77.7 | 64.57 | 735.7 | 138.6 |
-| load-20000-copies-1 | lib3mf-public | 30 | 143.2 | 28.2 | 70.57 | 257.0 | 52.3 |
-| load-20000-copies-1 | lib3mf-buffer | 30 | 142.1 | 28.3 | 1.78 | 186.2 | 49.9 |
+| core-basic | current | 30 | 573.7 | 1.7 | 0.14 | 576.4 | 100.7 |
+| core-basic | lib3mf-public | 30 | 143.0 | 1.7 | 0.24 | 154.2 | 46.8 |
+| core-basic | lib3mf-buffer | 30 | 145.3 | 1.7 | 0.19 | 155.2 | 46.8 |
+| load-5000-copies-1 | current | 30 | 579.6 | 20.2 | 13.98 | 619.1 | 110.2 |
+| load-5000-copies-1 | lib3mf-public | 30 | 145.6 | 8.5 | 16.96 | 180.2 | 49.1 |
+| load-5000-copies-1 | lib3mf-buffer | 30 | 145.2 | 8.5 | 0.60 | 163.4 | 47.0 |
+| load-20000-copies-1 | current | 30 | 584.5 | 77.4 | 65.47 | 749.7 | 138.6 |
+| load-20000-copies-1 | lib3mf-public | 30 | 143.2 | 29.0 | 71.93 | 259.1 | 52.3 |
+| load-20000-copies-1 | lib3mf-buffer | 30 | 144.1 | 29.1 | 1.80 | 189.5 | 49.8 |
 
 The smallest input is a **four-face tetrahedron**, not a 12-face cube. This shared
 WSL x86_64 host is exploratory; these medians do not certify deployment latency,
@@ -81,9 +88,9 @@ NumPy/core directly. A future scene-only XML seam may recover some startup cost
 without adopting a native dependency; this experiment does not attribute all
 end-to-end savings to XML parsing.
 
-At 200,000 faces (n=3/cell), total medians were 2398/1503/542 ms and RSS medians
+At 200,000 faces (n=3/cell), total medians were 2117/1402/536 ms and RSS medians
 490/115/92 MiB for current/public/buffer respectively. Array extraction was
-677/981/24 ms. This separates fast native reading from costly Python conversion:
+620/881/27 ms. This separates fast native reading from costly Python conversion:
 public bulk still materializes a list of structure proxies.
 
 A 5,000-face resource placed 64 times (n=3/cell) retained 240,000 bytes of unique

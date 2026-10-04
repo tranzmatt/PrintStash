@@ -1,16 +1,17 @@
 """Exercise the optional pilot against real XML/native readers, without adoption."""
 
+from importlib import import_module
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from scripts.pilot_lib3mf import _arrays, check_expectations, measure
+from scripts.pilot_lib3mf import _arrays, check_expectations, enabled_backends, measure
 from tests.factories.three_mf_pilot import load_case, load_mesh
 
 
-@pytest.fixture(params=["current", "lib3mf-public", "lib3mf-buffer"])
+@pytest.fixture(params=enabled_backends())
 def backend(request):
-    if request.param != "current":
-        pytest.importorskip("lib3mf.Lib3MF")
     return request.param
 
 
@@ -63,26 +64,27 @@ class TestPilotWorker:
         assert observed["peak_rss_bytes"] > 0
 
 
-class TestNativeArrays:
-    def test_buffer_extraction_matches_public_arrays(self, tmp_path):
-        binding = pytest.importorskip("lib3mf.Lib3MF")
-        from pathlib import Path
+# Register only applicable research cases; current-reader cases always exist.
+if "lib3mf-public" in enabled_backends():
+    class TestNativeArrays:
+        def test_buffer_extraction_matches_public_arrays(self, tmp_path):
+            binding = import_module("lib3mf.Lib3MF")
 
-        path = tmp_path / "arrays.3mf"
-        path.write_bytes(load_mesh(20).payload)
-        wrapper = binding.Wrapper(str(Path(binding.__file__).with_name("lib3mf")))
-        model = wrapper.CreateModel()
-        model.QueryReader("3mf").ReadFromFile(str(path))
-        meshes = model.GetMeshObjects()
-        assert meshes.MoveNext()
-        mesh = meshes.GetCurrent()
+            path = tmp_path / "arrays.3mf"
+            path.write_bytes(load_mesh(20).payload)
+            wrapper = binding.Wrapper(str(Path(binding.__file__).with_name("lib3mf")))
+            model = wrapper.CreateModel()
+            model.QueryReader("3mf").ReadFromFile(str(path))
+            meshes = model.GetMeshObjects()
+            assert meshes.MoveNext()
+            mesh = meshes.GetCurrent()
 
-        public = _arrays(mesh, binding, "lib3mf-public", np)
-        buffer = _arrays(mesh, binding, "lib3mf-buffer", np)
+            public = _arrays(mesh, binding, "lib3mf-public", np)
+            buffer = _arrays(mesh, binding, "lib3mf-buffer", np)
 
-        np.testing.assert_array_equal(buffer[0], public[0])
-        np.testing.assert_array_equal(buffer[1], public[1])
-        assert buffer[0].dtype == np.float64
-        assert buffer[1].dtype == np.int64
-        assert buffer[0].flags.owndata
-        assert buffer[1].flags.owndata
+            np.testing.assert_array_equal(buffer[0], public[0])
+            np.testing.assert_array_equal(buffer[1], public[1])
+            assert buffer[0].dtype == np.float64
+            assert buffer[1].dtype == np.int64
+            assert buffer[0].flags.owndata
+            assert buffer[1].flags.owndata
