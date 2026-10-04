@@ -37,6 +37,8 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+
+- Large STL files now retain complete bounding dimensions and facet counts when only metadata is requested; measurements no longer depend on producing a thumbnail.
 - Ingest acceptance keeps the API event loop responsive while staging files,
   recording work and notifying the background engine.
 
