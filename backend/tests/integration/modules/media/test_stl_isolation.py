@@ -1,6 +1,6 @@
 """Converting a mesh to STL in a worker gives the bytes the in-process code would.
 
-The viewer converts on demand, in a request, from a file a user uploaded. That is
+The viewer converts on demand, through a Job, from a file a user uploaded. That is
 the one place a person can trigger mesh parsing at will, so it must not run in the
 API process (#259). Running it elsewhere must not change what the viewer receives.
 """
@@ -15,8 +15,8 @@ import trimesh
 
 from app.core.config import _overlay
 from app.modules.media import mesh_isolation, mesh_processing, stl_isolation
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from tests.factories.geometry import three_mf
 
 
@@ -46,7 +46,9 @@ class TestToStlBytes:
 
         assert stl_isolation.to_stl_bytes(raw, file_type="stl") == b"already stl"
 
-    def test_a_3mf_over_the_budget_converts_to_nothing(self, tmp_path, monkeypatch):
+    def test_a_3mf_over_the_budget_preserves_resource_refusal(
+        self, tmp_path, monkeypatch
+    ):
         """#259: the worker's bounded loader refuses placements past the budget."""
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1000)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
@@ -54,7 +56,22 @@ class TestToStlBytes:
         path = tmp_path / "plate.3mf"
         path.write_bytes(three_mf(build=placements))
 
-        assert stl_isolation.to_stl_bytes(path, file_type="3mf") is None
+        with pytest.raises(MeshWorkerError) as error:
+            stl_isolation.to_stl_bytes(path, file_type="3mf")
+        assert error.value.reason is ThumbnailFailureReason.RESOURCE_LIMIT
+
+    def test_preserves_step_triangle_refusal(self, tmp_path, monkeypatch):
+        from tests.paths import FIXTURES_DIR
+
+        monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1)
+        monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
+
+        with pytest.raises(MeshWorkerError) as error:
+            stl_isolation.to_stl_bytes(
+                FIXTURES_DIR / "cascadio_material.stp", file_type="step"
+            )
+
+        assert error.value.reason is ThumbnailFailureReason.RESOURCE_LIMIT
 
     def test_finds_a_source_given_as_a_path_relative_to_the_caller(
         self, cube_obj, monkeypatch

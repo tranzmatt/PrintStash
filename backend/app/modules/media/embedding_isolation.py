@@ -21,13 +21,13 @@ from pathlib import Path
 from printstash_core.inference import EmbeddingInput
 
 from app.modules.media import mesh_isolation
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import (
     MeshWorkerError,
     pack_value,
     raise_reported_error,
     unpack_value,
 )
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
 VIEWS_MAGIC = b"EMB1"
 # Six canonical frames; a worker that returns more is not the worker we started.

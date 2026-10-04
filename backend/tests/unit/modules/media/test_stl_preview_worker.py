@@ -18,6 +18,7 @@ unexpected happened. A refusal must never be reported as a success with an empty
 
 from __future__ import annotations
 
+import math
 import time
 from pathlib import Path
 
@@ -27,9 +28,6 @@ from app.modules.media import stl_preview_worker as worker
 from tests.factories.content import ascii_stl_facets as _ascii_stl
 from tests.factories.content import binary_stl_facets as _binary_stl
 from tests.paths import BACKEND_DIR
-
-RESERVOIR_SIZE = 4096
-
 
 TRIANGLE = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
 SECOND = ((0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (0.0, 1.0, 1.0))
@@ -65,36 +63,6 @@ def stl(tmp_path: Path):
     return write
 
 
-class TestFramingReservoir:
-    def test_keeps_every_centroid_while_there_is_room(self) -> None:
-        reservoir = worker._FramingReservoir()
-
-        reservoir.add([(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)])
-
-        assert reservoir.values == [(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)]
-        assert reservoir.seen == 2
-
-    def test_stops_growing_at_the_reservoir_size(self) -> None:
-        reservoir = worker._FramingReservoir()
-
-        reservoir.add([(float(i), 0.0, 0.0) for i in range(RESERVOIR_SIZE + 500)])
-
-        # The whole point is a bounded footprint on an unbounded file.
-        assert len(reservoir.values) == RESERVOIR_SIZE
-        assert reservoir.seen == RESERVOIR_SIZE + 500
-
-    def test_samples_the_same_way_every_run(self) -> None:
-        centroids = [(float(i), 0.0, 0.0) for i in range(RESERVOIR_SIZE * 3)]
-        first, second = worker._FramingReservoir(), worker._FramingReservoir()
-
-        first.add(centroids)
-        second.add(centroids)
-
-        # A process-global RNG would make the same file frame differently on a
-        # retry, so the sampling uses its own LCG.
-        assert first.values == second.values
-
-
 class TestCheckDeadline:
     def test_allows_work_before_the_deadline(self, limits) -> None:
         worker._check_deadline(limits())
@@ -121,39 +89,26 @@ class TestReadPass:
 
 
 class TestFrame:
-    def test_frames_a_mesh_around_its_sampled_centre(self, limits) -> None:
-        reservoir = worker._FramingReservoir()
-        reservoir.add([(0.5, 0.5, 0.5), (0.4, 0.6, 0.5)])
+    def test_frames_the_exact_source_bounds(self) -> None:
+        import numpy as np
 
-        center, rotation, robust_min, robust_max, _mid, extent_x, extent_y = (
-            worker._frame((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), reservoir)
+        center, rotation, _mid, extent_x, extent_y = worker._frame(
+            (0.0, 0.0, 0.0), (101.0, 2.0, 2.0)
         )
 
+        np.testing.assert_array_equal(center, (50.5, 1.0, 1.0))
         assert rotation.shape == (3, 3)
         assert extent_x > 0 and extent_y > 0
-        assert len(center) == 3
 
-    def test_falls_back_to_the_exact_bounds_when_nothing_was_sampled(self) -> None:
-        center, _rotation, robust_min, robust_max, _mid, _x, _y = worker._frame(
-            (0.0, 0.0, 0.0), (2.0, 2.0, 2.0), worker._FramingReservoir()
+    def test_keeps_camera_coordinates_in_float64(self) -> None:
+        import numpy as np
+
+        center, rotation, projected_mid, _x, _y = worker._frame(
+            (1e9, 1e9, 1e9), (1e9 + 10, 1e9 + 10, 1e9 + 10)
         )
 
-        # An empty reservoir must still frame something rather than divide by
-        # zero: the exact bounds stand in for the samples it never got.
-        assert all(abs(value - 0.0) < 0.05 for value in robust_min)
-        assert all(abs(value - 2.0) < 0.05 for value in robust_max)
-
-    def test_widens_a_degenerate_axis_back_to_the_exact_bounds(self) -> None:
-        reservoir = worker._FramingReservoir()
-        reservoir.add([(0.5, 0.5, 0.0), (0.5, 0.5, 0.0)])
-
-        _c, _r, robust_min, robust_max, _mid, _x, _y = worker._frame(
-            (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), reservoir
-        )
-
-        # A flat sample on an axis would frame the model edge-on and render a line.
-        assert robust_min[0] == 0.0
-        assert robust_max[0] == 1.0
+        assert center.dtype == rotation.dtype == projected_mid.dtype == np.float64
+        np.testing.assert_array_equal(center, (1e9 + 5, 1e9 + 5, 1e9 + 5))
 
 
 class TestWriteManifest:
@@ -385,7 +340,7 @@ class TestMain:
         assert self._run_in_process(source, tmp_path, monkeypatch) == 3
 
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
-    def test_refuses_replaced_source_with_restored_size_and_mtime(
+    def test_refuses_replaced_source_with_restored_file_metadata(
         self, stl, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, encoding: str
     ) -> None:
         import os
@@ -435,3 +390,45 @@ class TestMain:
         assert manifest["scanned_bytes"] >= source.stat().st_size
         assert (tmp_path / "out.png").read_bytes().startswith(b"\x89PNG")
         assert not (tmp_path / "out.png.tmp").exists()
+
+
+class TestNondegenerateTriangles:
+    def test_retains_valid_streamed_triangle(self) -> None:
+        import numpy as np
+
+        view = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, 1.0], [0.0, 2.0, 1.0]]])
+
+        assert worker._nondegenerate_triangles(view).tolist() == [True]
+
+    @pytest.mark.parametrize(
+        "triangle",
+        [
+            ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (2.0, 2.0, 2.0)),
+            ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+        ],
+        ids=["collinear", "repeated-vertex"],
+    )
+    def test_rejects_degenerate_streamed_triangle(self, triangle) -> None:
+        import numpy as np
+
+        assert worker._nondegenerate_triangles(np.asarray([triangle])).tolist() == [
+            False
+        ]
+
+    def test_is_invariant_to_rigid_transform(self) -> None:
+        import numpy as np
+
+        view = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, 1.0], [0.0, 2.0, 1.0]]])
+        rotation = np.asarray([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+        assert worker._nondegenerate_triangles(
+            view @ rotation.T + np.asarray([5.0, -7.0, 9.0])
+        ).tolist() == [True]
+
+    @pytest.mark.parametrize("value", [math.inf, math.nan], ids=["infinity", "nan"])
+    def test_rejects_nonfinite_streamed_triangle(self, value: float) -> None:
+        import numpy as np
+
+        view = np.array([[[0.0, 0.0, 0.0], [2.0, 0.0, value], [0.0, 2.0, 1.0]]])
+
+        assert worker._nondegenerate_triangles(view).tolist() == [False]

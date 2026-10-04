@@ -147,7 +147,7 @@ class TestCancel:
 
         service.cancel(job.id, actor=owner)
 
-        execution = work_engine.executions[execution_id(job.id, 1)]
+        execution = work_engine.executions[execution_id(job.id, 1, job.execution_epoch)]
         assert execution.status is EngineStatus.CANCELLED
 
     def test_a_job_never_submitted_needs_no_engine_cancel(
@@ -200,6 +200,41 @@ class TestCancel:
         error = _refused(lambda: service.cancel(job.id, actor=owner))
 
         assert (error.code, error.kind) == ("job_not_active", ErrorKind.CONFLICT)
+
+    def test_failed_intent_withdrawal_rolls_back_cancellation(
+        self, make_job, mesh, owner, db_session, work_catalog, monkeypatch
+    ):
+        from dataclasses import replace
+
+        from app.modules.derivatives.jobs import definitions
+
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH, subject=subject_key(mesh.id), owner=owner
+        )
+        definition = next(d for d in definitions() if d.name is job.kind)
+
+        def broken_withdrawal(session, subject):
+            definition.cancel(session, subject)
+            session.flush()
+            raise RuntimeError("withdrawal_failed")
+
+        monkeypatch.setitem(
+            work_catalog.definitions,
+            job.kind,
+            replace(definition, cancel=broken_withdrawal),
+        )
+
+        with pytest.raises(RuntimeError, match="withdrawal_failed"):
+            service.cancel(job.id, actor=owner)
+
+        db_session.refresh(job)
+        assert job.state is JobState.QUEUED
+        assert (
+            db_session.exec(
+                select(ArtifactDerivative).where(ArtifactDerivative.file_id == mesh.id)
+            ).all()
+            == []
+        )
 
 
 class TestCancelQueued:
@@ -386,3 +421,163 @@ class TestRetry:
         error = _refused(lambda: service.retry(job.id, actor=make_user()))
 
         assert error.kind is ErrorKind.NOT_FOUND
+
+
+class TestExecutionEpoch:
+    def test_retry_before_begin_rejects_old_callback_without_counting_execution(
+        self, make_job, mesh, owner, db_session, nudged
+    ):
+        from app.modules.work.runner import _begin
+
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH, subject=subject_key(mesh.id), owner=owner
+        )
+        old_epoch = job.execution_epoch
+        service.cancel(job.id, actor=owner)
+        service.retry(job.id, actor=owner)
+        db_session.refresh(job)
+
+        assert job.attempts == 0
+        assert job.execution_epoch != old_epoch
+        assert _begin(job.id, 1, old_epoch) is None
+        db_session.refresh(job)
+        assert job.state is JobState.QUEUED
+        assert job.attempts == 0
+
+    def test_retry_without_nudge_is_submitted_by_reconciliation(
+        self, make_job, mesh, owner, db_session, nudged, work_engine, work_catalog
+    ):
+        from app.core.time import utcnow
+        from app.modules.work.reconciler import PassResult, _repair
+        from app.modules.work.submission import submit
+
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH, subject=subject_key(mesh.id), owner=owner
+        )
+        submit(job.id)
+        service.cancel(job.id, actor=owner)
+        service.retry(job.id, actor=owner)
+        db_session.refresh(job)
+        assert job.attempts == 1
+        result = PassResult()
+
+        _repair(work_catalog.definition(job.kind), now=utcnow(), result=result)
+
+        db_session.refresh(job)
+        assert (result.submitted, result.interrupted, job.attempts) == (1, 0, 2)
+        assert job.submitted_epoch == job.execution_epoch
+        assert execution_id(job.id, 2, job.execution_epoch) in work_engine.executions
+
+    def test_late_submit_confirmation_cannot_rewrite_retried_job(
+        self, make_job, mesh, owner, db_session, nudged, work_engine, monkeypatch
+    ):
+        from app.modules.work.contracts import JobSubmission
+        from app.modules.work.submission import submit
+
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH, subject=subject_key(mesh.id), owner=owner
+        )
+        old_epoch = job.execution_epoch
+        accept = work_engine.submit
+        retried_at = []
+
+        def accept_after_retry(submission):
+            if isinstance(submission, JobSubmission):
+                service.cancel(job.id, actor=owner)
+                status = service.retry(job.id, actor=owner)
+                retried_at.append(status.updated_at)
+            return accept(submission)
+
+        monkeypatch.setattr(work_engine, "submit", accept_after_retry)
+        submit(job.id)
+
+        db_session.refresh(job)
+        assert job.execution_epoch != old_epoch
+        assert job.attempts == 0
+        assert job.submitted_epoch is None
+        from app.core.time import ensure_utc
+
+        assert ensure_utc(job.updated_at) == ensure_utc(retried_at[0])
+        assert (
+            work_engine.executions[execution_id(job.id, 1, old_epoch)].status
+            is EngineStatus.CANCELLED
+        )
+
+    @pytest.mark.parametrize(
+        "new_job", [False, True], ids=["retry", "rediscovered-subject"]
+    )
+    def test_pending_epoch_recovers_old_subject_deduplication(
+        self, make_job, mesh, owner, db_session, nudged, work_engine, new_job
+    ):
+        from app.modules.work.submission import submit
+
+        old = make_job(
+            kind=JobKind.DERIVATIVES_MESH, subject=subject_key(mesh.id), owner=owner
+        )
+        submit(old.id)
+        old_epoch = old.execution_epoch
+        old_execution = work_engine.executions[execution_id(old.id, 1, old_epoch)]
+        service.cancel(old.id, actor=owner)
+        # Crash/lost engine cancellation leaves the terminal Job's execution active.
+        old_execution.status = EngineStatus.QUEUED
+        if new_job:
+            current = make_job(kind=old.kind, subject=old.subject_key, owner=owner)
+        else:
+            service.retry(old.id, actor=owner)
+            db_session.refresh(old)
+            current = old
+        previous_attempts = current.attempts
+
+        submit(current.id)
+
+        db_session.refresh(current)
+        assert current.attempts == previous_attempts + 1
+        assert current.submitted_epoch == current.execution_epoch
+        assert old_execution.status is EngineStatus.CANCELLED
+        assert (
+            work_engine.executions[
+                execution_id(current.id, current.attempts, current.execution_epoch)
+            ].status
+            is EngineStatus.QUEUED
+        )
+
+    def test_dedupe_recovery_does_not_cancel_a_newly_retried_related_job(
+        self, make_job, mesh, owner, db_session, nudged, work_engine, monkeypatch
+    ):
+        from dataclasses import replace
+
+        from app.modules.work.contracts import JobOutcome
+        from app.modules.work.jobs import jobs
+        from app.modules.work.submission import submit
+
+        old = make_job(
+            kind=JobKind.DERIVATIVES_MESH, subject=subject_key(mesh.id), owner=owner
+        )
+        submit(old.id)
+        original = work_engine.executions[execution_id(old.id, 1, old.execution_epoch)]
+        service.cancel(old.id, actor=owner)
+        original.status = EngineStatus.QUEUED
+        current = make_job(kind=old.kind, subject=old.subject_key, owner=owner)
+        active = work_engine.active
+        retried = []
+
+        def retry_during_active_catalogue():
+            jobs.finish(current.id, JobOutcome.CANCELLED, error="superseded")
+            service.retry(old.id, actor=owner)
+            db_session.refresh(old)
+            original.status = EngineStatus.CANCELLED
+            execution = replace(
+                original.submission,
+                execution_epoch=old.execution_epoch,
+                execution_id=execution_id(old.id, 2, old.execution_epoch),
+                attempt=2,
+            )
+            work_engine.submit(execution)
+            retried.append(execution.execution_id)
+            return active()
+
+        monkeypatch.setattr(work_engine, "active", retry_during_active_catalogue)
+
+        submit(current.id)
+
+        assert work_engine.executions[retried[0]].status is EngineStatus.QUEUED

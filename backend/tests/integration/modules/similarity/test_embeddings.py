@@ -11,8 +11,8 @@ from app.core.config import _overlay
 from app.db.models import FileType, PassageVector, SimilarityCandidate
 from app.db.session import get_session_factory
 from app.modules.media import embedding_isolation
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 from app.modules.similarity import configuration, runs
 from app.modules.similarity.processing import SimilarityProcessor
 from app.modules.similarity.semantic_search import SearchRequest, capabilities, search

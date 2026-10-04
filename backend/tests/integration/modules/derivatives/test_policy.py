@@ -37,8 +37,15 @@ def artifact(producer_group, make_model, make_file):
         JobKind.DERIVATIVES_MESH: "part.stl",
         JobKind.DERIVATIVES_GCODE: "part.gcode",
         JobKind.DERIVATIVES_TOOLPATH: "part.bgcode",
+        JobKind.DERIVATIVES_VIEWER_STL: "part.3mf",
     }[producer_group.definition]
-    return make_file(make_model(), filename=filename)
+    return make_file(
+        make_model(),
+        filename=filename,
+        viewer_requested_at=utcnow()
+        if producer_group.definition is JobKind.DERIVATIVES_VIEWER_STL
+        else None,
+    )
 
 
 class TestResolution:
@@ -174,6 +181,7 @@ class TestAdmission:
             JobKind.DERIVATIVES_MESH: producers.derive_mesh,
             JobKind.DERIVATIVES_GCODE: producers.derive_gcode,
             JobKind.DERIVATIVES_TOOLPATH: producers.derive_toolpath,
+            JobKind.DERIVATIVES_VIEWER_STL: producers.derive_viewer_stl,
         }[producer_group.definition]
         with pytest.raises(OperationError, match="derivative_group_disabled"):
             producer(artifact.id)
@@ -440,7 +448,7 @@ class TestRepairBacklog:
         )
         submit(healthy.id)
         work_engine.executions[
-            execution_id(healthy.id, 1)
+            execution_id(healthy.id, 1, healthy.execution_epoch)
         ].status = EngineStatus.RUNNING
         lost = make_job(
             kind=JobKind.DERIVATIVES_MESH,

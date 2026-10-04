@@ -691,7 +691,7 @@ class TestPartialSampling:
 
 
 class TestSampleWorkingSet:
-    def test_sampling_temporary_is_bounded_by_retained_cap_and_block(
+    def test_bounds_sampling_working_set(
         self, tmp_path, monkeypatch
     ):
         path = tmp_path / "working-set.stl"

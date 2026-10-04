@@ -16,10 +16,9 @@ from printstash_core.mesh.similarity.verification import (
 from app.modules.media.fingerprints import ALGORITHM_VERSION
 from tests.factories.similarity_corpus import ROOT, cases, mesh_for, provenance
 
-# This frozen verifier evidence predates the view-hash renderer recipe change.
-# Retain its original provenance: verification has no rasterizer dependency,
-# and test_preserves_versioned_evaluation_golden compares recomputed evidence.
-CALIBRATION_FINGERPRINT_VERSION = "geometry-v2-sh5f4577c4"
+# Freeze the recipe measured when this verifier reference was produced. Later
+# fingerprint changes must not relabel historical verifier evidence.
+CALIBRATION_FINGERPRINT_VERSION = "geometry-v4-sh5f4577c4"
 
 
 @pytest.fixture(scope="module")

@@ -306,9 +306,15 @@ class TestProducerAdmission:
 
         artifact = make_file(
             make_model(),
-            filename="part.stl"
-            if definition is JobKind.DERIVATIVES_MESH
-            else "part.bgcode",
+            filename={
+                JobKind.DERIVATIVES_MESH: "part.stl",
+                JobKind.DERIVATIVES_GCODE: "part.bgcode",
+                JobKind.DERIVATIVES_TOOLPATH: "part.bgcode",
+                JobKind.DERIVATIVES_VIEWER_STL: "part.3mf",
+            }[definition],
+            viewer_requested_at=utcnow()
+            if definition is JobKind.DERIVATIVES_VIEWER_STL
+            else None,
         )
         derivative_group = group(definition)
         rows = [
@@ -322,7 +328,13 @@ class TestProducerAdmission:
             attempts=1,
         )
         context = ExecutionContext(
-            job.id, definition, job.subject_key, WorkPriority.BACKFILL, "admitted", 1
+            job.id,
+            definition,
+            job.subject_key,
+            WorkPriority.BACKFILL,
+            "admitted",
+            1,
+            execution_epoch=job.execution_epoch,
         )
         assert DEFINITIONS[definition].admission(db_session) is None
         policy.update(db_session, {policy.SETTINGS[definition]: False})

@@ -10,7 +10,7 @@ from typing import Mapping
 
 # Renderer arithmetic participates in derived visual identities independently
 # of camera/material settings and immutable encoder asset manifests.
-RASTERIZER_RECIPE = "relative-f64-v1"
+RASTERIZER_RECIPE = "referenced-relative-f64-v2"
 
 
 def _mapping(value: object, name: str) -> Mapping[str, object]:

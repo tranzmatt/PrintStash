@@ -30,11 +30,13 @@ from app.db.session import get_session_factory
 from . import catalog as catalog_module
 from .contracts import (
     Deduplicated,
+    ExecutionKind,
     JobSubmission,
     Partitioned,
     PassSubmission,
     SubmitOutcome,
 )
+from .jobs import TERMINAL_STATES, jobs
 
 logger = get_logger(__name__)
 
@@ -42,9 +44,9 @@ logger = get_logger(__name__)
 PRIORITY_RANK = {WorkPriority.INTERACTIVE: 1, WorkPriority.BACKFILL: 1000}
 
 
-def execution_id(job_id: str, attempt: int) -> str:
-    """The engine key of one attempt: exactly once per (Job, attempt)."""
-    return f"{job_id}:{attempt}"
+def execution_id(job_id: str, attempt: int, execution_epoch: str) -> str:
+    """The engine key of one attempt: exactly once per (Job, epoch, attempt)."""
+    return f"{job_id}:{execution_epoch}:{attempt}"
 
 
 def dedupe_key(definition: JobKind, subject_key: str) -> str:
@@ -71,32 +73,88 @@ def submit(job_id: str, *, now: datetime | None = None) -> SubmitOutcome | None:
             return None
         attempt = row.attempts + 1
         submission = JobSubmission(
-            execution_id=execution_id(row.id, attempt),
+            execution_id=execution_id(row.id, attempt, row.execution_epoch),
             job_id=row.id,
             definition=row.kind,
             subject_key=row.subject_key,
             lane=definition.lane,
             priority=row.priority,
             attempt=attempt,
+            execution_epoch=row.execution_epoch,
             routing=Deduplicated(dedupe_key(row.kind, row.subject_key))
             if definition.partition is None
             else Partitioned(definition.partition(row.subject_key)),
         )
+        pending_epoch = row.submitted_epoch != row.execution_epoch
     outcome = engine.submit(submission)
+    if pending_epoch and outcome is SubmitOutcome.DEDUPLICATED:
+        _cancel_superseded(submission)
+        outcome = engine.submit(submission)
     if outcome is SubmitOutcome.DEDUPLICATED:
         # An older attempt of this subject is still active in the engine. The
         # reconciler cancels or settles it; this attempt is not recorded.
         return outcome
     with get_session_factory().scoped_session() as session:
-        row = session.get(Job, job_id)
-        if row is not None and row.attempts < attempt:
+        row = jobs.lock_execution(session, job_id, epoch=submission.execution_epoch)
+        # The body can legitimately finish before engine.submit returns. Its
+        # terminal result is not evidence of retired authority; only cancellation
+        # or a missing/replaced epoch warrants cancelling this exact execution.
+        superseded = row is None or row.state is JobState.CANCELLED
+        if (
+            row is not None
+            and row.state in ACTIVE_JOB_STATES
+            and row.attempts < attempt
+        ):
             row.attempts = attempt
+            row.submitted_epoch = submission.execution_epoch
             if row.state is JobState.INTERRUPTED:
                 row.state = JobState.QUEUED
             row.updated_at = now
             session.add(row)
             session.commit()
+    if superseded:
+        engine.cancel(submission.execution_id)
+
     return outcome
+
+
+def _cancel_superseded(submission: JobSubmission) -> None:
+    """Free subject dedupe after a retry or a replaced terminal Job.
+
+    The engine contract only exposes an active catalogue, not subject lookup.
+    Read it only when an epoch's first submission is deduplicated; successful
+    submissions and ordinary resubmits use exact execution IDs. No database lock spans engine I/O.
+    """
+    engine = catalog_module.get_engine()
+    # Observe executions first: a later DB snapshot can prove these exact IDs
+    # obsolete, but cannot accidentally authorize cancellation of a future epoch.
+    active = engine.active()
+    with get_session_factory().scoped_session() as session:
+        from sqlmodel import select
+
+        related = session.exec(
+            select(Job).where(
+                Job.kind == submission.definition,
+                Job.subject_key == submission.subject_key,
+            )
+        ).all()
+        epochs = {
+            row.id: row.execution_epoch
+            for row in related
+            if row.id == submission.job_id or row.state in TERMINAL_STATES
+        }
+    for execution in active:
+        if execution.kind is not ExecutionKind.JOB:
+            continue
+        for job_id, epoch in epochs.items():
+            if not execution.execution_id.startswith(f"{job_id}:"):
+                continue
+            current = job_id == submission.job_id and execution.execution_id.startswith(
+                f"{job_id}:{epoch}:"
+            )
+            if not current:
+                engine.cancel(execution.execution_id)
+            break
 
 
 def _cursor(session: Session, source: JobKind) -> ReconcileCursor:

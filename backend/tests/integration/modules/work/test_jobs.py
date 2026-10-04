@@ -826,3 +826,215 @@ class TestPrune:
         store.prune(now=now)
 
         assert db_session.get(Job, active.id) is not None
+
+
+class TestSettleAttempt:
+    @pytest.mark.parametrize(
+        ("observed_attempt", "observed_state", "old_epoch"),
+        [
+            pytest.param(1, JobState.RUNNING, False, id="older-attempt"),
+            pytest.param(2, JobState.QUEUED, False, id="older-state"),
+            pytest.param(2, JobState.RUNNING, True, id="older-epoch"),
+        ],
+    )
+    def test_stale_engine_evidence_leaves_current_derivatives_running(
+        self,
+        db_session,
+        make_model,
+        make_file,
+        make_job,
+        make_derivative,
+        observed_attempt,
+        observed_state,
+        old_epoch,
+    ):
+        from app.db.models import DerivativeKind, DerivativeState
+        from app.modules.derivatives.jobs import definitions
+
+        file = make_file(make_model(), filename="retry.stl")
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH,
+            subject=f"file/{file.id}",
+            state=JobState.RUNNING,
+            attempts=2,
+        )
+        derivative = make_derivative(
+            file, DerivativeKind.THUMBNAIL, state=DerivativeState.RUNNING
+        )
+        definition = next(
+            d for d in definitions() if d.name is JobKind.DERIVATIVES_MESH
+        )
+
+        status = JobStore().settle_attempt(
+            job.id,
+            observed_attempt,
+            JobOutcome.FAILED,
+            expected_state=observed_state,
+            error="old_engine_failure",
+            on_failure=definition.on_failure,
+            execution_epoch="previous-epoch" if old_epoch else job.execution_epoch,
+        )
+
+        assert status is None
+        db_session.refresh(job)
+        db_session.refresh(derivative)
+        assert job.state is JobState.RUNNING
+        assert (derivative.state, derivative.failure_reason) == (
+            DerivativeState.RUNNING,
+            None,
+        )
+
+    def test_matching_queued_policy_cancellation_settles_its_derivatives(
+        self, db_session, make_model, make_file, make_job, make_derivative
+    ):
+        from app.db.models import DerivativeKind, DerivativeState
+        from app.modules.derivatives.jobs import definitions
+
+        file = make_file(make_model(), filename="disabled.stl")
+        job = make_job(
+            kind=JobKind.DERIVATIVES_MESH,
+            subject=f"file/{file.id}",
+            state=JobState.QUEUED,
+            attempts=0,
+        )
+        derivative = make_derivative(
+            file, DerivativeKind.THUMBNAIL, state=DerivativeState.RUNNING
+        )
+        definition = next(
+            d for d in definitions() if d.name is JobKind.DERIVATIVES_MESH
+        )
+
+        status = JobStore().settle_attempt(
+            job.id,
+            0,
+            JobOutcome.CANCELLED,
+            expected_state=JobState.QUEUED,
+            error="derivative_group_disabled",
+            on_failure=definition.on_failure,
+            execution_epoch=job.execution_epoch,
+        )
+
+        assert status.state is JobState.CANCELLED
+        db_session.refresh(derivative)
+        assert (derivative.state, derivative.failure_reason) == (
+            DerivativeState.FAILED,
+            "derivative_group_disabled",
+        )
+
+    def test_replayed_failure_does_not_settle_a_later_job_for_the_subject(
+        self, db_session, make_model, make_file, make_job, make_derivative
+    ):
+        from app.db.models import DerivativeKind, DerivativeState
+        from app.modules.derivatives.jobs import definitions
+
+        file = make_file(make_model(), filename="replacement.stl")
+        old = make_job(
+            kind=JobKind.DERIVATIVES_MESH,
+            subject=f"file/{file.id}",
+            state=JobState.FAILED,
+            attempts=1,
+        )
+        make_job(
+            kind=JobKind.DERIVATIVES_MESH,
+            subject=f"file/{file.id}",
+            state=JobState.RUNNING,
+            attempts=1,
+        )
+        derivative = make_derivative(
+            file, DerivativeKind.THUMBNAIL, state=DerivativeState.RUNNING
+        )
+        definition = next(
+            d for d in definitions() if d.name is JobKind.DERIVATIVES_MESH
+        )
+
+        JobStore().settle_attempt(
+            old.id,
+            1,
+            JobOutcome.FAILED,
+            error="replayed_old_failure",
+            on_failure=definition.on_failure,
+            execution_epoch=old.execution_epoch,
+        )
+
+        db_session.refresh(derivative)
+        assert (derivative.state, derivative.failure_reason) == (
+            DerivativeState.RUNNING,
+            None,
+        )
+
+
+class TestReconcileSettledAttempt:
+    @pytest.mark.parametrize(
+        "old_epoch", [False, True], ids=["older-attempt", "older-epoch"]
+    )
+    def test_old_cleanup_preserves_staging_owned_by_a_later_attempt(
+        self,
+        db_session,
+        make_user,
+        make_ingest_request,
+        make_file,
+        make_model,
+        tmp_path,
+        old_epoch,
+    ):
+        import hashlib
+
+        from app.db.models import IngestRequestKind
+        from app.modules.ingestion import jobs as ingestion_jobs
+        from app.modules.ingestion import staging_leases
+
+        owner = make_user()
+        request = make_ingest_request(
+            owner, kind=IngestRequestKind.UPLOAD, state=JobState.COMPLETED
+        )
+        job = db_session.get(Job, request.job_id)
+        job.attempts = 1 if old_epoch else 2
+        db_session.add(job)
+        db_session.commit()
+        make_file(make_model(), filename="committed.stl", ingestion_key=job.id)
+        staged = tmp_path / "retry.stl"
+        staged.write_bytes(b"new attempt bytes")
+        lease = staging_leases.create_job_lease(
+            db_session,
+            job_id=job.id,
+            owner_user_id=owner.id,
+            path=staged,
+            size_bytes=staged.stat().st_size,
+            sha256=hashlib.sha256(staged.read_bytes()).hexdigest(),
+        )
+        db_session.commit()
+        definition = next(
+            d
+            for d in ingestion_jobs.definitions()
+            if d.name is JobKind.INGESTION_UPLOAD
+        )
+
+        JobStore().reconcile_settled_attempt(
+            job.id,
+            1,
+            definition.on_settled,
+            execution_epoch="previous-epoch" if old_epoch else job.execution_epoch,
+        )
+
+        db_session.expire_all()
+        assert staged.read_bytes() == b"new attempt bytes"
+        assert db_session.get(StagingLease, lease.id) is not None
+
+
+class TestExecutionEpochInvariant:
+    @pytest.mark.parametrize(
+        "field,value",
+        [("execution_epoch", ""), ("execution_epoch", None), ("submitted_epoch", "")],
+    )
+    def test_database_rejects_missing_execution_authority(
+        self, db_session, make_job, field, value
+    ):
+        from sqlalchemy import text
+
+        row = make_job()
+        with pytest.raises(IntegrityError):
+            db_session.execute(
+                text(f"UPDATE jobs SET {field} = :value WHERE id = :job_id"),
+                {"value": value, "job_id": row.id},
+            )
+            db_session.commit()

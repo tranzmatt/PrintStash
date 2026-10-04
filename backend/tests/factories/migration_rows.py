@@ -360,4 +360,46 @@ def create_pre_derivative_controls_schema(connection) -> None:
         "derivatives_toolpath_enabled",
     ):
         config._columns.remove(config.c[column])
+    files = metadata.tables["files"]
+    files.indexes = {
+        index for index in files.indexes if "viewer_requested_at" not in index.columns
+    }
+    files._columns.remove(files.c.viewer_requested_at)
+    from sqlalchemy import CheckConstraint, text
+
+    for table in metadata.tables.values():
+        for constraint in table.constraints:
+            if isinstance(constraint, CheckConstraint):
+                constraint.sqltext = text(
+                    str(constraint.sqltext)
+                    .replace(", 'viewer_stl'", "")
+                    .replace(", 'derivatives.viewer_stl'", "")
+                )
+    metadata.create_all(connection)
+
+
+def create_pre_derivative_attempt_schema(connection) -> None:
+    """The previous schema, without execution ownership on derivative rows."""
+    from sqlmodel import SQLModel
+
+    metadata = MetaData(naming_convention=SQLModel.metadata.naming_convention)
+    for table in SQLModel.metadata.tables.values():
+        table.to_metadata(metadata)
+    derivatives = metadata.tables["artifact_derivatives"]
+    derivatives._columns.remove(derivatives.c.attempt_token)
+    constraint = next(
+        c
+        for c in derivatives.constraints
+        if c.name == "ck_artifact_derivatives_attempt_token_iff_running"
+    )
+    derivatives.constraints.remove(constraint)
+    jobs = metadata.tables["jobs"]
+    for name in ("execution_epoch", "submitted_epoch"):
+        jobs._columns.remove(jobs.c[name])
+    for constraint in list(jobs.constraints):
+        if constraint.name in {
+            "ck_jobs_execution_epoch_present",
+            "ck_jobs_submitted_epoch_present",
+        }:
+            jobs.constraints.remove(constraint)
     metadata.create_all(connection)

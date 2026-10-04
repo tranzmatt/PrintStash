@@ -6,7 +6,7 @@ import trimesh
 from printstash_core.mesh.similarity import GeometryError
 
 from app.modules.media import geometry_analysis, mesh_resources
-from tests.factories.geometry import tetrahedron
+from tests.factories.geometry import tetrahedron, three_mf
 from tests.fixtures.three_mf_projects import build_instanced_project
 
 
@@ -132,6 +132,36 @@ class TestVerifyPaths:
 
 
 class TestEmbeddingViews:
+    @pytest.mark.parametrize("profile", ["thumbnail", "multiview"])
+    def test_ignores_unreferenced_vertices_in_visual_inputs(self, tmp_path, profile):
+        from printstash_core.inference import EmbeddingSpace
+        from printstash_core.search.visual_inputs import VisualRecipe
+
+        mesh = tetrahedron()
+        original_path = tmp_path / "original.3mf"
+        original_path.write_bytes(three_mf(meshes={1: mesh}))
+        mesh.vertices = np.concatenate([mesh.vertices, [[1e6, -1e6, 1e6]]])
+        padded_path = tmp_path / "padded.3mf"
+        padded_path.write_bytes(three_mf(meshes={1: mesh}))
+        recipe = VisualRecipe.for_space(
+            VisualRecipe.space(
+                EmbeddingSpace("clip", "v1", 3, "text_image", "test"),
+                image_size=32,
+                profile=profile,
+            )
+        )
+
+        original = geometry_analysis.visual_views(
+            original_path, file_type="3mf", recipe=recipe, triangle_cap=100
+        )
+        padded = geometry_analysis.visual_views(
+            padded_path, file_type="3mf", recipe=recipe, triangle_cap=100
+        )
+
+        assert original.thumbnail is not None
+        assert len(original.views) == (6 if profile == "multiview" else 1)
+        assert padded == original
+
     def test_loads_the_mesh_once_for_a_complete_visual_pass(
         self, mesh_path, monkeypatch
     ):

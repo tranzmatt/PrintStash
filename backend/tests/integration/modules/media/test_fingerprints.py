@@ -11,12 +11,35 @@ from printstash_core.mesh.similarity import fingerprint_mesh
 from app.core.config import _overlay
 from app.modules.media import mesh_processing
 from app.modules.media.fingerprints import SH_BASIS_DIGEST
-from app.modules.media.thumbnail_engine import ThumbnailEngine, ThumbnailRequest
+from app.modules.media.mesh_contracts import ThumbnailRequest
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 from tests.factories import content
 from tests.factories.geometry import tetrahedron, three_mf
 
 
 class TestFingerprintExtraction:
+    def test_ignores_unreferenced_3mf_vertices(self, tmp_path):
+        mesh = tetrahedron()
+        original_path = tmp_path / "original.3mf"
+        original_path.write_bytes(three_mf(meshes={1: mesh}))
+        mesh.vertices = np.concatenate([mesh.vertices, [[1e6, -1e6, 1e6]]])
+        padded_path = tmp_path / "padded.3mf"
+        padded_path.write_bytes(three_mf(meshes={1: mesh}))
+
+        original = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                original_path, include_fingerprint=True, include_thumbnail=False
+            )
+        )
+        padded = ThumbnailEngine().generate(
+            ThumbnailRequest(
+                padded_path, include_fingerprint=True, include_thumbnail=False
+            )
+        )
+
+        assert original.fingerprint_result.state == "ready"
+        assert padded.fingerprint_result == original.fingerprint_result
+
     def test_releases_loaded_mesh_before_reclaim(self, tmp_path, monkeypatch):
         path = tmp_path / "single.stl"
         path.write_bytes(tetrahedron().export(file_type="stl"))

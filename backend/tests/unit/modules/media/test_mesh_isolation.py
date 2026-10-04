@@ -20,18 +20,18 @@ import pytest
 
 from app.modules.media import mesh_isolation
 from app.modules.media.fingerprints import FingerprintRecord, FingerprintResult
-from app.modules.media.mesh_isolation import (
-    MeshWorkerError,
-    decode_reply,
-    encode_reply,
-    supervise,
-)
-from app.modules.media.thumbnail_engine import (
+from app.modules.media.mesh_contracts import (
     GeometryReady,
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailResult,
     ThumbnailStrategy,
+)
+from app.modules.media.mesh_isolation import (
+    MeshWorkerError,
+    decode_reply,
+    encode_reply,
+    supervise,
 )
 
 MB = 1024 * 1024
@@ -427,7 +427,7 @@ class TestReplyFrame:
 
 class TestGeometryOutcome:
     def test_refusal_survives_a_successful_preview_reply(self):
-        from app.modules.media.thumbnail_engine import GeometryRefused
+        from app.modules.media.mesh_contracts import GeometryRefused
 
         result = _result(
             geometry_outcome=GeometryRefused(ThumbnailFailureReason.RESOURCE_LIMIT)

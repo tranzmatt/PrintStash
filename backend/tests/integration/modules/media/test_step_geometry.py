@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from app.modules.media import mesh_processing
-from app.modules.media.thumbnail_engine import ThumbnailEngine, ThumbnailRequest
+from app.modules.media.mesh_contracts import ThumbnailRequest
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 from tests.paths import FIXTURES_DIR
 
 

@@ -178,7 +178,7 @@ class TestSTLConsumers:
             assert mesh_processing._load_mesh(source) is None
 
     @pytest.mark.parametrize("encoding", ["binary", "ascii"])
-    def test_discloses_source_and_sample_completion(
+    def test_certifies_source_completion_for_partial_samples(
         self, tmp_path: Path, encoding: str
     ):
         source = tmp_path / "partial.stl"

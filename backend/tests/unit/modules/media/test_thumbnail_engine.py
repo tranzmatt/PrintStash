@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 
 from app.modules.media import mesh_processing
-from app.modules.media.thumbnail_engine import (
-    ThumbnailEngine,
+from app.modules.media.mesh_contracts import (
     ThumbnailFailureReason,
     ThumbnailRequest,
     ThumbnailStrategy,
 )
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 
 
 def _geometry() -> dict[str, float | int | None]:

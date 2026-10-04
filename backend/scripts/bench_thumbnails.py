@@ -26,12 +26,9 @@ from trimesh.exchange.stl import export_stl
 
 from app.core.config import settings
 from app.modules.derivatives.kinds import MESH_THUMBNAIL_RECIPE
+from app.modules.media.mesh_contracts import ThumbnailRequest, ThumbnailStrategy
 from app.modules.media.thumbnail import to_webp
-from app.modules.media.thumbnail_engine import (
-    ThumbnailEngine,
-    ThumbnailRequest,
-    ThumbnailStrategy,
-)
+from app.modules.media.thumbnail_engine import ThumbnailEngine
 from app.modules.storage.artifact_delivery import (
     DeliveryPurpose,
     DeliveryRequest,

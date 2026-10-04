@@ -28,7 +28,8 @@ def main() -> None:
 
     from app.core.config import _overlay
     from app.modules.media.geometry_analysis import _load, verify_paths
-    from app.modules.media.thumbnail_engine import ThumbnailEngine, ThumbnailRequest
+    from app.modules.media.mesh_contracts import ThumbnailRequest
+    from app.modules.media.thumbnail_engine import ThumbnailEngine
     from app.modules.similarity.configuration import SimilaritySettings
     from tests.paths import TESTDATA_DIR
 

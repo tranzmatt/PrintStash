@@ -15,6 +15,7 @@ renderer crash never loses an upload.
 | `file_id`, `kind`, `recipe_version` | Unique together; a row at an older recipe does not count |
 | `state` | `running`, `ready`, `skipped`, `failed` or `cancelled` |
 | `attempts`, `next_attempt_at`, `failure_reason` | Retry bookkeeping |
+| `attempt_token` | Unique publication authority while the attempt is running |
 | `storage_key`, `output_json` | Where the output lives and a small summary |
 | `duration_ms`, `peak_rss_bytes` | What producing it cost |
 
@@ -61,7 +62,7 @@ A producer derives only the kinds still owed, records every outcome on the
 kind's row, and tells viewers of the Model on `model:<id>` so an open page
 refreshes when a thumbnail lands.
 
-## Rendering distant geometry
+## Mesh rendering
 
 The software renderer subtracts the mesh's bounding-box center in float64 before
 converting relative coordinates to float32 for camera projection and shading.
@@ -70,13 +71,29 @@ Small geometry far from the origin therefore retains the precision provided by
 detail already lost when binary STL coordinates were written as float32. Source
 Artifact coordinates and physical metadata are unchanged by rendering.
 
-Mesh thumbnail recipe 3 refreshes existing previews. Similarity view-descriptor
-recipe 2 and fingerprint algorithm `geometry-v3-sh5f4577c4` distinguish the new
-pixels from earlier cached evidence. Search visual recipe 2 and the derived
-embedding-space rasterizer token `relative-f64-v1` invalidate earlier rendered
-inputs and vectors. Encoder asset manifests and their digests are unchanged.
+Only vertices referenced by triangle faces participate in framing, camera
+selection and normal welding. The renderer compacts that surface in a private
+view and remaps faces inside each existing chunk; unused source vertices remain
+unchanged. Face indices must refer to the source vertex array.
+
+Mesh thumbnail recipe 4 refreshes existing previews. Similarity uses view-descriptor
+recipe 2 and fingerprint algorithm `geometry-v4-sh5f4577c4`. Search visual recipe 3
+and the derived embedding-space rasterizer token `referenced-relative-f64-v2`
+invalidate earlier rendered inputs and vectors. Encoder asset manifests and
+their digests are unchanged.
+Native encoder alignment has its own stable `encoder_space()` identity. Point
+exports and search visual profiles use that identity to pair image/text towers;
+a renderer update never requires rewriting preplaced Point manifests. Legacy
+mesh-view inference uses `space()`, whose identity includes the rasterizer.
+Thumbnail and multiview search vectors additionally carry their `VisualRecipe`,
+so changed rendered inputs cannot reuse older derived vectors. Rebuild a search
+generation after its rendering recipe changes; an incompatible generation is
+not silently relabelled or reused.
+
 Historical verifier calibration remains tied to its original fingerprint and
-verification versions; it is not relabelled as a new measurement.
+verification versions; it is not relabelled as a new measurement. Fingerprint
+preparation already compacts referenced vertices, so unused-vertex rendering
+does not change its contents, descriptor recipe or algorithm identity.
 
 ## Mesh volume measurements
 
@@ -96,6 +113,29 @@ are assumed to be millimetres. Metadata recipe 4 recalculates existing measureme
 to remove volumes previously published for inconsistently wound surfaces; the
 fingerprint algorithm is unchanged.
 
+## Optional fingerprint budgets
+
+Similarity's triangle cap admits fingerprint analysis using the actual loaded
+face count, including expanded 3MF instances. It does not reduce the separate
+mesh load or rendering limits. A mesh admitted for measurements and preview
+therefore retains those outputs even when its fingerprint is refused with
+`geometry_work_limit`. Sources exceeding the mesh load limit still use the
+existing bounded strategies, including explicitly partial STL fingerprints.
+
+Fingerprint results contain serialized descriptors. Prepared scene buffers are
+released after analysis, and a failed full STL render releases its loaded mesh
+before the streaming strategy starts. Sample preparation has its own scope so
+construction errors also release temporary arrays before recovery begins.
+
+Metadata recipe 7 and thumbnail recipe 5 recover terminal resource-limit
+refusals produced by the earlier coupled admission policy. The derivative source
+finds missing current-recipe outputs, including when an earlier fingerprint
+failure remains cached. Successful content algorithms and the fingerprint
+algorithm version stay unchanged.
+Mesh thumbnail recipe 6 refreshes streamed previews whose valid oblique facets
+were discarded by the former degeneracy filter. Collinear and repeated facets
+retain the same rejection threshold.
+
 ## Bounded STL measurements
 
 Mesh metadata recipe 6 refreshes existing measurements. An STL that exceeds the
@@ -110,10 +150,17 @@ non-finite vertices are rejected. ASCII accepts complete facets without an
 `endsolid` line, ignores blank/comment lines, and rejects incomplete facets or
 content after `endsolid`. Byte, facet, line and line-length limits still apply;
 read errors, changed sources and budget refusals publish no complete measurements.
-The preview worker shares this parser while retaining its existing float32
-coordinate interpretation. Its temporary read-pass adapter remains
-local to `stl_preview_worker`; fallback sampling and full mesh loading migrate to
-the block iterator separately.
+The preview worker shares this parser. Streaming camera bounds cover every
+validated source facet, including small components far from a dense main part;
+percentile framing and spatial clipping no longer remove source geometry. ASCII
+coordinates remain float64 through centering and projection, then bounded screen
+coordinates and scaled depth convert to float32 for rasterization. Finite values
+near the float32 limit therefore remain renderable after rotation. Raster work
+budgets still determine whether a preview is complete.
+
+Mesh metadata recipe 8 and thumbnail recipe 7 refresh measurements and previews
+from the former streaming camera policy. Fallback sampling and full mesh loading
+migrate to the block iterator separately.
 
 ## Shared STL source validation
 
@@ -188,7 +235,9 @@ replacement is ready.
 
 ## Mesh geometry outcomes
 
-Mesh replies carry a geometry outcome independently from thumbnail status.
+Mesh replies use the request/result types and tagged geometry codec owned by
+`modules/media/mesh_contracts.py`, independently from thumbnail strategy
+selection. Replies carry a geometry outcome independently from thumbnail status.
 A validated embedded preview can remain ready when geometry is refused. Refused
 geometry records a failed metadata derivative, with terminal resource/malformed
 input reasons; it does not publish a successful all-unknown measurement row.
@@ -200,6 +249,30 @@ and restarts for the same bytes and recipe. Explicit retry, changed content or a
 new recipe makes work eligible; timeout backoff keeps the configured maximum.
 Original downloads and signed slicer downloads continue to use Artifact bytes.
 
+
+## On-demand 3D viewer STL
+
+`viewer_stl` recipe 1 is produced by `derivatives.viewer_stl` in `derive.native`.
+Only 3MF, OBJ and STEP Artifacts with `files.viewer_requested_at` set are eligible;
+uploads, scans and card hover do not request conversion. The first authorized
+`GET /api/v1/files/{id}/stl` (or the scoped share endpoint) persists this demand
+and nudges the source. Reconciliation recovers it after a lost nudge or restart.
+The active-Subject constraint shares work across requests.
+
+Original STL is served directly. Other formats return 202 with `DerivativeRead`
+and `Retry-After: 1` until publication, 200 with the stored representation when
+ready, or 422 with the recorded failure `detail`. Preparation responses use
+`private, no-store`. Resource and invalid-input refusals are terminal for the
+recipe; timeouts/storage failures use bounded derivative backoff. Explicit retry
+uses the existing derivative retry endpoint. Mesh processing policy gates new
+work; published previews remain readable while disabled.
+
+Ready STL objects use immutable owned publication and `storage_key`, so backup,
+Vault migration and trash retain their existing ownership contracts. A missing
+published object becomes eligible for repair. Legacy STL caches are regenerated
+once on access. Original downloads and signed slicer handoff never depend on STL
+preparation. The browser waits for STL bytes, displays persisted failures, and
+refreshes authenticated previews after derivative completion or policy changes.
 
 ## Live processing policy
 
@@ -238,3 +311,59 @@ After commit, the event publisher emits a payload-free `derivative_policy`
 notice on the authenticated `derivatives:policy` channel. Views refetch through
 their authorized endpoints. Periodic reconciliation recovers lost notices or
 nudges.
+
+
+## Attempt publication
+
+Every producer captures an immutable attempt token with its Artifact source,
+recipe and regeneration marker. Completion checks that authority inside the
+same transaction that publishes metadata, material requirements or thumbnail
+pointers. Cancellation, retry, regeneration, trash and source replacement cannot
+be overwritten by a late result, including a late failure or skipped outcome.
+Job executions also retain their Job attempt identity; stale progress and engine
+settlement cannot change a retry or run its failure and staging cleanup hooks.
+
+Publication locks the Job (when present), generation policy, Model, Artifact and
+derivative in that order. PostgreSQL publishers share the generation policy lock;
+regeneration takes it exclusively. SQLite reserves its writer before reading.
+These short transactions contain no renderer, parser or storage publication I/O.
+Byte outputs are created first under an attempt-specific immutable key with the
+normal durable ownership receipt. Rejection rolls back the domain pointers and
+ownership promotion; the exact pending receipt remains for orphan reconciliation.
+An uncertain commit never authorizes deleting an output by pathname.
+
+A regeneration makes an older in-flight derivative discoverable immediately. The
+existing active-Job uniqueness rule still prevents overlapping Jobs for the same
+producer and Artifact; after the old execution settles, discovery starts the new
+attempt. Earlier kinds that already committed still notify Model viewers if a
+later kind is superseded. Fingerprints carry the original source hash into their
+separate content-and-algorithm-versioned publication contract.
+
+The attempt-token migration preserves existing outputs and retry history. Legacy
+running attempts cannot prove ownership, so they become retryable interrupted
+attempts without charging that interrupted attempt against their retry limit.
+
+The optional similarity cache is keyed by source SHA and algorithm version.
+A retired execution may supply that immutable evidence, but cannot overwrite a
+ready entry or relabel an old result with the current Artifact's SHA. Creating
+a similarity run additionally requires the originating Job's current epoch and
+attempt under the Job lock; cancellation/retry therefore creates no new work.
+
+## Convex hull descriptor
+
+The mesh dependency uses SciPy/Qhull for convex hull volume. The application
+passes finite three-dimensional arrays through one array-to-scalar owner;
+SciPy objects do not cross that boundary. Translation and scale normalization
+precede the native calculation, and no coordinate perturbation is enabled.
+Coplanar or degenerate input has an explicit unavailable descriptor. Nonfinite
+input and an unrepresentable physical volume are rejected.
+
+The input ceiling is `MAX_ANALYSIS_VERTICES` (6,000,000 points), before
+preparation allocations. The old Python point/plane `max_work` counter is
+removed; `max_points` bounds inputs, while the native worker supervisor enforces
+wall-clock and RSS limits. The point ceiling alone is not a memory guarantee.
+
+Fingerprint algorithm `geometry-v4-sh5f4577c4` separates new hull values and
+newly available descriptors from the former Python hull recipe. Existing
+fingerprints are recalculated without rewriting historical records or verifier
+calibration. Mesh measurements and thumbnail recipes are unchanged.

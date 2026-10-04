@@ -38,6 +38,14 @@ from app.core.cancellation import OperationCancelled, checkpoint
 from app.core.config import _overlay, settings
 from app.modules.media import mesh_processing
 from app.modules.media.fingerprints import FingerprintRecord, FingerprintResult
+from app.modules.media.mesh_contracts import (
+    ThumbnailFailureReason,
+    ThumbnailRequest,
+    ThumbnailResult,
+    ThumbnailStrategy,
+    decode_geometry,
+    encode_geometry,
+)
 from app.modules.media.mesh_observability import record_phases, record_supervision
 from app.modules.media.mesh_telemetry import (
     SupervisedReply,
@@ -47,16 +55,6 @@ from app.modules.media.mesh_telemetry import (
     encode_phase_stats,
 )
 from app.modules.media.stl_streaming import _terminate_process_group
-from app.modules.media.thumbnail_engine import (
-    GeometryNotRequested,
-    GeometryOutcome,
-    GeometryReady,
-    GeometryRefused,
-    ThumbnailFailureReason,
-    ThumbnailRequest,
-    ThumbnailResult,
-    ThumbnailStrategy,
-)
 from app.modules.media.worker_bootstrap import RESOURCE_EXIT, reap_descendants
 from app.modules.media.worker_bootstrap import command as worker_command
 
@@ -130,26 +128,6 @@ def unpack_value(value: Any) -> Any:
             raise ValueError("unknown tag")
         return {key: unpack_value(item) for key, item in value.items()}
     return value
-
-
-def encode_geometry(outcome: GeometryOutcome) -> dict[str, str]:
-    if isinstance(outcome, GeometryReady):
-        return {"state": "ready"}
-    if isinstance(outcome, GeometryRefused):
-        return {"state": "refused", "reason": outcome.reason.value}
-    if isinstance(outcome, GeometryNotRequested):
-        return {"state": "not_requested"}
-    raise TypeError("invalid geometry outcome")
-
-
-def decode_geometry(raw: dict[str, str]) -> GeometryOutcome:
-    if raw == {"state": "ready"}:
-        return GeometryReady()
-    if raw == {"state": "not_requested"}:
-        return GeometryNotRequested()
-    if set(raw) == {"state", "reason"} and raw["state"] == "refused":
-        return GeometryRefused(ThumbnailFailureReason(raw["reason"]))
-    raise ValueError("invalid geometry outcome")
 
 
 def encode_reply(result: ThumbnailResult) -> bytes:

@@ -61,7 +61,7 @@ def _upload(ctx: JobContext) -> None:
     staged = _staged_path(ctx.job_id)
     selection = requests.selection(request)
     ingest_staged_file(
-        job_id=ctx.job_id,
+        job_context=ctx,
         artifact=StagedArtifact(
             staged_path=staged,
             original_filename=request.original_filename or staged.name,
@@ -94,7 +94,7 @@ def _url(ctx: JobContext) -> None:
     try:
         run_async(
             background.import_from_url(
-                job_id=ctx.job_id,
+                job_context=ctx,
                 req=UrlIngestRequest(
                     url=request.source_url or "",
                     collection=request.collection,
@@ -113,7 +113,7 @@ def _url(ctx: JobContext) -> None:
 def _archive_inspect(ctx: JobContext) -> None:
     request = _request(ctx)
     background.inspect_uploaded_archive(
-        job_id=ctx.job_id,
+        job_context=ctx,
         staged=_staged_path(ctx.job_id),
         original_filename=request.original_filename or "archive.zip",
         cancelled=ctx.cancelled,
@@ -125,7 +125,7 @@ def _archive_selection(ctx: JobContext) -> None:
     selection = requests.selection(request)
     archive = _staged_path(ctx.job_id)
     background.run_archive_selection(
-        job_id=ctx.job_id,
+        job_context=ctx,
         archive=archive,
         archive_name=str(selection.get("archive_name") or archive.name),
         names=[str(name) for name in selection.get("names", [])],
@@ -135,7 +135,7 @@ def _archive_selection(ctx: JobContext) -> None:
         actor_user_id=request.owner_user_id,
         session_factory=get_session_factory(),
     )
-    release_job_staging(ctx.job_id)
+    release_job_staging(ctx)
 
 
 def _url_selection(ctx: JobContext) -> None:
@@ -143,7 +143,7 @@ def _url_selection(ctx: JobContext) -> None:
     selection = requests.selection(request)
     run_async(
         background.run_file_selection_import(
-            job_id=ctx.job_id,
+            job_context=ctx,
             page_url=request.source_url or "",
             files=_typed(ModelFile, list(selection.get("files", []))),
             collection=request.collection,
@@ -159,7 +159,7 @@ def _collection(ctx: JobContext) -> None:
     selection = requests.selection(request)
     run_async(
         background.run_collection_member_import(
-            job_id=ctx.job_id,
+            job_context=ctx,
             members=_typed(CollectionMember, list(selection.get("members", []))),
             target_collection=str(selection.get("target_collection") or ""),
             tags=request.tags,

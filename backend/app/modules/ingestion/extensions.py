@@ -4,6 +4,7 @@ from typing import Protocol, TypedDict
 
 from app.db.session import SessionFactory
 from app.modules.media.fingerprints import FingerprintResult
+from app.modules.work.contracts import JobExecution
 
 
 class MeshExtractionOptions(TypedDict, total=False):
@@ -20,6 +21,9 @@ class MeshDerivatives(Protocol):
         file_id: int,
         actor_id: int | None,
         result: FingerprintResult,
+        *,
+        source_sha256: str,
+        execution: JobExecution | None = None,
     ) -> str: ...
 
 
@@ -40,9 +44,19 @@ def after_commit(
     file_id: int,
     actor_id: int | None,
     result: FingerprintResult,
+    *,
+    source_sha256: str,
+    execution: JobExecution | None = None,
 ) -> str | None:
     return (
-        _derivatives.after_commit(sessions, file_id, actor_id, result)
+        _derivatives.after_commit(
+            sessions,
+            file_id,
+            actor_id,
+            result,
+            source_sha256=source_sha256,
+            execution=execution,
+        )
         if _derivatives
         else None
     )

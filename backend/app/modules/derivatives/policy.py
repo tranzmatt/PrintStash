@@ -21,6 +21,7 @@ class SettingName(StrEnum):
 
 SETTINGS = {
     JobKind.DERIVATIVES_MESH: SettingName.MESH,
+    JobKind.DERIVATIVES_VIEWER_STL: SettingName.MESH,
     JobKind.DERIVATIVES_GCODE: SettingName.GCODE,
     JobKind.DERIVATIVES_TOOLPATH: SettingName.TOOLPATH,
 }
@@ -66,6 +67,19 @@ def lock(session: Session) -> SystemConfig:
         config = SystemConfig(id=1)
         session.add(config)
         session.flush()
+    return config
+
+
+def lock_generation(session: Session) -> SystemConfig:
+    """Share generation authority among publishers; regeneration takes it exclusively."""
+    begin_write(session, immediate=True)
+    config = session.exec(
+        select(SystemConfig).where(SystemConfig.id == 1).with_for_update(read=True)
+    ).first()
+    if config is None:
+        # Bootstrap normally creates it. The exceptional first writer must
+        # actually establish authority, never publish without a locked row.
+        return lock(session)
     return config
 
 

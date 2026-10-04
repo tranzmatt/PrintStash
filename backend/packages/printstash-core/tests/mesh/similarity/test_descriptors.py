@@ -53,14 +53,14 @@ class TestPhysicalDescriptors:
         with pytest.raises(GeometryError, match="degenerate_hull"):
             descriptors.hull_volume(np.array([[0.0, 0, 0], [1, 0, 0], [0, 1, 0]]))
 
-    def test_hull_work_cap_stops_analysis(self, tetra):
+    def test_hull_point_cap_stops_analysis(self, tetra):
         with pytest.raises(GeometryError, match="hull_resource_limit"):
-            descriptors.hull_volume(tetra[0], max_work=1)
+            descriptors.hull_volume(tetra[0], max_points=1)
 
-    @pytest.mark.parametrize("value", [0, 20_000_001, True])
+    @pytest.mark.parametrize("value", [0, 6_000_001, True])
     def test_rejects_invalid_hull_budget(self, tetra, value):
         with pytest.raises(GeometryError, match="invalid_hull_budget"):
-            descriptors.hull_volume(tetra[0], max_work=value)
+            descriptors.hull_volume(tetra[0], max_points=value)
 
     def test_invalid_volume_does_not_invent_solid_metrics(self, tetra):
         vertices, faces = tetra

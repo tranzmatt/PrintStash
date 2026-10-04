@@ -68,8 +68,8 @@ from app.modules.storage.storage_deletion import enqueue_creation_receipt
 from app.modules.storage.storage_ownership import publish_file
 from app.modules.storage.storage_paths import unlink_managed_file
 from app.modules.work import service as work_service
-from app.modules.work.contracts import JobOutcome
-from app.modules.work.jobs import failure_of, safe_error, safe_item
+from app.modules.work.contracts import JobContext, JobExecution, JobOutcome
+from app.modules.work.jobs import TERMINAL_STATES, failure_of, safe_error, safe_item
 from app.modules.work.jobs import jobs as registry
 from app.schemas.inbox import (
     CaptureSourceDraft,
@@ -1542,35 +1542,37 @@ def _zip_result_key(source_selection_id: str, entry_name: str) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def run_import_job(item_id: int, job_id: str) -> None:
+def run_import_job(item_id: int, job_context: JobContext) -> None:
     """The ``ingestion.inbox_import`` step: rebuild the import from the item and run it.
 
     Everything is re-read from the Pending Import on every attempt, so a Job
     interrupted mid-import resumes it: files an earlier attempt committed are
     skipped by their ingestion keys.
     """
+    job_id = job_context.job_id
     from app.modules.work.async_steps import run_async
 
     session_factory = get_session_factory()
     with session_factory.scoped_session() as session:
         row = session.get(InboxItem, item_id)
         if row is None or row.state != InboxItemState.IMPORTING or row.job_id != job_id:
-            registry.finish(
-                job_id, JobOutcome.CANCELLED, error="pending_import_moved_on"
-            )
+            job_context.finish(JobOutcome.CANCELLED, error="pending_import_moved_on")
             return
         context = _import_context(session, row, job_id)
-    run_async(_run_import(item_id, context, session_factory))
+    run_async(_run_import(item_id, context, session_factory, job_context=job_context))
 
 
 async def _run_import(
-    item_id: int, context: dict[str, Any], session_factory: SessionFactory
+    item_id: int,
+    context: dict[str, Any],
+    session_factory: SessionFactory,
+    *,
+    job_context: JobContext,
 ) -> None:
     manifest = context["manifest"]
     selected = context["selected"]
     source_url = context["source_url"]
     staging_key = context["staging_key"]
-    job_id = context["job_id"]
 
     try:
         assets: list[tuple[Path, str] | StagedAsset] = []
@@ -1673,7 +1675,7 @@ async def _run_import(
             assets.extend(await _download_assets(source_url))
         await asyncio.to_thread(
             importer.import_assets,
-            job_id=job_id,
+            job_context=job_context,
             staged_files=assets,
             collection=context["collection_path"],
             tags=context["tags"],
@@ -1682,12 +1684,19 @@ async def _run_import(
             session_factory=session_factory,
             inbox_item_id=item_id if v2_manifest is not None else None,
         )
-        await asyncio.to_thread(_finish_import, item_id, job_id, session_factory)
-    except Exception as exc:
-        registry.finish(
-            job_id, JobOutcome.FAILED, error=failure_of(exc), retryable=True
+        await asyncio.to_thread(
+            _finish_import,
+            item_id,
+            JobExecution(
+                job_context.job_id, job_context.attempt, job_context.execution_epoch
+            ),
+            session_factory,
         )
-        await asyncio.to_thread(_fail_import, item_id, exc, session_factory)
+    except Exception as exc:
+        job_context.finish(JobOutcome.FAILED, error=failure_of(exc), retryable=True)
+        await asyncio.to_thread(
+            _fail_import, item_id, exc, session_factory, job_context
+        )
 
 
 def begin_import(
@@ -1787,8 +1796,30 @@ def _import_context(session: Session, row: InboxItem, job_id: str) -> dict[str, 
     }
 
 
-def _finish_import(item_id: int, job_id: str, session_factory: SessionFactory) -> None:
-    job = registry.get(job_id)
+def _lock_import_completion(
+    session: Session, item_id: int, execution: JobExecution
+) -> bool:
+    job = registry.lock_execution(
+        session,
+        execution.job_id,
+        epoch=execution.execution_epoch,
+        attempt=execution.attempt,
+        states=TERMINAL_STATES,
+    )
+    if job is None:
+        return False
+    return (
+        session.exec(
+            select(InboxItem.job_id).where(InboxItem.id == item_id).with_for_update()
+        ).first()
+        == execution.job_id
+    )
+
+
+def _finish_import(
+    item_id: int, execution: JobExecution, session_factory: SessionFactory
+) -> None:
+    job = registry.get(execution.job_id)
     with session_factory.scoped_session() as session:
         row = session.get(InboxItem, item_id)
         if row is None:
@@ -1819,6 +1850,14 @@ def _finish_import(item_id: int, job_id: str, session_factory: SessionFactory) -
                         row.retryable = True
                     elif isinstance(cover_result, source_covers.SourceCoverWrite):
                         cover_write = cover_result
+                # Byte publication above precedes the short authority transaction.
+                # Never clean staging or commit completion across a retry.
+                if not _lock_import_completion(session, item_id, execution):
+                    # Cover bytes have an independently committed pending lease
+                    # and ownership intent. Leave those for receipt-based recovery;
+                    # compensating here could race the current import's adoption.
+                    session.rollback()
+                    return
                 if not row.retryable and not _cleanup_capture_slots(session, row):
                     row.error_code = "capture_upload_cleanup_pending"
                     row.retryable = True
@@ -1826,6 +1865,9 @@ def _finish_import(item_id: int, job_id: str, session_factory: SessionFactory) -
                     unlink_managed_file(row.staging_key, settings.incoming_dir)
                     row.staging_key = None
             else:
+                if not _lock_import_completion(session, item_id, execution):
+                    session.rollback()
+                    return
                 row.state = InboxItemState.FAILED
                 row.error_code = (
                     job.error
@@ -1940,8 +1982,21 @@ def _record_v2_results(
     return all_links_durable, succeeded, failed
 
 
-def _fail_import(item_id: int, exc: Exception, session_factory: SessionFactory) -> None:
+def _fail_import(
+    item_id: int,
+    exc: Exception,
+    session_factory: SessionFactory,
+    job_context: JobContext,
+) -> None:
     with session_factory.scoped_session() as session:
+        if not _lock_import_completion(
+            session,
+            item_id,
+            JobExecution(
+                job_context.job_id, job_context.attempt, job_context.execution_epoch
+            ),
+        ):
+            return
         row = session.get(InboxItem, item_id)
         if row is not None:
             row.state = InboxItemState.FAILED
@@ -2103,7 +2158,7 @@ def _dismiss_browser_lease(session: Session, row: InboxItem) -> bool:
 
 
 def reconcile_interrupted_items() -> int:
-    completed_imports: list[tuple[int, str]] = []
+    completed_imports: list[tuple[int, JobExecution]] = []
     with get_session_factory().scoped_session() as session:
         # Capture slot publication is independent of inbox state. Recover all
         # durable slot intents before interrupted imports are retried/dismissed.
@@ -2141,7 +2196,16 @@ def reconcile_interrupted_items() -> int:
                 and job.model_id is not None
             ):
                 if row.id is not None and row.job_id is not None:
-                    completed_imports.append((row.id, row.job_id))
+                    job_row = registry.row(session, row.job_id)
+                    assert job_row is not None
+                    completed_imports.append(
+                        (
+                            row.id,
+                            JobExecution(
+                                job_row.id, job_row.attempts, job_row.execution_epoch
+                            ),
+                        )
+                    )
                 continue
             else:
                 row.state = InboxItemState.FAILED
@@ -2151,10 +2215,10 @@ def reconcile_interrupted_items() -> int:
             session.add(row)
             settled += 1
         session.commit()
-    for item_id, job_id in completed_imports:
+    for item_id, execution in completed_imports:
         # Preserve every durable terminalization step: per-file results,
         # optional source cover, capture receipt cleanup, and rollback rules.
-        _finish_import(item_id, job_id, get_session_factory())
+        _finish_import(item_id, execution, get_session_factory())
     _recover_completed_capture_cleanups()
     return settled + len(completed_imports)
 
@@ -2278,7 +2342,7 @@ def _resolve_step(ctx) -> None:
 
 
 def _import_step(ctx) -> None:
-    run_import_job(_item_id(ctx.subject_key), ctx.job_id)
+    run_import_job(_item_id(ctx.subject_key), ctx)
 
 
 def _withdraw(session: Session, subject_key: str) -> None:

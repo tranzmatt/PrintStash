@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.stl_isolation import decode_reply, encode_reply
-from app.modules.media.thumbnail_engine import ThumbnailFailureReason
 
 
 class TestReplyFrame:
@@ -23,17 +23,37 @@ class TestReplyFrame:
     def test_round_trips_a_conversion_that_produced_nothing(self):
         assert decode_reply(encode_reply(None)) is None
 
+    @pytest.mark.parametrize("reason", list(ThumbnailFailureReason))
+    def test_preserves_a_typed_failure(self, reason):
+        from app.modules.media.stl_isolation import FAILURE_MAGIC
+
+        with pytest.raises(MeshWorkerError) as raised:
+            decode_reply(FAILURE_MAGIC + reason.value.encode("ascii"))
+
+        assert raised.value.reason is reason
+
     @pytest.mark.parametrize(
         "payload",
         [
             b"",
+            b"FAILunknown",
+            b"FAIL\xff",
             b"STL1",
             b"STL1\x00\x00",
             b"NOPE" + bytes(8),
             b"NONEx",
             b"STL1" + bytes(9),
         ],
-        ids=["empty", "no-size", "short-size", "wrong-magic", "trailing", "long-size"],
+        ids=[
+            "empty",
+            "unknown-failure",
+            "invalid-ascii",
+            "no-size",
+            "short-size",
+            "wrong-magic",
+            "trailing",
+            "long-size",
+        ],
     )
     def test_treats_a_malformed_reply_as_a_worker_failure(self, payload):
         with pytest.raises(MeshWorkerError) as raised:
@@ -70,3 +90,19 @@ class TestViewerResourceBounds:
         with pytest.raises(MeshWorkerError) as error:
             stl_isolation.to_stl_bytes(tmp_path / "mesh.obj")
         assert error.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+    def test_does_not_hide_export_allocation_failure(self, tmp_path, monkeypatch):
+        import trimesh
+
+        from app.modules.media import stl_worker
+
+        source = tmp_path / "cube.obj"
+        trimesh.creation.box().export(source, file_type="obj")
+
+        def exhausted(*args, **kwargs):
+            raise MemoryError("export allocation")
+
+        monkeypatch.setattr(trimesh.Trimesh, "export", exhausted)
+
+        with pytest.raises(MemoryError):
+            stl_worker.convert(source, "obj")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Protocol
 
 from sqlmodel import Session, select
 
@@ -13,6 +14,7 @@ from app.db.scopes import live
 from app.modules.work.contracts import (
     JobContext,
     JobDefinition,
+    JobExecution,
     JobOutcome,
     SkipReason,
     Step,
@@ -23,26 +25,26 @@ from .kinds import DerivativeGroup, group
 from .source import DerivativeSource, file_id_of
 
 
+class Producer(Protocol):
+    def __call__(
+        self, file_id: int, *, execution: JobExecution | None = None
+    ) -> producers.Outcome: ...
+
+
 def _step(
-    produce: Callable[[int], producers.Outcome], derivative_group: DerivativeGroup
+    produce: Producer, derivative_group: DerivativeGroup
 ) -> Callable[[JobContext], None]:
     def run(ctx: JobContext) -> None:
         try:
-            outcome = produce(file_id_of(ctx.subject_key))
+            outcome = produce(
+                file_id_of(ctx.subject_key),
+                execution=JobExecution(
+                    ctx.job_id, ctx.attempt, ctx.execution_epoch
+                ),
+            )
         except OperationError as exc:
             if exc.code != SkipReason.DERIVATIVE_GROUP_DISABLED:
                 raise
-            from app.db.session import get_session_factory
-
-            with get_session_factory().scoped_session() as session:
-                records.fail_in_flight(
-                    session,
-                    file_id_of(ctx.subject_key),
-                    str(exc.code),
-                    now=utcnow(),
-                    kinds=derivative_group.kinds,
-                )
-                session.commit()
             ctx.finish(
                 JobOutcome.CANCELLED,
                 error=SkipReason.DERIVATIVE_GROUP_DISABLED,
@@ -87,9 +89,7 @@ def _hooks(derivative_group: DerivativeGroup):
     return cancel, on_failure, retry
 
 
-def _definition(
-    name: JobKind, lane: LaneName, produce: Callable[[int], producers.Outcome]
-) -> JobDefinition:
+def _definition(name: JobKind, lane: LaneName, produce: Producer) -> JobDefinition:
     derivative_group = group(name)
     cancel, on_failure, retry = _hooks(derivative_group)
     return JobDefinition(
@@ -107,6 +107,11 @@ def _definition(
 
 def definitions() -> list[JobDefinition]:
     return [
+        _definition(
+            JobKind.DERIVATIVES_VIEWER_STL,
+            LaneName.DERIVE_NATIVE,
+            producers.derive_viewer_stl,
+        ),
         _definition(
             JobKind.DERIVATIVES_MESH, LaneName.DERIVE_NATIVE, producers.derive_mesh
         ),
