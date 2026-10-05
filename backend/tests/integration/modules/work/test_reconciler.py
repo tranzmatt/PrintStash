@@ -30,10 +30,13 @@ from app.db.models import (
     WorkPriority,
 )
 from app.modules.work import catalog as catalog_module
+from app.modules.work import reconciler as reconciler_module
 from app.modules.work.catalog import WorkCatalog, default_lanes
 from app.modules.work.contracts import (
+    Deduplicated,
     EngineStatus,
     JobDefinition,
+    JobSubmission,
     Lane,
     PassSubmission,
     SkipReason,
@@ -454,6 +457,18 @@ class TestDiscover:
 
 
 class TestPass:
+    @staticmethod
+    def _consume_discovered_work(engine: InlineJobEngine) -> None:
+        from dataclasses import replace
+
+        def consume(_ctx):
+            PROBE.items.clear()
+
+        engine.catalog.definitions[SOURCED] = replace(
+            engine.catalog.definitions[SOURCED],
+            steps=(Step(f"{SOURCED}.consume", consume),),
+        )
+
     def test_a_pass_already_claimed_elsewhere_does_nothing(
         self, engine: InlineJobEngine, db_session: Session
     ) -> None:
@@ -512,6 +527,106 @@ class TestPass:
         assert PROBE.calls == 2
         assert [job.subject_key for job in _jobs(db_session)] == ["late"]
 
+    def test_overlapping_loser_does_not_cover_the_next_nudge(
+        self, engine: InlineJobEngine, db_session: Session
+    ) -> None:
+        from app.modules.work.reconciler import PassNote
+
+        losers = []
+
+        def overlap_once():
+            if PROBE.calls == 1:
+                nudge(SOURCED)
+                # Execute the queued pass while the original still owns its
+                # claim. This is the actual durable-engine interleaving.
+                losers.append(run_pass(SOURCED, holder="competing-executor"))
+                engine.drain()
+
+        PROBE.on_pending = overlap_once
+        run_pass(SOURCED, holder="original-executor")
+
+        assert losers[0].outcomes == {PassNote.CLAIMED_ELSEWHERE: 1}
+        assert PROBE.calls == 2
+        assert all(
+            ex.status is EngineStatus.SUCCEEDED for ex in _passes(engine, SOURCED)
+        )
+        db_session.expire_all()
+        cursor = db_session.get(ReconcileCursor, SOURCED)
+        assert cursor is not None and cursor.holder is None
+        assert cursor.pass_queued_at is None
+        assert cursor.pass_priority is None
+
+        PROBE.on_pending = None
+        self._consume_discovered_work(engine)
+        PROBE.items = _items("next-upload")
+        before = len(_passes(engine, SOURCED))
+        nudge(SOURCED)
+        assert len(_passes(engine, SOURCED)) == before + 1
+        engine.drain()
+        assert [job.subject_key for job in _jobs(db_session)] == ["next-upload"]
+
+    @pytest.mark.parametrize(
+        ("holder", "stamp_delta", "cleared"),
+        [("original", -1, True), ("original", 1, False), ("replacement", -1, True)],
+    )
+    def test_losing_claim_acknowledges_only_its_elapsed_queue_stamp(
+        self, engine, db_session, holder, stamp_delta, cleared
+    ):
+        from app.modules.work.reconciler import _claim
+
+        run_pass(SOURCED)
+        db_session.expire_all()
+        cursor = db_session.get(ReconcileCursor, SOURCED)
+        assert cursor is not None
+        invocation = utcnow()
+        queued = invocation + timedelta(seconds=stamp_delta)
+        expiry = invocation + timedelta(minutes=1)
+        cursor.holder = holder
+        cursor.holder_expires_at = expiry
+        cursor.nudged_at = queued
+        cursor.pass_queued_at = queued
+        cursor.pass_priority = WorkPriority.INTERACTIVE
+        db_session.add(cursor)
+        db_session.commit()
+
+        assert _claim(SOURCED, "competing-executor", now=invocation) is False
+
+        db_session.expire_all()
+        cursor = db_session.get(ReconcileCursor, SOURCED)
+        assert cursor is not None
+        assert cursor.pass_queued_at == (
+            None if cleared else queued.replace(tzinfo=None)
+        )
+        assert cursor.pass_priority == (None if cleared else WorkPriority.INTERACTIVE)
+        assert cursor.holder == holder
+        assert cursor.holder_expires_at == expiry.replace(tzinfo=None)
+        assert cursor.nudged_at == queued.replace(tzinfo=None)
+
+    def test_bounded_handoff_queues_after_competing_passes_have_finished(
+        self, engine: InlineJobEngine, db_session: Session
+    ) -> None:
+        def overlap_every_iteration():
+            nudge(SOURCED)
+            engine.drain()
+
+        PROBE.on_pending = overlap_every_iteration
+        run_pass(SOURCED, holder="original-executor")
+
+        assert PROBE.calls == 20
+        pending = [
+            ex for ex in _passes(engine, SOURCED) if ex.status is EngineStatus.QUEUED
+        ]
+        assert len(pending) == 1
+        assert all(
+            ex.status in {EngineStatus.SUCCEEDED, EngineStatus.QUEUED}
+            for ex in _passes(engine, SOURCED)
+        )
+        PROBE.on_pending = None
+        self._consume_discovered_work(engine)
+        PROBE.items = _items("handoff-upload")
+        engine.drain()
+        assert [job.subject_key for job in _jobs(db_session)] == ["handoff-upload"]
+
     def test_a_pass_that_never_settles_hands_over(
         self, engine: InlineJobEngine, db_session: Session
     ) -> None:
@@ -565,7 +680,7 @@ class TestPass:
         assert cursor is not None and cursor.holder is None
 
 
-def _stranded_pass(engine: InlineJobEngine, source: str, executor: str) -> str:
+def _stranded_pass(engine: InlineJobEngine, source: JobKind, executor: str) -> str:
     """A reconcile pass a process was running when it died."""
     nudge(source)
     (stranded,) = _passes(engine, source)
@@ -613,6 +728,236 @@ class TestSweepLostPasses:
 
         assert sweep_lost_passes() == 0
         assert execution.status is EngineStatus.RUNNING
+
+
+def _stranded_job(
+    engine: InlineJobEngine,
+    job: Job,
+    owner: str | None,
+    *,
+    epoch: str | None = None,
+    attempt: int | None = None,
+):
+    """An actual submitted attempt whose engine settlement was interrupted."""
+    epoch = job.execution_epoch if epoch is None else epoch
+    attempt = job.attempts if attempt is None else attempt
+    identifier = execution_id(job.id, attempt, epoch)
+    engine.submit(
+        JobSubmission(
+            execution_id=identifier,
+            job_id=job.id,
+            definition=job.kind,
+            subject_key=job.subject_key,
+            lane=PROBE_LANE,
+            priority=job.priority,
+            attempt=attempt,
+            execution_epoch=epoch,
+            routing=Deduplicated(f"{job.kind}|{job.subject_key}"),
+        )
+    )
+    execution = engine.executions[identifier]
+    execution.status = EngineStatus.RUNNING
+    execution.executor_id = owner
+    return execution
+
+
+class TestSweepLostTerminalAttempts:
+    @pytest.mark.parametrize(
+        "state", [JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED]
+    )
+    def test_frees_a_terminal_attempt_on_a_lost_executor(
+        self, engine, make_job, make_work_executor, db_session, state
+    ):
+        dead = make_work_executor("terminal-dead", stale=True)
+        job = make_job(
+            kind=REQUESTED, state=state, attempts=1, status_json='{"result":"retained"}'
+        )
+        before = (
+            job.state,
+            job.status_json,
+            job.finished_at,
+            job.execution_epoch,
+            job.attempts,
+        )
+        stranded = _stranded_job(engine, job, dead.executor_id)
+
+        assert reconciler_module.sweep_lost_terminal_attempts() == 1
+
+        assert stranded.status is EngineStatus.CANCELLED
+        assert engine.lane_depth(PROBE_LANE).running == 0
+        row = _row(db_session, job.id)
+        assert (
+            row.state,
+            row.status_json,
+            row.finished_at,
+            row.execution_epoch,
+            row.attempts,
+        ) == before
+        assert reconciler_module.sweep_lost_terminal_attempts() == 0
+
+    @pytest.mark.parametrize(
+        "case",
+        [
+            "live",
+            "unknown",
+            "unowned",
+            "active",
+            "old_epoch",
+            "old_attempt",
+            "missing",
+            "queued",
+            "pass",
+        ],
+    )
+    def test_preserves_executions_without_terminal_lost_owner_authority(
+        self, engine, make_job, make_work_executor, db_session, case
+    ):
+        dead = make_work_executor("terminal-dead", stale=True)
+        live = make_work_executor("terminal-live")
+        job = make_job(
+            kind=REQUESTED,
+            state=JobState.RUNNING if case == "active" else JobState.COMPLETED,
+            attempts=2,
+        )
+        owner = {
+            "live": live.executor_id,
+            "unknown": "unregistered",
+            "unowned": None,
+        }.get(case, dead.executor_id)
+        if case == "pass":
+            identifier = _stranded_pass(engine, SOURCED, dead.executor_id)
+            stranded = engine.executions[identifier]
+        else:
+            stranded = _stranded_job(
+                engine,
+                job,
+                owner,
+                epoch="superseded" if case == "old_epoch" else None,
+                attempt=1 if case == "old_attempt" else None,
+            )
+        if case == "queued":
+            stranded.status = EngineStatus.QUEUED
+        if case == "missing":
+            db_session.delete(job)
+            db_session.commit()
+        before = stranded.status
+
+        assert reconciler_module.sweep_lost_terminal_attempts() == 0
+
+        assert stranded.status is before
+
+    def test_rechecks_engine_owner_before_cancelling(
+        self, engine, make_job, make_work_executor, monkeypatch
+    ):
+        dead = make_work_executor("terminal-dead", stale=True)
+        live = make_work_executor("terminal-live")
+        job = make_job(kind=REQUESTED, state=JobState.COMPLETED, attempts=1)
+        stranded = _stranded_job(engine, job, dead.executor_id)
+        evidence = engine.evidence
+
+        def reassigned(identifiers):
+            stranded.executor_id = live.executor_id
+            return evidence(identifiers)
+
+        monkeypatch.setattr(engine, "evidence", reassigned)
+
+        assert reconciler_module.sweep_lost_terminal_attempts() == 0
+
+        assert stranded.status is EngineStatus.RUNNING
+
+    def test_preserves_an_executor_that_renews_during_inspection(
+        self, engine, make_job, make_work_executor, db_session, monkeypatch
+    ):
+        dead = make_work_executor("terminal-renewed", stale=True)
+        job = make_job(kind=REQUESTED, state=JobState.COMPLETED, attempts=1)
+        stranded = _stranded_job(engine, job, dead.executor_id)
+        evidence = engine.evidence
+
+        def renewed(identifiers):
+            dead.heartbeat_at = utcnow()
+            db_session.add(dead)
+            db_session.commit()
+            return evidence(identifiers)
+
+        monkeypatch.setattr(engine, "evidence", renewed)
+
+        assert reconciler_module.sweep_lost_terminal_attempts() == 0
+
+        assert stranded.status is EngineStatus.RUNNING
+
+    def test_retries_a_failed_engine_cancellation(
+        self, engine, make_job, make_work_executor, monkeypatch, caplog
+    ):
+        dead = make_work_executor("terminal-dead", stale=True)
+        job = make_job(kind=REQUESTED, state=JobState.COMPLETED, attempts=1)
+        stranded = _stranded_job(engine, job, dead.executor_id)
+        cancel = engine.cancel
+
+        def unavailable(_identifier):
+            raise OSError("engine temporarily unavailable")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(engine, "cancel", unavailable)
+            assert reconciler_module.sweep_lost_terminal_attempts() == 0
+        assert stranded.status is EngineStatus.RUNNING
+        assert "terminal" in caplog.text.lower()
+
+        assert reconciler_module.sweep_lost_terminal_attempts() == 1
+        assert stranded.status is EngineStatus.CANCELLED
+        assert engine.cancel == cancel
+
+    def test_periodic_tick_recovers_a_terminal_lost_attempt(
+        self, engine, make_job, make_work_executor
+    ):
+        dead = make_work_executor("terminal-dead", stale=True)
+        job = make_job(kind=REQUESTED, state=JobState.COMPLETED, attempts=1)
+        stranded = _stranded_job(engine, job, dead.executor_id)
+
+        reconciler_module.tick()
+
+        assert stranded.status is EngineStatus.CANCELLED
+        assert engine.lane_depth(PROBE_LANE).running == 0
+
+    def test_reaches_valid_terminal_attempts_after_unowned_candidates(
+        self, engine, make_job, make_work_executor, monkeypatch
+    ):
+        monkeypatch.setitem(_overlay, "jobs_reconcile_batch", 2)
+        dead = make_work_executor("terminal-dead", stale=True)
+        for _ in range(3):
+            active = make_job(kind=REQUESTED, state=JobState.RUNNING, attempts=1)
+            _stranded_job(engine, active, dead.executor_id)
+        terminal = make_job(kind=REQUESTED, state=JobState.COMPLETED, attempts=1)
+        stranded = _stranded_job(engine, terminal, dead.executor_id)
+
+        assert reconciler_module.sweep_lost_terminal_attempts() == 1
+
+        assert stranded.status is EngineStatus.CANCELLED
+        assert engine.lane_depth(PROBE_LANE).running == 3
+
+    def test_closes_owned_sql_sessions_before_engine_cancellation(
+        self, engine, make_job, make_work_executor, db_session, monkeypatch
+    ):
+        from app.db.session import get_session_factory, override_session_factory
+        from tests.fakes.thread_sessions import ThreadBoundSessionFactory
+
+        dead = make_work_executor("terminal-dead", stale=True)
+        job = make_job(kind=REQUESTED, state=JobState.COMPLETED, attempts=1)
+        stranded = _stranded_job(engine, job, dead.executor_id)
+        factory = ThreadBoundSessionFactory(db_session.get_bind())
+        previous = get_session_factory()
+        cancel = engine.cancel
+
+        def outside_sql(identifier):
+            assert factory.active_count == 0
+            cancel(identifier)
+
+        override_session_factory(factory)
+        try:
+            monkeypatch.setattr(engine, "cancel", outside_sql)
+            assert reconciler_module.sweep_lost_terminal_attempts() == 1
+            assert stranded.status is EngineStatus.CANCELLED
+        finally:
+            override_session_factory(previous)
 
 
 class TestSweepForeignVersions:
