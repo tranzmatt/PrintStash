@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Keep Model card tag and similarity badge reads bounded as the SQLite catalog grows, including
+  installations with stale query-planner statistics.
+
 - Defer parent-only metrics and database URL parsing in disposable mesh workers,
   reducing measured small-model startup costs while preserving CPU outputs,
   parent telemetry and guarded process cleanup.
