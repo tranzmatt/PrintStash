@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from printstash_core.mesh.similarity import GeometryError
+from trimesh.exchange.stl import export_stl
 
 from app.modules.media import mesh_policy
 from app.modules.media.mesh_contracts import ThumbnailFailureReason
@@ -59,7 +60,7 @@ def convert(path: Path, file_type: str | None) -> bytes | None:
                 else ThumbnailFailureReason.INVALID_SOURCE
             )
             raise MeshWorkerError(reason) from exc
-        return None if mesh is None else mesh.export(file_type="stl")
+        return None if mesh is None else export_stl(mesh)
 
 
 def main(argv: list[str]) -> int:

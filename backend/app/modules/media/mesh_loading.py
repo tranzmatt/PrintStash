@@ -8,17 +8,13 @@ from __future__ import annotations
 
 import io
 import os
-import subprocess
-import sys
 import tempfile
-import time
 from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, cast
 
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 
-from app import __file__ as application_file
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.modules.media import mesh_policy
@@ -48,8 +44,9 @@ def load_step_mesh(
 
     isolated = os.environ.get(WORKER_MARKER) == str(os.getpid())
     with ExitStack() as resources:
+        permit = resources.enter_context(mesh_policy.render_admission())
         tmp = resources.enter_context(
-            tempfile.TemporaryDirectory(prefix="printstash-step-")
+            tempfile.TemporaryDirectory(prefix="printstash-mesh-")
         )
         if include_brep and not isolated:
             import secrets
@@ -76,43 +73,43 @@ def load_step_mesh(
             failure = ""
             stderr = b""
         else:
-            env = os.environ.copy()
-            env["PRINTSTASH_STEP_BREP"] = "1" if include_brep else "0"
-            env["PRINTSTASH_STEP_TRIANGLE_LIMIT"] = str(triangle_limit)
-            command = [
-                sys.executable,
-                "-m",
-                "app.modules.media.step_worker",
-                str(path),
-                str(output),
-            ]
-            process = subprocess.Popen(  # nosec B603 - argv is fixed; no shell
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=env,
-                cwd=Path(application_file).resolve().parent.parent,
+            from app.modules.media.mesh_contracts import ThumbnailFailureReason
+            from app.modules.media.mesh_isolation import (
+                MeshWorkerError,
+                supervise_result,
             )
-            deadline = time.monotonic() + settings.mesh_step_timeout_seconds
-            memory_budget = mesh_policy.step_memory_budget_bytes()
+            from app.modules.media.worker_bootstrap import WorkerLifecycle, command
+
             failure = ""
-            while process.poll() is None:
-                if time.monotonic() >= deadline:
-                    failure = "timeout"
-                    process.kill()
-                    break
-                rss = mesh_policy.process_rss_bytes(process.pid)
-                if (
-                    memory_budget is not None
-                    and rss is not None
-                    and rss > memory_budget
-                ):
-                    failure = "memory budget"
-                    process.kill()
-                    break
-                time.sleep(0.05)
-            _stdout, stderr = process.communicate()
-            returncode = process.returncode
+            stderr = b""
+            try:
+                reply = supervise_result(
+                    command(
+                        "app.modules.media.step_worker",
+                        [str(path.absolute()), str(output)],
+                        permit.resources.bytes,
+                    ),
+                    memory_budget=permit.resources.bytes,
+                    timeout_seconds=float(settings.mesh_step_timeout_seconds),
+                    permit=permit,
+                    lifecycle=WorkerLifecycle.GUARDED,
+                    accepted_exit_codes=frozenset({0, 3, 4, 7}),
+                    temporary_directory=Path(tmp),
+                    environment={
+                        "PRINTSTASH_STEP_BREP": "1" if include_brep else "0",
+                        "PRINTSTASH_STEP_TRIANGLE_LIMIT": str(triangle_limit),
+                    },
+                )
+                returncode = reply.returncode
+            except MeshWorkerError as exc:
+                failure = (
+                    "timeout"
+                    if exc.reason is ThumbnailFailureReason.TIMEOUT
+                    else "memory budget"
+                    if exc.reason is ThumbnailFailureReason.RESOURCE_LIMIT
+                    else "worker failed"
+                )
+                returncode = 4
         if failure or returncode != 0 or not output.is_file():
             if include_brep or strict_failures:
                 from printstash_core.mesh.similarity import GeometryError
@@ -155,8 +152,7 @@ def load_step_mesh(
             )
             return loaded
         try:
-            # Native loader variants are checked at the runtime boundary below.
-            loaded = cast(object, trimesh.load_mesh(str(output), process=False))
+            loaded = trimesh.load_mesh(str(output), process=False)
         except MemoryError:
             raise
         except Exception:
@@ -166,19 +162,9 @@ def load_step_mesh(
                 exc_info=True,
             )
             return None
-        if isinstance(loaded, trimesh.Trimesh):
-            return loaded
-        if isinstance(loaded, trimesh.Scene):
-            meshes = [
-                geometry
-                for geometry in loaded.dump()
-                if isinstance(geometry, trimesh.Trimesh)
-            ]
-            if not meshes:
-                return None
-            combined = trimesh.util.concatenate(meshes)
-            return combined if isinstance(combined, trimesh.Trimesh) else None
-        return None
+        # The pinned trimesh.load_mesh delegates to load_scene(...).to_mesh();
+        # its result is already a transformed, concatenated Trimesh.
+        return cast("Trimesh", loaded)
 
 
 def _load_3mf_mesh(path: Path, suffix: str) -> Trimesh:

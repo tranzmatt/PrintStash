@@ -48,6 +48,7 @@ from app.modules.media.mesh_contracts import (
     ThumbnailRequest,
 )
 from app.modules.media.mesh_isolation import MeshWorkerError
+from app.modules.media.source_preparation import reserve_sources
 from app.modules.media.thumbnail_publication import (
     ThumbnailPublicationError,
     point_at,
@@ -60,6 +61,7 @@ from app.modules.storage.storage_backend.contracts import StorageCollisionError
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_ownership import publish_bytes, publish_file
 from app.modules.work.contracts import JobExecution
+from app.runtime.native_admission import AdmissionTooLarge
 
 from . import records
 from .kinds import group
@@ -217,7 +219,7 @@ def _publish_thumbnail(
                 encoded,
                 recipe_tag=f"{DerivativeKind.THUMBNAIL}:{attempt.recipe}:{attempt.token}:w{settings.model_thumbnail_width}",
             )
-        except (ThumbnailPublicationError, OperationError, OSError):
+        except ThumbnailPublicationError, OperationError, OSError:
             session.rollback()
             logger.exception(
                 "thumbnail publication failed", extra={"file_id": file_row.id}
@@ -381,20 +383,24 @@ def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outc
 
     try:
         with ExitStack() as stack:
+            prepared = stack.enter_context(reserve_sources((resolve(file_row),)))
             claim = CapacityManager(get_session_factory()).reserve(
                 f"derive:mesh:{file_id}:{time.monotonic_ns()}",
                 [
                     CapacityResource.for_path(
+                        prepared.directory,
+                        file_row.size_bytes * 2,
+                        role="mesh source preparation",
+                    ),
+                    CapacityResource.for_path(
                         Path(tempfile.gettempdir()),
                         file_row.size_bytes * 3 + 16 * 1024**2,
                         role="thumbnail rendering",
-                    )
+                    ),
                 ],
             )
             stack.callback(claim.release)
-            source = stack.enter_context(
-                resolve(file_row).materialize(capacity_claimed=True)
-            )
+            (source,) = stack.enter_context(prepared.materialize(capacity_claimed=True))
             result = mesh_isolation.generate(
                 ThumbnailRequest(
                     path=source,
@@ -433,9 +439,13 @@ def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outc
                         session.commit()
     except records.AttemptSuperseded:
         return Outcome(outcome)
-    except (ArtifactContentError, MeshWorkerError) as exc:
+    except (ArtifactContentError, MeshWorkerError, AdmissionTooLarge) as exc:
         reason = (
-            exc.reason.value if isinstance(exc, MeshWorkerError) else "invalid_source"
+            ThumbnailFailureReason.RESOURCE_LIMIT.value
+            if isinstance(exc, AdmissionTooLarge)
+            else exc.reason.value
+            if isinstance(exc, MeshWorkerError)
+            else "invalid_source"
         )
         logger.warning(
             "mesh derivation failed in its worker",
@@ -448,7 +458,7 @@ def _derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outc
                 _fail(
                     authority,
                     reason,
-                    deterministic=isinstance(exc, MeshWorkerError)
+                    deterministic=isinstance(exc, MeshWorkerError | AdmissionTooLarge)
                     and reason in _DETERMINISTIC,
                 )
             except records.AttemptSuperseded:
@@ -703,16 +713,24 @@ def _derive_viewer_stl(
 
     estimate = max(file.size_bytes * 3, 16 * 1024**2)
     try:
-        with CapacityManager(get_session_factory()).hold(
-            f"derive:viewer-stl:{file_id}:{time.monotonic_ns()}",
-            [
-                CapacityResource.for_path(
-                    Path(tempfile.gettempdir()), estimate, role="mesh conversion"
-                ),
-                vault_allocation(estimate, role="derived STL publication"),
-            ],
+        with (
+            reserve_sources((resolve(file),)) as prepared,
+            CapacityManager(get_session_factory()).hold(
+                f"derive:viewer-stl:{file_id}:{time.monotonic_ns()}",
+                [
+                    CapacityResource.for_path(
+                        prepared.directory,
+                        file.size_bytes * 2,
+                        role="mesh source preparation",
+                    ),
+                    CapacityResource.for_path(
+                        Path(tempfile.gettempdir()), estimate, role="mesh conversion"
+                    ),
+                    vault_allocation(estimate, role="derived STL publication"),
+                ],
+            ),
         ):
-            with resolve(file).materialize(capacity_claimed=True) as source:
+            with prepared.materialize(capacity_claimed=True) as (source,):
                 data = stl_isolation.to_stl_bytes(
                     source, file_type=file.file_type.value
                 )
@@ -737,10 +755,15 @@ def _derive_viewer_stl(
                     duration_ms=int((time.monotonic() - started) * 1000),
                 )
                 session.commit()
-    except MeshWorkerError as exc:
+    except (MeshWorkerError, AdmissionTooLarge) as exc:
+        reason = (
+            ThumbnailFailureReason.RESOURCE_LIMIT
+            if isinstance(exc, AdmissionTooLarge)
+            else exc.reason
+        )
         return failed(
-            exc.reason,
-            deterministic=exc.reason
+            reason,
+            deterministic=reason
             in {
                 ThumbnailFailureReason.RESOURCE_LIMIT,
                 ThumbnailFailureReason.INVALID_SOURCE,
@@ -751,7 +774,7 @@ def _derive_viewer_stl(
         )
     except ArtifactContentError:
         return failed(ThumbnailFailureReason.INVALID_SOURCE, deterministic=True)
-    except (OSError, StorageCollisionError):
+    except OSError, StorageCollisionError:
         return failed(ThumbnailFailureReason.STORAGE, deterministic=False)
     return Outcome({DerivativeKind.VIEWER_STL: DerivativeState.READY})
 

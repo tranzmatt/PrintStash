@@ -122,7 +122,7 @@ def _peak_rss_bytes() -> int | None:
         # are Linux, while the conservative branch keeps local development sane.
         value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
         return value * 1024 if value < 1 << 40 else value
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 

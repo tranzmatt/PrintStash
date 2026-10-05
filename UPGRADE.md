@@ -393,3 +393,19 @@ supported rollback path.
 
 For recovery details, see
 [Disaster recovery](./docs/disaster-recovery.md).
+
+### Native memory profiles
+
+Local model residency now shares a separate file-lock ledger across the API and
+worker. The default `VAULT_EMBEDDING_MEMORY_BUDGET_FRACTION=0.25` leaves
+headroom beside geometry's effective 0.5 allocation. The combined fractions must
+be below 1. Unknown physical memory refuses local model admission. Set
+`VAULT_EMBEDDING_RESIDENT_WORKERS` (default 1, maximum 2) and
+`VAULT_EMBEDDING_WORKER_MEMORY_MB` (default 1024, minimum 512) for the models
+you install; a model whose mappings exceed the ceiling fails with a memory error.
+
+Stop all API and worker processes before changing memory partitions or model
+residency settings, then restart all with the same profile and shared local data
+root. Mixed profiles during a rolling restart do not provide a common physical
+memory bound. An idle cached model may retire under residency pressure and
+reload on its next request.

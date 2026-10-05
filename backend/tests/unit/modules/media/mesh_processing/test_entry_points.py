@@ -13,6 +13,7 @@ from app.modules.media import (
     mesh_loading,
     mesh_policy,
     mesh_processing,
+    native_process,
 )
 from tests.fixtures.three_mf_projects import (
     build_instanced_project,
@@ -92,7 +93,7 @@ class TestExtractGeometry:
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 5_000_000)
         monkeypatch.setitem(_overlay, "mesh_max_load_mb", 0)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0.5)
-        monkeypatch.setattr(mesh_policy, "_MEMORY_LIMIT_BYTES", 2 * 1024**3)
+        monkeypatch.setattr(native_process, "memory_limit_bytes", lambda: 2 * 1024**3)
         p = tmp_path / "mid.stl"
         # ~700k triangles: under the 5M static cap, but over the ~480k RAM cap @ 2 GB.
         _write_binary_stl(p, 700_000)
@@ -110,7 +111,7 @@ class TestExtractGeometry:
         # A 256 GB host: the RAM cap is enormous, so the static ceiling is what binds.
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1000)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0.5)
-        monkeypatch.setattr(mesh_policy, "_MEMORY_LIMIT_BYTES", 256 * 1024**3)
+        monkeypatch.setattr(native_process, "memory_limit_bytes", lambda: 256 * 1024**3)
         p = tmp_path / "huge.stl"
         _write_binary_stl(p, 50_000)
         monkeypatch.setattr(

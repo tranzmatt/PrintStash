@@ -20,6 +20,7 @@ from app.modules.media import mesh_isolation
 from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.mesh_policy import canonical_suffix
+from app.modules.media.native_budget import GeometryWork, MeshSource
 
 SIZE_MAGIC = b"STL1"
 NOTHING_MAGIC = b"NONE"
@@ -44,7 +45,7 @@ def decode_reply(payload: bytes) -> int | None:
             reason = ThumbnailFailureReason(
                 payload[len(FAILURE_MAGIC) :].decode("ascii")
             )
-        except (ValueError, UnicodeDecodeError):
+        except ValueError, UnicodeDecodeError:
             raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED) from None
         raise MeshWorkerError(reason)
     if len(payload) == len(SIZE_MAGIC) + 8 and payload.startswith(SIZE_MAGIC):
@@ -75,7 +76,12 @@ def to_stl_bytes(path: Path, *, file_type: str | None = None) -> bytes | None:
             "output": str(output),
         }
         size = decode_reply(
-            mesh_isolation.run_worker("app.modules.media.stl_worker", spec)
+            mesh_isolation.run_worker(
+                "app.modules.media.stl_worker",
+                spec,
+                sources=(MeshSource(path, file_type or path.suffix),),
+                work=GeometryWork(),
+            )
         )
         if size is None:
             return None

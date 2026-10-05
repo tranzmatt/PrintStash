@@ -5,7 +5,12 @@ none imports the compatibility facade or thumbnail/analysis orchestration.
 
 | Responsibility | Owner | Public operations |
 | --- | --- | --- |
-| Admission, format routing, source estimates, RAM/RSS budgets and reclamation | `app.modules.media.mesh_policy` | `RenderAdmission`, `render_admission`, `render_jobs_limit`, `canonical_suffix`, `estimate_triangle_count`, `detect_memory_limit_bytes`, `ram_triangle_cap`, `load_face_budget`, `exceeds_cap`, `process_rss_bytes`, `process_tree_rss_bytes`, `step_memory_budget_bytes`, `native_memory_budget_bytes`, `reclaim_memory` |
+| Format routing, source estimates, loader ceilings and reclamation | `app.modules.media.mesh_policy` | `render_admission`, `render_jobs_limit`, `canonical_suffix`, `estimate_triangle_count`, `ram_triangle_cap`, `load_face_budget`, `exceeds_cap`, `reclaim_memory` |
+| Host capacity and native process memory facts | `app.modules.media.native_process` | `memory_limit_bytes`, `native_capacity`, `native_memory_budget_bytes`, `process_rss_bytes`, `process_tree_rss_bytes` |
+| Typed work profiles, weighted source claims and loader memory costs | `app.modules.media.native_budget` | `GeometryWork`, `RasterWork`, `AnalysisWork`, `MeshSource`, `estimate_sources`, `request`, `face_capacity` |
+| Shared descriptor-owned admission | `app.runtime.native_admission`, `app.runtime.native_runtime` | `LocalResourcePool`, `NativePermit`, `Resources`, `admit`, `current_permit`, `inherit` |
+| Bounded source preparation | `app.modules.media.source_preparation`, `app.runtime.preparation_runtime` | Batch reservations, separate prepared-byte and transfer-slot pools |
+| Shared warm-model residency | `app.runtime.inference_resources` | `reserve`, `capacity`, `launch_resources`, `has_pressure` |
 | Materialized source loading, isolated STEP conversion and STL export | `app.modules.media.mesh_loading` | `load_mesh`, `load_step_mesh`, `to_stl_bytes` |
 | Materialized source dimensions and signed volume evidence | `app.modules.media.mesh_measurements` | `geometry_from_mesh`, `signed_mesh_integral` |
 | Measurements from retained 3MF resources and placements | `app.modules.media.scene_measurements` | `measure_scene`, `SceneMeasurements`, `VolumeTopologyRequired` |
@@ -17,7 +22,9 @@ none imports the compatibility facade or thumbnail/analysis orchestration.
 | Relative positions and repeatable face chunks for rendering | `printstash_core.mesh.render_geometry` | `prepare_mesh`, `prepare_scene` |
 | Software shading and rasterization | `printstash_core.mesh.rasterizer` | `render_mesh_thumbnail`, `render_scene_thumbnail` |
 
-Admission gates and cached detected memory ceilings live only in `mesh_policy`.
+Bootstrap binds the shared admission, source-preparation and model-residency
+ledgers explicitly. `mesh_policy` projects the inherited allowance into loader
+ceilings; it owns no process-local semaphore or cached host-memory ceiling.
 Loading remains lazy and preserves scene placements. Measurements preserve source
 precision and winding evidence. Embedded preview extraction keeps its archive and
 image limits. New consumers enter the bounded isolation seams; only execution

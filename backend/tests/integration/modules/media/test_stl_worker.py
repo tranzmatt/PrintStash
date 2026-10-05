@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import struct
 
 import pytest
 import trimesh
@@ -12,7 +14,7 @@ from app.modules.media import stl_worker
 from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.media.stl_isolation import decode_reply
-from tests.factories.geometry import three_mf
+from tests.factories.geometry import tetrahedron, three_mf
 from tests.factories.three_mf_pilot import load_case
 
 
@@ -48,6 +50,24 @@ class TestMain:
 
         assert status == 0
         assert size == output.stat().st_size and size > 84
+
+    def test_writes_the_complete_binary_stl_for_a_3mf(self, tmp_path, run_worker):
+        source = tmp_path / "tetrahedron.3mf"
+        payload = three_mf()
+        source.write_bytes(payload)
+
+        status, size, output = run_worker(source, file_type="3mf")
+
+        converted = output.read_bytes()
+        expected = tetrahedron().export(file_type="stl")
+        assert status == 0
+        assert size == len(converted) == 84 + 4 * 50
+        assert struct.unpack_from("<I", converted, 80)[0] == 4
+        assert converted == expected
+        restored = trimesh.load_mesh(io.BytesIO(converted), file_type="stl")
+        assert len(restored.faces) == 4
+        assert restored.bounds.tolist() == [[0, 0, 0], [10, 20, 30]]
+        assert source.read_bytes() == payload
 
     def test_reports_a_mesh_it_cannot_convert_as_nothing(self, tmp_path, run_worker):
         source = tmp_path / "garbage.obj"

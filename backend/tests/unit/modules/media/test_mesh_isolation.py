@@ -175,17 +175,18 @@ class TestSupervise:
 
         assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
 
-    def test_refuses_a_reply_larger_than_the_frame_limit(self, monkeypatch):
-        monkeypatch.setattr(mesh_isolation, "MAX_REPLY_BYTES", 1024)
-
+    def test_refuses_a_reply_larger_than_the_frame_limit(self):
         with pytest.raises(MeshWorkerError) as raised:
-            supervise(
+            mesh_isolation.supervise_result(
                 _child("import sys; sys.stdout.buffer.write(b'x' * 100000)"),
                 memory_budget=512 * MB,
                 timeout_seconds=30,
+                reply_limit=1024,
             )
 
         assert raised.value.reason is ThumbnailFailureReason.WORKER_FAILED
+
+        assert raised.value.supervision.exit_cause.value == "reply_limit"
 
 
 class TestSuperviseAfterEof:
@@ -807,7 +808,7 @@ class TestSupervisionStats:
 
     def test_preserves_unobserved_rss(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            mesh_isolation.mesh_policy, "process_tree_rss_bytes", lambda _pid: None
+            mesh_isolation.native_process, "process_tree_rss_bytes", lambda _pid: None
         )
 
         result = mesh_isolation.supervise_result(
@@ -1300,20 +1301,19 @@ def staged_native(tmp_path, monkeypatch):
     )
     pids = tmp_path / "pids"
 
+    guarded_command = mesh_isolation.worker_command
+
     def configure(mode, *, final=False, budget=256 * MB):
         monkeypatch.setitem(_overlay, "mesh_worker_timeout_seconds", 1.0)
         monkeypatch.setattr(mesh_isolation, "memory_budget_bytes", lambda: budget)
         monkeypatch.setattr(
             mesh_isolation,
             "worker_command",
-            lambda *_args, **_kwargs: [
-                sys.executable,
-                "-m",
+            lambda _module, _arguments, allowance: guarded_command(
                 "tests.fakes.mesh_staged_output_probe",
-                mode,
-                str(complete if final else basic),
-                str(pids),
-            ],
+                [mode, str(complete if final else basic), str(pids)],
+                allowance,
+            ),
         )
 
     return request, geometry, pids, configure
@@ -1574,3 +1574,26 @@ class TestWatchdogStartup:
         assert monitors[0].stopped.is_set()
         assert not monitors[0].thread.is_alive()
         assert _wait_gone(monitors[0].pid)
+
+
+class TestCallbackWatchdog:
+    def test_preserves_guardian_when_stopping_guarded_root(self, monkeypatch):
+        signals = []
+        monkeypatch.setattr(mesh_isolation.sys, "platform", "linux")
+        monkeypatch.setattr(
+            mesh_isolation.native_process, "process_tree_rss_bytes", lambda _pid: 2
+        )
+        monkeypatch.setattr(os, "kill", lambda pid, sig: signals.append((pid, sig)))
+
+        def forbidden_group_signal(*_args):
+            raise AssertionError("guarded sentinel must remain alive")
+
+        monkeypatch.setattr(os, "killpg", forbidden_group_signal)
+        monitor = mesh_isolation._CallbackWatchdog(
+            123, time.monotonic() + 30, 1, mesh_isolation.WorkerLifecycle.GUARDED
+        )
+
+        monitor._monitor()
+
+        assert signals == [(123, mesh_isolation.signal.SIGKILL)]
+        assert monitor.failure_cause() is mesh_isolation.WorkerExitCause.MEMORY_LIMIT

@@ -24,12 +24,14 @@ import selectors
 import signal
 import struct
 import subprocess  # nosec B404 - fixed interpreter/module invocation only
+import sys
 import tempfile
 import time
+from collections.abc import Callable
 from contextlib import ExitStack
 from pathlib import Path
 from threading import Event, Lock, Thread
-from typing import Any, Callable, Final
+from typing import Any, Final
 
 from printstash_core.mesh.measurements import decode_volume, encode_volume
 from printstash_core.mesh.similarity import GeometryError
@@ -37,7 +39,7 @@ from printstash_core.mesh.similarity import GeometryError
 from app import __file__ as application_file
 from app.core.cancellation import OperationCancelled, checkpoint
 from app.core.config import _overlay, settings
-from app.modules.media import mesh_policy
+from app.modules.media import mesh_policy, native_process
 from app.modules.media.fingerprints import (
     FingerprintRecord,
     FingerprintResult,
@@ -71,15 +73,30 @@ from app.modules.media.mesh_telemetry import (
     decode_phase_stats,
     encode_phase_stats,
 )
-from app.modules.media.stl_streaming import _terminate_process_group
-from app.modules.media.worker_bootstrap import RESOURCE_EXIT, reap_descendants
+from app.modules.media.native_budget import (
+    AnalysisWork,
+    GeometryWork,
+    MeshSource,
+    RasterCodec,
+    RasterWork,
+    WorkProfile,
+    estimate_sources,
+)
+from app.modules.media.native_execution import admission
+from app.modules.media.worker_bootstrap import (
+    RESOURCE_EXIT,
+    WorkerLifecycle,
+    launch_resources,
+    reap_descendants,
+    terminate_worker,
+)
 from app.modules.media.worker_bootstrap import command as worker_command
+from app.runtime.native_admission import NativePermit, Resources
+from app.runtime.native_runtime import current_permit
 
 REPLY_MAGIC = b"MSH1"
 MAX_REPLY_BYTES = 32 * 1024 * 1024
 _POLL_SECONDS = 0.025
-# Used only where neither a cgroup limit nor host memory can be read.
-_FALLBACK_MEMORY_BUDGET = 2 * 1024**3
 
 
 class MeshWorkerError(Exception):
@@ -105,9 +122,7 @@ def memory_budget_bytes() -> int:
     The same budget the triangle caps are derived from, so a mesh the caps admit
     fits in it; a mesh the caps mis-sized is what the kill is for.
     """
-    return mesh_policy.step_memory_budget_bytes() or (
-        _FALLBACK_MEMORY_BUDGET // mesh_policy.render_jobs_limit()
-    )
+    return native_process.native_capacity().bytes
 
 
 def pack_value(value: Any) -> Any:
@@ -265,10 +280,17 @@ class _CallbackWatchdog:
     and publication callbacks remain cooperative on the calling thread.
     """
 
-    def __init__(self, pid: int, deadline: float, memory_budget: int) -> None:
+    def __init__(
+        self,
+        pid: int,
+        deadline: float,
+        memory_budget: int,
+        lifecycle: WorkerLifecycle = WorkerLifecycle.PROCESS_GROUP,
+    ) -> None:
         self.pid: Final[int] = pid
         self.deadline: Final[float] = deadline
         self.memory_budget: Final[int] = memory_budget
+        self.worker_lifecycle: Final[WorkerLifecycle] = lifecycle
         self.stopped = Event()
         self.lifecycle = Lock()
         self.failure: WorkerExitCause | None = None
@@ -282,7 +304,7 @@ class _CallbackWatchdog:
             # Sampling outside the lifecycle lock lets cleanup withdraw the
             # monitor even if a filesystem read is delayed. Check withdrawal
             # again under the lock before recording a cause or signalling.
-            rss = mesh_policy.process_tree_rss_bytes(self.pid)
+            rss = native_process.process_tree_rss_bytes(self.pid)
             with self.lifecycle:
                 if self.stopped.is_set():
                     return
@@ -300,7 +322,14 @@ class _CallbackWatchdog:
                 if cause is not None:
                     self.failure = cause
                     try:
-                        os.killpg(self.pid, signal.SIGKILL)
+                        if (
+                            self.worker_lifecycle is WorkerLifecycle.GUARDED
+                            and sys.platform == "linux"
+                        ):
+                            # Leave the sentinel alive to drain escaped descendants.
+                            os.kill(self.pid, signal.SIGKILL)
+                        else:
+                            os.killpg(self.pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
                     except OSError:
@@ -346,6 +375,13 @@ def supervise_result(
     *,
     memory_budget: int,
     timeout_seconds: float,
+    permit: NativePermit | None = None,
+    lifecycle: WorkerLifecycle = WorkerLifecycle.PROCESS_GROUP,
+    accepted_exit_codes: frozenset[int] = frozenset({0}),
+    temporary_directory: Path | None = None,
+    environment: dict[str, str] | None = None,
+    reply_limit: int = MAX_REPLY_BYTES,
+    withdrawn: Callable[[], bool] | None = None,
     on_chunk: Callable[[bytes], None] | None = None,
 ) -> SupervisedReply:
     """Own the process lifecycle and retain observed costs on every exit.
@@ -355,6 +391,13 @@ def supervise_result(
     callbacks themselves and cancellation remain cooperative on this thread.
     No terminal frame can establish the active phase of a killed child.
     """
+    if type(reply_limit) is not int or not 0 < reply_limit <= MAX_REPLY_BYTES:
+        raise ValueError("invalid worker reply limit")
+    if not accepted_exit_codes or any(
+        type(code) is not int or not 0 <= code <= 255 or code == RESOURCE_EXIT
+        for code in accepted_exit_codes
+    ):
+        raise ValueError("accepted worker exit codes must be non-resource status codes")
     started = time.monotonic_ns()
     execution_id = secrets.token_hex(16)
     peak_rss: int | None = None
@@ -364,7 +407,18 @@ def supervise_result(
     cancelled: OperationCancelled | None = None
     process: subprocess.Popen[bytes] | None = None
     watchdog: _CallbackWatchdog | None = None
-    temporary = tempfile.TemporaryDirectory(prefix="printstash-mesh-")
+    temporary = (
+        tempfile.TemporaryDirectory(prefix="printstash-mesh-")
+        if temporary_directory is None
+        else None
+    )
+    temporary_path = (
+        Path(temporary.name) if temporary is not None else temporary_directory
+    )
+    assert temporary_path is not None
+    if not temporary_path.is_dir():
+        raise ValueError("worker temporary directory must exist")
+    inherited = launch_resources(permit) if permit is not None else None
     try:
         try:
             process = subprocess.Popen(  # nosec B603 - fixed argv; no shell
@@ -373,11 +427,16 @@ def supervise_result(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                pass_fds=inherited.descriptors if inherited is not None else (),
                 env={
                     **os.environ,
+                    **(environment if environment is not None else {}),
                     "OMP_NUM_THREADS": "1",
                     "OPENBLAS_NUM_THREADS": "1",
-                    "TMPDIR": temporary.name,
+                    "MKL_NUM_THREADS": "1",
+                    "NUMEXPR_NUM_THREADS": "1",
+                    "TMPDIR": str(temporary_path),
+                    **(inherited.environment if inherited is not None else {}),
                 },
                 cwd=Path(application_file).resolve().parent.parent,
             )
@@ -388,13 +447,17 @@ def supervise_result(
         os.set_blocking(process.stdout.fileno(), False)
         deadline = time.monotonic() + timeout_seconds
         if on_chunk is not None:
-            watchdog = _CallbackWatchdog(process.pid, deadline, memory_budget)
+            watchdog = _CallbackWatchdog(
+                process.pid, deadline, memory_budget, lifecycle
+            )
             watchdog.thread.start()
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             stdout_closed = False
             while True:
                 checkpoint()
+                if withdrawn is not None and withdrawn():
+                    raise OperationCancelled()
                 monitored_cause = (
                     watchdog.failure_cause() if watchdog is not None else None
                 )
@@ -404,7 +467,7 @@ def supervise_result(
                 if time.monotonic() >= deadline:
                     cause = WorkerExitCause.DEADLINE
                     raise MeshWorkerError(ThumbnailFailureReason.TIMEOUT)
-                rss = mesh_policy.process_tree_rss_bytes(process.pid)
+                rss = native_process.process_tree_rss_bytes(process.pid)
                 if rss is not None:
                     peak_rss = rss if peak_rss is None else max(peak_rss, rss)
                     if rss > memory_budget:
@@ -417,12 +480,14 @@ def supervise_result(
                         selector.unregister(process.stdout)
                         break
                     reply.extend(chunk)
-                    if len(reply) > MAX_REPLY_BYTES:
+                    if len(reply) > reply_limit:
                         cause = WorkerExitCause.REPLY_LIMIT
                         raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
                     if on_chunk is not None:
                         on_chunk(chunk)
                         checkpoint(force=True)
+                        if withdrawn is not None and withdrawn():
+                            raise OperationCancelled()
                         monitored_cause = (
                             watchdog.failure_cause() if watchdog is not None else None
                         )
@@ -458,11 +523,15 @@ def supervise_result(
                 else WorkerExitCause.MEMORY_LIMIT
             )
             raise MeshWorkerError(ThumbnailFailureReason.RESOURCE_LIMIT)
-        if code != 0:
+        if code not in accepted_exit_codes:
             cause = WorkerExitCause.EXITED_NONZERO
             raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
         checkpoint(force=True)
-        cause = WorkerExitCause.EXITED_ZERO
+        if withdrawn is not None and withdrawn():
+            raise OperationCancelled()
+        cause = (
+            WorkerExitCause.EXITED_ZERO if code == 0 else WorkerExitCause.EXITED_NONZERO
+        )
     except MeshWorkerError as exc:
         error = exc
         try:
@@ -494,11 +563,7 @@ def supervise_result(
                 )
         try:
             if process is not None:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                _terminate_process_group(process)
+                terminate_worker(process, lifecycle)
                 process.wait()
                 reap_descendants(process.pid)
                 if process.stdout is not None:
@@ -509,7 +574,8 @@ def supervise_result(
             error.__cause__ = exc
         finally:
             try:
-                temporary.cleanup()
+                if temporary is not None:
+                    temporary.cleanup()
             except OSError as exc:
                 cause = WorkerExitCause.SUPERVISION_FAILED
                 error = MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
@@ -524,15 +590,23 @@ def supervise_result(
         raise MeshWorkerCancelled(stats) from cancelled
     if error is not None:
         raise error
-    return SupervisedReply(bytes(reply), stats)
+    assert process is not None and process.returncode is not None
+    return SupervisedReply(bytes(reply), stats, process.returncode)
 
 
 def supervise(
-    command: list[str], *, memory_budget: int, timeout_seconds: float
+    command: list[str],
+    *,
+    memory_budget: int,
+    timeout_seconds: float,
+    lifecycle: WorkerLifecycle = WorkerLifecycle.PROCESS_GROUP,
 ) -> bytes:
     """Byte-only convenience retained for non-mesh workers and containment probes."""
     return supervise_result(
-        command, memory_budget=memory_budget, timeout_seconds=timeout_seconds
+        command,
+        memory_budget=memory_budget,
+        timeout_seconds=timeout_seconds,
+        lifecycle=lifecycle,
     ).payload
 
 
@@ -587,32 +661,43 @@ def _run_worker(
     module: str,
     spec: dict[str, Any],
     *,
+    sources: tuple[MeshSource, ...],
+    work: WorkProfile,
     on_chunk: Callable[[bytes], None] | None = None,
 ) -> SupervisedReply:
-    """Run `python -m module` on *spec* under supervision; return its reply.
-
-    Every isolated worker starts the same way: it is handed the parent's runtime
-    overrides with its request, and it counts against the same local concurrency
-    limit as the mesh derivatives it shares memory with.
-    """
-    with mesh_policy.render_admission():
-        budget = memory_budget_bytes()
+    """Plan a weighted native allowance, then run one supervised worker."""
+    existing = current_permit()
+    capacity = Resources(native_process.native_capacity().slots, memory_budget_bytes())
+    amount = (
+        existing.resources
+        if existing is not None
+        else estimate_sources(capacity, sources, work=work)
+    )
+    with admission(amount, capacity, checkpoint=checkpoint) as permit:
         command = worker_command(
             module,
             [json.dumps({"overrides": runtime_overrides(), **spec})],
-            budget,
+            permit.resources.bytes,
         )
         return supervise_result(
             command,
-            memory_budget=budget,
+            memory_budget=permit.resources.bytes,
             timeout_seconds=float(settings.mesh_worker_timeout_seconds),
+            permit=permit,
+            lifecycle=WorkerLifecycle.GUARDED,
             on_chunk=on_chunk,
         )
 
 
-def run_worker(module: str, spec: dict[str, Any]) -> bytes:
+def run_worker(
+    module: str,
+    spec: dict[str, Any],
+    *,
+    sources: tuple[MeshSource, ...],
+    work: WorkProfile,
+) -> bytes:
     """Byte reply convenience for STL conversion, embedding and verification."""
-    return _run_worker(module, spec).payload
+    return _run_worker(module, spec, sources=sources, work=work).payload
 
 
 def read_spec(argv: list[str]) -> dict[str, Any]:
@@ -664,7 +749,21 @@ def generate(
         "output_format": request.output_format,
         "reason": request.reason,
     }
-    with mesh_policy.render_admission(), ExitStack() as resources:
+    raster: RasterWork | None = None
+    if request.include_thumbnail:
+        width = int(request.width or settings.model_thumbnail_width)
+        height = int(request.height or round(width * 3 / 4))
+        raster = RasterWork(
+            width, height, 1, RasterCodec(request.output_format.lower())
+        )
+    work: WorkProfile = (
+        AnalysisWork(raster)
+        if request.include_fingerprint
+        else raster
+        if raster is not None
+        else GeometryWork()
+    )
+    with ExitStack() as resources:
         if request.include_fingerprint and mesh_policy.canonical_suffix(
             request.path, request.file_type
         ) in (".step", ".stp"):
@@ -685,7 +784,15 @@ def generate(
                 ],
             )
             resources.callback(reservation.release)
-        reply = _run_worker("app.modules.media.mesh_worker", spec, on_chunk=receive)
+        reply = _run_worker(
+            "app.modules.media.mesh_worker",
+            spec,
+            sources=(
+                MeshSource(request.path, request.file_type or request.path.suffix),
+            ),
+            work=work,
+            on_chunk=receive,
+        )
         try:
             final = decoder.finish()
             if geometry_output is None:

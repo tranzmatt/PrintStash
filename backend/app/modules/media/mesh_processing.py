@@ -23,9 +23,6 @@ from app.modules.media.mesh_measurements import (
     geometry_from_mesh as _geometry_from_mesh,
 )
 from app.modules.media.mesh_policy import (
-    RenderAdmission as _RenderAdmission,
-)
-from app.modules.media.mesh_policy import (
     canonical_suffix as _canonical_suffix,
 )
 from app.modules.media.mesh_policy import (
@@ -84,7 +81,6 @@ def extract_geometry(path: Path) -> dict[str, float | None]:
 
 
 __all__ = [
-    "_RenderAdmission",
     "_canonical_suffix",
     "_detect_memory_limit_bytes",
     "_estimate_triangle_count",

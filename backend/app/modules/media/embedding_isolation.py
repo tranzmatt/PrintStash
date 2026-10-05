@@ -27,6 +27,7 @@ from app.modules.media.mesh_isolation import (
     raise_reported_error,
 )
 from app.modules.media.mesh_wire_values import pack_value, unpack_value
+from app.modules.media.native_budget import MeshSource, RasterCodec, RasterWork
 
 VIEWS_MAGIC = b"EMB1"
 # Six canonical frames; a worker that returns more is not the worker we started.
@@ -78,5 +79,10 @@ def embedding_views(
         "triangle_cap": triangle_cap,
     }
     return decode_reply(
-        mesh_isolation.run_worker("app.modules.media.embedding_worker", spec)
+        mesh_isolation.run_worker(
+            "app.modules.media.embedding_worker",
+            spec,
+            sources=(MeshSource(path, file_type),),
+            work=RasterWork(image_size, image_size, 6, RasterCodec.RGB),
+        )
     )

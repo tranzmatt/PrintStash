@@ -10,8 +10,9 @@ import ctypes
 import ctypes.util
 import gc
 import struct
-import threading
-from pathlib import Path, PurePosixPath
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Literal, Optional
 
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
@@ -19,14 +20,13 @@ from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 from app.core.cancellation import checkpoint
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.modules.media import native_process
+from app.modules.media.native_execution import admission
+from app.runtime.native_admission import NativePermit, Resources
+from app.runtime.native_runtime import current_permit
 
 logger = get_logger(__name__)
 _LIBC: ctypes.CDLL | Literal[False] | None = None
-_RENDER_SEMAPHORE: RenderAdmission | None = None
-_RENDER_SEMAPHORE_LOCK = threading.Lock()
-_PEAK_BYTES_PER_TRIANGLE: dict[str, int] = {".3mf": 3600}
-_DEFAULT_PEAK_BYTES_PER_TRIANGLE = 2200
-_MEMORY_LIMIT_BYTES: int | Literal[False] | None = None
 
 
 def reclaim_memory() -> None:
@@ -48,80 +48,22 @@ def reclaim_memory() -> None:
             _LIBC = ctypes.CDLL(libc_name) if libc_name else False
         if _LIBC and hasattr(_LIBC, "malloc_trim"):
             _LIBC.malloc_trim(0)
-    except (OSError, AttributeError):  # pragma: no cover - platform dependent
+    except OSError, AttributeError:  # pragma: no cover - platform dependent
         _LIBC = False
 
 
-class RenderAdmission:
-    """One admission controller, including while administrators change its limit.
-
-    A new allocation split becomes effective after old admissions drain. Mixing
-    old large shares with new small ones could otherwise exceed the total budget.
-    Nested work in the same thread consumes the existing admission.
-    """
-
-    def __init__(self) -> None:
-        self.condition = threading.Condition()
-        self.active = 0
-        self.limit = 1
-        self.requested = 1
-        self.local = threading.local()
-
-    def configure(self, limit: int) -> None:
-        with self.condition:
-            self.requested = limit
-            self.condition.notify_all()
-
-    def __enter__(self) -> RenderAdmission:
-        depth = getattr(self.local, "depth", 0)
-        if depth:
-            self.local.depth = depth + 1
-            return self
-        while True:
-            # A checkpoint may consult durable job state. Never hold the
-            # admission lock while that external operation blocks.
-            checkpoint()
-            with self.condition:
-                if self.active == 0:
-                    self.limit = self.requested
-                if self.limit == self.requested and self.active < self.limit:
-                    self.active += 1
-                    self.local.depth = 1
-                    self.local.limit = self.limit
-                    return self
-                self.condition.wait(0.1)
-
-    def __exit__(self, *_args: object) -> None:
-        self.local.depth -= 1
-        if self.local.depth:
-            return
-        with self.condition:
-            self.active -= 1
-            self.condition.notify_all()
-
-
-def _configured_render_jobs() -> int:
-    try:
-        return max(int(settings.max_render_jobs), 1)
-    except (TypeError, ValueError):
-        return 1
-
-
 def render_jobs_limit() -> int:
-    """The allocation split belonging to this thread's admission."""
-    gate = _RENDER_SEMAPHORE
-    if gate is not None and getattr(gate.local, "depth", 0):
-        return gate.local.limit
-    return _configured_render_jobs()
+    return native_process.native_capacity().slots
 
 
-def render_admission() -> RenderAdmission:
-    global _RENDER_SEMAPHORE
-    with _RENDER_SEMAPHORE_LOCK:
-        if _RENDER_SEMAPHORE is None:
-            _RENDER_SEMAPHORE = RenderAdmission()
-        _RENDER_SEMAPHORE.configure(_configured_render_jobs())
-        return _RENDER_SEMAPHORE
+@contextmanager
+def render_admission() -> Iterator[NativePermit]:
+    """Reuse admitted credits; direct work conservatively reserves the pool."""
+    capacity = native_process.native_capacity()
+    active = current_permit()
+    amount = active.resources if active is not None else Resources(1, capacity.bytes)
+    with admission(amount, capacity, checkpoint=checkpoint) as permit:
+        yield permit
 
 
 def canonical_suffix(path: Path, file_type: str | None = None) -> str:
@@ -229,86 +171,28 @@ def estimate_triangle_count(
             # XML byte counts include unreachable objects and cannot represent
             # placement multiplicity. The bounded source reader owns admission.
             return None
-    except (OSError, struct.error):
+    except OSError, struct.error:
         return None
     return None
 
 
 def detect_memory_limit_bytes() -> int | None:
-    """Best-effort bytes of RAM the process may use before being OOM-killed.
-
-    Container-aware: a Docker/NAS deployment is usually capped well below host
-    RAM by its cgroup, and that limit — not the host's total — is what the kernel
-    enforces. Takes the smallest of the cgroup limit (v2 then v1) and host
-    ``MemTotal`` so the RAM-aware cap reflects the real ceiling. Returns None when
-    nothing can be read (non-Linux, locked-down /proc), disabling the RAM cap.
-    """
-    limits: list[int] = []
-    try:  # cgroup v2
-        raw = Path("/sys/fs/cgroup/memory.max").read_text().strip()
-        if raw != "max":
-            limits.append(int(raw))
-    except (OSError, ValueError):
-        pass
-    # On a host service the cgroup filesystem is mounted above this process's
-    # group. Reading only its root misses MemoryMax on the service or a parent
-    # slice. Containers with a cgroup namespace already expose their group at /.
-    try:
-        root = Path("/sys/fs/cgroup")
-        for line in Path("/proc/self/cgroup").read_text().splitlines():
-            if not line.startswith("0::/"):
-                continue
-            parts = PurePosixPath(line[3:]).parts[1:]
-            if len(parts) > 128 or any(part in (".", "..") for part in parts):
-                continue
-            group = root.joinpath(*parts)
-            while group != root:
-                try:
-                    value = int((group / "memory.max").read_text().strip())
-                    if value > 0:
-                        limits.append(value)
-                except (OSError, ValueError):
-                    pass
-                group = group.parent
-    except OSError:
-        pass
-    try:  # cgroup v1
-        v1 = int(
-            Path("/sys/fs/cgroup/memory/memory.limit_in_bytes").read_text().strip()
-        )
-        if 0 < v1 < (1 << 62):  # v1 uses a huge sentinel for "unlimited"
-            limits.append(v1)
-    except (OSError, ValueError):
-        pass
-    try:  # host total
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            if line.startswith("MemTotal:"):
-                limits.append(int(line.split()[1]) * 1024)
-                break
-    except (OSError, ValueError, IndexError):
-        pass
-    return min(limits) if limits else None
+    return native_process.memory_limit_bytes()
 
 
 def ram_triangle_cap(suffix: str) -> Optional[int]:
-    """RAM-derived triangle ceiling for *suffix*, or None when RAM capping is off.
+    """Use the admitted allowance without dividing large jobs by slot count."""
+    if settings.mesh_memory_budget_fraction <= 0:
+        return None
+    from app.modules.media.native_budget import face_capacity
 
-    Turns the ``mesh_memory_budget_fraction`` of detected memory into a triangle
-    count using the format's measured per-triangle peak cost, so the same config
-    auto-skips a mesh on a 4 GB box that a 32 GB box renders fine. The budget is
-    divided by ``max_render_jobs`` so concurrent renders share the RAM ceiling
-    rather than each claiming the whole of it (#29)."""
-    fraction = settings.mesh_memory_budget_fraction
-    if fraction <= 0:
-        return None
-    global _MEMORY_LIMIT_BYTES
-    if _MEMORY_LIMIT_BYTES is None:
-        _MEMORY_LIMIT_BYTES = detect_memory_limit_bytes() or False
-    if not _MEMORY_LIMIT_BYTES:
-        return None
-    budget = _MEMORY_LIMIT_BYTES * fraction / render_jobs_limit()
-    per_tri = _PEAK_BYTES_PER_TRIANGLE.get(suffix, _DEFAULT_PEAK_BYTES_PER_TRIANGLE)
-    return max(int(budget / per_tri), 1)
+    permit = current_permit()
+    memory = (
+        permit.resources.bytes
+        if permit is not None
+        else native_process.native_capacity().bytes
+    )
+    return face_capacity(memory, suffix)
 
 
 def load_face_budget(suffix: str) -> int:
@@ -396,62 +280,16 @@ def exceeds_cap(path: Path, *, file_type: str | None = None) -> bool:
 
 
 def process_rss_bytes(pid: int) -> int | None:
-    """Read one Linux process's resident set; unavailable platforms return None."""
-
-    try:
-        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
-            if line.startswith("VmRSS:"):
-                return int(line.split()[1]) * 1024
-    except (OSError, ValueError, IndexError):
-        return None
-    return None
+    return native_process.process_rss_bytes(pid)
 
 
 def step_memory_budget_bytes() -> int | None:
-    limit = detect_memory_limit_bytes()
-    fraction = settings.mesh_memory_budget_fraction
-    if limit is None:
-        return None
-    # Zero disables triangle estimation, never containment.
-    safety_fraction = fraction if fraction > 0 else 0.5
-    return max(int(limit * safety_fraction / render_jobs_limit()), 1)
+    return native_process.native_memory_budget_bytes()
 
 
 def process_tree_rss_bytes(pid: int) -> int | None:
-    """Resident memory of an admitted worker including its descendants."""
-    pending = [pid]
-    seen: set[int] = set()
-    total = 0
-    found = False
-    while pending:
-        current = pending.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        rss = process_rss_bytes(current)
-        if rss is not None:
-            total += rss
-            found = True
-        try:
-            pending.extend(
-                int(value)
-                for value in Path(f"/proc/{current}/task/{current}/children")
-                .read_text()
-                .split()
-            )
-        except (OSError, ValueError):
-            # A process can exit between the two reads.
-            continue
-    return total if found else None
+    return native_process.process_tree_rss_bytes(pid)
 
 
 def native_memory_budget_bytes() -> int:
-    """The render-step RSS policy, applied to one native worker process.
-
-    Bounded even when automatic geometry RAM caps are disabled on a platform
-    where cgroup or host memory cannot be detected. Embedding and search-view
-    workers are killed past it.
-    """
-    return min(
-        step_memory_budget_bytes() or 1024**3 // render_jobs_limit(), 2 * 1024**3
-    )
+    return native_process.native_memory_budget_bytes()

@@ -5,12 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 import trimesh
 
 from app.modules.media import (
     mesh_loading,
-    mesh_policy,
     mesh_previews,
 )
 from tests.fixtures.mesh_analysis import analyze
@@ -128,28 +126,32 @@ class TestLoadMesh:
 
         assert mesh_loading.load_mesh(p) is None
 
-    @pytest.mark.parametrize("suffix", [".obj", ".step"], ids=["scene", "step-result"])
-    def test_declines_a_non_mesh_concatenation_result(
-        self, tmp_path, monkeypatch, suffix
-    ):
+    def test_declines_a_non_mesh_concatenation_result(self, tmp_path, monkeypatch):
         scene = trimesh.Scene()
         scene.add_geometry(trimesh.creation.box(), node_name="a")
         scene.add_geometry(trimesh.creation.box(), node_name="b")
-        path = tmp_path / ("source" + suffix)
+        path = tmp_path / "source.obj"
         path.write_bytes(b"placeholder")
         monkeypatch.setattr(trimesh, "load_scene", lambda *a, **k: scene)
-        monkeypatch.setattr(trimesh, "load_mesh", lambda *a, **k: scene)
         monkeypatch.setattr(trimesh.util, "concatenate", lambda *a, **k: object())
 
-        def completed_conversion(command, **_kwargs):
-            Path(command[-1]).write_bytes(b"converted placeholder")
-            return SimpleNamespace(
-                returncode=0, poll=lambda: 0, communicate=lambda: (b"", b"")
-            )
+        assert mesh_loading.load_mesh(path) is None
 
-        monkeypatch.setattr(mesh_loading.subprocess, "Popen", completed_conversion)
+    def test_declines_a_malformed_converted_step_artifact(self, tmp_path, monkeypatch):
+        from app.modules.media import mesh_isolation
+
+        path = tmp_path / "source.step"
+        original = b"ISO-10303-21;\nHEADER;\nENDSEC;\nEND-ISO-10303-21;\n"
+        path.write_bytes(original)
+
+        def completed_conversion(command, **_kwargs):
+            Path(command[-1]).write_bytes(b"malformed converted mesh artifact")
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr(mesh_isolation, "supervise_result", completed_conversion)
 
         assert mesh_loading.load_mesh(path) is None
+        assert path.read_bytes() == original
 
     def test_load_mesh_scene_with_single_geometry_returns_it_directly(
         self, tmp_path: Path, monkeypatch
@@ -200,31 +202,20 @@ class TestLoadMesh:
 
 
 class TestLoadStepMeshIsolated:
-    def test_step_tessellation_is_killed_when_child_exceeds_rss_budget(
+    def test_preserves_supervisor_memory_refusal(
         self, tmp_path: Path, monkeypatch
     ) -> None:
+        from app.modules.media import mesh_isolation
+        from app.modules.media.mesh_contracts import ThumbnailFailureReason
+        from app.runtime.native_runtime import current_permit
+
         path = tmp_path / "complex.step"
         path.write_text("ISO-10303-21;")
 
-        class MemoryHungryProcess:
-            pid = 4242
-            returncode = None
-            killed = False
+        def refused(*args, **kwargs):
+            raise mesh_isolation.MeshWorkerError(ThumbnailFailureReason.RESOURCE_LIMIT)
 
-            def poll(self):
-                return -9 if self.killed else None
-
-            def kill(self):
-                self.killed = True
-                self.returncode = -9
-
-            def communicate(self):
-                return b"", b""
-
-        process = MemoryHungryProcess()
-        monkeypatch.setattr(mesh_loading.subprocess, "Popen", lambda *a, **k: process)
-        monkeypatch.setattr(mesh_policy, "step_memory_budget_bytes", lambda: 1024)
-        monkeypatch.setattr(mesh_policy, "process_rss_bytes", lambda _pid: 2048)
+        monkeypatch.setattr(mesh_isolation, "supervise_result", refused)
 
         assert mesh_loading.load_step_mesh(path) is None
-        assert process.killed is True
+        assert current_permit() is None
