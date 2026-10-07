@@ -3,6 +3,7 @@
 import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
 
+import type { TagsReview } from "@/components/entity-tags-editor";
 import { useState } from "react";
 import { Tags } from "lucide-react";
 
@@ -25,6 +26,7 @@ export function EntityTagsDialog({
   canEdit,
   help,
   onSave,
+  reviewLatest,
   triggerMode = "inline",
   triggerClassName,
 }: {
@@ -33,17 +35,22 @@ export function EntityTagsDialog({
   availableTags: TagRead[];
   canEdit: boolean;
   help: string;
-  onSave: (tags: string[]) => Promise<void>;
+  onSave: (tags: string[], signal: AbortSignal) => Promise<void>;
+  reviewLatest?: (signal: AbortSignal) => Promise<TagsReview>;
   triggerMode?: "inline" | "icon";
   triggerClassName?: string;
 }) {
   useUiLocale();
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState(0);
+  // The command and the initial selection describe one edit intent, even while
+  // its parent receives a newer server snapshot or the lazy editor is loading.
+  const [intent, setIntent] = useState({ entityLabel, tags, help, onSave, reviewLatest });
   const startup = useLibraryStartup();
 
   function openDialog() {
     startup.request("filters");
+    setIntent({ entityLabel, tags, help, onSave, reviewLatest });
     setSession((value) => value + 1);
     setOpen(true);
   }
@@ -89,18 +96,19 @@ export function EntityTagsDialog({
       )}
 
       <DeferredDialog
-        open={open}
-        title={uiText("Tags · {value1}", { value1: String(entityLabel) })}
+        open={open && canEdit}
+        title={uiText("Tags · {value1}", { value1: String(intent.entityLabel) })}
         onClose={() => setOpen(false)}
       >
         <EntityTagsEditor
           key={session}
-          open={open}
-          entityLabel={entityLabel}
-          tags={tags}
+          open={open && canEdit}
+          entityLabel={intent.entityLabel}
+          tags={intent.tags}
           availableTags={availableTags}
-          help={help}
-          onSave={onSave}
+          help={intent.help}
+          onSave={intent.onSave}
+          reviewLatest={intent.reviewLatest}
           onClose={() => setOpen(false)}
         />
       </DeferredDialog>

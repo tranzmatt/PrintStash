@@ -34,6 +34,8 @@ const artifact: FileRead = {
 };
 
 const updatedModel: ModelRead = {
+  edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  edit_version: 1,
   id: 1,
   name: "Bracket",
   slug: "bracket",

@@ -3,18 +3,25 @@
  * Counts describe the whole visible branch; pages describe only downloaded
  * rows. Global name search is independent of which branches are open.
  */
+import { queryKeys } from "@/lib/query-client";
 import { outlinerRoutes } from "@/test-support/outliner";
 
 import "@testing-library/jest-dom/vitest";
 import { useState } from "react";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FilterSidebar, type FilterSidebarProps } from "@/components/filter-sidebar";
 import { collectionTreeRoutes } from "@/test-support/collection-tree";
-import { aCollection, aCollectionNode, aPrinter, aTag } from "@/test-support/factories";
-import { json, renderApp } from "@/test-support/render";
+import {
+  aOutlinerModel,
+  aCollection,
+  aCollectionNode,
+  aPrinter,
+  aTag,
+} from "@/test-support/factories";
+import { json, renderApp, type RouteTable } from "@/test-support/render";
 import type { CollectionRead, MultipartModelListItem, OutlinerModelRead } from "@/types";
 
 const TREE = [
@@ -23,21 +30,10 @@ const TREE = [
   aCollection({ id: 3, name: "Toys", path: "toys", parent_id: null }),
 ];
 
-function outlinerModel(over: Partial<OutlinerModelRead> = {}): OutlinerModelRead {
-  // The tree groups by `collection` *path*, not by id — a model with only an id
-  // is invisible to it, which is exactly the drift this fixture pins down.
-  return {
-    id: 1,
-    name: "Benchy",
-    collection: "parts",
-    collection_id: 1,
-    collection_label: "Parts",
-    ...over,
-  };
-}
-
 function multipartSet(over: Partial<MultipartModelListItem> = {}): MultipartModelListItem {
   return {
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: 1,
     id: 40,
     name: "Dragon figure",
     slug: "dragon-figure",
@@ -69,11 +65,13 @@ function renderSidebar({
   collections = TREE,
   models = [],
   multipartModels = [],
+  routes = {},
   ...over
 }: Partial<FilterSidebarProps> & {
   collections?: CollectionRead[];
   models?: OutlinerModelRead[];
   multipartModels?: MultipartModelListItem[];
+  routes?: RouteTable;
 } = {}) {
   const handlers = {
     onCollectionChange: vi.fn<FilterSidebarProps["onCollectionChange"]>(),
@@ -104,7 +102,7 @@ function renderSidebar({
           selectedTags={[]}
           selectedPrinterId={null}
           selectedPrinterPresence={null}
-          libraryView="organized"
+          libraryView="all"
           {...handlers}
           {...over}
           selectedCollection={selectedCollection}
@@ -120,6 +118,7 @@ function renderSidebar({
     routes: {
       ...collectionTreeRoutes(collections),
       ...outlinerRoutes(collections, models, multipartModels),
+      ...routes,
     },
   });
   return { ...result, ...handlers };
@@ -146,6 +145,38 @@ async function openFolder(user: ReturnType<typeof userEvent.setup>, name: string
 }
 
 describe("FilterSidebar", () => {
+  it("keeps the gesture version when an outliner read changes during dragging", async () => {
+    const user = userEvent.setup();
+    const models = [aOutlinerModel({ id: 1, name: "Original model", edit_version: 7 })];
+    const view = renderSidebar({ models });
+    await openFolder(user, "Parts");
+    const source = await screen.findByRole("button", { name: "Original model" });
+    const destination = await folderRow("Toys");
+    // jsdom has no geometry. Give the actual mouse sensor two separated hit regions.
+    const sourceRect = vi
+      .spyOn(source, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 100, 20));
+    const destinationRect = vi
+      .spyOn(destination, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 100, 100, 20));
+    try {
+      fireEvent.mouseDown(source, { button: 0, buttons: 1, clientX: 10, clientY: 10 });
+      fireEvent.mouseMove(document, { buttons: 1, clientX: 20, clientY: 10 });
+      await waitFor(() => expect(source).toHaveAttribute("aria-pressed", "true"));
+      models[0] = aOutlinerModel({ id: 1, name: "Changed model", edit_version: 8 });
+      await act(async () => view.client.invalidateQueries({ queryKey: queryKeys.outliner }));
+      await screen.findByRole("button", { name: "Changed model" });
+      fireEvent.mouseMove(document, { buttons: 1, clientX: 20, clientY: 110 });
+      fireEvent.mouseUp(document, { button: 0, clientX: 20, clientY: 110 });
+      expect(view.onMoveModel).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, name: "Original model", edit_version: 7 }),
+        "toys",
+      );
+    } finally {
+      sourceRect.mockRestore();
+      destinationRect.mockRestore();
+    }
+  });
   describe("the folder tree", () => {
     it("lists the root folders", async () => {
       renderSidebar();
@@ -253,7 +284,7 @@ describe("FilterSidebar", () => {
           selectedTags={[]}
           selectedPrinterId={null}
           selectedPrinterPresence={null}
-          libraryView="organized"
+          libraryView="all"
           onCollectionChange={vi.fn<FilterSidebarProps["onCollectionChange"]>()}
           onTagsChange={vi.fn<FilterSidebarProps["onTagsChange"]>()}
           onPrinterChange={vi.fn<FilterSidebarProps["onPrinterChange"]>()}
@@ -329,7 +360,7 @@ describe("FilterSidebar", () => {
     it("uses the collection total when only part of a folder is loaded", async () => {
       renderSidebar({
         collections: [aCollection({ id: 1, name: "Archive", path: "archive", model_count: 501 })],
-        models: [outlinerModel({ collection: "archive", collection_id: 1 })],
+        models: [aOutlinerModel({ collection: "archive", collection_id: 1 })],
       });
 
       expect(await folderRow("Archive")).toHaveTextContent("Archive501");
@@ -366,15 +397,15 @@ describe("FilterSidebar", () => {
           aCollection({ id: 2, name: "Child", path: "parent/child", parent_id: 1, model_count: 2 }),
         ],
         models: [
-          outlinerModel({
+          aOutlinerModel({
             id: 1,
             name: "Other",
             collection: "parent",
             collection_id: 1,
             collection_label: "Parent",
           }),
-          outlinerModel({ id: 2, name: "Match", ...inChild }),
-          outlinerModel({ id: 3, name: "Another", ...inChild }),
+          aOutlinerModel({ id: 2, name: "Match", ...inChild }),
+          aOutlinerModel({ id: 3, name: "Another", ...inChild }),
         ],
       });
 
@@ -455,7 +486,7 @@ describe("FilterSidebar", () => {
 
     it("keeps a folder holding a matching model", async () => {
       const user = userEvent.setup();
-      renderSidebar({ models: [outlinerModel()] });
+      renderSidebar({ models: [aOutlinerModel()] });
 
       await filterBy(user, "benchy");
 
@@ -480,13 +511,13 @@ describe("FilterSidebar", () => {
     it("keeps the folder holding a filtered model", async () => {
       // A tag filter arrives with the model list already narrowed, so the tree
       // shows where those models actually live rather than the whole library.
-      renderSidebar({ selectedTags: ["functional"], models: [outlinerModel()] });
+      renderSidebar({ selectedTags: ["functional"], models: [aOutlinerModel()] });
 
       expect((await screen.findAllByText("Parts")).length).toBeGreaterThan(0);
     });
 
     it("drops a folder holding none of them", () => {
-      renderSidebar({ selectedTags: ["functional"], models: [outlinerModel()] });
+      renderSidebar({ selectedTags: ["functional"], models: [aOutlinerModel()] });
 
       expect(screen.queryByText("Toys")).toBeNull();
     });
@@ -625,6 +656,56 @@ describe("FilterSidebar", () => {
   });
 
   describe("remembering the open folders", () => {
+    it("publishes a restored branch while another remains pending", async () => {
+      const user = userEvent.setup();
+      const slow = Promise.withResolvers<Response>();
+      const started = Promise.withResolvers<void>();
+      const fastModel = aOutlinerModel({
+        id: 100,
+        name: "Restored bracket",
+        collection: "parts",
+        collection_id: 1,
+      });
+      const slowModel = aOutlinerModel({
+        id: 200,
+        name: "Pending toy",
+        collection: "toys",
+        collection_id: 3,
+      });
+      sessionStorage.setItem("ps-filter-expanded", JSON.stringify(["parts", "toys"]));
+      renderSidebar({
+        models: [fastModel, slowModel],
+        routes: {
+          "GET /api/v1/outliner/entries": (url) => {
+            const id = new URL(url, "http://test").searchParams.get("collection_id");
+            if (id === "3") {
+              started.resolve();
+              return slow.promise;
+            }
+            return json({
+              items: id === "1" ? [{ ...fastModel, kind: "model" }] : [],
+              next_cursor: null,
+            });
+          },
+        },
+      });
+      try {
+        await started.promise;
+        expect(await screen.findByRole("button", { name: "Restored bracket" })).toBeVisible();
+        expect(screen.queryByRole("button", { name: "Pending toy" })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Parts" }));
+
+        expect(screen.getByLabelText("Selected collection")).toHaveTextContent("parts");
+        expect(await screen.findByRole("button", { name: "Restored bracket" })).toBeVisible();
+      } finally {
+        await act(async () =>
+          slow.resolve(json({ items: [{ ...slowModel, kind: "model" }], next_cursor: null })),
+        );
+      }
+      expect(await screen.findByRole("button", { name: "Pending toy" })).toBeVisible();
+    });
+
     it("starts a first visit at the top level", async () => {
       // A tree that loads a level at a time cannot open a whole library, and
       // opening a large one whole is what took a minute (#295).
@@ -678,7 +759,7 @@ describe("FilterSidebar", () => {
 
     it("remembers that the model group was collapsed", async () => {
       const user = userEvent.setup();
-      renderSidebar({ models: [outlinerModel({ id: 5, collection: null, collection_id: null })] });
+      renderSidebar({ models: [aOutlinerModel({ id: 5, collection: null, collection_id: null })] });
 
       await user.click((await screen.findAllByRole("button", { name: "Collapse" }))[0]);
 
@@ -693,40 +774,43 @@ describe("FilterSidebar", () => {
       const user = userEvent.setup();
       const { onLibraryViewChange } = renderSidebar();
 
-      await user.click(screen.getByRole("button", { name: "Parts only" }));
+      await user.click(screen.getByRole("button", { name: "Multipart sets only" }));
 
-      expect(onLibraryViewChange).toHaveBeenCalledWith("components");
+      expect(onLibraryViewChange).toHaveBeenCalledWith("multipart");
     });
 
-    it("groups a referenced model beneath its multipart set", () => {
-      renderSidebar({ models: [outlinerModel()], multipartModels: [multipartSet()] });
+    it("exposes only the supported library view controls", () => {
+      renderSidebar({ models: [aOutlinerModel()], multipartModels: [multipartSet()] });
 
-      expect(screen.queryByText("Benchy")).toBeNull();
+      expect(screen.getByRole("button", { name: "Everything" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Multipart sets only" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Organized" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Parts only" })).not.toBeInTheDocument();
     });
 
-    it("shows referenced models in the parts-only view", async () => {
+    it("shows referenced models in Everything", async () => {
       renderSidebar({
-        models: [outlinerModel({ collection: null, collection_id: null })],
+        models: [aOutlinerModel({ collection: null, collection_id: null })],
         multipartModels: [multipartSet()],
-        libraryView: "components",
+        libraryView: "all",
       });
 
       expect(await screen.findByText("Benchy")).toBeInTheDocument();
     });
 
-    it("hides unrelated models in the parts-only view", () => {
+    it("shows unrelated models in Everything", async () => {
       renderSidebar({
-        models: [outlinerModel({ id: 2, collection: null, collection_id: null })],
+        models: [aOutlinerModel({ id: 2, collection: null, collection_id: null })],
         multipartModels: [multipartSet()],
-        libraryView: "components",
+        libraryView: "all",
       });
 
-      expect(screen.queryByText("Benchy")).toBeNull();
+      expect(await screen.findByText("Benchy")).toBeInTheDocument();
     });
 
     it("hides regular models in the multipart-only view", () => {
       renderSidebar({
-        models: [outlinerModel({ collection: null, collection_id: null })],
+        models: [aOutlinerModel({ collection: null, collection_id: null })],
         multipartModels: [multipartSet()],
         libraryView: "multipart",
       });
@@ -816,7 +900,7 @@ describe("FilterSidebar", () => {
 
 describe("outliner pages", () => {
   const models = Array.from({ length: 51 }, (_, i) =>
-    outlinerModel({ id: i + 1, name: `Part ${String(i).padStart(3, "0")}` }),
+    aOutlinerModel({ id: i + 1, name: `Part ${String(i).padStart(3, "0")}` }),
   );
 
   it("reuses pages of the opened branch after reopening", async () => {

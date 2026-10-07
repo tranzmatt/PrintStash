@@ -1,3 +1,5 @@
+import type { EditingBase } from "./editing";
+
 export interface SetupStatus {
   configured: boolean;
   setup_available?: boolean;
@@ -77,7 +79,7 @@ export interface SetupResponse {
   token_type: string;
 }
 
-export interface VaultConfigRead {
+export interface VaultConfigRead extends EditingBase {
   derivatives_mesh_enabled: boolean;
   derivatives_gcode_enabled: boolean;
   derivatives_toolpath_enabled: boolean;
@@ -302,7 +304,7 @@ export type StorageConnectionPurpose = "library" | "backup" | "both";
 export type StorageConnectionConfigurationValue = string | number | boolean | null;
 export type StorageConnectionConfiguration = Record<string, StorageConnectionConfigurationValue>;
 
-export interface StorageConnection {
+export interface StorageConnection extends EditingBase {
   id: number;
   name: string;
   kind: Exclude<LibrarySourceKind, "mounted">;
@@ -337,7 +339,7 @@ export interface ExternalLibraryScanSummary {
   aborted: boolean;
 }
 
-export interface ExternalLibrary {
+export interface ExternalLibrary extends EditingBase {
   id: number;
   name: string;
   root_path: string;

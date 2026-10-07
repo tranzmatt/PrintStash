@@ -1,3 +1,4 @@
+import type { EditingBase } from "./editing";
 import type {
   PrintJobIdentityRead,
   PrintJobReportedMetadataRead,
@@ -116,6 +117,8 @@ export interface ModelSimilarityRead {
 }
 
 export interface ModelRead {
+  edit_epoch: string;
+  edit_version: number;
   similarity?: ModelSimilarityRead;
   id: number;
   name: string;
@@ -210,6 +213,8 @@ export interface PrintSummaryRead {
 }
 
 export interface ModelListItem {
+  edit_epoch: string;
+  edit_version: number;
   similarity?: ModelSimilarityRead;
   id: number;
   name: string;
@@ -314,6 +319,10 @@ export interface ModelBatchResult {
   failed_count: number;
 }
 
+export interface ModelEditBatchResult extends ModelBatchResult {
+  succeeded_versions: Record<number, EditingBase>;
+}
+
 export interface RevisionBatchResult {
   succeeded_ids: number[];
   succeeded_count: number;
@@ -396,7 +405,7 @@ export interface PrintStatisticsRead {
 
 export interface ModelUpdate {
   name?: string;
-  description?: string;
+  description?: string | null;
   source_url?: string | null;
   collection?: string;
   tags?: string[];
@@ -834,7 +843,7 @@ export interface ModelPageRead {
   total: number;
 }
 
-export interface OutlinerModelRead {
+export interface OutlinerItemRead {
   id: number;
   name: string;
   collection: string | null;
@@ -843,12 +852,20 @@ export interface OutlinerModelRead {
   collection_label: string | null;
 }
 
+export interface OutlinerModelRead extends OutlinerItemRead {
+  edit_epoch: string;
+  edit_version: number;
+}
+
 export interface ListModelPageParams extends Omit<ListModelsParams, "offset"> {
   sort?: ModelSort;
   cursor?: string;
 }
 
+export type LibraryViewMode = "all" | "multipart";
+
 export interface SavedViewFilters {
+  library_view: LibraryViewMode;
   sort?: ModelSort | null;
   collection?: string | null;
   direct: boolean;
@@ -961,7 +978,7 @@ export interface CollectionPermissionUpdate {
   role: CollectionRole;
 }
 
-export interface FilamentProfileRead {
+export interface FilamentProfileRead extends EditingBase {
   id: number;
   name: string;
   material_type: string | null;
@@ -992,7 +1009,7 @@ export interface FilamentProfileUpdate {
   notes?: string | null;
 }
 
-export interface PrinterProfileRead {
+export interface PrinterProfileRead extends EditingBase {
   id: number;
   name: string;
   printer_model: string | null;

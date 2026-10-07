@@ -9,7 +9,8 @@ the next two.
 The cursor page is the grid's real pagination. Its cursor encodes the sort and filters it
 was issued under, so presenting it back under a different sort is a 400 rather than a page
 resumed from a meaningless position. And the outliner is deliberately thin: it feeds a
-tree of thousands of leaves, so it returns four fields and nothing else.
+tree of thousands of leaves, so it returns only identity, location and the captured
+editing base needed for a conditional drag.
 """
 
 from __future__ import annotations
@@ -22,7 +23,15 @@ from app.core.time import utcnow
 from app.db.models import CollectionRole, Model
 from tests.factories import build_model
 
-OUTLINER_FIELDS = {"id", "name", "collection", "collection_id", "collection_label"}
+OUTLINER_FIELDS = {
+    "id",
+    "name",
+    "edit_epoch",
+    "edit_version",
+    "collection",
+    "collection_id",
+    "collection_label",
+}
 PRINTER_FILTERS = [
     pytest.param({"printer_id": 1}, id="printer_id"),
     pytest.param({"printer_presence": "any"}, id="printer_presence"),

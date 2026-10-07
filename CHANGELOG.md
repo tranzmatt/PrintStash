@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+- Finish Settings cache and audit ownership: preserve pending edits during refresh,
+  reject obsolete cache-policy changes, share audit reads, and retire commands
+  when leaving a view or changing session.
+
+- Keep manual printer-material drafts after rejected saves and offer explicit review
+  before adoption; cancel obsolete reads when switching printers.
+
+- Preserve first-run storage drafts across locale changes, retire setup requests
+  on navigation, and recover one initial Library read conflict without mixing snapshots.
+
+- Keep Library view metadata out of AI Search filter requests, so filtered and saved searches remain usable.
+
+- Offer Everything and Multipart Sets as the two Library views. Filter and order
+  mixed results on the server before pagination so later matching results remain
+  reachable. Reject stale continuation pages instead of mixing catalog revisions.
+
+- Preserve each Library history entry's filters and reading position through
+  detail navigation. Bound restoration after cache eviction, explain missing
+  anchors, keep rapid folder transitions coherent and retire private snapshots
+  when the session or access changes.
+
+- Detect competing edits to Models, Multipart Sets, Documents, printer settings,
+  Profiles, Search, Vault settings, browser names, notifications, storage connections,
+  Library sources and Spoolman. Preserve drafts for explicit review after conflicts
+  or uncertain responses. Bind edits to database history so restored backups cannot
+  authorize obsolete drafts. Legacy clients retain unversioned compatibility.
+
+- Keep confirmed changes authoritative during refetch and pagination races. Remove
+  the duplicate transport GET cache and transport-owned invalidation. Feature owners
+  coordinate reads, receipts and recovery; session changes retire private requests,
+  cached results, local secrets and pending confirmations.
+
+- Retain protected thumbnail URLs while displayed, admit nearby images under a
+  four-download limit and cancel abandoned work. Bound idle encoded image data
+  without evicting mounted consumers. Preserve Shift selection after page append
+  and the reading position after removing a confirmed favorite.
+
+- Share Inbox and durable Job state across consumers. Preserve accepted uploads
+  and scans after their forms close, recover missed events and prevent disposed
+  printer subscriptions from reconnecting. Retire bulk transfers with their session.
+
+- Give settings, storage migration, backup, source management, manufacturing and
+  ZIP review explicit loading, error and recovery states. Preserve unsaved input,
+  require the reviewed destination for destructive actions and avoid replaying
+  commands after an uncertain acknowledgement. Save compound Vault configuration
+  in one transaction; retain omitted credentials and independent edit counters.
+
+- Bind browser-extension captures to the selected connection throughout download
+  and upload. Retire revoked credentials, cancelled pairing and obsolete callbacks;
+  clean up malformed upload receipts and unnecessary host permissions.
+
+- Keep route-chunk recovery bounded and localized, restrict the offline cache to
+  public static resources and recover online navigation when Cache Storage fails.
+  Retain React Router and the static Vite deployment; enforce app/package dependency
+  directions and remove obsolete navigation and invalidation compatibility APIs.
+
 - Load the Library route immediately and defer upload, tag, multipart creation
   and ZIP review forms until opened. Prioritize cards and the bounded tree,
   release auxiliary reads after paint or explicit interaction, and share the
@@ -228,6 +284,10 @@ See [the upgrade guide](UPGRADE.md#unreleased-dbos-30).
   will be removed in 0.16.
 
 ### Fixed
+
+- Keep admitted editor state while setup navigation is checked, retire it on rejection, and show legacy local/S3 storage details.
+
+- Preserve confirmed Model batch results when a later request loses its response, with explicit review and conditional undo of acknowledged changes.
 
 - Bounded STL previews report whether all source triangles are represented independently from a complete source scan. Mesh processing now uses separate admission, loading, measurement and preview owners with validated geometry and fingerprint contracts.
 - Mesh workers reject unknown or malformed fingerprint result states before publication.

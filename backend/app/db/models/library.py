@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from sys import float_info
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 
 from printstash_core.mesh.measurements import (
     VolumeMethod,
@@ -11,6 +11,7 @@ from printstash_core.mesh.measurements import (
     VolumeUnavailableCause,
 )
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Column,
     ForeignKey,
@@ -23,7 +24,8 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SAEnum,
 )
-from sqlmodel import Field, Relationship
+from sqlalchemy.orm import Mapped, column_property
+from sqlmodel import Field, Relationship, select
 
 from app.core.time import utcnow
 from app.db.enum_columns import EnumText, enum_check
@@ -490,6 +492,10 @@ class Model(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    edit_epoch: ClassVar[Mapped[str]]
+    edit_version: int = Field(
+        default=1, sa_column=Column(BigInteger, nullable=False, server_default="1")
+    )
     name: str = Field(index=True, max_length=255)
     slug: str = Field(index=True, unique=True, max_length=255)
     hash: str = Field(index=True, unique=True, max_length=64)
@@ -549,6 +555,10 @@ class MultipartModel(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("slug", name="uq_multipart_models_slug"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    edit_epoch: ClassVar[Mapped[str]]
+    edit_version: int = Field(
+        default=1, sa_column=Column(BigInteger, nullable=False, server_default="1")
+    )
     name: str = Field(max_length=255, index=True)
     slug: str = Field(max_length=255, index=True)
     description: Optional[str] = Field(default=None, sa_column=Column(Text))
@@ -696,6 +706,10 @@ class Document(SQLModel, table=True):
     __tablename__ = "documents"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    edit_epoch: ClassVar[Mapped[str]]
+    edit_version: int = Field(
+        default=1, sa_column=Column(BigInteger, nullable=False, server_default="1")
+    )
     name: str = Field(index=True, max_length=255)
     kind: DocumentKind = Field(index=True)
     collection_id: Optional[int] = Field(
@@ -723,3 +737,28 @@ class Document(SQLModel, table=True):
     updated_by: Optional[int] = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class LibraryRevision(SQLModel, table=True):
+    """Transactionally maintained authority for revision-checked browse pages."""
+
+    __tablename__ = "library_revision"
+    __table_args__ = (CheckConstraint("id = 1", name="library_revision_singleton"),)
+
+    id: int = Field(default=1, primary_key=True)
+    epoch: str = Field(max_length=32)
+    authorization_revision: int = Field(
+        default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
+    )
+    revision: int = Field(
+        default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
+    )
+
+
+# Capture the database incarnation in the same SELECT as each editing version.
+# This is an uncorrelated read expression, not a table column or a per-row query.
+# Snapshot/export code continues to copy only the durable table columns.
+for _editable_aggregate in (Model, MultipartModel, Document):
+    _editable_aggregate.edit_epoch = column_property(
+        select(LibraryRevision.epoch).where(LibraryRevision.id == 1).scalar_subquery()
+    )

@@ -1,5 +1,35 @@
 """Register every domain table and expose the shared SQLModel metadata."""
 
+# Versioned database contracts also install on the direct create_all path.
+from app.db import (
+    browser_edit_contracts_v1 as _browser_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import (
+    config_edit_contracts_v1 as _config_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import (
+    connection_edit_contracts_v1 as _connection_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import library_contracts_v1 as _library_contracts_v1  # noqa: F401, E402
+from app.db import (
+    notification_edit_contracts_v1 as _notification_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import (
+    printer_edit_contracts_v1 as _printer_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import (
+    profile_edit_contracts_v1 as _profile_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import (
+    search_edit_contracts_v1 as _search_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import (
+    source_edit_contracts_v1 as _source_edit_contracts_v1,  # noqa: F401, E402
+)
+from app.db import (
+    spoolman_edit_contracts_v1 as _spoolman_edit_contracts_v1,  # noqa: F401, E402
+)
+
 from .administration import (
     AuditLog as AuditLog,
 )
@@ -110,6 +140,7 @@ from .library import (
 from .library import (
     FileTagLink as FileTagLink,
 )
+from .library import LibraryRevision as LibraryRevision
 from .library import (
     Metadata as Metadata,
 )

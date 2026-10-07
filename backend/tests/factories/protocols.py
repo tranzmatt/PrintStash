@@ -37,6 +37,7 @@ from app.db.models import (
     DocumentKind,
     EmbeddingSpace,
     ExternalLibrary,
+    FilamentProfile,
     File,
     FileRevisionStatus,
     FileTagLink,
@@ -69,6 +70,7 @@ from app.db.models import (
     PassageVector,
     Printer,
     PrinterFile,
+    PrinterProfile,
     PrinterProvider,
     PrinterStatus,
     PrintJob,
@@ -232,6 +234,7 @@ class MakeCollection(Protocol):
         name: str = "Parts",
         *,
         parent: Collection | None = None,
+        trashed: bool | datetime = False,
         **overrides: Any,
     ) -> Collection: ...
 
@@ -732,3 +735,13 @@ class MakeIngestionScratchWindow(Protocol):
         execution_epoch: str | None = None,
         **overrides: Any,
     ) -> IngestionScratchWindow: ...
+
+
+class MakeFilamentProfile(Protocol):
+    def __call__(
+        self, name: str | None = None, *, material: str = "PLA", **overrides: Any
+    ) -> FilamentProfile: ...
+
+
+class MakePrinterProfile(Protocol):
+    def __call__(self, name: str | None = None, **overrides: Any) -> PrinterProfile: ...

@@ -1,3 +1,5 @@
+import type { GcPlan } from "@/lib/api/gc";
+import type { TrashedModelRead } from "@/types";
 import type { VolumeMeasurement } from "@/types/models";
 import type { ArtifactCacheRead } from "@/lib/api/artifact-cache";
 /**
@@ -45,6 +47,7 @@ import type {
   ExternalLibrary,
   JobStatus,
   ModelListItem,
+  OutlinerModelRead,
   PrinterAccess,
   PrinterCapabilities,
   PrinterRead,
@@ -101,10 +104,18 @@ export function printerCapabilities(override?: Partial<PrinterCapabilities>): Pr
 /** A reachable Moonraker printer the caller may fully operate. */
 export function aPrinter(override?: Partial<PrinterRead>): PrinterRead {
   return {
+    ...anEditingBase(),
     id: 1,
     name: "Voron",
     provider: "moonraker",
     moonraker_url: "http://printer.invalid:7125",
+    provider_material_sync_enabled: true,
+    operator_release_required: false,
+    has_bambu_access_code: false,
+    has_prusalink_password: false,
+    has_prusalink_api_key: false,
+    has_elegoo_centauri_access_code: false,
+    has_octoprint_api_key: false,
     has_api_key: false,
     capabilities: printerCapabilities(),
     access: printerAccess(),
@@ -227,6 +238,8 @@ export function storageUsage(override?: Partial<StorageUsageRead>): StorageUsage
 /** One enabled S3 location that may be reused by backup and library workflows. */
 export function aStorageConnection(override?: Partial<StorageConnection>): StorageConnection {
   return {
+    edit_epoch: "a".repeat(32),
+    edit_version: 1,
     id: 1,
     name: "Workshop storage",
     kind: "s3",
@@ -264,6 +277,8 @@ export function vaultStats(override?: Partial<VaultStatsRead>): VaultStatsRead {
 /** One row of the model library listing, with nothing printed yet. */
 export function aModelListItem(override?: Partial<ModelListItem>): ModelListItem {
   return {
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: 1,
     id: 1,
     name: "Bracket",
     slug: "bracket",
@@ -290,6 +305,8 @@ export function aModel(
   override?: Partial<import("@/types").ModelRead>,
 ): import("@/types").ModelRead {
   return {
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: 1,
     id: 1,
     name: "Leg",
     slug: "leg",
@@ -462,6 +479,8 @@ export function aMultipartModel(
   override?: Partial<import("@/types/multipart-models").MultipartModelRead>,
 ): import("@/types/multipart-models").MultipartModelRead {
   return {
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: 1,
     id: 7,
     name: "Table",
     slug: "table",
@@ -490,6 +509,8 @@ export function aMultipartModel(
 
 export function anArtifactCache(overrides: Partial<ArtifactCacheRead> = {}): ArtifactCacheRead {
   return {
+    edit_epoch: "00000000000000000000000000000001",
+    edit_version: 1,
     policy: {
       enabled: false,
       root: "/cache",
@@ -542,6 +563,8 @@ export function anAuditPolicy(
 /** A mounted, read-only source with its root verified. */
 export function anExternalLibrary(override?: Partial<ExternalLibrary>): ExternalLibrary {
   return {
+    edit_epoch: "a".repeat(32),
+    edit_version: 1,
     id: 1,
     name: "My models",
     root_path: "/libraries/models",
@@ -742,6 +765,7 @@ export function aVaultConfig(
   override?: Partial<import("@/types").VaultConfigRead>,
 ): import("@/types").VaultConfigRead {
   return {
+    ...anEditingBase(),
     derivatives_mesh_enabled: true,
     derivatives_gcode_enabled: true,
     derivatives_toolpath_enabled: true,
@@ -830,6 +854,157 @@ export function aMigrationProvider(
         secret: false,
       },
     ],
+    ...override,
+  };
+}
+
+/** A scheduled service window for printer 1. */
+export function aMaintenanceWindow(
+  override?: Partial<import("@/types").MaintenanceWindow>,
+): import("@/types").MaintenanceWindow {
+  return {
+    id: 1,
+    printer_id: 1,
+    starts_at: "2026-08-01T09:00:00Z",
+    ends_at: "2026-08-01T11:00:00Z",
+    reason: "Nozzle swap",
+    created_at: FROZEN_NOW,
+    updated_at: FROZEN_NOW,
+    ...override,
+  };
+}
+
+/** One completed printer service record. */
+export function aMaintenanceLog(
+  override?: Partial<import("@/types").MaintenanceLog>,
+): import("@/types").MaintenanceLog {
+  return {
+    id: 1,
+    printer_id: 1,
+    performed_at: FROZEN_NOW,
+    category: "belt",
+    note: "Tensioned X belt",
+    counter_value: null,
+    counter_unit: null,
+    created_at: FROZEN_NOW,
+    updated_at: FROZEN_NOW,
+    ...override,
+  };
+}
+
+/** A known remote file linked to a vault Artifact. */
+export function aPrinterFile(
+  override?: Partial<import("@/types").PrinterFileRead>,
+): import("@/types").PrinterFileRead {
+  return {
+    id: 50,
+    printer_id: 4,
+    printer_name: "Voron",
+    file_id: 20,
+    model_id: 1,
+    model_name: "Bracket",
+    original_filename: "bracket.gcode",
+    remote_filename: "bracket.gcode",
+    size_bytes: 4096,
+    sha256: "b".repeat(64),
+    matched_by: "sha256",
+    modified_at: FROZEN_NOW,
+    last_seen_at: FROZEN_NOW,
+    missing_since: null,
+    created_at: FROZEN_NOW,
+    updated_at: FROZEN_NOW,
+    ...override,
+  };
+}
+
+/** A captured Model source with an explicit editing version and absent cover. */
+export function aModelProvenance(
+  override?: Partial<import("@/types").ModelProvenanceRead>,
+): import("@/types").ModelProvenanceRead {
+  return {
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: 1,
+    sources: [
+      {
+        id: 8,
+        provider: "printables",
+        source_item_id: "41",
+        canonical_url: "https://www.printables.com/model/41",
+        source_revision: null,
+        tags: [],
+        first_captured_at: FROZEN_NOW,
+        last_checked_at: FROZEN_NOW,
+        captures: [],
+        cover: null,
+        fields: [
+          {
+            field_name: "title",
+            captured_value: "Source title",
+            captured_origin: "confirmed",
+            user_value: null,
+            user_override_set: false,
+            effective_value: "Source title",
+            effective_origin: "confirmed",
+            captured_at: null,
+            user_updated_at: null,
+          },
+        ],
+      },
+    ],
+    ...override,
+  };
+}
+
+/** Minimal versioned tree leaf; its location is explicit without rich Model hydration. */
+export function aOutlinerModel(override: Partial<OutlinerModelRead> = {}): OutlinerModelRead {
+  return {
+    id: 1,
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: 1,
+    name: "Benchy",
+    collection: "parts",
+    collection_id: 1,
+    collection_label: "Parts",
+    ...override,
+  };
+}
+
+/** An acknowledged editing base in the test library's stable database history. */
+export function anEditingBase(
+  override?: Partial<import("@/types").EditingBase>,
+): import("@/types").EditingBase {
+  return { edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", edit_version: 1, ...override };
+}
+
+/** A restorable model and a separately reviewed cleanup plan. */
+export function aTrashedModel(override?: Partial<TrashedModelRead>): TrashedModelRead {
+  return {
+    id: 7,
+    name: "Old bracket",
+    slug: "old-bracket",
+    collection: null,
+    tags: [],
+    thumbnail_url: null,
+    file_count: 2,
+    size_bytes: 2048,
+    deleted_at: "2026-01-01T00:00:00Z",
+    expires_at: "2026-02-01T00:00:00Z",
+    ...override,
+  };
+}
+export function aGcPlan(override?: Partial<GcPlan>): GcPlan {
+  return {
+    id: 12,
+    state: "preview",
+    digest: "a".repeat(64),
+    resource_count: 3,
+    candidate_pool_count: 3,
+    key_count: 5,
+    size_bytes: 2048,
+    quarantine_until: null,
+    backup_id: null,
+    last_error: null,
+    items: [],
     ...override,
   };
 }

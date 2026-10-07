@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.core.time import ensure_utc
 from app.db.models import CollectionRole, FileRevisionStatus, FileType, PrintJobState
+from app.schemas.editing import EditingBase
 from app.schemas.mesh_measurements import VolumeMeasurementRead
 from app.schemas.orca import OrcaNativeContext
 from app.schemas.printers import (
@@ -150,7 +151,7 @@ class ModelSimilarityRead(BaseModel):
     confirmed: int = 0
 
 
-class ModelRead(BaseModel):
+class ModelRead(EditingBase):
     similarity: ModelSimilarityRead = Field(default_factory=ModelSimilarityRead)
     id: int
     name: str
@@ -253,7 +254,7 @@ class PrintSummaryRead(BaseModel):
     total_cost: Optional[float] = None
 
 
-class ModelListItem(BaseModel):
+class ModelListItem(EditingBase):
     similarity: ModelSimilarityRead = Field(default_factory=ModelSimilarityRead)
     id: int
     name: str
@@ -296,13 +297,17 @@ class ModelPageRead(BaseModel):
     total: int
 
 
-class OutlinerModelRead(BaseModel):
+class OutlinerItemRead(BaseModel):
     id: int
     name: str
     collection: Optional[str] = None
     collection_id: Optional[int] = None
     # The collection's name path (``Parts/Brackets``); None outside a collection.
     collection_label: Optional[str] = None
+
+
+class OutlinerModelRead(OutlinerItemRead, EditingBase):
+    pass
 
 
 class ModelFilters(BaseModel):
@@ -423,10 +428,18 @@ class ModelBatchResult(BaseModel):
     failed_count: int = 0
 
 
+class ModelEditBatchResult(ModelBatchResult):
+    # Exact versions acknowledged by this mutation, captured before commit.
+    succeeded_versions: dict[str, EditingBase]
+
+
 class ModelBatchMove(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_ids: List[int] = Field(min_length=1, max_length=500)
+    expected_versions: dict[int, EditingBase] | None = Field(
+        default=None, max_length=500
+    )
     # Same semantics as ModelUpdate.collection: "" (or missing) means root.
     collection: str = Field(default="", max_length=1024)
 
@@ -435,6 +448,9 @@ class ModelBatchTags(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_ids: List[int] = Field(min_length=1, max_length=500)
+    expected_versions: dict[int, EditingBase] | None = Field(
+        default=None, max_length=500
+    )
     add: List[str] = Field(default_factory=list, max_length=100)
     remove: List[str] = Field(default_factory=list, max_length=100)
 
@@ -717,7 +733,7 @@ class FilamentProfileUpdate(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=4096)
 
 
-class FilamentProfileRead(FilamentProfileBase):
+class FilamentProfileRead(FilamentProfileBase, EditingBase):
     id: int
     usage_count: int = 0
     # Present when this preset mirrors a Spoolman filament — the UI shows a
@@ -751,7 +767,7 @@ class PrinterProfileUpdate(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=4096)
 
 
-class PrinterProfileRead(PrinterProfileBase):
+class PrinterProfileRead(PrinterProfileBase, EditingBase):
     id: int
     usage_count: int = 0
     created_at: datetime

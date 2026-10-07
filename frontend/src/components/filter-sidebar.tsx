@@ -1,5 +1,6 @@
 "use client";
 
+import { captureModelDrag, type ModelDrag } from "@/lib/model-dnd";
 import { knownUiText } from "@/lib/locale";
 import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
@@ -22,7 +23,6 @@ import type {
   OutlinerEntry,
   OutlinerFilters,
   OutlinerParams,
-  OutlinerView,
 } from "@/types/outliner";
 import { Button } from "@/components/ui/button";
 import { Localized } from "@/components/ui/localized";
@@ -40,9 +40,10 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 
-export type LibraryViewMode = OutlinerView;
+import type { LibraryViewMode } from "@/features/library/url";
+export type { LibraryViewMode } from "@/features/library/url";
 
-const LIBRARY_VIEWS: LibraryViewMode[] = ["organized", "all", "multipart", "components"];
+const LIBRARY_VIEWS: LibraryViewMode[] = ["all", "multipart"];
 
 type DragPayload =
   | { type: "model"; model: OutlinerModelRead }
@@ -734,13 +735,18 @@ export function FilterSidebarContent({
     });
   }
 
+  const modelDrag = useRef<ModelDrag | null>(null);
   function handleDragStart(event: DragStartEvent) {
-    setDragging(activeDragPayload(event));
+    const payload = activeDragPayload(event);
+    modelDrag.current = payload?.type === "model" ? captureModelDrag(payload.model) : null;
+    setDragging(payload);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setDragging(null);
     const payload = activeDragPayload(event);
+    const source = modelDrag.current;
+    modelDrag.current = null;
     const target = collectionDropTarget(event);
     if (!payload || !target) return;
 
@@ -748,8 +754,8 @@ export function FilterSidebarContent({
     const targetCollectionId = target.collectionId;
 
     if (payload.type === "model") {
-      if (targetCollectionPath === (payload.model.collection ?? null)) return;
-      onMoveModel?.(payload.model.id, targetCollectionPath);
+      if (!source || targetCollectionPath === source.collection) return;
+      onMoveModel?.(source, targetCollectionPath);
     } else if (payload.type === "collection") {
       const col = payload.collection;
       if (targetCollectionId === col.id) return;
@@ -817,7 +823,10 @@ export function FilterSidebarContent({
         collisionDetection={pointerWithin}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onDragCancel={() => setDragging(null)}
+        onDragCancel={() => {
+          modelDrag.current = null;
+          setDragging(null);
+        }}
       >
         <div className="flex-1 overflow-auto py-4 px-3 space-y-6">
           <section>
@@ -837,13 +846,7 @@ export function FilterSidebarContent({
                       : "text-foreground hover:bg-muted"
                   }`}
                 >
-                  {view === "organized"
-                    ? t("libraryView.organized")
-                    : view === "all"
-                      ? t("libraryView.all")
-                      : view === "multipart"
-                        ? t("libraryView.multipart")
-                        : t("libraryView.components")}
+                  {view === "all" ? t("libraryView.all") : t("libraryView.multipart")}
                 </button>
               ))}
             </div>
@@ -1119,7 +1122,7 @@ export interface FilterSidebarProps {
   onPrinterChange: (printerId: number | null) => void;
   onPrinterPresenceChange: (presence: "any" | "none" | null) => void;
   onCreateCollection: () => void;
-  onMoveModel?: (modelId: number, targetCollection: string | null) => void;
+  onMoveModel?: (source: ModelDrag, targetCollection: string | null) => void;
   onMoveCollection?: (collectionId: number, newParentId: number | null) => void;
   onDeleteCollection?: (id: number, recursive: boolean) => void;
   canViewPrinters?: boolean;

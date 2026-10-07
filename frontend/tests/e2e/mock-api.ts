@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
+import { aVaultConfig, aPrinter } from "../../src/test-support/factories";
+import type { VaultConfigUpdate, PrinterUpdate } from "../../src/types";
 import { aCaption } from "../../src/test-support/captions";
 import { searchPreferences, searchStatus } from "../../src/test-support/search";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import type { SubjectCaption } from "../../src/types/captions";
 import type { SearchStatus } from "../../src/types/search";
+import type { ModelProvenanceRead, ModelSourceCoverRead } from "../../src/types/provenance";
 import type { MetadataRead } from "../../src/types/models";
 
 const now = "2026-06-04T00:24:22.000000";
@@ -70,6 +73,8 @@ const metadata: MetadataRead = {
 };
 
 const model = {
+  edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  edit_version: 1,
   id: 1,
   name: "skadis_kitchen-roll_screw",
   slug: "skadis-kitchen-roll-screw",
@@ -122,7 +127,11 @@ const model = {
   ],
 };
 
-const printer = {
+const initialPrinter = aPrinter({
+  edit_epoch: "a".repeat(32),
+  edit_version: 1,
+  provider_material_sync_enabled: true,
+  operator_release_required: false,
   id: 3,
   name: "ender",
   provider: "moonraker",
@@ -164,7 +173,8 @@ const printer = {
   last_error: null,
   created_at: "2026-05-31T18:51:39.627384",
   updated_at: now,
-};
+});
+let printer = { ...initialPrinter };
 
 const filamentProfiles = [
   {
@@ -220,6 +230,8 @@ const printerDiagnostics = {
 const modelList = [
   {
     id: model.id,
+    edit_epoch: model.edit_epoch,
+    edit_version: model.edit_version,
     name: model.name,
     slug: model.slug,
     collection: model.collection,
@@ -250,6 +262,7 @@ const state = {
   inboxCaptured: false,
   inboxImported: false,
   sourceOverride: false,
+  sourceEditVersion: 1,
   sourceCover: true,
   browserDeviceRevoked: false,
   s3LegacyCandidate: true,
@@ -436,6 +449,8 @@ function artifactUploadStatus(uploadState: "created" | "uploading" | "ingesting"
 }
 
 export function resetMockApiState(): void {
+  printer = { ...initialPrinter };
+  configuration = aVaultConfig({ storage_tier: "unguarded" });
   state.externalLibrariesEnabled = false;
   state.ingestJobQueued = false;
   state.thumbnailRebuildQueued = false;
@@ -445,6 +460,7 @@ export function resetMockApiState(): void {
   state.inboxImported = false;
   inboxCollectionId = null;
   state.sourceOverride = false;
+  state.sourceEditVersion = 1;
   state.sourceCover = true;
   state.browserDeviceRevoked = false;
   state.s3LegacyCandidate = true;
@@ -577,9 +593,38 @@ function importedInboxItem() {
   };
 }
 
-function provenance() {
+function sourceCoverMetadata(): ModelSourceCoverRead {
+  return {
+    id: 1,
+    provenance_source_id: 8,
+    content_type: "image/webp",
+    size_bytes: 68,
+    updated_at: new Date(Date.parse(now) + state.sourceEditVersion).toISOString(),
+  };
+}
+
+function claimSourceEdit(req: IncomingMessage, res: ServerResponse): boolean {
+  if (req.headers["x-printstash-edit-contract"] !== "conditional-v1" || !req.headers["if-match"]) {
+    sendJson(res, { detail: "edit_precondition_required" }, 428);
+    return false;
+  }
+  if (
+    req.headers["if-match"] !==
+    `"model-1-eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-v${state.sourceEditVersion}"`
+  ) {
+    sendJson(res, { detail: "edit_conflict" }, 412);
+    return false;
+  }
+  state.sourceEditVersion++;
+  res.setHeader("ETag", `"model-1-eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-v${state.sourceEditVersion}"`);
+  return true;
+}
+
+function provenance(): ModelProvenanceRead & { schema_version: 2 } {
   return {
     schema_version: 2,
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: state.sourceEditVersion,
     sources: [
       {
         id: 8,
@@ -590,6 +635,7 @@ function provenance() {
         first_captured_at: now,
         last_checked_at: now,
         captures: [],
+        cover: state.sourceCover ? sourceCoverMetadata() : null,
         fields: [
           {
             field_name: "description",
@@ -645,44 +691,16 @@ function provenance() {
 
 export function setExternalLibrariesEnabled(value: boolean): void {
   state.externalLibrariesEnabled = value;
+  configuration = {
+    ...configuration,
+    external_libraries_enabled: value,
+    edit_version: configuration.edit_version + 1,
+  };
 }
 
+let configuration = aVaultConfig({ storage_tier: "unguarded" });
 function vaultConfig() {
-  return {
-    storage_backend: "local",
-    storage_provider: "local",
-    storage_provider_config: {
-      provider: "local",
-      data_dir: "/data/files",
-      thumb_dir: "/data/thumbs",
-      root: "vault-data",
-    },
-    storage_tier: "unguarded",
-    storage_warnings: [],
-    storage_unverified_acknowledged: false,
-    data_dir: "/data/files",
-    thumb_dir: "/data/thumbs",
-    s3_bucket: "",
-    s3_endpoint_url: "",
-    s3_region: "",
-    s3_access_key: "",
-    s3_secret_key: "",
-    has_s3_access_key: false,
-    has_s3_secret_key: false,
-    backup_retention_days: 30,
-    trash_retention_days: 30,
-    backup_s3_bucket: "",
-    backup_s3_endpoint_url: "",
-    backup_s3_region: "",
-    backup_s3_access_key: "",
-    backup_s3_secret_key: "",
-    has_backup_s3_access_key: false,
-    has_backup_s3_secret_key: false,
-    has_backup_s3: false,
-    auto_mark_known_good: true,
-    external_libraries_enabled: state.externalLibrariesEnabled,
-    model_thumbnail_width: 640,
-  };
+  return { ...configuration, external_libraries_enabled: state.externalLibrariesEnabled };
 }
 
 function storageProviders() {
@@ -1016,14 +1034,18 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
   // The tree a level, a lookup or a search at a time. Every mock collection is
   // a top-level folder with nothing below it.
   if (url.pathname.startsWith("/api/v1/outliner/")) {
-    const leaves = modelList.map(({ id, name, collection, collection_id }) => ({
-      kind: "model",
-      id,
-      name,
-      collection,
-      collection_id,
-      collection_label: mockCollections().find((row) => row.id === collection_id)?.name ?? null,
-    }));
+    const leaves = modelList.map(
+      ({ id, name, edit_epoch, edit_version, collection, collection_id }) => ({
+        kind: "model",
+        edit_epoch,
+        edit_version,
+        id,
+        name,
+        collection,
+        collection_id,
+        collection_label: mockCollections().find((row) => row.id === collection_id)?.name ?? null,
+      }),
+    );
     const page = <T extends { name: string; id: number }>(items: T[]) => {
       const offset = Number(url.searchParams.get("cursor") ?? 0);
       const limit = Number(url.searchParams.get("limit") ?? 50);
@@ -1168,11 +1190,16 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     return;
   }
   if (url.pathname === "/api/v1/models/1/provenance") {
+    res.setHeader(
+      "ETag",
+      `"model-1-eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-v${state.sourceEditVersion}"`,
+    );
     sendJson(res, provenance());
     return;
   }
   if (url.pathname === "/api/v1/models/1/provenance/8" && req.method === "PATCH") {
     drainRequest(req, () => {
+      if (!claimSourceEdit(req, res)) return;
       state.sourceOverride = !state.sourceOverride;
       sendJson(res, provenance());
     });
@@ -1183,30 +1210,20 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
       if (!state.sourceCover) {
         sendJson(res, { detail: "source_cover_not_found" }, 404);
       } else {
-        sendJson(res, {
-          id: 1,
-          provenance_source_id: 8,
-          content_type: "image/webp",
-          size_bytes: 68,
-          updated_at: now,
-        });
+        sendJson(res, sourceCoverMetadata());
       }
       return;
     }
     if (req.method === "PUT") {
       drainRequest(req, () => {
+        if (!claimSourceEdit(req, res)) return;
         state.sourceCover = true;
-        sendJson(res, {
-          id: 1,
-          provenance_source_id: 8,
-          content_type: "image/webp",
-          size_bytes: 68,
-          updated_at: now,
-        });
+        sendJson(res, sourceCoverMetadata());
       });
       return;
     }
     if (req.method === "DELETE") {
+      if (!claimSourceEdit(req, res)) return;
       state.sourceCover = false;
       res.writeHead(204);
       res.end();
@@ -1279,6 +1296,34 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     sendJson(res, []);
     return;
   }
+  if (url.pathname === "/api/v1/models/browse/thumbnails") {
+    const ids = new Set(url.searchParams.getAll("model_id").map(Number));
+    sendJson(res, {
+      items: modelList
+        .filter((model) => ids.has(model.id))
+        .map((model) => ({ model_id: model.id, thumbnail_url: model.thumbnail_url })),
+      authorization_revision: "a1",
+    });
+    return;
+  }
+  if (url.pathname === "/api/v1/models/browse/revision") {
+    sendJson(res, { browse_revision: "r1", authorization_revision: "a1" });
+    return;
+  }
+  if (url.pathname === "/api/v1/models/browse") {
+    const items =
+      url.searchParams.get("view") === "multipart"
+        ? []
+        : modelList.map((model) => ({ kind: "model", model }));
+    sendJson(res, {
+      items,
+      next_cursor: null,
+      total: items.length,
+      browse_revision: "r1",
+      authorization_revision: "a1",
+    });
+    return;
+  }
   if (url.pathname === "/api/v1/models/page") {
     sendJson(res, {
       items: modelList,
@@ -1290,7 +1335,9 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
   if (url.pathname === "/api/v1/models/outliner") {
     sendJson(
       res,
-      modelList.map(({ id, name, collection, collection_id }) => ({
+      modelList.map(({ id, name, edit_epoch, edit_version, collection, collection_id }) => ({
+        edit_epoch,
+        edit_version,
         id,
         name,
         collection,
@@ -1343,7 +1390,7 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     return;
   }
   if (url.pathname === "/api/v1/models/1") {
-    sendJson(res, model);
+    sendJson(res, { ...model, edit_version: state.sourceEditVersion });
     return;
   }
   if (url.pathname === "/api/v1/models/1/printer-files") {
@@ -1548,7 +1595,32 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
   }
   if (url.pathname === "/api/v1/printers/3") {
     if (req.method === "PATCH") {
-      drainRequest(req, () => sendJson(res, { ...printer, name: "Workshop printer" }));
+      let body = "";
+      req.on("data", (chunk: string) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const expected = `"printer-${printer.id}-e${printer.edit_epoch}-v${printer.edit_version}"`;
+        if (req.headers["x-printstash-edit-contract"] && !req.headers["if-match"]) {
+          sendJson(res, { detail: "edit_precondition_required" }, 428);
+          return;
+        }
+        if (req.headers["if-match"] && req.headers["if-match"] !== expected) {
+          sendJson(res, { detail: "edit_conflict" }, 412);
+          return;
+        }
+        const update: PrinterUpdate = JSON.parse(body);
+        if (update.name !== undefined) printer.name = update.name;
+        if (update.model_name !== undefined) printer.model_name = update.model_name || null;
+        if (update.group !== undefined) printer.group = update.group || null;
+        if (update.notes !== undefined) printer.notes = update.notes;
+        if (update.provider_material_sync_enabled !== undefined)
+          printer.provider_material_sync_enabled = update.provider_material_sync_enabled;
+        if (update.operator_release_required !== undefined)
+          printer.operator_release_required = update.operator_release_required;
+        printer.edit_version += 1;
+        sendJson(res, printer);
+      });
       return;
     }
     sendJson(res, printer);
@@ -1859,7 +1931,72 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
   }
   if (url.pathname === "/api/v1/config") {
     if (req.method === "PUT") {
-      drainRequest(req, () => sendJson(res, vaultConfig()));
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const base = `"vault-config-e${configuration.edit_epoch}-v${configuration.edit_version}"`;
+        if (
+          req.headers["x-printstash-edit-contract"] === "conditional-v1" &&
+          !req.headers["if-match"]
+        ) {
+          sendJson(res, { detail: "edit_precondition_required" }, 428);
+          return;
+        }
+        if (req.headers["if-match"] && req.headers["if-match"] !== base) {
+          sendJson(res, { detail: "edit_conflict" }, 412);
+          return;
+        }
+        const update: VaultConfigUpdate = JSON.parse(body);
+        const {
+          oidc_client_secret,
+          s3_access_key,
+          s3_secret_key,
+          backup_s3_access_key,
+          backup_s3_secret_key,
+          derivatives_mesh_enabled,
+          derivatives_gcode_enabled,
+          derivatives_toolpath_enabled,
+          ...publicFields
+        } = update;
+        configuration = {
+          ...configuration,
+          ...publicFields,
+          edit_version: configuration.edit_version + 1,
+          derivatives_mesh_enabled:
+            derivatives_mesh_enabled === undefined
+              ? configuration.derivatives_mesh_enabled
+              : (derivatives_mesh_enabled ?? true),
+          derivatives_gcode_enabled:
+            derivatives_gcode_enabled === undefined
+              ? configuration.derivatives_gcode_enabled
+              : (derivatives_gcode_enabled ?? true),
+          derivatives_toolpath_enabled:
+            derivatives_toolpath_enabled === undefined
+              ? configuration.derivatives_toolpath_enabled
+              : (derivatives_toolpath_enabled ?? true),
+          has_oidc_client_secret:
+            oidc_client_secret === undefined
+              ? configuration.has_oidc_client_secret
+              : !!oidc_client_secret,
+          has_s3_access_key:
+            s3_access_key === undefined ? configuration.has_s3_access_key : !!s3_access_key,
+          has_s3_secret_key:
+            s3_secret_key === undefined ? configuration.has_s3_secret_key : !!s3_secret_key,
+          has_backup_s3_access_key:
+            backup_s3_access_key === undefined
+              ? configuration.has_backup_s3_access_key
+              : !!backup_s3_access_key,
+          has_backup_s3_secret_key:
+            backup_s3_secret_key === undefined
+              ? configuration.has_backup_s3_secret_key
+              : !!backup_s3_secret_key,
+        };
+        state.externalLibrariesEnabled = configuration.external_libraries_enabled;
+        sendJson(res, vaultConfig());
+      });
       return;
     }
     sendJson(res, vaultConfig());
@@ -1941,6 +2078,18 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
       sendJson(res, {
         backup_id: "legacy-2025",
         source_ref: "s3-legacy-source",
+        provider_ref: "provider-legacy-s3",
+        created_at: "2025-01-01T00:00:00Z",
+        size_bytes: 4096,
+        file_count: 12,
+        storage_backend: "s3",
+        app_version: "0.12.1",
+        location: "s3",
+        namespace: "printstash-bucket/nexus3d-backups",
+        key: "nexus3d-backups/legacy-2025.tar.gz",
+        prefix: "nexus3d-backups/",
+        canonical: true,
+        precedence: 2,
         archive_sha256: "a".repeat(64),
       }),
     );

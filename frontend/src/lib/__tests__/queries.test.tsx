@@ -3,7 +3,7 @@
  * broken.
  *
  * **Freshness.** Collections, tags, printers, profiles and vault stats all pass
- * `fresh: true`, because every one of them changes as a *result* of something the
+ * Query-owned freshness, because every one of them changes as a *result* of something the
  * user just did. A cached collection list after creating a collection shows the
  * user their new folder missing.
  *
@@ -25,6 +25,7 @@
  * requested only on demand. A client that re-sorted locally would paginate a
  * different order than the one it displays.
  */
+import { anEditingBase } from "@/test-support/factories";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -49,6 +50,7 @@ import {
   useOutlinerModels,
   useTags,
   useVaultStats,
+  useVaultConfig,
   type QueryApi,
 } from "@/lib/queries";
 import type {
@@ -62,11 +64,10 @@ import type {
   TagRead,
   VaultStatsRead,
 } from "@/types";
-import { aCollectionNode, aPrinter } from "@/test-support/factories";
+import { aOutlinerModel, aCollectionNode, aPrinter, aVaultConfig } from "@/test-support/factories";
 
 // The hooks are thin, but they encode two real contracts worth locking down:
-// (1) every shared read passes `{ fresh: true }` so TanStack Query — not the
-// legacy in-memory cache in request.ts — is the single source of truth, and
+// (1) shared reads preserve their endpoint parameters and Query ownership, and
 // (2) usePrinters honours `enabled` so non-admins don't fetch a list they
 // can't use.
 //
@@ -80,6 +81,7 @@ const stubs = {
   lookupCollectionById: vi.fn<QueryApi["lookupCollectionById"]>(),
   searchCollections: vi.fn<QueryApi["searchCollections"]>(),
   getModelFacets: vi.fn<QueryApi["getModelFacets"]>(),
+  getVaultConfig: vi.fn<QueryApi["getVaultConfig"]>(),
   getVaultStats: vi.fn<QueryApi["getVaultStats"]>(),
   listFilamentProfiles: vi.fn<QueryApi["listFilamentProfiles"]>(),
   listModelPage: vi.fn<QueryApi["listModelPage"]>(),
@@ -99,6 +101,7 @@ const tag: TagRead = { id: 1, name: "petg", slug: "petg", model_count: 1 };
 const printer = aPrinter({ name: "Voron", moonraker_url: "http://10.0.0.1:7125" });
 
 const printerProfile: PrinterProfileRead = {
+  ...anEditingBase(),
   id: 1,
   name: "Ender",
   printer_model: null,
@@ -111,6 +114,7 @@ const printerProfile: PrinterProfileRead = {
 };
 
 const filamentProfile: FilamentProfileRead = {
+  ...anEditingBase(),
   id: 1,
   name: "PLA",
   material_type: null,
@@ -149,6 +153,8 @@ const emptyPage: ModelPageRead = { items: [], next_cursor: null, total: 0 };
 
 function makeListItem(id: number, name: string): ModelListItem {
   return {
+    edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    edit_version: 1,
     id,
     name,
     slug: name.toLowerCase().replaceAll(" ", "-"),
@@ -166,10 +172,6 @@ function makeListItem(id: number, name: string): ModelListItem {
     print_summary: null,
     starred: false,
   };
-}
-
-function makeOutlinerModel(id: number, name: string): OutlinerModelRead {
-  return { id, name, collection: null, collection_id: null, collection_label: null };
 }
 
 function emptyFacets(): ModelFacetsRead {
@@ -207,6 +209,7 @@ beforeEach(() => {
   stubs.listPrinterProfiles.mockResolvedValue([printerProfile]);
   stubs.listFilamentProfiles.mockResolvedValue([filamentProfile]);
   stubs.getVaultStats.mockResolvedValue(vaultStats);
+  stubs.getVaultConfig.mockResolvedValue(aVaultConfig());
   stubs.listModelPage.mockResolvedValue(emptyPage);
 });
 
@@ -225,12 +228,16 @@ describe("taxonomy hooks", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(stubs.listCollectionChildren).toHaveBeenCalledTimes(1);
-    expect(stubs.listCollectionChildren).toHaveBeenCalledWith(null, null);
+    expect(stubs.listCollectionChildren).toHaveBeenCalledWith(null, null, undefined, {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data?.pages[0].items).toEqual([first]);
     await act(async () => {
       await result.current.fetchNextPage();
     });
-    expect(stubs.listCollectionChildren).toHaveBeenNthCalledWith(2, null, "next");
+    expect(stubs.listCollectionChildren).toHaveBeenNthCalledWith(2, null, "next", undefined, {
+      signal: expect.any(AbortSignal),
+    });
     await waitFor(() => expect(result.current.data?.pages[1]?.items).toEqual([second]));
   });
 
@@ -252,7 +259,9 @@ describe("taxonomy hooks", () => {
     const { result } = renderHook(() => useCollectionLookup("parts"), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(stubs.lookupCollection).toHaveBeenCalledTimes(1);
-    expect(stubs.lookupCollection).toHaveBeenCalledWith("parts");
+    expect(stubs.lookupCollection).toHaveBeenCalledWith("parts", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data?.collection.path).toBe("parts");
   });
 
@@ -262,14 +271,16 @@ describe("taxonomy hooks", () => {
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(stubs.searchCollections).toHaveBeenCalledTimes(1);
-    expect(stubs.searchCollections).toHaveBeenCalledWith("bracket", "edit", null);
+    expect(stubs.searchCollections).toHaveBeenCalledWith("bracket", "edit", null, undefined, {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("resolves a saved collection by id", async () => {
     const { result } = renderHook(() => useCollectionLookupById(1), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.collection.id).toBe(1);
-    expect(stubs.lookupCollectionById).toHaveBeenCalledWith(1);
+    expect(stubs.lookupCollectionById).toHaveBeenCalledWith(1, { signal: expect.any(AbortSignal) });
   });
 
   it("leaves id lookup idle without a collection", () => {
@@ -278,35 +289,54 @@ describe("taxonomy hooks", () => {
     expect(stubs.lookupCollectionById).not.toHaveBeenCalled();
   });
 
-  it("useTags fetches with fresh:true", async () => {
+  it("loads the tag catalog", async () => {
     const { result } = renderHook(() => useTags(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(stubs.listTags).toHaveBeenCalledWith({ fresh: true });
+    expect(stubs.listTags).toHaveBeenCalledWith({});
   });
 });
 
 describe("resource hooks", () => {
-  it("usePrinterProfiles / useFilamentProfiles / useVaultStats pass fresh:true", async () => {
+  it("loads the resource catalogs", async () => {
     const pp = renderHook(() => usePrinterProfiles(), { wrapper: wrapper() });
     await waitFor(() => expect(pp.result.current.isSuccess).toBe(true));
-    expect(stubs.listPrinterProfiles).toHaveBeenCalledWith({ fresh: true });
+    expect(stubs.listPrinterProfiles).toHaveBeenCalledWith({
+      signal: expect.any(AbortSignal),
+    });
 
     const fp = renderHook(() => useFilamentProfiles(), { wrapper: wrapper() });
     await waitFor(() => expect(fp.result.current.isSuccess).toBe(true));
-    expect(stubs.listFilamentProfiles).toHaveBeenCalledWith({ fresh: true });
+    expect(stubs.listFilamentProfiles).toHaveBeenCalledWith({
+      signal: expect.any(AbortSignal),
+    });
 
     const vs = renderHook(() => useVaultStats(), { wrapper: wrapper() });
     await waitFor(() => expect(vs.result.current.isSuccess).toBe(true));
-    expect(stubs.getVaultStats).toHaveBeenCalledWith({ fresh: true });
+    expect(stubs.getVaultStats).toHaveBeenCalledWith({});
   });
 });
 
 describe("usePrinters enabled gate", () => {
-  it("fetches when enabled (default) with fresh:true", async () => {
+  it("cancels the canonical printer choice read on disposal", async () => {
+    const response = Promise.withResolvers<Awaited<ReturnType<QueryApi["listPrinters"]>>>();
+    let signal: AbortSignal | undefined;
+    stubs.listPrinters.mockImplementationOnce((_group, options) => {
+      signal = options?.signal;
+      return response.promise;
+    });
+    const app = renderHook(() => usePrinters(), { wrapper: wrapper() });
+    await waitFor(() => expect(signal).toBeDefined());
+    app.unmount();
+    expect(signal?.aborted).toBe(true);
+    response.resolve([printer]);
+  });
+  it("fetches when enabled by default", async () => {
     const { result } = renderHook(() => usePrinters(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([printer]);
-    expect(stubs.listPrinters).toHaveBeenCalledWith(undefined, { fresh: true });
+    expect(stubs.listPrinters).toHaveBeenCalledWith(undefined, {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("does NOT fetch when enabled is false", async () => {
@@ -323,8 +353,24 @@ describe("usePrinters enabled gate", () => {
 
 describe("filter query continuity", () => {
   it("keeps outliner data mounted while changed filters refetch", async () => {
-    const firstModels = [makeOutlinerModel(1, "Drawer Housing")];
-    const filteredModels = [makeOutlinerModel(2, "PLA Bracket")];
+    const firstModels = [
+      aOutlinerModel({
+        id: 1,
+        name: "Drawer Housing",
+        collection: null,
+        collection_id: null,
+        collection_label: null,
+      }),
+    ];
+    const filteredModels = [
+      aOutlinerModel({
+        id: 2,
+        name: "PLA Bracket",
+        collection: null,
+        collection_id: null,
+        collection_label: null,
+      }),
+    ];
     let resolveFiltered!: (value: OutlinerModelRead[]) => void;
     stubs.listOutlinerModels.mockResolvedValueOnce(firstModels).mockImplementationOnce(
       () =>
@@ -432,6 +478,8 @@ describe("server-owned Model pagination", () => {
 describe("folder navigation", () => {
   function aMultipartModel(id: number, name: string): MultipartModelListItem {
     return {
+      edit_epoch: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      edit_version: 1,
       id,
       name,
       slug: name.toLowerCase(),
@@ -485,7 +533,7 @@ describe("folder navigation", () => {
     const { result } = renderHook(() => useCollectionReadme(5), { wrapper: wrapper() });
 
     await waitFor(() => expect(result.current.data).toBe("# Rack"));
-    expect(stubs.getCollectionReadme).toHaveBeenCalledWith(5);
+    expect(stubs.getCollectionReadme).toHaveBeenCalledWith(5, { signal: expect.any(AbortSignal) });
   });
 
   it("does not request a readme while disabled", async () => {
@@ -573,5 +621,69 @@ describe("folder navigation", () => {
     await act(() => result.current.modelList(filters, 60, "date-desc"));
 
     expect(stubs.listModelPage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("canonical Vault configuration reader", () => {
+  it("retains default enabled behavior through the injected reader", async () => {
+    const { result } = renderHook(() => useVaultConfig(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(stubs.getVaultConfig).toHaveBeenCalledWith({
+      signal: expect.any(AbortSignal),
+    });
+  });
+  it("does not read administrator configuration while disabled", () => {
+    renderHook(() => useVaultConfig({ enabled: false }), { wrapper: wrapper() });
+    expect(stubs.getVaultConfig).not.toHaveBeenCalled();
+  });
+  it("shares one request between configuration consumers", async () => {
+    const { result } = renderHook(() => [useVaultConfig(), useVaultConfig()], {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.every((query) => query.isSuccess)).toBe(true));
+    expect(stubs.getVaultConfig).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("collection query cancellation", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    { label: "children", useRead: () => useCollectionChildren(null) },
+    { label: "path lookup", useRead: () => useCollectionLookup("parts") },
+    { label: "id lookup", useRead: () => useCollectionLookupById(1) },
+    { label: "search", useRead: () => useCollectionSearch("bracket", "edit") },
+    { label: "README", useRead: () => useCollectionReadme(1) },
+  ])("aborts the obsolete collection HTTP read: $label", async ({ useRead }) => {
+    const headers = Promise.withResolvers<Response>();
+    const fetchMock = vi.fn<typeof fetch>().mockReturnValue(headers.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = renderHook(
+      () => {
+        useRead();
+      },
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    try {
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const signal = fetchMock.mock.calls[0][1]?.signal;
+      expect(signal?.aborted).toBe(false);
+      await act(() => client.cancelQueries());
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      view.unmount();
+      client.clear();
+      // Complete the held boundary even on the unfixed path; no work leaks
+      // into the next parameter case. Cancellation must precede these headers.
+      headers.resolve(new Response(null, { status: 204 }));
+      await headers.promise;
+    }
   });
 });

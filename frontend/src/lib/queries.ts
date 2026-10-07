@@ -1,3 +1,8 @@
+import { spoolmanStatusOptions } from "./queries/settings-spoolman";
+import { multipartDetailOptions } from "@/features/library/multipart";
+import { vaultConfigOptions } from "@/lib/queries/settings-config";
+import { filamentProfilesOptions, printerProfilesOptions } from "@/lib/queries/profiles";
+import { printStatisticsOptions } from "@/lib/queries/statistics";
 import { markStartup } from "@/lib/startup-timing";
 
 import { listOutlinerCollections, listOutlinerEntries, searchOutliner } from "@/lib/api/outliner";
@@ -46,23 +51,16 @@ import type {
   CollectionRole,
   Dashboard,
   FleetSummary,
-  FilamentProfileRead,
   ListModelsParams,
   ModelPageRead,
   ModelSort,
   ModelFacetsRead,
   MultipartModelCandidate,
   MultipartModelListItem,
-  MultipartModelRead,
   OutlinerModelRead,
-  PrinterProfileRead,
-  PrinterRead,
   PrintJobRead,
-  PrintStatisticsRead,
-  SpoolmanStatus,
   SpoolRead,
   TagRead,
-  VaultConfigRead,
   VaultStatsRead,
 } from "@/types";
 
@@ -72,11 +70,10 @@ import type {
  * These were previously fetched into local `useState` in ~5 places; now they
  * share one TanStack Query cache entry, dedupe in-flight requests, and
  * revalidate on window focus. Mutations go through the api layer, whose keyed
- * invalidation (`invalidateQueriesForPath`) busts these after a
+ * feature-owned invalidation busts these after a
  * create/move/delete, so they refetch automatically.
  *
- * The `queryFn`s pass `{ fresh: true }` to bypass the legacy in-memory cache in
- * `request.ts`, making TanStack Query the single source of truth for them.
+ * JSON transport always reads the network; Query owns reuse and freshness.
  */
 
 /**
@@ -130,7 +127,7 @@ function useQueryApi(): QueryApi {
 function collectionReadmeOptions(api: QueryApi, collectionId: number) {
   return queryOptions<string | null>({
     queryKey: queryKeys.collectionReadme(collectionId),
-    queryFn: async () => (await api.getCollectionReadme(collectionId)).readme,
+    queryFn: async ({ signal }) => (await api.getCollectionReadme(collectionId, { signal })).readme,
   });
 }
 
@@ -143,8 +140,8 @@ export function useCollectionChildren(parentId: number | null, options?: { enabl
   const api = useQueryApi();
   return useInfiniteQuery({
     queryKey: queryKeys.collectionChildren(parentId),
-    queryFn: ({ pageParam }: { pageParam: string | null }) =>
-      api.listCollectionChildren(parentId, pageParam),
+    queryFn: ({ pageParam, signal }) =>
+      api.listCollectionChildren(parentId, pageParam, undefined, { signal }),
     initialPageParam: null,
     getNextPageParam: (page: CollectionPage) => page.next_cursor,
     enabled: options?.enabled ?? true,
@@ -156,9 +153,9 @@ export function useCollectionLookup(path: string | null) {
   const api = useQueryApi();
   return useQuery<CollectionLookupRead>({
     queryKey: queryKeys.collectionLookup(path),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (path === null || path === "") throw new Error("Collection lookup requires a path");
-      return api.lookupCollection(path);
+      return api.lookupCollection(path, { signal });
     },
     enabled: path !== null && path !== "",
     placeholderData: keepPreviousData,
@@ -170,9 +167,9 @@ export function useCollectionLookupById(id: number | null) {
   const api = useQueryApi();
   return useQuery<CollectionLookupRead>({
     queryKey: queryKeys.collectionLookupById(id),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (id === null) throw new Error("Collection lookup requires an id");
-      return api.lookupCollectionById(id);
+      return api.lookupCollectionById(id, { signal });
     },
     enabled: id !== null,
   });
@@ -190,8 +187,8 @@ export function useCollectionSearch(
   const api = useQueryApi();
   return useInfiniteQuery({
     queryKey: queryKeys.collectionSearch(query, minRole),
-    queryFn: ({ pageParam }: { pageParam: string | null }) =>
-      api.searchCollections(query, minRole, pageParam),
+    queryFn: ({ pageParam, signal }) =>
+      api.searchCollections(query, minRole, pageParam, undefined, { signal }),
     initialPageParam: null,
     getNextPageParam: (page: CollectionPage) => page.next_cursor,
     enabled: options?.enabled ?? true,
@@ -216,24 +213,29 @@ export function useTags(options?: { enabled?: boolean }) {
   return useQuery<TagRead[]>({
     queryKey: queryKeys.tags,
     enabled: options?.enabled,
-    queryFn: () => api.listTags({ fresh: true }),
+    queryFn: () => api.listTags({}),
   });
 }
 
 /**
  * Same shared-cache treatment for the other read-mostly resources that were
- * each fetched into local `useState` per component. Mutations through the api
- * layer invalidate these by key (see `invalidateQueriesForPath`), so a printer
+ * each fetched into local `useState` per component. Feature commands
+ * invalidate these by key, so a printer
  * added on one screen shows up on every other without a manual reload.
  *
- * `fresh: true` bypasses the legacy in-memory cache in `request.ts` so TanStack
- * Query stays the single source of truth, matching the other taxonomy hooks.
+ * Query is the sole freshness owner; the transport consumes the signal.
  */
+export function printersOptions(api: Pick<QueryApi, "listPrinters"> = defaultQueryApi) {
+  return queryOptions({
+    queryKey: queryKeys.printers,
+    queryFn: ({ signal }) => api.listPrinters(undefined, { signal }),
+  });
+}
+
 export function usePrinters(options?: { enabled?: boolean; refetchInterval?: number }) {
   const api = useQueryApi();
-  return useQuery<PrinterRead[]>({
-    queryKey: queryKeys.printers,
-    queryFn: () => api.listPrinters(undefined, { fresh: true }),
+  return useQuery({
+    ...printersOptions(api),
     enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
   });
@@ -243,7 +245,7 @@ export function usePrinterDashboard(options?: { enabled?: boolean; refetchInterv
   const api = useQueryApi();
   return useQuery<Dashboard>({
     queryKey: queryKeys.printerDashboard,
-    queryFn: () => api.getDashboard({ fresh: true }),
+    queryFn: () => api.getDashboard({}),
     enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
   });
@@ -268,27 +270,22 @@ export function useFleetSummary(options?: { refetchInterval?: number }) {
   });
 }
 
+// Migrated option owners retain this injected facade until the M10 caller cutover.
 export function usePrinterProfiles() {
   const api = useQueryApi();
-  return useQuery<PrinterProfileRead[]>({
-    queryKey: queryKeys.printerProfiles,
-    queryFn: () => api.listPrinterProfiles({ fresh: true }),
-  });
+  return useQuery(printerProfilesOptions(api.listPrinterProfiles));
 }
 
 export function useFilamentProfiles() {
   const api = useQueryApi();
-  return useQuery<FilamentProfileRead[]>({
-    queryKey: queryKeys.filamentProfiles,
-    queryFn: () => api.listFilamentProfiles({ fresh: true }),
-  });
+  return useQuery(filamentProfilesOptions(api.listFilamentProfiles));
 }
 
 export function useVaultStats() {
   const api = useQueryApi();
   return useQuery<VaultStatsRead>({
     queryKey: queryKeys.vaultStats,
-    queryFn: () => api.getVaultStats({ fresh: true }),
+    queryFn: () => api.getVaultStats({}),
   });
 }
 
@@ -328,17 +325,7 @@ export function useMultipartModels(
 
 export function useMultipartModel(id: number | null) {
   const api = useQueryApi();
-  return useQuery<MultipartModelRead>({
-    queryKey:
-      id === null
-        ? [...queryKeys.multipartModels, "detail", "empty"]
-        : queryKeys.multipartModel(id),
-    queryFn: () => {
-      if (id === null) return Promise.reject(new Error("Multipart model id is required"));
-      return api.getMultipartModel(id);
-    },
-    enabled: id !== null,
-  });
+  return useQuery(multipartDetailOptions(id, api.getMultipartModel));
 }
 
 export const MULTIPART_CANDIDATE_PAGE_SIZE = 48;
@@ -375,25 +362,19 @@ export function useMultipartModelCandidates(
 
 export function usePrintStatistics(period: StatsPeriod) {
   const api = useQueryApi();
-  return useQuery<PrintStatisticsRead>({
-    queryKey: queryKeys.printStats(period),
-    queryFn: () => api.getPrintStatistics(period, { fresh: true }),
-  });
+  return useQuery(printStatisticsOptions(period, api.getPrintStatistics));
 }
 
-export function useVaultConfig() {
+export function useVaultConfig(options?: { enabled?: boolean; retry?: false }) {
   const api = useQueryApi();
-  return useQuery<VaultConfigRead>({
-    queryKey: queryKeys.vaultConfig,
-    queryFn: () => api.getVaultConfig(),
-  });
+  const read = { ...vaultConfigOptions(api.getVaultConfig), enabled: options?.enabled ?? true };
+  return useQuery(options?.retry === false ? { ...read, retry: false } : read);
 }
 
 export function useSpoolmanStatus(options?: { enabled?: boolean }) {
   const api = useQueryApi();
-  return useQuery<SpoolmanStatus>({
-    queryKey: queryKeys.spoolmanStatus,
-    queryFn: () => api.getSpoolmanStatus(),
+  return useQuery({
+    ...spoolmanStatusOptions(api.getSpoolmanStatus),
     enabled: options?.enabled ?? true,
   });
 }
@@ -403,7 +384,7 @@ export function useSpools(options?: { enabled?: boolean }) {
   const api = useQueryApi();
   return useQuery<SpoolRead[]>({
     queryKey: queryKeys.spools,
-    queryFn: () => api.listSpools(),
+    queryFn: ({ signal }) => api.listSpools(false, { signal }),
     enabled: options?.enabled ?? true,
   });
 }
@@ -439,7 +420,7 @@ export function useModelFacets(filters: ModelListFilters, options?: { enabled?: 
  *  - Results are cached per filter set, so backspacing to a query you just ran
  *    (or revisiting a folder) is instant instead of a fresh round-trip.
  *
- * Mutations invalidate `["models"]` via `invalidateQueriesForPath`, which by
+ * Feature commands invalidate `["models"]`, which by
  * prefix-matching also busts every keyed list here.
  */
 /** Opaque page cursor as issued by the API; `null` requests the first page. */
