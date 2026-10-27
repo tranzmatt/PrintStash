@@ -54,11 +54,20 @@ for (const width of [1440, 390]) {
       await expect(page.getByRole("tab", { name: "Detected settings", exact: true })).toHaveCount(
         0,
       );
+      await expect(
+        page.getByRole("button", { name: `View details for ${filament!.name}`, exact: true }),
+      ).toHaveAttribute("aria-expanded", "false");
+      await page.screenshot({
+        path: testInfo.outputPath("profiles-collapsed.png"),
+        fullPage: true,
+      });
       const filamentDetails = page.getByRole("region", {
         name: `Settings for ${filament!.name}`,
         exact: true,
       });
-      await filamentDetails.getByRole("button", { name: "Slicer settings and variants" }).click();
+      await page
+        .getByRole("button", { name: `View details for ${filament!.name}`, exact: true })
+        .click();
       await expect(filamentDetails.getByRole("article")).toHaveCount(2);
       const repeated = filamentDetails.getByRole("article").filter({ hasText: "Source files: 2" });
       await repeated.getByRole("button", { name: "View settings" }).click();
@@ -69,12 +78,18 @@ for (const width of [1440, 390]) {
       await expect(changed.getByText("1.04", { exact: true })).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath("filament-variants.png"), fullPage: true });
 
+      await page
+        .getByRole("button", { name: `Hide details for ${filament!.name}`, exact: true })
+        .click();
+      await expect(filamentDetails).toHaveCount(0);
       await page.getByRole("tab", { name: /Printers/ }).click();
       const printerDetails = page.getByRole("region", {
         name: `Settings for ${printer!.name}`,
         exact: true,
       });
-      await printerDetails.getByRole("button", { name: "Slicer settings and variants" }).click();
+      await page
+        .getByRole("button", { name: `View details for ${printer!.name}`, exact: true })
+        .click();
       await expect(printerDetails.getByRole("article")).toHaveCount(1);
       await printerDetails.getByRole("button", { name: "View settings" }).click();
       await expect(printerDetails.getByRole("link")).toHaveCount(3);

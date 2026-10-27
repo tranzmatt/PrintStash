@@ -4566,5 +4566,11 @@
   "profiles.settingsFor": "Settings for {name}",
   "profiles.openProfileSettings": "Slicer settings and variants",
   "profiles.closeProfileSettings": "Hide slicer settings",
-  "profiles.noLoadedSettings": "No captured settings in the loaded files yet."
+  "profiles.noLoadedSettings": "No captured settings in the loaded files yet.",
+  "profiles.profileRow": "Profile: {name}",
+  "profiles.openDetails": "View details for {name}",
+  "profiles.closeDetails": "Hide details for {name}",
+  "profiles.costSummary": "{cost} / kg",
+  "profiles.nozzleSummary": "Nozzle {nozzle} mm",
+  "profiles.details": "Details"
 }

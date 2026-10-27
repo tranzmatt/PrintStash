@@ -173,7 +173,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 function RowLabel({ children }: { children: React.ReactNode }) {
   useUiLocale();
   return (
-    <span className="mb-1.5 block text-3xs font-semibold uppercase tracking-wider text-muted-foreground md:sr-only">
+    <span className="mb-1.5 block text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
       {children}
     </span>
   );
@@ -272,6 +272,59 @@ function PresetReviewPanel({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function ProfileRow({
+  name,
+  summary,
+  onBlur,
+  onClose,
+  children,
+}: {
+  name: string;
+  summary: string;
+  onBlur: React.FocusEventHandler<HTMLDivElement>;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      className="group min-w-0"
+      onBlur={onBlur}
+      role="region"
+      aria-label={uiText("profiles.profileRow", { name })}
+    >
+      <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-5">
+        <div className="min-w-0">
+          <h3 className="break-words text-sm font-semibold">{name}</h3>
+          {summary && <p className="mt-1 break-words text-xs text-muted-foreground">{summary}</p>}
+        </div>
+        <Button
+          variant="outline"
+          size="xs"
+          className="shrink-0"
+          aria-label={uiText(expanded ? "profiles.closeDetails" : "profiles.openDetails", { name })}
+          aria-expanded={expanded}
+          onClick={() => {
+            if (expanded) onClose();
+            setExpanded(!expanded);
+          }}
+        >
+          {uiText("profiles.details")}
+          <ChevronDown
+            aria-hidden
+            className={`h-3.5 w-3.5 transition-transform duration-press ${expanded ? "rotate-180" : ""}`}
+          />
+        </Button>
+      </div>
+      {expanded && (
+        <div className="grid min-w-0 gap-4 border-t bg-muted/10 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -984,16 +1037,6 @@ export function FilamentProfilesCard() {
                 />
               ) : (
                 <div>
-                  <div className="hidden grid-cols-[minmax(10rem,1.3fr)_7rem_minmax(8rem,1fr)_7rem_minmax(8rem,1fr)_3.5rem] gap-2 border-b bg-muted/20 px-5 py-2 md:grid">
-                    {["Name", "Material", "Brand", "Cost / kg", "Notes", ""].map((label) => (
-                      <span
-                        key={label || "actions"}
-                        className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
                   <div className="divide-y">
                     {filaments.map((profile) => {
                       const review = filamentReviews[profile.id];
@@ -1002,12 +1045,25 @@ export function FilamentProfilesCard() {
                       const locked =
                         !auth.isAuthenticated || linked || rowStatus[`f${profile.id}`] === "saving";
                       return (
-                        <div
+                        <ProfileRow
                           key={profile.id}
+                          name={profile.name}
+                          summary={[
+                            profile.material_type,
+                            profile.material_brand,
+                            profile.cost_per_kg == null
+                              ? null
+                              : uiText("profiles.costSummary", {
+                                  cost: formatCost(profile.cost_per_kg),
+                                }),
+                            uiText("counts.usedByFiles", { count: profile.usage_count }),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                           onBlur={(e) => handleRowBlur(e, () => autoSaveFilament(profile))}
-                          className="group grid gap-3 px-5 py-4 transition-colors duration-press hover:bg-muted/20 md:grid-cols-[minmax(10rem,1.3fr)_7rem_minmax(8rem,1fr)_7rem_minmax(8rem,1fr)_3.5rem] md:items-start md:gap-2"
+                          onClose={() => void autoSaveFilament(profile)}
                         >
-                          <label>
+                          <label className="min-w-0 sm:col-span-2">
                             <RowLabel>{uiText("Name")}</RowLabel>
                             <div className="flex items-center gap-2">
                               <span
@@ -1092,9 +1148,9 @@ export function FilamentProfilesCard() {
                               </span>
                             )}
                           </label>
-                          <label>
+                          <label className="min-w-0 sm:col-span-2 lg:col-span-3">
                             <RowLabel>{uiText("Notes")}</RowLabel>
-                            <Input
+                            <textarea
                               value={edit.notes}
                               onChange={(e) =>
                                 updateFilamentEdit(profile.id, { notes: e.target.value })
@@ -1104,10 +1160,10 @@ export function FilamentProfilesCard() {
                                 value1: String(profile.id),
                               })}
                               placeholder={uiText("Optional")}
-                              className={compactInputClass}
+                              className="min-h-20 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                             />
                           </label>
-                          <div className="flex h-9 items-center justify-end gap-1 md:mt-5">
+                          <div className="col-span-full flex items-center justify-end gap-1">
                             {linked ? (
                               <Badge variant="success">{uiText("Synced")}</Badge>
                             ) : (
@@ -1139,7 +1195,11 @@ export function FilamentProfilesCard() {
                               </>
                             )}
                           </div>
-                          <ProfileSettingsDetails kind="filament" profile={profile} />
+                          <ProfileSettingsDetails
+                            kind="filament"
+                            profile={profile}
+                            initiallyExpanded
+                          />
                           {review && (
                             <PresetReviewPanel
                               review={review}
@@ -1161,7 +1221,7 @@ export function FilamentProfilesCard() {
                               onSave={() => void autoSaveFilament(profile, true)}
                             />
                           )}
-                        </div>
+                        </ProfileRow>
                       );
                     })}
                   </div>
@@ -1270,27 +1330,29 @@ export function FilamentProfilesCard() {
                 />
               ) : (
                 <div>
-                  <div className="hidden grid-cols-[minmax(11rem,1.3fr)_minmax(10rem,1fr)_7rem_minmax(10rem,1fr)_3.5rem] gap-2 border-b bg-muted/20 px-5 py-2 md:grid">
-                    {["Name", "Printer model", "Nozzle", "Notes", ""].map((label) => (
-                      <span
-                        key={label || "actions"}
-                        className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
                   <div className="divide-y">
                     {printers.map((profile) => {
                       const review = printerReviews[profile.id];
                       const edit = printerEdits[profile.id] ?? printerEdit(profile);
                       return (
-                        <div
+                        <ProfileRow
                           key={profile.id}
+                          name={profile.name}
+                          summary={[
+                            profile.printer_model,
+                            profile.nozzle_diameter_mm == null
+                              ? null
+                              : uiText("profiles.nozzleSummary", {
+                                  nozzle: formatNozzle(profile.nozzle_diameter_mm),
+                                }),
+                            uiText("counts.usedByFiles", { count: profile.usage_count }),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                           onBlur={(e) => handleRowBlur(e, () => autoSavePrinter(profile))}
-                          className="group grid gap-3 px-5 py-4 transition-colors duration-press hover:bg-muted/20 md:grid-cols-[minmax(11rem,1.3fr)_minmax(10rem,1fr)_7rem_minmax(10rem,1fr)_3.5rem] md:items-start md:gap-2"
+                          onClose={() => void autoSavePrinter(profile)}
                         >
-                          <label>
+                          <label className="min-w-0 sm:col-span-2">
                             <RowLabel>{uiText("Name")}</RowLabel>
                             <Input
                               value={edit.name}
@@ -1357,9 +1419,9 @@ export function FilamentProfilesCard() {
                               className={compactInputClass}
                             />
                           </label>
-                          <label>
+                          <label className="min-w-0 sm:col-span-2 lg:col-span-3">
                             <RowLabel>{uiText("Notes")}</RowLabel>
-                            <Input
+                            <textarea
                               value={edit.notes}
                               onChange={(e) =>
                                 updatePrinterEdit(profile.id, { notes: e.target.value })
@@ -1371,10 +1433,10 @@ export function FilamentProfilesCard() {
                                 value1: String(profile.id),
                               })}
                               placeholder={uiText("Optional")}
-                              className={compactInputClass}
+                              className="min-h-20 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                             />
                           </label>
-                          <div className="flex h-9 items-center justify-end gap-1 md:mt-5">
+                          <div className="col-span-full flex items-center justify-end gap-1">
                             <RowStatus state={rowStatus[`p${profile.id}`]} />
                             <Button
                               type="button"
@@ -1399,7 +1461,11 @@ export function FilamentProfilesCard() {
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
-                          <ProfileSettingsDetails kind="printer" profile={profile} />
+                          <ProfileSettingsDetails
+                            kind="printer"
+                            profile={profile}
+                            initiallyExpanded
+                          />
                           {review && (
                             <PresetReviewPanel
                               review={review}
@@ -1420,7 +1486,7 @@ export function FilamentProfilesCard() {
                               onSave={() => void autoSavePrinter(profile, true)}
                             />
                           )}
-                        </div>
+                        </ProfileRow>
                       );
                     })}
                   </div>

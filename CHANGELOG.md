@@ -4,7 +4,7 @@
 
 ### Added
 
-- Filament and printer profiles include searchable slicer settings from G-code. Equal configurations are grouped with their source files, different presets and values remain separate variants, and print settings stay with each source file. Existing files are refreshed in the background. These are observed print settings, not restorable slicer preset backups.
+- Filament and printer profiles use compact summaries with collapsible details, multiline notes and searchable slicer settings from G-code. Equal configurations are grouped with their source files, different presets and values remain separate variants, and print settings stay with each source file. Existing files are refreshed in the background. These are observed print settings, not restorable slicer preset backups.
 
 ### Fixed
 

@@ -4566,5 +4566,11 @@
   "profiles.settingsFor": "Ajustes de {name}",
   "profiles.openProfileSettings": "Ajustes del slicer y variantes",
   "profiles.closeProfileSettings": "Ocultar ajustes del slicer",
-  "profiles.noLoadedSettings": "Todavía no hay ajustes extraídos en los archivos cargados."
+  "profiles.noLoadedSettings": "Todavía no hay ajustes extraídos en los archivos cargados.",
+  "profiles.profileRow": "Perfil: {name}",
+  "profiles.openDetails": "Ver detalles de {name}",
+  "profiles.closeDetails": "Ocultar detalles de {name}",
+  "profiles.costSummary": "{cost} / kg",
+  "profiles.nozzleSummary": "Boquilla {nozzle} mm",
+  "profiles.details": "Detalles"
 }

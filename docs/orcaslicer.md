@@ -78,8 +78,9 @@ token.
 ## Inspect captured settings in Profiles
 
 After a G-code upload finishes processing, open **Profiles → Filaments** or
-**Printers** and expand **Slicer settings and variants** on the corresponding
-profile. Material and brand match filament observations; the machine model
+**Printers** and open **Details** on the corresponding profile. Profiles start
+collapsed with a compact summary. The expanded editor includes multiline notes
+and a collapsible slicer-settings section; each variant can also be collapsed. Material and brand match filament observations; the machine model
 matches printer observations. Matching is case-insensitive and ignores surrounding
 spaces. A name alone is never enough; profiles without those attributes have no
 associated observations. Changing those attributes changes the observations shown.

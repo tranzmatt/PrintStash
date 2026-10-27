@@ -11,6 +11,10 @@ import { test, expect, authBundleFor, ADMIN } from "./helpers";
 // Resolve the unique name to the server-ID label in one DOM read. Retaining
 // an ordinal locator would follow a different row if the refreshed list sorts.
 async function inputByValue(scope: Locator, labelRe: RegExp, value: string): Promise<Locator> {
+  const row = scope.getByRole("region", { name: `Profile: ${value}`, exact: true });
+  const opener = row.getByRole("button", { name: `View details for ${value}`, exact: true });
+  await expect(row).toBeVisible();
+  if (await opener.count()) await opener.click();
   const inputs = scope.getByLabel(labelRe);
   let label: string | null = null;
   await expect
@@ -31,7 +35,7 @@ async function inputByValue(scope: Locator, labelRe: RegExp, value: string): Pro
 }
 
 function rowOf(input: Locator): Locator {
-  return input.locator('xpath=ancestor::div[contains(@class,"group")][1]');
+  return input.locator("xpath=ancestor::div[@role='region'][1]");
 }
 
 test.describe("profiles", () => {

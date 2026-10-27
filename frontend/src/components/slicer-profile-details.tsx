@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -72,6 +73,10 @@ function Variant({ variant, index }: { variant: SettingsVariant; index: number }
           onClick={() => setExpanded(!expanded)}
         >
           {uiText(expanded ? "profiles.hideSettings" : "profiles.viewSettings")}
+          <ChevronDown
+            aria-hidden
+            className={`h-3.5 w-3.5 transition-transform duration-press ${expanded ? "rotate-180" : ""}`}
+          />
         </Button>
       </div>
       {expanded && (
@@ -198,14 +203,16 @@ function ProfileSettingsContent({
 export function ProfileSettingsDetails({
   kind,
   profile,
+  initiallyExpanded = false,
 }: {
   kind: ProfileSettingsKind;
   profile: Profile;
+  initiallyExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   return (
     <section
-      className="col-span-full min-w-0 rounded-md bg-muted/20 p-3"
+      className="col-span-full min-w-0 border-t pt-4"
       aria-label={uiText("profiles.settingsFor", { name: profile.name })}
     >
       <Button
@@ -215,6 +222,10 @@ export function ProfileSettingsDetails({
         onClick={() => setExpanded(!expanded)}
       >
         {uiText(expanded ? "profiles.closeProfileSettings" : "profiles.openProfileSettings")}
+        <ChevronDown
+          aria-hidden
+          className={`h-3.5 w-3.5 transition-transform duration-press ${expanded ? "rotate-180" : ""}`}
+        />
       </Button>
       {expanded && (
         <ProfileSettingsContent
