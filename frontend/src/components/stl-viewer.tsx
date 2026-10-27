@@ -596,10 +596,13 @@ export function STLViewer({
     return (
       <div
         role="status"
-        className="flex h-full flex-col items-center justify-center gap-2 text-on-surface-variant"
+        className="flex h-full min-w-0 flex-col items-center justify-center gap-2 p-6 text-center text-on-surface-variant"
       >
         <AlertTriangle className="h-8 w-8" aria-hidden />
-        <span className="text-xs">{stlPreviewMessage(failure.reason)}</span>
+        <p className="text-sm font-medium text-on-surface">{uiText("Failed to load 3D preview")}</p>
+        <p className="max-w-md break-words text-xs leading-relaxed">
+          {stlPreviewMessage(failure.reason)}
+        </p>
       </div>
     );
   if (parsed.state === "failed" || (overlay !== undefined && parsedOverlay.state === "failed"))

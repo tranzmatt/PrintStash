@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Model details retain storage failure guidance in the 3D viewer and Source Files. Long filenames, error explanations and retry controls fit narrow panels.
+- The Model Similar tab uses the same section headings, surfaces and compact empty states as the other detail tabs.
+
 - Collapsing All Models hides its folders as well as root Models, including folder-only libraries, and preserves branch expansion when reopened.
 
 - Remote storage checks explain expired credentials, rejected authentication, missing permissions and invalid signatures. Connection warnings include recovery guidance without exposing provider details or ending the PrintStash session.

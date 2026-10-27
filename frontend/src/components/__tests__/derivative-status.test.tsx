@@ -97,6 +97,13 @@ describe("DerivativeStatus", () => {
     ["renderer_no_output", /stopped unexpectedly on the server/],
     ["source_unavailable", /storage is reachable/],
     ["storage", /storage is reachable/],
+    ["remote_storage_metadata_failed", /storage is reachable/],
+    ["remote_storage_read_failed", /storage is reachable/],
+    ["remote_storage_list_failed", /storage is reachable/],
+    ["storage_credentials_expired", /credentials have expired/],
+    ["storage_authentication_failed", /provider rejected authentication/],
+    ["storage_access_denied", /credentials have permission/],
+    ["storage_signature_invalid", /request signature/],
   ])("explains the %s failure by its cause", async (reason, message) => {
     renderStatus(
       stubApi([

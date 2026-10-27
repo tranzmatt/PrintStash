@@ -288,6 +288,68 @@ test.describe("Similarity desktop review", () => {
 });
 
 test.describe("Model detail Similar controls", () => {
+  test("matches the other detail sections when there are no model matches", async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.route("**/api/v1/similarity/status", (route) =>
+      route.fulfill({ json: similarityStatus() }),
+    );
+    await page.route("**/api/v1/similarity/candidates?*", (route) =>
+      route.fulfill({ json: { items: [], next_cursor: null } }),
+    );
+    await page.goto("/models/1");
+    const pane = page.getByTestId("model-detail-sidebar");
+    const settingsHeading = pane.getByRole("heading", { name: "Print Settings", exact: true });
+    await expect(settingsHeading).toBeVisible();
+    const settingsStyle = await settingsHeading.evaluate((heading) => {
+      const title = getComputedStyle(heading);
+      const frame = getComputedStyle(heading.nextElementSibling!);
+      return {
+        fontSize: title.fontSize,
+        fontWeight: title.fontWeight,
+        color: title.color,
+        backgroundColor: frame.backgroundColor,
+        borderColor: frame.borderColor,
+        borderRadius: frame.borderRadius,
+      };
+    });
+    await pane.getByRole("tab", { name: "Similar", exact: true }).click();
+    const heading = pane.getByRole("heading", { name: "Model matches", exact: true });
+    const frame = pane.getByRole("region", { name: "Model matches", exact: true });
+    await expect(heading).toBeVisible();
+    const empty = frame.getByText("No candidates to review", { exact: true });
+    await expect(empty).toBeVisible();
+    expect(
+      await heading.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { fontSize: style.fontSize, fontWeight: style.fontWeight, color: style.color };
+      }),
+    ).toEqual({
+      fontSize: settingsStyle.fontSize,
+      fontWeight: settingsStyle.fontWeight,
+      color: settingsStyle.color,
+    });
+    expect(
+      await frame.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          borderColor: style.borderColor,
+          borderRadius: style.borderRadius,
+        };
+      }),
+    ).toEqual({
+      backgroundColor: settingsStyle.backgroundColor,
+      borderColor: settingsStyle.borderColor,
+      borderRadius: settingsStyle.borderRadius,
+    });
+    const titleBounds = await heading.boundingBox();
+    const frameBounds = await frame.boundingBox();
+    expect(titleBounds!.y + titleBounds!.height).toBeLessThanOrEqual(frameBounds!.y);
+    const emptyBounds = await empty.locator("..").boundingBox();
+    expect(emptyBounds!.height).toBeLessThan(180);
+    await expect(frame.getByRole("button", { name: "Find similar", exact: true })).toBeEnabled();
+  });
+
   for (const scenario of [
     {
       label: "default480desktop",

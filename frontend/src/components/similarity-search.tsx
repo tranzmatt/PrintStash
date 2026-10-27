@@ -10,6 +10,7 @@ import {
 } from "@/lib/queries/similarity";
 import { useI18n } from "@/lib/i18n";
 import { Link } from "@/lib/link";
+import { cn } from "@/lib/utils";
 
 /** Native semantic scores never offer the geometric confirmation actions. */
 export function SimilaritySearch({ modelId }: { modelId?: number }) {
@@ -30,7 +31,13 @@ export function SimilaritySearch({ modelId }: { modelId?: number }) {
   )
     return null;
   return (
-    <Card className="mb-4 space-y-3 p-4">
+    <Card
+      className={cn(
+        "mb-4 space-y-3 p-4",
+        modelId !== undefined &&
+          "rounded border-outline-variant bg-surface text-on-surface shadow-none",
+      )}
+    >
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {

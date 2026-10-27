@@ -240,7 +240,7 @@ describe("RemoteStorageConnections", () => {
     await user.click(screen.getByRole("button", { name: "Test" }));
 
     expect(
-      await screen.findByText(
+      await within(await screen.findByRole("alert")).findByText(
         "Google Drive isn't available in this server image. Upgrade or rebuild the full image, then try again.",
       ),
     ).toBeVisible();
@@ -264,7 +264,11 @@ describe("RemoteStorageConnections", () => {
 
     await user.click(screen.getByRole("button", { name: "Test" }));
 
-    expect(await screen.findByText(/could not list the remote folder/i)).toBeVisible();
+    expect(
+      await within(await screen.findByRole("alert")).findByText(
+        /could not list the remote folder/i,
+      ),
+    ).toBeVisible();
   });
 
   it("explains that a shared profile can list the Library but cannot probe backups", async () => {
@@ -285,7 +289,9 @@ describe("RemoteStorageConnections", () => {
 
     await user.click(screen.getByRole("button", { name: "Test" }));
 
-    expect(await screen.findByText(/Library listing succeeded/i)).toBeVisible();
+    expect(
+      await within(await screen.findByRole("alert")).findByText(/Library listing succeeded/i),
+    ).toBeVisible();
   });
 
   it("keeps save unavailable until the profile has a name", async () => {
@@ -979,6 +985,7 @@ describe("RemoteStorageConnections access warnings", () => {
       await pending;
     });
     expect(screen.queryByText(/credentials have expired/i)).toBeNull();
-    expect(screen.getByRole("button", { name: "Save connection" })).toBeDisabled();
+    expect(screen.queryByText("Workshop storage")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save connection" })).toBeNull();
   });
 });

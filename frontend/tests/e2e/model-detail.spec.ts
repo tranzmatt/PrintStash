@@ -20,11 +20,86 @@ import { expect, test } from "@playwright/test";
 
 import { collectPageProblems, useMockApi } from "./_setup";
 import type { ModelRead } from "../../src/types/models";
-import { aModel } from "../../src/test-support/factories";
+import { aDerivative, aModel, aRevision } from "../../src/test-support/factories";
 
 useMockApi();
 
 test.describe("model detail route", () => {
+  for (const width of [320, 1920]) {
+    test(`keeps failed source controls inside the details panel at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1080 });
+      const filename = "linked_source_with_a_long_unbroken_filename_for_a_detailed_model.3mf";
+      const file = aRevision({
+        id: 7,
+        file_type: "3mf",
+        original_filename: filename,
+        is_external: true,
+      });
+      await page.route("**/api/v1/models/1", (route) =>
+        route.fulfill({ json: aModel({ files: [file] }) }),
+      );
+      await page.route("**/api/v1/files/7/derivatives", (route) =>
+        route.fulfill({
+          json: (["metadata", "thumbnail", "viewer_stl"] as const).map((kind) =>
+            aDerivative({
+              kind,
+              state: "failed",
+              failure_reason: "storage_authentication_failed",
+              retryable: true,
+            }),
+          ),
+        }),
+      );
+      await page.route("**/api/v1/files/7/stl", (route) =>
+        route.fulfill({ status: 422, json: { detail: "storage_authentication_failed" } }),
+      );
+      await page.goto("/models/1");
+      const pane = page.getByTestId("model-detail-sidebar");
+      if (width === 1920) {
+        const resize = page.getByRole("separator", { name: "Resize details panel", exact: true });
+        await resize.focus();
+        for (let step = 0; step < 5; step++) await resize.press("ArrowRight");
+        await expect.poll(async () => (await pane.boundingBox())!.width).toBeCloseTo(400, 0);
+      }
+      await pane.getByRole("tab", { name: /Files/ }).click();
+      const card = pane.getByRole("article", { name: filename });
+      const explanation = card.getByText(/provider rejected authentication/);
+      await expect(explanation).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      const download = card.getByRole("button", { name: "Download", exact: true });
+      const headerBounds = await download.boundingBox();
+      const explanationBounds = await explanation.boundingBox();
+      expect(headerBounds).not.toBeNull();
+      expect(explanationBounds).not.toBeNull();
+      expect(explanationBounds!.y).toBeGreaterThanOrEqual(headerBounds!.y + headerBounds!.height);
+      for (const control of [
+        explanation,
+        card.getByText(filename, { exact: true }),
+        card.getByRole("button", { name: "Open in slicer", exact: true }),
+        download,
+        card.getByRole("button", { name: `Actions for ${filename}`, exact: true }),
+        ...(await card.getByRole("button", { name: /^Retry / }).all()),
+      ]) {
+        await control.scrollIntoViewIfNeeded();
+        const bounds = await control.boundingBox();
+        const frame = await card.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(frame).not.toBeNull();
+        expect(bounds!.x).toBeGreaterThanOrEqual(frame!.x);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(frame!.x + frame!.width);
+        expect(
+          await control.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        ).toBe(true);
+      }
+      await expect(card.getByRole("button", { name: /^Retry / })).toHaveCount(3);
+      expect(await pane.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      );
+    });
+  }
+
   test("anchors the title editor without shifting header actions at 1080p", async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto("/models/1");

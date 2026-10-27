@@ -4,6 +4,11 @@
 import { useEffect, useState } from "react";
 import { getDerivedBlob } from "@/lib/api/request";
 import { parseApiError } from "@/lib/errors";
+import {
+  derivativeFailureCause,
+  derivativeFailureMessage,
+  type DerivativeFailureCause,
+} from "@/lib/derivative-failures";
 import { uiText } from "@/lib/locale";
 import { followModel } from "@/lib/events";
 
@@ -13,7 +18,7 @@ export type StlPreviewFailure =
   | "invalid_source"
   | "derivative_group_disabled"
   | "cancelled"
-  | "worker_failed";
+  | DerivativeFailureCause;
 
 function failureCode(code: string): StlPreviewFailure {
   switch (code) {
@@ -24,7 +29,7 @@ function failureCode(code: string): StlPreviewFailure {
     case "cancelled":
       return code;
     default:
-      return "worker_failed";
+      return derivativeFailureCause(code);
   }
 }
 
@@ -46,7 +51,7 @@ export function stlPreviewMessage(reason: StlPreviewFailure): string {
     case "cancelled":
       return uiText("3D preview preparation was cancelled");
     default:
-      return uiText("Failed to load 3D preview");
+      return derivativeFailureMessage(reason);
   }
 }
 

@@ -19,6 +19,24 @@ describe("STLViewer", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["storage_credentials_expired", /credentials have expired/],
+    ["storage_authentication_failed", /provider rejected authentication/],
+    ["storage_access_denied", /credentials have permission/],
+    ["storage_signature_invalid", /request signature/],
+    ["remote_storage_metadata_failed", /storage is reachable/],
+    ["unrecognised_failure", /This couldn't be produced/],
+  ])("shows safe guidance for %s", async (code, message) => {
+    const fetcher = vi
+      .fn<typeof getDerivedBlob>()
+      .mockRejectedValue(new ApiError(422, code, "PrivateProviderDetails"));
+    render(<STLViewer url="/api/v1/files/1/stl" previewFetcher={fetcher} />);
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(screen.getByText("Failed to load 3D preview")).toBeVisible();
+    expect(screen.queryByText(/PrivateProviderDetails/)).toBeNull();
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("shows a memory refusal", async () => {
     const request = vi
       .fn<typeof fetch>()

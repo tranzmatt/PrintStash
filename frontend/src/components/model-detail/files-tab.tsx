@@ -114,108 +114,111 @@ export function FilesTab({
         )}
         <div className="space-y-2">
           {sourceFiles.map((f) => (
-            <div
+            <article
               key={f.id}
-              className="flex items-center justify-between p-3 border border-outline-variant rounded hover:border-primary hover:shadow-sm transition-[border-color,box-shadow] group bg-surface"
+              aria-label={f.original_filename}
+              className="min-w-0 space-y-3 p-3 border border-outline-variant rounded hover:border-primary hover:shadow-sm transition-[border-color,box-shadow] group bg-surface"
             >
-              <div className="flex items-center gap-3 min-w-0">
-                <FileText className="h-5 w-5 flex-shrink-0 text-outline group-hover:text-primary" />
-                <div className="min-w-0">
-                  <p className="flex items-center gap-2 text-sm text-on-surface font-medium truncate">
-                    <span className="truncate">{f.original_filename}</span>
-                    {f.is_external && (
-                      <span
-                        title={uiText(
-                          "Indexed from a library source; original bytes stay in external storage",
-                        )}
-                        className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono text-3xs uppercase tracking-wider text-primary"
-                      >
-                        <FolderSync className="h-3 w-3" />
-                        {uiText("Linked")}
-                      </span>
-                    )}
-                  </p>
-                  <p className="font-mono text-2xs text-on-surface-variant">
-                    {uiText("{value1} · v{value2} · Source", {
-                      value1: String(formatBytes(f.size_bytes) ?? ""),
-                      value2: String(f.version ?? ""),
-                    })}
-                  </p>
-                  <DerivativeStatus modelId={modelId} fileId={f.id} canRetry={canEdit} />
-                  <div className="mt-1.5">
-                    <EntityTagsDialog
-                      entityLabel={f.original_filename}
-                      tags={f.tags}
-                      availableTags={availableTags}
-                      canEdit={canEdit}
-                      help={uiText(
-                        "Artifact tags make the owning Model discoverable without changing the Model’s direct tags.",
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                <div className="flex items-start gap-3 min-w-0">
+                  <FileText className="h-5 w-5 flex-shrink-0 text-outline group-hover:text-primary" />
+                  <div className="min-w-0">
+                    <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-on-surface font-medium">
+                      <span className="min-w-0 break-all">{f.original_filename}</span>
+                      {f.is_external && (
+                        <span
+                          title={uiText(
+                            "Indexed from a library source; original bytes stay in external storage",
+                          )}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono text-3xs uppercase tracking-wider text-primary"
+                        >
+                          <FolderSync className="h-3 w-3" />
+                          {uiText("Linked")}
+                        </span>
                       )}
-                      onSave={(tags) => saveTags(f, tags)}
-                    />
+                    </p>
+                    <p className="font-mono text-2xs text-on-surface-variant">
+                      {uiText("{value1} · v{value2} · Source", {
+                        value1: String(formatBytes(f.size_bytes) ?? ""),
+                        value2: String(f.version ?? ""),
+                      })}
+                    </p>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                {SLICEABLE_TYPES.has(f.file_type) && (
-                  <SlicerOpenButton fileId={f.id} fileType={f.file_type} />
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadAuthenticatedFile(
-                      `/api/v1/files/${f.id}/download`,
-                      f.original_filename,
-                    ).catch((e) => toast.error(e))
-                  }
-                  title={uiText("Download")}
-                  className="text-on-surface-variant hover:text-primary p-2 rounded hover:bg-surface-container-high transition-colors"
-                >
-                  <Download className="h-5 w-5" />
-                </button>
-                <DropdownMenu
-                  open={menuFileId === f.id}
-                  onOpenChange={(open) => setMenuFileId(open ? f.id : null)}
-                  trigger={
-                    <Button
-                      type="button"
-                      data-menu-trigger
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-haspopup="menu"
-                      aria-expanded={menuFileId === f.id}
-                      aria-label={uiText("Actions for {value1}", {
-                        value1: f.original_filename,
-                      })}
-                      onClick={() => setMenuFileId(menuFileId === f.id ? null : f.id)}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  }
-                  contentClassName="w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
-                >
-                  {f.is_external ? (
-                    <p className="px-3 py-2 text-xs text-muted-foreground">
-                      {uiText("Linked source files stay in their Library source.")}
-                    </p>
-                  ) : (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={!canEdit || busyFileId !== null}
-                      onClick={() => {
-                        setMenuFileId(null);
-                        setDeleteTarget(f);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      {uiText("Move to trash")}
-                    </button>
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  {SLICEABLE_TYPES.has(f.file_type) && (
+                    <SlicerOpenButton fileId={f.id} fileType={f.file_type} />
                   )}
-                </DropdownMenu>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadAuthenticatedFile(
+                        `/api/v1/files/${f.id}/download`,
+                        f.original_filename,
+                      ).catch((e) => toast.error(e))
+                    }
+                    title={uiText("Download")}
+                    className="text-on-surface-variant hover:text-primary p-2 rounded hover:bg-surface-container-high transition-colors"
+                  >
+                    <Download className="h-5 w-5" />
+                  </button>
+                  <DropdownMenu
+                    open={menuFileId === f.id}
+                    onOpenChange={(open) => setMenuFileId(open ? f.id : null)}
+                    trigger={
+                      <Button
+                        type="button"
+                        data-menu-trigger
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-haspopup="menu"
+                        aria-expanded={menuFileId === f.id}
+                        aria-label={uiText("Actions for {value1}", {
+                          value1: f.original_filename,
+                        })}
+                        onClick={() => setMenuFileId(menuFileId === f.id ? null : f.id)}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    }
+                    contentClassName="w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+                  >
+                    {f.is_external ? (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">
+                        {uiText("Linked source files stay in their Library source.")}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!canEdit || busyFileId !== null}
+                        onClick={() => {
+                          setMenuFileId(null);
+                          setDeleteTarget(f);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {uiText("Move to trash")}
+                      </button>
+                    )}
+                  </DropdownMenu>
+                </div>
               </div>
-            </div>
+              <DerivativeStatus modelId={modelId} fileId={f.id} canRetry={canEdit} />
+              <div className="mt-1.5">
+                <EntityTagsDialog
+                  entityLabel={f.original_filename}
+                  tags={f.tags}
+                  availableTags={availableTags}
+                  canEdit={canEdit}
+                  help={uiText(
+                    "Artifact tags make the owning Model discoverable without changing the Model’s direct tags.",
+                  )}
+                  onSave={(tags) => saveTags(f, tags)}
+                />
+              </div>
+            </article>
           ))}
         </div>
         {trashedSourceFiles.length > 0 && (
