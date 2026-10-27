@@ -11,6 +11,20 @@ or tiers.
 
 ## Choose the smallest useful test scope
 
+For a backend change, run the new or changed tests and the existing tests for
+the affected behavior locally, including the relevant integration and E2E
+flows. Run lint and type checks. Use **Deep CI on the final commit** for the
+full backend handoff gate instead of also running local `full` or `coverage`.
+
+Deep CI's backend matrix runs exhaustive, disjoint `full-ordinary` and
+`full-resources` partitions of the same tests as `./scripts/test.sh full`, then
+combines coverage and checks the floors. Ordinary PR CI excludes slow and
+external-resource tests, so it does not replace that full gate. Deep CI also
+includes other validation beyond the backend suite. When changing test paths,
+resource markers or workflow selection, verify that the partitions still cover
+the full selection; `backend/tests/repo/test_ci_workflows.py` checks their
+coverage and uniqueness.
+
 For an ordinary frontend change, run the new or changed Vitest files and the
 existing files that cover the affected component or flow. Use
 `pnpm exec vitest run <test paths>` so a file selection stays within the app
@@ -26,19 +40,35 @@ full-suite request, release validation, or work on the suite or coverage floors.
 
 ## Run the selected lanes cheapest-first
 
-A failure found in 8 seconds costs nothing; the same failure found after a
-4-minute full run costs the whole run. So never start with `full`.
+Start with the affected behavior so failures are quick to locate. Avoid fixed
+runtime assumptions: suite size, service startup and runner queues change.
 
 ```
-# backend, in order
-uv run pytest <the one file you touched> -q     # seconds
-./scripts/test.sh fast -q                       # ~40s, unit + integration
-./scripts/test.sh full -q                       # ~3.5min, everything
+# backend, affected files and flows
+uv run pytest <affected test paths> -q
+./scripts/test.sh fast <affected test paths> -q
 uv run ruff check app/ tests/
 uv run ruff format --check app/core app/db app/schemas packages/printstash-core/src
 uv run pyright
-./scripts/test.sh coverage                      # full run + the floor tests
 ```
+
+After committing and pushing the final changes, reuse a successful Deep CI run
+for that exact SHA, or dispatch one from the repository:
+
+```bash
+gh workflow run deep-ci.yml --ref <branch>
+```
+
+Check the run's `headSha` and wait for its result before reporting the full gate
+as passed. Keep the optional startup benchmark and real CLIP inputs at their
+defaults unless the task needs them. A queued run is not a reason to start a
+duplicate local full suite. Report the run URL, SHA and conclusion separately
+from focused local results.
+
+Reserve local `full` or `coverage` for an explicit request, unavailable CI, or
+diagnosing a failure that needs the full lane locally. Prefer the failing
+file or partition for diagnosis. Do not run both full and coverage to establish
+the same result, or claim a partial/interrupted local run completed.
 
 ```
 # frontend, for the affected files and flow

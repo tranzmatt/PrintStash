@@ -68,9 +68,15 @@ and changelog instead of reconstructing their contents.
    first. Every new feature gets focused unit/integration coverage and one e2e
    test for its headline capability.
 3. Run focused checks while iterating, then the applicable gate:
-   - Backend: `cd backend && ./scripts/test.sh fast -q`; before handoff of a
-     backend change, `./scripts/test.sh full -q`,
-     `uv run ruff check app/ tests/`, and `uv run pyright` when feasible.
+   - Backend: run the affected tests locally, plus `uv run ruff check app/ tests/`
+     and `uv run pyright` when feasible. Use a successful **Deep CI** run on the
+     final commit for the full handoff gate: its parallel `full-ordinary` and
+     `full-resources` partitions cover the same backend tests as `full`, with
+     coverage checks added. After committing and pushing, reuse a run for that
+     exact SHA or dispatch `gh workflow run deep-ci.yml --ref <branch>` and
+     check its result. Do not duplicate it with local `full` or `coverage`;
+     see [references/running-tests.md](references/running-tests.md) for scope
+     selection and local fallbacks.
    - Frontend: `cd frontend && pnpm format:check && pnpm lint && pnpm typecheck`;
      run the affected Vitest files for logic and the applicable Playwright spec
      for a headline UI flow. A localized UI change does not call for the full

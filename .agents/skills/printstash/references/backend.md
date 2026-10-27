@@ -72,9 +72,12 @@ Files in `backend/alembic/versions/`, named `<rev>_snake_description.py`
 
 ## Testing expectations
 
-- `cd backend && ./scripts/test.sh fast -q` — focused development loop.
-- `cd backend && ./scripts/test.sh full -q` — backend handoff gate, including
-  the full test layers configured by the repository scripts.
+- Run the affected backend test files during development; use
+  `./scripts/test.sh fast <affected paths> -q` when that lane fits the change.
+- A successful **Deep CI** run on the final commit supplies the full backend
+  handoff gate. It partitions the same tests as `full` and adds coverage checks;
+  do not repeat the full suite locally. See [running-tests.md](running-tests.md)
+  for dispatch, reporting and local fallbacks.
 - Report actual results; never claim a run you did not do.
 - Data-integrity and security fixes: write the failing test first
   (AGENTS.md rule 4).
