@@ -291,6 +291,14 @@ carries maintenance with this flag false. Task Center ignores those notices;
 the Background work page still refreshes. Reconnection always resynchronizes,
 and clients retain the old wake behavior when an older server omits the hint.
 
+Task Center groups visible Job notices for up to 250 ms before reading the
+authorized snapshot. While Jobs are active, a recovery snapshot runs after
+10 seconds without a refresh when the socket is open; without an open socket,
+subsequent snapshots run every second. A disconnection is detected by the next
+scheduled snapshot, within that 10-second recovery window. Reconnection and
+newly tracked Jobs request an immediate snapshot. Failed reads back off even
+when more Job notices arrive, and hidden tabs suspend scheduled reads.
+
 ## Topologies
 
 | Topology | Settings | Needs |

@@ -535,7 +535,10 @@ def supervise_result(
                         raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
                     if on_chunk is not None:
                         on_chunk(chunk)
-                        checkpoint(force=True)
+                        # Fragment arrival is not publication. Keep the paced
+                        # cancellation probe here; decoded outputs check fresh
+                        # authority immediately before reaching their consumer.
+                        checkpoint()
                         if withdrawn is not None and withdrawn():
                             raise OperationCancelled()
                         monitored_cause = (
@@ -948,6 +951,7 @@ def generate(
         if not _refused_for_memory(result):
             for output in held:
                 if on_output is not None:
+                    checkpoint(force=True)
                     on_output(output)
             return result
         reason = ThumbnailFailureReason.RESOURCE_LIMIT
@@ -995,6 +999,7 @@ def _generate_once(
             else:
                 continue
             if on_output is not None:
+                checkpoint(force=True)
                 on_output(output)
 
     spec = {
@@ -1139,6 +1144,7 @@ def _generate_once(
                     peak_rss_bytes=peak_rss,
                 )
                 if on_output is not None:
+                    checkpoint(force=True)
                     on_output(thumbnail_output)
             if geometry_output is None:
                 from printstash_core.mesh.measurements import (

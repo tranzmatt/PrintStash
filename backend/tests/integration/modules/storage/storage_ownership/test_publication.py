@@ -390,6 +390,33 @@ class TestPublishFile:
 
 
 class TestReserveCreation:
+    def test_reserves_a_fresh_publication_with_one_locator_lock(
+        self, db_session, sql_statements
+    ):
+        backend = get_backend()
+        key = backend.thumbnail_key(910)
+        with sql_statements.recording():
+            reservation = reserve_creation(
+                db_session,
+                backend,
+                key,
+                object_kind="thumbnail",
+                expected_size=4,
+                sha256=hashlib.sha256(b"data").hexdigest(),
+            )
+
+        locks = [
+            statement.sql
+            for statement in sql_statements.statements
+            if statement.sql.startswith("INSERT INTO storage_publication_locators")
+        ]
+        with Session(db_session.get_bind()) as reader:
+            row = reader.get(OwnedStorageObject, reservation.id)
+            assert row is not None
+            assert row.state is StorageObjectState.PENDING
+            assert row.size_bytes == 4
+        assert len(locks) == 1
+
     def test_reuses_a_stale_committed_locator_when_bytes_are_absent(
         self, db_session: Session, make_owned_storage_object
     ) -> None:

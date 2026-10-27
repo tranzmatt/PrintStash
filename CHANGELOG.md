@@ -57,6 +57,10 @@
 
 ### Performance
 
+- Task Center batches job-change notices and checks active work every ten seconds while its events connection is open, with one-second polling when disconnected.
+- Mesh workers check cancellation before each output publication instead of forcing a database read for every output fragment.
+- Storage publication acquires its locator lock once per reservation while preserving the durable reservation and receipt needed for recovery.
+
 - Local AI model warm-up stops re-reading its settings every second while there is nothing to warm, and wakes as soon as a search needs a model.
 - Imports read collections less: a file's collection path is resolved once per commit instead of twice, and search finds every collection above a Model in one query.
 - Search updates share bounded preparation across overlapping Model and collection changes while retaining independent retry checkpoints.

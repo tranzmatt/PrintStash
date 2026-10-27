@@ -662,6 +662,35 @@ def _refused(result, reason: ThumbnailFailureReason):
 
 
 class TestStepEscalation:
+    def test_refuses_held_outputs_after_cancellation(self, pool, attempts, step_result):
+        from app.core.cancellation import OperationCancelled, cancellation_scope
+
+        _calls, script = attempts
+        script.append((["geometry", "thumbnail"], step_result))
+        published = []
+
+        with cancellation_scope(lambda: True), pytest.raises(OperationCancelled):
+            mesh_isolation.generate(_step_request(), on_output=published.append)
+
+        assert published == []
+
+    def test_checks_cancellation_between_held_outputs(
+        self, pool, attempts, step_result
+    ):
+        from app.core.cancellation import OperationCancelled, cancellation_scope
+
+        _calls, script = attempts
+        script.append((["geometry", "thumbnail"], step_result))
+        published = []
+
+        with (
+            cancellation_scope(lambda: bool(published)),
+            pytest.raises(OperationCancelled),
+        ):
+            mesh_isolation.generate(_step_request(), on_output=published.append)
+
+        assert published == ["geometry"]
+
     def test_admits_a_step_derivative_under_the_optimistic_claim(self, pool, caplog):
         from app.modules.media.native_budget import STEP_OPTIMISTIC_MEMORY
 
