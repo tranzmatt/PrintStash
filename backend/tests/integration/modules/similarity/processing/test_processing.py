@@ -32,13 +32,13 @@ from tests.factories.similarity import advance_oldest_run
 
 @pytest.fixture
 def stored_mesh(db_session, make_model, make_file, local_storage):
-    """A new Model whose STL Artifact holds *mesh*."""
+    """An STL Artifact holding *mesh*, in *model* or a new Model."""
     backend = get_backend()
 
-    def store(mesh):
+    def store(mesh, model=None):
         content = mesh.export(file_type="stl")
         file = make_file(
-            make_model(),
+            model if model is not None else make_model(),
             file_type=FileType.STL,
             size_bytes=len(content),
             sha256=hashlib.sha256(content).hexdigest(),
@@ -494,6 +494,21 @@ class TestPairFanOut:
 
         assert db_session.exec(select(SimilarityCandidate)).one().exact_equivalence
         assert db_session.exec(select(SimilarityEmptyVerification)).all() == []
+
+    def test_counts_a_candidate_refined_by_two_observations_once(
+        self, db_session, local_pair, stored_mesh
+    ):
+        actor, files = local_pair
+        # A second Artifact of the first Model matches the same other Model.
+        stored_mesh(moved_tetrahedron((-20, 14, 5)), model=files[0].model)
+        run = runs.start(db_session, actor)
+
+        finish(
+            db_session, run, SimilarityProcessor(get_session_factory(), get_backend())
+        )
+
+        counters = json.loads(run.counters_json)
+        assert (counters["observations"], counters["candidates"]) == (2, 1)
 
     def test_records_no_outcome_for_a_failed_pair(
         self, db_session, local_pair, monkeypatch

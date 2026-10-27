@@ -7,10 +7,16 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 
 from printstash_core.mesh.similarity import GeometryError
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
 from app.core.errors import OperationError
-from app.db.models import File, GeometryFingerprint, SimilarityRun, User
+from app.db.models import (
+    File,
+    GeometryFingerprint,
+    SimilarityCandidate,
+    SimilarityRun,
+    User,
+)
 from app.db.session import SessionFactory
 from app.modules.media import mesh_isolation, verification_isolation
 from app.modules.media.fingerprints import FingerprintResult, FingerprintResultState
@@ -290,6 +296,12 @@ class SimilarityProcessor:
             .limit(1)
         ).first()
         if row is None:
+            # Many observations can refine one Candidate; report the Candidates.
+            counters["candidates"] = session.exec(
+                select(func.count())
+                .select_from(SimilarityCandidate)
+                .where(SimilarityCandidate.run_id == run.id)
+            ).one()
             runs.checkpoint(session, run, token, state="completed", counters=counters)
             return
         shortlist = retrieval.find_candidates(
@@ -407,4 +419,4 @@ class SimilarityProcessor:
                 session, first, second, evidence, run=run, run_token=token, kind=kind
             )
             if candidate is not None and candidate.confidence > 0:
-                counters["candidates"] = counters.get("candidates", 0) + 1
+                counters["observations"] = counters.get("observations", 0) + 1
