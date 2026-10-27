@@ -53,6 +53,62 @@ beforeEach(() => {
 });
 
 describe("DerivativeStatus", () => {
+  it("shows a current read failure after processing succeeded", async () => {
+    const api = stubApi([aDerivative({ kind: "thumbnail", state: "ready" })]);
+    renderApp(
+      <DerivativeStatus
+        modelId={3}
+        fileId={7}
+        canRetry
+        api={api}
+        previewFailure="storage_authentication_failed"
+      />,
+    );
+    expect(await screen.findByText(/provider rejected authentication/)).toBeVisible();
+    await waitFor(() => expect(api.list).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("button", { name: /Retry/ })).not.toBeInTheDocument();
+  });
+
+  it("retires a current read failure when loading recovers", async () => {
+    const api = stubApi([aDerivative({ state: "ready" })]);
+    const view = renderApp(
+      <DerivativeStatus
+        modelId={3}
+        fileId={7}
+        canRetry
+        api={api}
+        previewFailure="storage_authentication_failed"
+      />,
+    );
+    expect(await screen.findByText(/provider rejected authentication/)).toBeVisible();
+    view.rerender(
+      <DerivativeStatus modelId={3} fileId={7} canRetry api={api} previewFailure={null} />,
+    );
+    expect(screen.queryByText(/provider rejected authentication/)).not.toBeInTheDocument();
+    expect(api.list).toHaveBeenCalledOnce();
+  });
+
+  it("shows a shared persisted cause only once", async () => {
+    const api = stubApi([
+      aDerivative({
+        kind: "viewer_stl",
+        state: "failed",
+        failure_reason: "storage_authentication_failed",
+      }),
+    ]);
+    renderApp(
+      <DerivativeStatus
+        modelId={3}
+        fileId={7}
+        canRetry
+        api={api}
+        previewFailure="storage_authentication_failed"
+      />,
+    );
+    await screen.findByText("3D preview failed");
+    expect(screen.getAllByText(/provider rejected authentication/)).toHaveLength(1);
+  });
+
   it("says which outputs are still being prepared", async () => {
     renderStatus(
       stubApi([
@@ -97,6 +153,13 @@ describe("DerivativeStatus", () => {
     ["renderer_no_output", /stopped unexpectedly on the server/],
     ["source_unavailable", /storage is reachable/],
     ["storage", /storage is reachable/],
+    ["remote_storage_metadata_failed", /storage is reachable/],
+    ["remote_storage_read_failed", /storage is reachable/],
+    ["remote_storage_list_failed", /storage is reachable/],
+    ["storage_credentials_expired", /credentials have expired/],
+    ["storage_authentication_failed", /provider rejected authentication/],
+    ["storage_access_denied", /credentials have permission/],
+    ["storage_signature_invalid", /request signature/],
   ])("explains the %s failure by its cause", async (reason, message) => {
     renderStatus(
       stubApi([

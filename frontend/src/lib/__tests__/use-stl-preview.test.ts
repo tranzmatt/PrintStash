@@ -78,7 +78,15 @@ describe("useStlPreview", () => {
     ["invalid_source", "invalid_source"],
     ["derivative_group_disabled", "derivative_group_disabled"],
     ["cancelled", "cancelled"],
-    ["unexpected_provider_failure", "worker_failed"],
+    ["storage_credentials_expired", "storage_credentials_expired"],
+    ["storage_authentication_failed", "storage_authentication_failed"],
+    ["storage_access_denied", "storage_access_denied"],
+    ["storage_signature_invalid", "storage_signature_invalid"],
+    ["remote_storage_metadata_failed", "storage"],
+    ["remote_storage_read_failed", "storage"],
+    ["remote_storage_list_failed", "storage"],
+    ["worker_failed", "processing"],
+    ["unexpected_provider_failure", "unknown"],
   ])("reports terminal %s without retrying or creating a preview", async (code, reason) => {
     request.mockResolvedValueOnce(new Response(JSON.stringify({ detail: code }), { status: 422 }));
     const { result } = renderHook(() => useStlPreview("/api/v1/files/1/stl"));
@@ -152,7 +160,10 @@ describe("stlPreviewMessage", () => {
     ["invalid_source", "This file cannot be converted to a 3D preview"],
     ["derivative_group_disabled", "3D preview processing is disabled"],
     ["cancelled", "3D preview preparation was cancelled"],
-    ["worker_failed", "Failed to load 3D preview"],
+    [
+      "processing",
+      "Processing stopped unexpectedly on the server. Try again; if it keeps failing, check the PrintStash logs.",
+    ],
   ] as const)("explains %s to the user", (reason, message) => {
     expect(stlPreviewMessage(reason)).toBe(message);
   });

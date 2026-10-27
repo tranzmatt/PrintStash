@@ -9,7 +9,16 @@
  */
 import { uiText } from "@/lib/locale";
 
-export type DerivativeFailureCause = "file" | "too_large" | "processing" | "storage" | "unknown";
+export type DerivativeFailureCause =
+  | "file"
+  | "too_large"
+  | "processing"
+  | "storage"
+  | "storage_credentials_expired"
+  | "storage_authentication_failed"
+  | "storage_access_denied"
+  | "storage_signature_invalid"
+  | "unknown";
 
 const CAUSES = {
   invalid_source: "file",
@@ -27,6 +36,13 @@ const CAUSES = {
   storage: "storage",
   source_unavailable: "storage",
   backup_blob_missing: "storage",
+  remote_storage_metadata_failed: "storage",
+  remote_storage_read_failed: "storage",
+  remote_storage_list_failed: "storage",
+  storage_credentials_expired: "storage_credentials_expired",
+  storage_authentication_failed: "storage_authentication_failed",
+  storage_access_denied: "storage_access_denied",
+  storage_signature_invalid: "storage_signature_invalid",
 } as const satisfies Record<string, DerivativeFailureCause>;
 
 function isKnownReason(reason: string): reason is keyof typeof CAUSES {
@@ -39,6 +55,11 @@ export function derivativeFailureCause(reason: string | null): DerivativeFailure
 
 export function derivativeFailureMessage(cause: DerivativeFailureCause): string {
   switch (cause) {
+    case "storage_credentials_expired":
+    case "storage_authentication_failed":
+    case "storage_access_denied":
+    case "storage_signature_invalid":
+      return uiText(cause);
     case "file":
       return uiText(
         "PrintStash couldn't read this file. It may be damaged, incomplete or use a feature that isn't supported yet. You can still download it.",

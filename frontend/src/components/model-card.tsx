@@ -298,7 +298,7 @@ function ModelCardInner({
           <ProtectedThumbnail
             path={model.thumbnail_url}
             alt={model.name}
-            fade={!origin}
+            fade
             className="bg-muted relative overflow-hidden h-48 border-b border-border shrink-0"
             imageClassName="w-full h-full object-cover"
             placeholder={

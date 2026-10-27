@@ -40,7 +40,7 @@ export function ViewerToolbar({
   const cluster =
     "flex bg-surface-container-lowest/90 backdrop-blur border border-outline-variant rounded overflow-hidden shadow-sm";
   const iconBtn =
-    "flex h-11 w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary sm:h-9 sm:w-9";
+    "disabled:cursor-not-allowed disabled:opacity-50 flex h-11 w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary sm:h-9 sm:w-9";
 
   return (
     <Localized>
@@ -80,8 +80,9 @@ export function ViewerToolbar({
               {DISPLAY_MODES.map((m) => (
                 <button
                   key={m}
+                  disabled={!viewerReady}
                   onClick={() => setDisplayMode(m)}
-                  className={`h-11 px-2.5 font-mono text-2xs uppercase tracking-wider transition-colors sm:h-9 ${
+                  className={`disabled:cursor-not-allowed disabled:opacity-50 h-11 px-2.5 font-mono text-2xs uppercase tracking-wider transition-colors sm:h-9 ${
                     displayMode === m
                       ? "bg-accent text-accent-foreground"
                       : "text-on-surface-variant hover:bg-surface-container-high"
@@ -98,6 +99,7 @@ export function ViewerToolbar({
 
             <div className={cluster}>
               <button
+                disabled={!viewerReady}
                 onClick={() => controls.current?.fit()}
                 className={`${iconBtn} border-r border-outline-variant`}
                 title={uiText("Fit to view")}
@@ -122,6 +124,7 @@ export function ViewerToolbar({
                 <Camera className="h-4 w-4" />
               </button>
               <button
+                disabled={!viewerReady}
                 onClick={() => setShowGrid(!showGrid)}
                 className={`${iconBtn} ${showGrid ? "text-primary bg-secondary-container" : ""}`}
                 title={uiText("Build plate grid")}

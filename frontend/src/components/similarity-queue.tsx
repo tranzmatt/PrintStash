@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState, type ComponentProps } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Box, Columns2, ScanSearch, SlidersHorizontal } from "lucide-react";
@@ -20,6 +20,7 @@ import {
 } from "@/lib/queries/similarity";
 import { getSessionVersion } from "@/lib/session-transport";
 import { uiText } from "@/lib/locale";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { Link } from "@/lib/link";
 import {
@@ -118,7 +119,26 @@ export function SimilarityRow({
   );
 }
 
+function SimilarityEmptyState({
+  modelDetail,
+  ...props
+}: ComponentProps<typeof EmptyState> & { modelDetail: boolean }) {
+  if (!modelDetail) return <EmptyState {...props} />;
+  return (
+    <div className="space-y-2 p-4">
+      <p className="text-sm font-medium text-on-surface">{props.title}</p>
+      {props.description && (
+        <p className="font-mono text-xs leading-relaxed text-on-surface-variant">
+          {props.description}
+        </p>
+      )}
+      {props.action}
+    </div>
+  );
+}
+
 export function SimilarityQueue({ modelId }: { modelId?: number }) {
+  const modelDetail = modelId !== undefined;
   const { t } = useI18n();
   const navigate = useNavigate();
   const searchParams = useSearchParams();
@@ -244,9 +264,26 @@ export function SimilarityQueue({ modelId }: { modelId?: number }) {
   const returnTo = modelId === undefined ? filterUrl : `/models/${modelId}?${modelReturnParams}`;
   return (
     <>
+      {modelDetail && (
+        <h2 className="text-lg font-semibold text-on-surface mb-4 pb-1 border-b border-outline-variant">
+          {t("similarity.review")}
+        </h2>
+      )}
       <SimilaritySearch modelId={modelId} />
-      <Card className="@container/similarity overflow-hidden">
-        <div className="flex flex-wrap items-center gap-3 border-b bg-muted/30 p-3">
+      <Card
+        role="region"
+        aria-label={t("similarity.review")}
+        className={cn(
+          "@container/similarity min-w-0 overflow-hidden",
+          modelDetail && "rounded border-outline-variant bg-surface text-on-surface shadow-none",
+        )}
+      >
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-3 border-b bg-muted/30 p-3",
+            modelDetail && "border-outline-variant bg-surface",
+          )}
+        >
           <div className="min-w-0 basis-full @3xl/similarity:flex-1 @3xl/similarity:basis-auto">
             <TabBar
               tabs={REVIEW_STATES.map((state) => ({ key: state, label: t(`similarity.${state}`) }))}
@@ -467,9 +504,16 @@ export function SimilarityQueue({ modelId }: { modelId?: number }) {
             </Button>
           </div>
         )}
-        <div className="border-b px-4 py-3 sm:px-5">
-          <h2 className="text-sm font-semibold">{t("similarity.review")}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">{t("similarity.reviewHelp")}</p>
+        <div className={cn("border-b px-4 py-3 sm:px-5", modelDetail && "border-outline-variant")}>
+          {!modelDetail && <h2 className="text-sm font-semibold">{t("similarity.review")}</h2>}
+          <p
+            className={cn(
+              "text-xs text-muted-foreground",
+              modelDetail ? "font-mono leading-relaxed text-on-surface-variant" : "mt-1",
+            )}
+          >
+            {t("similarity.reviewHelp")}
+          </p>
         </div>
         {status.isError && (
           <div role="alert" className="border-b p-3 text-sm text-destructive">
@@ -519,7 +563,8 @@ export function SimilarityQueue({ modelId }: { modelId?: number }) {
             {t("similarity.loading")}
           </p>
         ) : queue.isError && !queue.data ? (
-          <EmptyState
+          <SimilarityEmptyState
+            modelDetail={modelDetail}
             title={t("similarity.loadError")}
             action={<Button onClick={() => void queue.refetch()}>{t("similarity.retry")}</Button>}
           />
@@ -530,7 +575,8 @@ export function SimilarityQueue({ modelId }: { modelId?: number }) {
             ))}
           </ul>
         ) : (
-          <EmptyState
+          <SimilarityEmptyState
+            modelDetail={modelDetail}
             icon={ScanSearch}
             title={t(
               activeFilters.length

@@ -651,6 +651,7 @@ function DroppableAllModels({
   isExpanded,
   onToggleExpand,
   count,
+  hasCollections,
   ctx,
 }: {
   selected: boolean;
@@ -658,6 +659,7 @@ function DroppableAllModels({
   isExpanded: boolean;
   onToggleExpand: () => void;
   count: number;
+  hasCollections: boolean;
   ctx: TreeContext;
 }) {
   useUiLocale();
@@ -671,7 +673,7 @@ function DroppableAllModels({
         ref={setNodeRef}
         className={`flex items-center rounded ${isOver || selected ? "bg-accent text-accent-foreground" : "text-foreground"}`}
       >
-        {count > 0 && (
+        {(count > 0 || hasCollections) && (
           <Button
             variant="ghost"
             size="sm"
@@ -772,14 +774,19 @@ export function FilterSidebarContent({
     restore,
     enabled: restoreEnabled,
     restoring,
-  } = useOutlinerRestoration(params, selectedCollection, outlinerQ === "", expanded);
+  } = useOutlinerRestoration(
+    params,
+    selectedCollection,
+    outlinerQ === "" && allModelsExpanded,
+    expanded,
+  );
   const roots = useOutlinerCollections(params, outlinerQ === "" && !restoring);
   const [levels, setLevels] = useState<ReadonlyMap<string, StartupOutcome>>(() => new Map());
   const treeLayoutReady =
     roots.data !== undefined &&
     !restoring &&
-    levels.size > 0 &&
-    [...levels.values()].every((state) => state === "ready");
+    (!allModelsExpanded ||
+      (levels.size > 0 && [...levels.values()].every((state) => state === "ready")));
   const attachFiltersRegion = useCallback(
     (node: HTMLDivElement | null) => {
       filtersRegionRef.current = node;
@@ -810,14 +817,13 @@ export function FilterSidebarContent({
   useEffect(() => {
     if (!readinessEnabled) return;
     const states = [...levels.values()];
-    if (roots.isError || (restoreEnabled && restore.isError) || states.includes("failed"))
+    if (
+      roots.isError ||
+      (restoreEnabled && restore.isError) ||
+      (allModelsExpanded && states.includes("failed"))
+    )
       settleStartup("tree", "failed");
-    else if (
-      roots.data !== undefined &&
-      !restoring &&
-      states.length > 0 &&
-      states.every((state) => state === "ready")
-    ) {
+    else if (treeLayoutReady) {
       let frame = 0;
       const painted = () => {
         const drawer = contentRef.current?.closest('[role="dialog"]');
@@ -838,11 +844,11 @@ export function FilterSidebarContent({
     } else settleStartup("tree", "pending");
   }, [
     readinessEnabled,
-    roots.data,
+    allModelsExpanded,
+    treeLayoutReady,
     roots.isError,
     restoreEnabled,
     restore.isError,
-    restoring,
     levels,
     settleStartup,
   ]);
@@ -1081,11 +1087,23 @@ export function FilterSidebarContent({
                       isExpanded={allModelsExpanded}
                       onToggleExpand={() => setAllModelsExpanded((v) => !v)}
                       count={roots.data?.pages[0]?.parent_direct_entry_count ?? 0}
+                      hasCollections={
+                        roots.data?.pages.some((page) => page.items.length > 0) ?? false
+                      }
                       ctx={treeContext}
                     />
-                    <div className="ml-1 border-l border-border pl-1 min-w-0">
-                      <CollectionLevel parentId={null} ctx={treeContext} />
-                    </div>
+                    {!allModelsExpanded && roots.isError && (
+                      <PageControls
+                        query={roots}
+                        initial={roots.data === undefined}
+                        label={t("Show more folders")}
+                      />
+                    )}
+                    {allModelsExpanded && (
+                      <div className="ml-1 border-l border-border pl-1 min-w-0">
+                        <CollectionLevel parentId={null} ctx={treeContext} />
+                      </div>
+                    )}
                   </>
                 )}
               </div>

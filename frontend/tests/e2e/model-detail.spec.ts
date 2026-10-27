@@ -20,11 +20,162 @@ import { expect, test } from "@playwright/test";
 
 import { collectPageProblems, useMockApi } from "./_setup";
 import type { ModelRead } from "../../src/types/models";
-import { aModel } from "../../src/test-support/factories";
+import { aDerivative, aMetadata, aModel, aRevision } from "../../src/test-support/factories";
 
 useMockApi();
 
 test.describe("model detail route", () => {
+  for (const width of [320, 1920]) {
+    test(`shows a current source access failure after processing succeeded at ${width}px`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 1080 });
+      const failedFile = aRevision({
+        id: 7,
+        file_type: "stl",
+        original_filename: "linked-already-processed.stl",
+        is_external: true,
+      });
+      const healthyFile = aRevision({
+        id: 8,
+        file_type: "stl",
+        original_filename: "another-source.stl",
+      });
+      await page.route("**/api/v1/models/1", (route) =>
+        route.fulfill({ json: aModel({ files: [failedFile, healthyFile] }) }),
+      );
+      await page.route(/\/api\/v1\/files\/[78]\/derivatives$/, (route) =>
+        route.fulfill({
+          json: [
+            aDerivative({ kind: "thumbnail", state: "ready" }),
+            aDerivative({ kind: "metadata", state: "ready" }),
+          ],
+        }),
+      );
+      let reads = 0;
+      await page.route("**/api/v1/files/7/stl", (route) => {
+        reads++;
+        return route.fulfill({
+          status: 409,
+          json: { detail: "storage_authentication_failed" },
+        });
+      });
+      await page.goto("/models/1");
+      await expect(
+        page
+          .getByRole("region", { name: "Preview", exact: true })
+          .getByText(/provider rejected authentication/),
+      ).toBeVisible();
+      // StrictMode may start an aborted read during mount. Opening Files
+      // must reuse the observed failure without adding a storage read.
+      const readsBeforeFiles = reads;
+      const pane = page.getByTestId("model-detail-sidebar");
+      await pane.getByRole("tab", { name: /Files/ }).click();
+      const card = pane.getByRole("article", { name: failedFile.original_filename });
+      const message = card.getByText(/provider rejected authentication/);
+      await expect(message).toBeVisible();
+      await expect(
+        pane
+          .getByRole("article", { name: healthyFile.original_filename })
+          .getByText(/provider rejected authentication/),
+      ).toHaveCount(0);
+      await card.evaluate((element) => element.scrollIntoView({ block: "center" }));
+      const bounds = (await card.boundingBox())!;
+      const text = (await message.boundingBox())!;
+      expect(text.x).toBeGreaterThanOrEqual(bounds.x);
+      expect(text.x + text.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await card.screenshot({ path: testInfo.outputPath("processed-source-access-error.png") });
+      expect(reads).toBe(readsBeforeFiles);
+    });
+  }
+
+  for (const width of [320, 390, 1920]) {
+    test(`keeps failed source controls inside the details panel at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1080 });
+      const filename = "linked_source_with_a_long_unbroken_filename_for_a_detailed_model.3mf";
+      const file = aRevision({
+        id: 7,
+        file_type: "3mf",
+        original_filename: filename,
+        is_external: true,
+      });
+      await page.route("**/api/v1/models/1", (route) =>
+        route.fulfill({ json: aModel({ files: [file] }) }),
+      );
+      await page.route("**/api/v1/files/7/derivatives", (route) =>
+        route.fulfill({
+          json: (["metadata", "thumbnail", "viewer_stl"] as const).map((kind) =>
+            aDerivative({
+              kind,
+              state: "failed",
+              failure_reason: "storage_authentication_failed",
+              retryable: true,
+            }),
+          ),
+        }),
+      );
+      await page.route("**/api/v1/files/7/stl", (route) =>
+        route.fulfill({ status: 422, json: { detail: "storage_authentication_failed" } }),
+      );
+      await page.goto("/models/1");
+      const pane = page.getByTestId("model-detail-sidebar");
+      if (width === 1920) {
+        const resize = page.getByRole("separator", { name: "Resize details panel", exact: true });
+        await resize.focus();
+        for (let step = 0; step < 5; step++) await resize.press("ArrowRight");
+        await expect.poll(async () => (await pane.boundingBox())!.width).toBeCloseTo(400, 0);
+      }
+      await pane.getByRole("tab", { name: /Files/ }).click();
+      const card = pane.getByRole("article", { name: filename });
+      const explanation = card.getByText(/provider rejected authentication/);
+      await expect(explanation).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      const download = card.getByRole("button", { name: "Download", exact: true });
+      const headerBounds = await download.boundingBox();
+      const explanationBounds = await explanation.boundingBox();
+      expect(headerBounds).not.toBeNull();
+      expect(explanationBounds).not.toBeNull();
+      expect(explanationBounds!.y).toBeGreaterThanOrEqual(headerBounds!.y + headerBounds!.height);
+      for (const control of [
+        explanation,
+        card.getByText(filename, { exact: true }),
+        card.getByRole("button", { name: "Open in slicer", exact: true }),
+        download,
+        card.getByRole("button", { name: `Actions for ${filename}`, exact: true }),
+        ...(await card.getByRole("button", { name: /^Retry / }).all()),
+      ]) {
+        await control.scrollIntoViewIfNeeded();
+        const bounds = await control.boundingBox();
+        const frame = await card.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(frame).not.toBeNull();
+        expect(bounds!.x).toBeGreaterThanOrEqual(frame!.x);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(frame!.x + frame!.width);
+        expect(
+          await control.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        ).toBe(true);
+      }
+      await expect(card.getByRole("button", { name: /^Retry / })).toHaveCount(3);
+      for (const retry of await card.getByRole("button", { name: /^Retry / }).all()) {
+        const style = await retry.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { border: parseFloat(style.borderTopWidth), background: style.backgroundColor };
+        });
+        expect(style.border).toBeGreaterThan(0);
+        expect(style.background).not.toBe("rgba(0, 0, 0, 0)");
+      }
+      await card.screenshot({ path: test.info().outputPath(`source-files-${width}.png`) });
+      expect(await pane.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      );
+    });
+  }
+
   test("anchors the title editor without shifting header actions at 1080p", async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto("/models/1");
@@ -355,12 +506,92 @@ test.describe("model detail route", () => {
       .screenshot({ path: test.info().outputPath("derivative-failures.png") });
   });
 
+  for (const width of [320, 390]) {
+    test(`keeps a failed preview readable at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.route("**/api/v1/files/*/stl", (route) =>
+        route.fulfill({ status: 422, json: { detail: "storage_authentication_failed" } }),
+      );
+      await page.goto("/models/1");
+      const panel = page.getByRole("region", { name: "Preview", exact: true });
+      const cause = panel.getByText(/provider rejected authentication/);
+      await expect(cause).toBeVisible();
+      await cause.scrollIntoViewIfNeeded();
+      const labelBox = await panel
+        .getByText(/Viewing:/)
+        .locator("..")
+        .boundingBox();
+      const statusBox = await panel.getByRole("status").boundingBox();
+      expect(labelBox).not.toBeNull();
+      expect(statusBox).not.toBeNull();
+      expect(statusBox!.y).toBeGreaterThanOrEqual(labelBox!.y + labelBox!.height);
+      expect(
+        await cause.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return hit === element || element.contains(hit);
+        }),
+      ).toBe(true);
+      await expect(panel.getByRole("button", { name: "Solid", exact: true })).toBeDisabled();
+      await expect(panel.getByRole("button", { name: "Fit to view", exact: true })).toBeDisabled();
+      await expect(panel.getByTitle("Zoom in")).toHaveCount(0);
+      expect(
+        await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      const panelBox = await panel.boundingBox();
+      for (const content of [
+        panel.getByRole("status"),
+        ...(await panel.getByRole("button").all()),
+      ]) {
+        const box = await content.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.y).toBeGreaterThanOrEqual(panelBox!.y);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(panelBox!.y + panelBox!.height);
+      }
+      await panel.screenshot({ path: test.info().outputPath(`failed-preview-${width}.png`) });
+    });
+  }
+
+  test("shows mesh overlays only for a ready 3D preview", async ({ page }) => {
+    await page.route("**/api/v1/models/1", (route) =>
+      route.fulfill({
+        json: aModel({
+          files: [
+            aRevision({ id: 1, file_type: "stl", original_filename: "cube.stl" }),
+            aRevision({
+              id: 2,
+              file_type: "gcode",
+              metadata: aMetadata({ bbox_x_mm: 10, bbox_y_mm: 20, bbox_z_mm: 30 }),
+            }),
+          ],
+        }),
+      }),
+    );
+    await page.route("**/api/v1/files/2/toolpath", (route) =>
+      route.fulfill({ status: 202, json: { state: "queued" } }),
+    );
+    await page.goto("/models/1");
+    const panel = page.getByRole("region", { name: "Preview", exact: true });
+    await expect(panel.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
+    await expect(panel.getByTitle("Reset view")).toBeVisible();
+    await expect(panel.getByText("10×20×30 mm", { exact: true })).toBeVisible();
+    await panel.getByRole("button", { name: "GCode", exact: true }).click();
+    await expect(panel.getByTitle("Reset view")).toHaveCount(0);
+    await expect(panel.getByText("10×20×30 mm", { exact: true })).toHaveCount(0);
+    await panel.getByRole("button", { name: "3D", exact: true }).click();
+    await expect(panel.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
+    await expect(panel.getByTitle("Reset view")).toBeVisible();
+    await expect(panel.getByText("10×20×30 mm", { exact: true })).toBeVisible();
+  });
+
   test("keeps viewer controls reachable inside the phone preview", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
 
     await page.goto("/models/1");
 
-    const preview = page.getByLabel("3D model preview");
+    const preview = page.getByRole("region", { name: "Preview", exact: true });
+    await page.getByRole("button", { name: "Screenshot", exact: true }).waitFor();
+    await expect(page.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
     const previewBox = await preview.boundingBox();
     const controls = [
       page.getByRole("button", { name: "Fit to view" }),
@@ -388,6 +619,7 @@ test.describe("model detail route", () => {
 
     await page.goto("/models/1");
 
+    await expect(page.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
     const viewingLabel = page.getByText(/Viewing:/).locator("..");
     await expect(viewingLabel).toBeVisible();
     const modeControls = [

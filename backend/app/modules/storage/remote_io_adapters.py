@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from typing import Any, Awaitable, BinaryIO, Iterator, TypeVar
 from urllib.parse import quote, urlsplit, urlunsplit
 
+from app.modules.storage.access_errors import raise_storage_access_error
 from app.modules.storage.remote_deadline import operation_timeout
 from app.modules.storage.remote_io import (
     IdentityDeletion,
@@ -189,7 +190,11 @@ class _RemoteAdapter:
         return self._namespace
 
     def exists(self, key: str) -> bool:
-        return bool(self._io_operator.exists(self._relative(key)))
+        try:
+            return bool(self._io_operator.exists(self._relative(key)))
+        except Exception as exc:
+            raise_storage_access_error(exc)
+            raise
 
     def publish_replica(self, source: BinaryIO, key: str) -> CreationReceipt:
         if self._read_only:
@@ -273,10 +278,15 @@ class _RemoteAdapter:
             else:
                 raise StorageConfigurationError("webdav_protocol_endpoint_required")
         except Exception as exc:
+            raise_storage_access_error(exc)
             if _is_collision(exc):
                 raise StorageCollisionError(key) from exc
             raise
-        metadata = self._operator.stat(destination)
+        try:
+            metadata = self._operator.stat(destination)
+        except Exception as exc:
+            raise_storage_access_error(exc)
+            raise
         return CreationReceipt(
             key=key,
             size=int(metadata.content_length),
@@ -291,6 +301,7 @@ class _RemoteAdapter:
         try:
             return int(self._io_operator.stat(self._relative(key)).content_length)
         except Exception as exc:
+            raise_storage_access_error(exc)
             if _is_not_found(exc):
                 raise FileNotFoundError(key) from exc
             raise
@@ -306,6 +317,7 @@ class _RemoteAdapter:
             raise
         except Exception as exc:
             operation_timeout()
+            raise_storage_access_error(exc)
             if _is_not_found(exc):
                 return None
             raise StorageConfigurationError("remote_storage_metadata_failed") from exc
@@ -317,7 +329,11 @@ class _RemoteAdapter:
         )
 
     def read_bytes(self, key: str) -> bytes:
-        return bytes(self._io_operator.read(self._relative(key)))
+        try:
+            return bytes(self._io_operator.read(self._relative(key)))
+        except Exception as exc:
+            raise_storage_access_error(exc)
+            raise
 
     @property
     def operator_capabilities(self):
@@ -325,7 +341,13 @@ class _RemoteAdapter:
         return self._operator.capability()
 
     def check(self) -> None:
-        self._io_operator.check()
+        try:
+            self._io_operator.check()
+        except Exception as exc:
+            # The binding has transport-specific exception classes. Normalize
+            # recognized access failures and preserve every other exception.
+            raise_storage_access_error(exc)
+            raise
 
     def _delete_versioned(self, key: str, version_id: str) -> None:
         if (
@@ -405,6 +427,7 @@ class _RemoteAdapter:
                 raise
             except Exception as exc:
                 operation_timeout()
+                raise_storage_access_error(exc)
                 if _is_not_found(exc):
                     raise FileNotFoundError(key) from exc
                 raise StorageConfigurationError("remote_storage_read_failed") from exc
@@ -476,6 +499,7 @@ class _RemoteAdapter:
                 raise
             except Exception as exc:
                 operation_timeout()
+                raise_storage_access_error(exc)
                 raise StorageConfigurationError("remote_storage_list_failed") from exc
             finally:
                 close = getattr(listing, "close", None)
@@ -523,6 +547,7 @@ class _RemoteReader(RawIOBase):
             raise
         except Exception as exc:
             operation_timeout()
+            raise_storage_access_error(exc)
             raise StorageConfigurationError("remote_storage_read_failed") from exc
         buffer[: len(chunk)] = chunk
         return len(chunk)
@@ -721,6 +746,7 @@ class _ChunkReader(RawIOBase):
                 raise
             except Exception as exc:
                 operation_timeout()
+                raise_storage_access_error(exc)
                 raise StorageConfigurationError("remote_storage_read_failed") from exc
         count = min(len(buffer), len(self._pending))
         buffer[:count] = self._pending[:count]
@@ -736,6 +762,7 @@ class _ChunkReader(RawIOBase):
             raise
         except Exception as exc:
             operation_timeout()
+            raise_storage_access_error(exc)
             raise StorageConfigurationError("remote_storage_read_failed") from exc
         finally:
             self._pending = memoryview(b"")

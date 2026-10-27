@@ -256,3 +256,78 @@ class TestDeliveryObservability:
             "native_candidate": False,
             "ranges": True,
         }
+
+
+class TestRemoteAccessFailures:
+    @pytest.mark.parametrize("endpoint", ["stl", "download"])
+    @pytest.mark.parametrize(
+        ("provider_code", "expected"),
+        [
+            ("ExpiredToken", "storage_credentials_expired"),
+            ("InvalidAccessKeyId", "storage_authentication_failed"),
+            ("AccessDenied", "storage_access_denied"),
+            ("SignatureDoesNotMatch", "storage_signature_invalid"),
+        ],
+    )
+    def test_reports_safe_access_failure_for_existing_artifact(
+        self,
+        client,
+        auth_headers,
+        db_session,
+        monkeypatch,
+        endpoint,
+        provider_code,
+        expected,
+    ):
+        from opendal.exceptions import Unexpected
+
+        from app.db.models import LibrarySourceKind, StorageConnectionPurpose
+        from app.modules.storage import remote_io_adapters
+        from tests.factories.ops import build_external_library, build_storage_connection
+
+        requests = []
+
+        class Operator:
+            def exists(self, key):
+                return self.stat(key)
+
+            def stat(self, key):
+                requests.append(key)
+                raise Unexpected(
+                    'Unexpected => S3Error { code: "'
+                    + provider_code
+                    + '", message: "PRIVATE_PROVIDER_DETAILS" }'
+                )
+
+        monkeypatch.setattr(
+            remote_io_adapters, "_operator_for", lambda spec: Operator()
+        )
+        connection = build_storage_connection(
+            db_session,
+            purpose=StorageConnectionPurpose.LIBRARY,
+        )
+        library = build_external_library(
+            db_session,
+            "remote",
+            source_kind=LibrarySourceKind.S3,
+            connection_id=connection.id,
+        )
+        artifact = build_file(
+            db_session,
+            build_model(db_session),
+            filename="linked.stl",
+            external=True,
+            external_library_id=library.id,
+            source_key="linked.stl",
+        )
+
+        response = client.get(
+            f"/api/v1/files/{artifact.id}/{endpoint}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": expected}
+        assert response.headers["cache-control"] == "private, no-store"
+        assert len(requests) == 1
+        assert client.get("/api/v1/auth/me", headers=auth_headers).status_code == 200

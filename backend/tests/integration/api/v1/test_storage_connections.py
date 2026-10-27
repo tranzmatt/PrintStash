@@ -1274,3 +1274,61 @@ class TestConditionalConnectionEditing:
             "/api/v1/storage-connections", headers=auth_headers
         ).json()[0]
         assert current["name"] == row["name"]
+
+
+class TestStorageAccessWarnings:
+    @pytest.mark.parametrize(
+        ("purpose", "fails_on"),
+        [
+            pytest.param("library", "list", id="library"),
+            pytest.param("backup", "check", id="backup"),
+            pytest.param("both", "list", id="shared-library"),
+            pytest.param("both", "check", id="shared-backup"),
+        ],
+    )
+    def test_probe_reports_safe_storage_access_error(
+        self, client, auth_headers, monkeypatch, purpose, fails_on
+    ):
+        from opendal.exceptions import Unexpected
+
+        from app.modules.storage import remote_io_adapters
+
+        class Operator:
+            def reject(self):
+                raise Unexpected(
+                    'Unexpected => S3Error { code: "ExpiredToken", message: "SECRET" }'
+                )
+
+            def list(self, directory):
+                if fails_on == "list":
+                    self.reject()
+                return iter(())
+
+            def check(self):
+                self.reject()
+
+        monkeypatch.setattr(
+            remote_io_adapters, "_operator_for", lambda spec: Operator()
+        )
+        created = client.post(
+            "/api/v1/storage-connections",
+            headers=auth_headers,
+            json={
+                "name": "Expired storage",
+                "kind": "s3",
+                "purpose": purpose,
+                "configuration": {"bucket": "fixture-bucket"},
+                "secrets": {
+                    "access_key": "FakeAccessKey",
+                    "secret_key": "FakeSecretKey",
+                },
+            },
+        )
+        assert created.status_code == 201, created.text
+        response = client.post(
+            f"/api/v1/storage-connections/{created.json()['id']}/probe",
+            headers=auth_headers,
+        )
+        assert response.status_code == 409
+        assert response.json() == {"detail": "storage_credentials_expired"}
+        assert client.get("/api/v1/auth/me", headers=auth_headers).status_code == 200

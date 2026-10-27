@@ -29,7 +29,7 @@ import {
 } from "@/lib/preview-preferences";
 import { fitCameraToBounds, heroCameraDirection } from "@/lib/thumbnail-camera";
 import { useViewerReadiness } from "@/lib/use-viewer-readiness";
-import { useStlPreview, stlPreviewMessage } from "@/lib/use-stl-preview";
+import { useStlPreview, stlPreviewMessage, type StlPreviewFailure } from "@/lib/use-stl-preview";
 
 export type ViewerDisplayMode = "solid" | "xray" | "wireframe";
 
@@ -41,12 +41,18 @@ export interface STLViewerControls {
   screenshot: () => Promise<void>;
 }
 
+export interface STLPreviewFeedback {
+  url: string;
+  reason: StlPreviewFailure | null;
+}
+
 export interface STLViewerProps {
   url: string;
   modelId?: number;
   previewFetcher?: NonNullable<Parameters<typeof useStlPreview>[2]>;
   onControlsReady?: (api: STLViewerControls) => void;
   onReadyChange?: (ready: boolean) => void;
+  onFailureChange?: (feedback: STLPreviewFeedback) => void;
   /** Largest loaded dimension, before viewer normalization, in source units. */
   onGeometrySize?: (size: number) => void;
   displayMode?: ViewerDisplayMode;
@@ -166,6 +172,7 @@ function Scene({
     | "previewFetcher"
     | "onControlsReady"
     | "onReadyChange"
+    | "onFailureChange"
     | "onGeometrySize"
     | "comparison"
     | "comparisonCamera"
@@ -562,6 +569,7 @@ export function STLViewer({
   previewFetcher,
   onControlsReady,
   onReadyChange,
+  onFailureChange,
   onGeometrySize,
   displayMode = "solid",
   showGrid = true,
@@ -586,6 +594,17 @@ export function STLViewer({
     onReadyChange?.(meshLoaded && preview.state === "ready");
   }, [meshLoaded, onReadyChange, preview.state]);
 
+  // Share this existing read with the owning file row; do not probe storage again.
+  const primaryFailure =
+    preview.state === "failed"
+      ? preview.reason
+      : parsed.state === "failed"
+        ? "invalid_source"
+        : null;
+  useEffect(() => {
+    onFailureChange?.({ url, reason: primaryFailure });
+  }, [url, primaryFailure, onFailureChange]);
+
   const failure =
     preview.state === "failed"
       ? preview
@@ -596,10 +615,13 @@ export function STLViewer({
     return (
       <div
         role="status"
-        className="flex h-full flex-col items-center justify-center gap-2 text-on-surface-variant"
+        className="flex h-full min-w-0 flex-col items-center justify-center gap-2 p-6 text-center text-on-surface-variant"
       >
         <AlertTriangle className="h-8 w-8" aria-hidden />
-        <span className="text-xs">{stlPreviewMessage(failure.reason)}</span>
+        <p className="text-sm font-medium text-on-surface">{uiText("Failed to load 3D preview")}</p>
+        <p className="max-w-md break-words text-xs leading-relaxed">
+          {stlPreviewMessage(failure.reason)}
+        </p>
       </div>
     );
   if (parsed.state === "failed" || (overlay !== undefined && parsedOverlay.state === "failed"))

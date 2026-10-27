@@ -1,4 +1,5 @@
 import { useCallback, useState, type ReactNode } from "react";
+import { peekCachedAssetUrl } from "@/lib/asset-cache";
 import { useAuthenticatedAsset } from "@/lib/use-authenticated-asset-url";
 import { useViewportAdmission } from "@/lib/use-viewport-admission";
 import { cn } from "@/lib/utils";
@@ -24,9 +25,19 @@ export function ProtectedThumbnail({
   const { ref, admitted } = useViewportAdmission();
   const external = path?.startsWith("https://") || path?.startsWith("http://") ? path : null;
   const asset = useAuthenticatedAsset(external ? null : path, admitted);
+  // Capture reuse before admission starts a download. A remounted cached image
+  // stays visible; a replacement blob still gets its own reveal.
+  const [cachedSource, setCachedSource] = useState(() => ({
+    path,
+    url: path && !external ? peekCachedAssetUrl(path) : null,
+  }));
+  if (cachedSource.path !== path) {
+    setCachedSource({ path, url: path && !external ? peekCachedAssetUrl(path) : null });
+  }
   const url = admitted ? (external ?? asset.url) : null;
   const [decoded, setDecoded] = useState<string | null>(null);
   const ready = url !== null && decoded === url;
+  const reveal = fade && url !== cachedSource.url;
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const failed = asset.status === "failed" || (url !== null && failedSource === url);
 
@@ -62,11 +73,12 @@ export function ProtectedThumbnail({
   return (
     <div
       ref={ref}
-      className={className}
+      className={cn(fade && "relative", className)}
       data-library-thumbnail={!path ? "missing" : failed ? "failed" : ready ? "ready" : "pending"}
     >
       {url ? (
         <img
+          key={url}
           src={url}
           alt={alt}
           draggable={false}
@@ -74,8 +86,8 @@ export function ProtectedThumbnail({
           decoding="async"
           className={cn(
             imageClassName,
-            fade && "transition-opacity duration-slow ease-out",
-            fade && (ready ? "opacity-90 group-hover:opacity-100" : "opacity-0"),
+            reveal && "thumbnail-reveal transition-opacity duration-slow ease-out",
+            fade && (failed || (reveal && !ready) ? "opacity-0" : "opacity-100"),
           )}
           onError={(event) => setFailedSource(event.currentTarget.getAttribute("src"))}
           onLoad={(event) => {
@@ -85,6 +97,17 @@ export function ProtectedThumbnail({
         />
       ) : (
         placeholder
+      )}
+      {url && fade && (
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 transition-opacity duration-slow ease-out",
+            failed || (reveal && !ready) ? "opacity-100" : "opacity-0",
+          )}
+        >
+          {placeholder}
+        </div>
       )}
       {children}
     </div>

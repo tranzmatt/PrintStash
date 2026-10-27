@@ -21,6 +21,7 @@ from app.db.models import (
     SystemConfig,
 )
 from app.db.session import get_session_factory
+from app.modules.storage.access_errors import raise_storage_access_error
 from app.modules.storage.remote_io import RemoteIO
 from app.modules.storage.remote_io_adapters import remote_io_for
 from app.modules.storage.storage_backend.contracts import (
@@ -83,6 +84,7 @@ class RemoteBackupDestination:
         try:
             self.backend.check()
         except Exception as exc:
+            raise_storage_access_error(exc)
             raise BackupDestinationError("storage_connection_probe_failed") from exc
         capabilities = self.backend.operations
         return {

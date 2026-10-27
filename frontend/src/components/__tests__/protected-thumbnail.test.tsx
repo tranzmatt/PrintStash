@@ -23,6 +23,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("ProtectedThumbnail", () => {
+  it("keeps a fallback visible when a fading image cannot decode", async () => {
+    render(
+      <ProtectedThumbnail
+        fade
+        path="/failed/fade"
+        alt="Failed fade"
+        placeholder={<span>Fallback</span>}
+      />,
+    );
+    const image = await screen.findByAltText("Failed fade");
+    Object.defineProperty(image, "decode", {
+      value: async () => {
+        throw new Error("decode failed");
+      },
+    });
+    await act(async () => fireEvent.load(image));
+    expect(image.parentElement).toHaveAttribute("data-library-thumbnail", "failed");
+    expect(screen.getByText("Fallback")).toBeVisible();
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   it("starts an admitted image without another visibility gate", async () => {
     render(
       <ProtectedThumbnail

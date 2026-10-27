@@ -47,6 +47,20 @@ function renderToolbar(
 }
 
 describe("ViewerToolbar screenshot", () => {
+  it("keeps model controls inert until the preview is ready", () => {
+    renderToolbar(false);
+    for (const name of [
+      "Solid",
+      "X-Ray",
+      "Wire",
+      "Fit to view",
+      "Screenshot",
+      "Build plate grid",
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+  });
+
   it("is disabled until the model reports that it is loaded", () => {
     renderToolbar(false);
 

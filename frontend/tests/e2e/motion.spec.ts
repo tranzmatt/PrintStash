@@ -18,6 +18,13 @@ useMockApi();
 declare global {
   interface Window {
     revisitedThumbnailOpacities: number[];
+    releaseThumbnailDecode: () => void;
+    thumbnailReveals: {
+      duration: number | string;
+      start: string | number | undefined;
+      end: string | number | undefined;
+      transform: string;
+    }[];
     descriptionHeights: number[];
   }
 }
@@ -51,6 +58,104 @@ async function folderWithDescription(page: Page) {
 }
 
 test.describe("motion and layering", () => {
+  for (const scenario of [
+    { width: 1920, reducedMotion: "no-preference" },
+    { width: 390, reducedMotion: "no-preference" },
+    { width: 390, reducedMotion: "reduce" },
+  ] as const) {
+    test(`new thumbnails crossfade without moving cards at ${scenario.width}px with ${scenario.reducedMotion}`, async ({
+      page,
+    }, info) => {
+      await page.setViewportSize({ width: scenario.width, height: 844 });
+      await page.emulateMedia({ reducedMotion: scenario.reducedMotion });
+      await folderWithDescription(page);
+      await page.route("**/api/v1/files/1/thumbnail", (route) =>
+        route.fulfill({
+          contentType: "image/svg+xml",
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="192" viewBox="0 0 320 192"><rect width="320" height="192" fill="#eef2f6"/><path d="M160 32 228 66 160 100 92 66Z" fill="#c7d7e8"/><path d="M92 66 160 100 160 164 92 130Z" fill="#6c87a6"/><path d="M160 100 228 66 228 130 160 164Z" fill="#99b0ca"/></svg>',
+        }),
+      );
+      const thumbnailRequests: string[] = [];
+      page.on("request", (request) => {
+        if (new URL(request.url()).pathname === "/api/v1/files/1/thumbnail")
+          thumbnailRequests.push(request.url());
+      });
+      await page.addInitScript(() => {
+        const original = HTMLImageElement.prototype.decode;
+        const pending = new Promise<void>((resolve) => {
+          window.releaseThumbnailDecode = resolve;
+        });
+        window.thumbnailReveals = [];
+        HTMLImageElement.prototype.decode = async function () {
+          await original.call(this);
+          await pending;
+        };
+        document.addEventListener(
+          "transitionrun",
+          (event) => {
+            if (!(event instanceof TransitionEvent) || event.propertyName !== "opacity") return;
+            const image = event.target;
+            if (!(image instanceof HTMLImageElement) || image.alt !== "Root model") return;
+            const transition = image
+              .getAnimations()
+              .find(
+                (animation) =>
+                  animation instanceof CSSTransition && animation.transitionProperty === "opacity",
+              );
+            if (!transition || !(transition.effect instanceof KeyframeEffect)) return;
+            const frames = transition.effect.getKeyframes();
+            window.thumbnailReveals.push({
+              duration: Number(transition.effect.getComputedTiming().duration),
+              start: String(frames[0].opacity),
+              end: String(frames.at(-1)?.opacity),
+              transform: getComputedStyle(image).transform,
+            });
+            transition.pause();
+            transition.currentTime = 150;
+            const placeholder = image.nextElementSibling;
+            for (const animation of placeholder?.getAnimations() ?? []) {
+              animation.pause();
+              animation.currentTime = 150;
+            }
+          },
+          true,
+        );
+      });
+      await page.goto("/");
+      const card = page
+        .getByRole("heading", { name: "Root model", exact: true })
+        .locator("xpath=ancestor::article");
+      await card.scrollIntoViewIfNeeded();
+      const image = card.getByRole("img", { name: "Root model", exact: true });
+      await expect(image).toHaveCSS("opacity", "0");
+      const initialBox = await card.boundingBox();
+      await page.evaluate(() => window.releaseThumbnailDecode());
+      await expect.poll(() => page.evaluate(() => window.thumbnailReveals.length)).toBe(1);
+      expect(await page.evaluate(() => window.thumbnailReveals[0])).toEqual({
+        duration: 300,
+        start: "0",
+        end: "1",
+        transform: "none",
+      });
+      const opacity = Number(await image.evaluate((element) => getComputedStyle(element).opacity));
+      expect(opacity).toBeGreaterThan(0);
+      expect(opacity).toBeLessThan(1);
+      await card.screenshot({ path: info.outputPath("thumbnail-mid-fade.png") });
+      await image.evaluate(async (element) => {
+        const animations = [
+          ...element.getAnimations(),
+          ...element.nextElementSibling!.getAnimations(),
+        ];
+        for (const animation of animations) animation.play();
+        await Promise.all(animations.map((animation) => animation.finished));
+      });
+      await expect(image).toHaveCSS("opacity", "1");
+      expect(await card.boundingBox()).toEqual(initialBox);
+      expect(thumbnailRequests).toHaveLength(1);
+      await card.screenshot({ path: info.outputPath("thumbnail-ready.png") });
+    });
+  }
+
   for (const reducedMotion of ["no-preference", "reduce"] as const) {
     test(`Library route results stay still with ${reducedMotion}`, async ({ page }) => {
       await page.emulateMedia({ reducedMotion });
@@ -331,6 +436,11 @@ test.describe("motion and layering", () => {
   });
 
   test("revisiting a folder keeps cached thumbnails visible", async ({ page }) => {
+    const downloads: string[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/v1/files/1/thumbnail")
+        downloads.push(request.url());
+    });
     await folderWithDescription(page);
     await page.route("**/api/v1/collections/1/readme", (route) =>
       route.fulfill({ json: { readme: "Folder description" } }),
@@ -369,6 +479,7 @@ test.describe("motion and layering", () => {
     const opacities = await page.evaluate(() => window.revisitedThumbnailOpacities);
     expect(opacities.length).toBeGreaterThan(0);
     expect(Math.min(...opacities)).toBeGreaterThanOrEqual(0.9);
+    expect(downloads).toHaveLength(1);
   });
 
   test("header and recent-folder menus stay above adjacent vault surfaces", async ({ page }) => {

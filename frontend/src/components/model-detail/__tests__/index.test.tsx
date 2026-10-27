@@ -452,7 +452,7 @@ describe("ModelDetail", () => {
     });
   });
 
-  it("shows mesh overlays only in 3D mode", async () => {
+  it("keeps mesh overlays hidden while the preview is unavailable", async () => {
     const user = userEvent.setup();
     renderDetail({
       model: aModel({
@@ -467,19 +467,22 @@ describe("ModelDetail", () => {
         ],
       }),
       routes: {
+        "GET /api/v1/files/10/stl": json({ detail: "storage_authentication_failed" }, 422),
         "GET /api/v1/files/11/toolpath": json({ state: "queued" }, 202),
       },
     });
-    expect(await screen.findByRole("button", { name: "Reset view" })).toBeVisible();
-    expect(screen.getByText("10×20×30 mm")).toBeVisible();
+    expect(await screen.findByText(/provider rejected authentication/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reset view" })).not.toBeInTheDocument();
+    expect(screen.queryByText("10×20×30 mm")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "GCode" }));
     expect(screen.queryByRole("button", { name: "Reset view" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Zoom in" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Zoom out" })).not.toBeInTheDocument();
     expect(screen.queryByText("10×20×30 mm")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "3D" }));
-    expect(screen.getByRole("button", { name: "Reset view" })).toBeVisible();
-    expect(screen.getByText("10×20×30 mm")).toBeVisible();
+    expect(await screen.findByText(/provider rejected authentication/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reset view" })).not.toBeInTheDocument();
+    expect(screen.queryByText("10×20×30 mm")).not.toBeInTheDocument();
   });
 
   it("omits mesh camera controls without a mesh", async () => {
