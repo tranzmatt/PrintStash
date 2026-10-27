@@ -39,6 +39,7 @@ def main() -> None:
     os.environ["OMP_NUM_THREADS"] = "1"
     from sqlmodel import Session, SQLModel, col, func, select
 
+    from app.bootstrap.native_resources import configure as configure_native_resources
     from app.core.config import _overlay
     from app.db.models import (
         File,
@@ -59,6 +60,8 @@ def main() -> None:
 
     _overlay["storage_identity"] = "a" * 64
     use_local_storage(args.root / "storage")
+    # Source preparation and native admission are bound by process bootstrap.
+    configure_native_resources(args.root / "data")
     engine = get_engine()
     report_path = args.root / "result.json"
 
