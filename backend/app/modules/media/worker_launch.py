@@ -30,7 +30,9 @@ logger = get_logger(__name__)
 
 _TEMPLATE_MODULE = "app.modules.media.worker_template"
 _BOOTSTRAP_MODULE = "app.modules.media.worker_bootstrap"
-_FORKED_WORKERS = frozenset({"app.modules.media.mesh_worker"})
+_FORKED_WORKERS = frozenset(
+    {"app.modules.media.mesh_worker", "app.modules.media.verification_worker"}
+)
 _START_SECONDS = 30.0
 _RETRY_SECONDS = 60.0
 # A fork begins at the template's virtual size and the job's ceiling bounds

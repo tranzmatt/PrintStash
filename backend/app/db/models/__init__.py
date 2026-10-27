@@ -270,6 +270,7 @@ from .search_preferences import UserSearchPreferences as UserSearchPreferences
 from .similarity import GeometryFingerprint as GeometryFingerprint
 from .similarity import SimilarityCandidate as SimilarityCandidate
 from .similarity import SimilarityCandidateObservation as SimilarityCandidateObservation
+from .similarity import SimilarityEmptyVerification as SimilarityEmptyVerification
 from .similarity import SimilarityReviewDecision as SimilarityReviewDecision
 from .similarity import SimilarityRun as SimilarityRun
 from .sources import (

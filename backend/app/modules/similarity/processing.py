@@ -280,6 +280,7 @@ class SimilarityProcessor:
                 GeometryFingerprint.id > progress.get("fingerprint_id", 0),
                 GeometryFingerprint.algorithm_version == run.algorithm_version,
                 col(GeometryFingerprint.state).in_(("ready", "partial")),
+                fingerprints.distinct_shape(),
                 # A source edit during fingerprinting cannot contribute old rows.
                 col(GeometryFingerprint.source_sha256).in_(
                     select(File.sha256).where(File.id == GeometryFingerprint.file_id)
@@ -335,6 +336,21 @@ class SimilarityProcessor:
                 counters["stale"] = counters.get("stale", 0) + 1
                 return
             runs.normalize_scope(session, actor, "models", [file.model_id])
+        # Neither shortcut publishes evidence, so neither needs source bytes.
+        if (first.component_index or second.component_index) and (
+            verification_cache.proven_exact_files(session, fa, fb)
+        ):
+            counters["implied_by_whole"] = counters.get("implied_by_whole", 0) + 1
+            return
+        if verification_cache.known_empty(
+            session,
+            first,
+            second,
+            sample_points=config.sample_points,
+            triangle_cap=config.triangle_cap,
+        ):
+            counters["verification_cached"] = counters.get("verification_cached", 0) + 1
+            return
         try:
             with prepare_sources(
                 tuple(
@@ -375,6 +391,10 @@ class SimilarityProcessor:
             counters["verification_failed"] = counters.get("verification_failed", 0) + 1
             return
         counters["verified"] = counters.get("verified", 0) + 1
+        if evidence.evidence_class is None:
+            verification_cache.record_empty(
+                session, first, second, evidence, triangle_cap=config.triangle_cap
+            )
         # Persist measured evidence independently of review thresholds. Changing
         # a slider selects durable candidates without repeating geometry work.
         if evidence.evidence_class is not None:

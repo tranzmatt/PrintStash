@@ -261,3 +261,40 @@ class SimilarityReviewDecision(SQLModel, table=True):
     snapshot_json: str = Field(sa_column=Column(Text, nullable=False))
     request_hash: str = Field(max_length=64)
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class SimilarityEmptyVerification(SQLModel, table=True):
+    """A pair verified without an Evidence Class, so it is not verified again.
+
+    Retrieval is not symmetric, so one pair is often shortlisted from both
+    sides and by later runs. Only exact inputs and an identical verifier recipe
+    reuse the outcome; a failure is never recorded, so it is retried.
+    """
+
+    __tablename__ = "similarity_empty_verifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "fingerprint_a_id",
+            "fingerprint_b_id",
+            "input_hash_a",
+            "input_hash_b",
+            "verification_version",
+            "sample_points",
+            "triangle_cap",
+            name="uq_similarity_empty_verification",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    fingerprint_a_id: int = Field(
+        foreign_key="geometry_fingerprints.id", ondelete="CASCADE"
+    )
+    fingerprint_b_id: int = Field(
+        foreign_key="geometry_fingerprints.id", ondelete="CASCADE", index=True
+    )
+    input_hash_a: str = Field(max_length=64)
+    input_hash_b: str = Field(max_length=64)
+    verification_version: str = Field(max_length=64)
+    sample_points: int
+    triangle_cap: int
+    created_at: datetime = Field(default_factory=utcnow)

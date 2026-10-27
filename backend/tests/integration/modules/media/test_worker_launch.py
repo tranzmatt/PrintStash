@@ -114,10 +114,12 @@ def _template_pid() -> int:
 
 
 class TestForkable:
-    def test_a_mesh_worker_command_is_forkable(self) -> None:
-        assert worker_launch.forkable(
-            command("app.modules.media.mesh_worker", ["{}"], ROOMY)
-        )
+    @pytest.mark.parametrize(
+        "module",
+        ["app.modules.media.mesh_worker", "app.modules.media.verification_worker"],
+    )
+    def test_a_preloaded_worker_command_is_forkable(self, module: str) -> None:
+        assert worker_launch.forkable(command(module, ["{}"], ROOMY))
 
     @pytest.mark.parametrize(
         "module",

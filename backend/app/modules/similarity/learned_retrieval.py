@@ -9,6 +9,7 @@ from app.db.models import GeometryFingerprint, PassageVector, User
 from app.db.session import SessionFactory
 from app.modules.inference.local import configured_provider
 from app.modules.similarity import vector_sources as store
+from app.modules.similarity.fingerprints import distinct_shape
 from app.modules.similarity.retrieval import Shortlist
 
 
@@ -73,6 +74,7 @@ def extend(
                     GeometryFingerprint.source_sha256 == row.input_hash,
                     GeometryFingerprint.algorithm_version == source.algorithm_version,
                     GeometryFingerprint.state == "ready",
+                    distinct_shape(),
                 )
             ).first()
             if fp is not None:

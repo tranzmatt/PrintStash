@@ -10,7 +10,7 @@ from sqlmodel import Session, col, select
 
 from app.db.models import CollectionRole, File, GeometryFingerprint, Model, User
 from app.modules.identity.rbac import accessible_collection_ids_stmt
-from app.modules.similarity.fingerprints import live_source_predicates
+from app.modules.similarity.fingerprints import distinct_shape, live_source_predicates
 
 PREFILTER_LIMIT = 512
 
@@ -69,6 +69,7 @@ def find_candidates(
         col(GeometryFingerprint.state).in_(("ready", "partial")),
         GeometryFingerprint.source_sha256 == File.sha256,
         Model.id != file.model_id,
+        distinct_shape(),
         *live_source_predicates(),
         editable_models(session, actor),
     )

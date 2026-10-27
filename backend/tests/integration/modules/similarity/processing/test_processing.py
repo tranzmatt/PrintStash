@@ -14,6 +14,7 @@ from app.db.models import (
     FileType,
     GeometryFingerprint,
     SimilarityCandidate,
+    SimilarityEmptyVerification,
     SimilarityRun,
 )
 from app.db.session import get_session_factory
@@ -30,17 +31,11 @@ from tests.factories.similarity import advance_oldest_run
 
 
 @pytest.fixture
-def local_pair(db_session, make_model, make_file, make_user, local_storage):
-    actor = make_user(superuser=True)
-    configuration.update_settings(
-        db_session, actor, {"enabled": True, "sample_points": 256}
-    )
+def stored_mesh(db_session, make_model, make_file, local_storage):
+    """A new Model whose STL Artifact holds *mesh*."""
     backend = get_backend()
-    files = []
-    for index in range(2):
-        mesh = tetrahedron()
-        if index:
-            mesh.apply_translation([35, -8, 2])
+
+    def store(mesh):
         content = mesh.export(file_type="stl")
         file = make_file(
             make_model(),
@@ -54,8 +49,27 @@ def local_pair(db_session, make_model, make_file, make_user, local_storage):
         db_session.add(file)
         db_session.commit()
         backend.write_stream(io.BytesIO(content), file.path)
-        files.append(file)
-    return actor, files
+        return file
+
+    return store
+
+
+def moved_tetrahedron(offset):
+    mesh = tetrahedron()
+    mesh.apply_translation(offset)
+    return mesh
+
+
+@pytest.fixture
+def local_pair(db_session, make_user, stored_mesh):
+    actor = make_user(superuser=True)
+    configuration.update_settings(
+        db_session, actor, {"enabled": True, "sample_points": 256}
+    )
+    return actor, [
+        stored_mesh(tetrahedron()),
+        stored_mesh(moved_tetrahedron((35, -8, 2))),
+    ]
 
 
 class TestProcessing:
@@ -235,8 +249,12 @@ class TestProcessingFailures:
         fp = db_session.exec(select(GeometryFingerprint)).one()
         assert fp.failure_code == "source_changed"
 
-    def test_cancels_between_committed_verification_pairs(self, db_session, local_pair):
+    def test_cancels_between_committed_verification_pairs(
+        self, db_session, local_pair, stored_mesh
+    ):
         actor, _ = local_pair
+        # A third copy gives every shortlist a second pair to cancel before.
+        stored_mesh(moved_tetrahedron((-20, 14, 5)))
         run = runs.start(db_session, actor)
         processor = SimilarityProcessor(get_session_factory(), get_backend())
         for _ in range(35):
@@ -365,6 +383,133 @@ class TestPairRecovery:
             assert counts["verification_failed"] == 1
         assert counts.get("verified", 0) == 0
         assert db_session.exec(select(SimilarityCandidate)).all() == []
+
+
+def finish(db_session, run, worker):
+    for _ in range(40):
+        assert advance_oldest_run(worker)
+        db_session.refresh(run)
+        if run.state in runs.TERMINAL:
+            return
+    raise AssertionError("run did not finish")
+
+
+def fingerprinted(db_session, actor, worker):
+    """A run whose two Artifacts are fingerprinted, with no pair queued yet."""
+    run = runs.start(db_session, actor)
+    advance_oldest_run(worker)
+    advance_oldest_run(worker)
+    rows = db_session.exec(
+        select(GeometryFingerprint).order_by(
+            GeometryFingerprint.component_index, GeometryFingerprint.id
+        )
+    ).all()
+    return run, rows
+
+
+def queue(db_session, run, pairs):
+    db_session.refresh(run)
+    run.phase = "candidates"
+    run.checkpoint_json = json.dumps({"pending_pairs": pairs})
+    db_session.add(run)
+    db_session.commit()
+
+
+class TestPairFanOut:
+    def test_shortlists_one_pair_per_side_for_single_body_models(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        run = runs.start(db_session, actor)
+
+        finish(
+            db_session, run, SimilarityProcessor(get_session_factory(), get_backend())
+        )
+
+        assert json.loads(run.counters_json)["shortlisted"] == 2
+
+    def test_skips_component_pairs_between_exactly_equal_files(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        finish(db_session, runs.start(db_session, actor), worker)
+        run, rows = fingerprinted(db_session, actor, worker)
+        components = [row.id for row in rows if row.component_index == 1]
+        queue(db_session, run, [components])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["implied_by_whole"], counters.get("verified", 0)) == (1, 0)
+
+    def test_verifies_component_pairs_without_exact_whole_evidence(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        components = [row.id for row in rows if row.component_index == 1]
+        queue(db_session, run, [components])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert json.loads(run.counters_json)["verified"] == 1
+
+    def test_reuses_an_empty_outcome_for_the_reversed_pair(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(tetrahedron())
+        stored_mesh(trimesh.creation.box((10, 20, 30)))
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+        queue(db_session, run, [[first, second], [second, first]])
+
+        assert advance_oldest_run(worker)
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["verified"], counters["verification_cached"]) == (1, 1)
+
+    def test_records_no_empty_outcome_for_published_evidence(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+
+        finish(
+            db_session,
+            runs.start(db_session, actor),
+            SimilarityProcessor(get_session_factory(), get_backend()),
+        )
+
+        assert db_session.exec(select(SimilarityCandidate)).one().exact_equivalence
+        assert db_session.exec(select(SimilarityEmptyVerification)).all() == []
+
+    def test_records_no_outcome_for_a_failed_pair(
+        self, db_session, local_pair, monkeypatch
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        queue(db_session, run, [[row.id for row in rows if row.component_index == 0]])
+
+        def failed(*args, **kwargs):
+            raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
+
+        monkeypatch.setattr(verification_isolation, "verify_paths", failed)
+
+        assert advance_oldest_run(worker)
+        assert db_session.exec(select(SimilarityEmptyVerification)).all() == []
 
 
 class TestIsolatedAnalysis:

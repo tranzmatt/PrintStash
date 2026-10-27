@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, col, or_, select
 
 from app.core.time import ensure_utc, utcnow
@@ -48,6 +49,30 @@ def live_source_predicates(file=File, model=Model):
         col(model.purge_token).is_(None),
         ~tombstone,
     )
+
+
+def distinct_shape():
+    """Exclude the Component row that only repeats a single-body whole row.
+
+    A file with one resource placed once stores that body twice: the whole row
+    and Component 1, in its source frame. Comparing both against every
+    neighbour verifies one Model pair four times. The whole row already joins
+    composition as Component 0, so the alias adds no evidence.
+    """
+    whole = aliased(GeometryFingerprint)
+    single_body = (
+        select(whole.id)
+        .where(
+            whole.file_id == GeometryFingerprint.file_id,
+            whole.component_index == 0,
+            whole.algorithm_version == GeometryFingerprint.algorithm_version,
+            whole.source_sha256 == GeometryFingerprint.source_sha256,
+            whole.component_count == 1,
+        )
+        .correlate(GeometryFingerprint)
+        .exists()
+    )
+    return or_(GeometryFingerprint.component_index == 0, ~single_body)
 
 
 def current_source(session: Session, file_id: int, source_hash: str) -> bool:

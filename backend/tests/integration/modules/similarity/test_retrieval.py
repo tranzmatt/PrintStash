@@ -236,3 +236,104 @@ class TestRetrieval:
         assert retrieval.find_candidates(
             db_session, source, make_user(superuser=True)
         ).fingerprint_ids == (matching.id,)
+
+
+class TestSingleBodyComponents:
+    """A single-body file's Component 1 repeats its whole row."""
+
+    def test_offers_only_the_whole_row_of_a_single_body_target(
+        self,
+        db_session,
+        source,
+        make_model,
+        make_file,
+        make_user,
+        make_geometry_fingerprint,
+    ):
+        file = make_file(make_model())
+        whole = make_geometry_fingerprint(
+            file,
+            state="ready",
+            normalized_area=1,
+            component_count=1,
+            d2_blob=source.d2_blob,
+        )
+        make_geometry_fingerprint(
+            file,
+            state="ready",
+            component_index=1,
+            normalized_area=1,
+            component_count=1,
+            d2_blob=source.d2_blob,
+        )
+
+        result = retrieval.find_candidates(
+            db_session, source, make_user(superuser=True)
+        )
+
+        assert result.fingerprint_ids == (whole.id,)
+
+    @pytest.mark.parametrize(
+        "component_count", [2, None], ids=["multi-body", "partial-whole"]
+    )
+    def test_offers_components_unless_the_whole_is_one_body(
+        self,
+        db_session,
+        source,
+        make_model,
+        make_file,
+        make_user,
+        make_geometry_fingerprint,
+        component_count,
+    ):
+        file = make_file(make_model())
+        rows = [
+            make_geometry_fingerprint(
+                file,
+                state="ready",
+                component_index=index,
+                normalized_area=1,
+                component_count=component_count if index == 0 else 1,
+                d2_blob=source.d2_blob,
+            )
+            for index in range(2)
+        ]
+
+        result = retrieval.find_candidates(
+            db_session, source, make_user(superuser=True)
+        )
+
+        assert set(result.fingerprint_ids) == {row.id for row in rows}
+
+    def test_offers_a_component_whose_whole_row_is_from_another_source(
+        self,
+        db_session,
+        source,
+        make_model,
+        make_file,
+        make_user,
+        make_geometry_fingerprint,
+    ):
+        file = make_file(make_model())
+        make_geometry_fingerprint(
+            file,
+            state="ready",
+            normalized_area=1,
+            component_count=1,
+            source_sha256="e" * 64,
+            d2_blob=source.d2_blob,
+        )
+        component = make_geometry_fingerprint(
+            file,
+            state="ready",
+            component_index=1,
+            normalized_area=1,
+            component_count=1,
+            d2_blob=source.d2_blob,
+        )
+
+        result = retrieval.find_candidates(
+            db_session, source, make_user(superuser=True)
+        )
+
+        assert result.fingerprint_ids == (component.id,)
