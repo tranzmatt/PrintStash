@@ -113,7 +113,7 @@ describe("SlicerProfileDetails", () => {
       routes: { "GET /api/v1/slicer-profiles": json({ items: [profile], next_before_id: null }) },
     });
 
-    await user.click(screen.getByRole("button", { name: "Refresh", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
 
     expect(await screen.findByText("bracket.gcode")).toBeVisible();
   });
@@ -125,7 +125,7 @@ describe("SlicerProfileDetails", () => {
       routes: { "GET /api/v1/slicer-profiles": json({ detail: "access_denied" }, 403) },
     });
 
-    await user.click(screen.getByRole("button", { name: "Refresh", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByRole("alert");
 
     expect(screen.queryByText("bracket.gcode")).not.toBeInTheDocument();
