@@ -69,12 +69,15 @@ and changelog instead of reconstructing their contents.
    test for its headline capability.
 3. Run focused checks while iterating, then the applicable gate:
    - Backend: run the affected tests locally, plus `uv run ruff check app/ tests/`
-     and `uv run pyright` when feasible. Use a successful **Deep CI** run on the
-     final commit for the full handoff gate: its parallel `full-ordinary` and
-     `full-resources` partitions cover the same backend tests as `full`, with
+     and `uv run pyright` when feasible. Use **Deep CI's backend partitions and
+     combined coverage gate** on the final commit for the full backend handoff
+     gate: its parallel `full-ordinary` and `full-resources` partitions cover
+     the same backend tests as `full`, with
      coverage checks added. After committing and pushing, reuse a run for that
      exact SHA or dispatch `gh workflow run deep-ci.yml --ref <branch>` and
-     check its result. Do not duplicate it with local `full` or `coverage`;
+     verify those jobs passed. Report the overall workflow result too, including
+     any failures outside that backend gate. Do not duplicate it with local
+     `full` or `coverage`;
      see [references/running-tests.md](references/running-tests.md) for scope
      selection and local fallbacks.
    - Frontend: `cd frontend && pnpm format:check && pnpm lint && pnpm typecheck`;

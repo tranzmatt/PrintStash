@@ -49,7 +49,7 @@ Report the PR URL, final commit and verified CI result when handing off.
   Never force-add private records or copy their contents into public docs.
 
 ## Commands
-- Backend: affected tests locally (`cd backend && ./scripts/test.sh fast <paths> -q`) · full/coverage gate: **Deep CI on the final commit** (`gh workflow run deep-ci.yml --ref <branch>`), without duplicating local full suites; see `.agents/skills/printstash/references/running-tests.md` · lint `uv run ruff check app/ tests/` · run `uv run uvicorn app.main:app --reload` · migrate `uv run python -m app.db.migrate` (prepares the data root, as the container does; raw `alembic` stays for authoring)
+- Backend: affected tests locally (`cd backend && ./scripts/test.sh fast <paths> -q`) · full/coverage gate: **Deep CI's backend jobs on the final commit** (`gh workflow run deep-ci.yml --ref <branch>`), without duplicating local full suites; see `.agents/skills/printstash/references/running-tests.md` · lint `uv run ruff check app/ tests/` · run `uv run uvicorn app.main:app --reload` · migrate `uv run python -m app.db.migrate` (prepares the data root, as the container does; raw `alembic` stays for authoring)
 - Frontend: `cd frontend && pnpm dev|test|coverage|lint|format|typecheck` — oxlint + oxfmt + TypeScript 7 (no ESLint, no prettier)
 - Full stack: `docker compose up` (prebuilt image — src edits need vite dev server).
 - Local dev gotcha: `:3000` serves the **prebuilt** image, not HMR. Run the vite

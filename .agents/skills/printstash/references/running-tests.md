@@ -52,15 +52,19 @@ uv run ruff format --check app/core app/db app/schemas packages/printstash-core/
 uv run pyright
 ```
 
-After committing and pushing the final changes, reuse a successful Deep CI run
-for that exact SHA, or dispatch one from the repository:
+After committing and pushing the final changes, reuse a Deep CI run for that
+exact SHA and inspect its results, or dispatch one from the repository:
 
 ```bash
 gh workflow run deep-ci.yml --ref <branch>
 ```
 
-Check the run's `headSha` and wait for its result before reporting the full gate
-as passed. Keep the optional startup benchmark and real CLIP inputs at their
+Check the run's `headSha` and require every backend partition and the combined
+backend coverage gate to succeed before reporting the full backend gate as
+passed. Report the overall Deep CI conclusion separately: its other jobs go
+beyond `full`. Investigate failures, and cite base-branch evidence when a failure
+predates the change; never describe that overall run as green. Keep the optional
+startup benchmark and real CLIP inputs at their
 defaults unless the task needs them. A queued run is not a reason to start a
 duplicate local full suite. Report the run URL, SHA and conclusion separately
 from focused local results.

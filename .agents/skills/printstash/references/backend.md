@@ -74,8 +74,9 @@ Files in `backend/alembic/versions/`, named `<rev>_snake_description.py`
 
 - Run the affected backend test files during development; use
   `./scripts/test.sh fast <affected paths> -q` when that lane fits the change.
-- A successful **Deep CI** run on the final commit supplies the full backend
-  handoff gate. It partitions the same tests as `full` and adds coverage checks;
+- Successful **Deep CI backend partitions and the combined coverage gate** on
+  the final commit supply the full backend handoff gate. They partition the
+  same tests as `full` and add coverage checks;
   do not repeat the full suite locally. See [running-tests.md](running-tests.md)
   for dispatch, reporting and local fallbacks.
 - Report actual results; never claim a run you did not do.
