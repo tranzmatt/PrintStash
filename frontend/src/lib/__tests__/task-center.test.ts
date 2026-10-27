@@ -21,7 +21,7 @@
  * looking stalled until a reload.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { adminSession, memberSession } from "@/test-support/render";
 import { aJob } from "@/test-support/factories";
@@ -1392,14 +1392,96 @@ describe("attachTaskToImportJob", () => {
 describe("createImportJobSynchronizer", () => {
   async function handshake() {
     await vi.advanceTimersByTimeAsync(0);
+    socket.onopen?.();
     socket.deliver({ type: "resync" });
     await vi.advanceTimersByTimeAsync(0);
   }
+
+  it("coalesces a burst of visible job notices", async () => {
+    listJobs.mockResolvedValue([aJob({ job_id: "burst-job", state: "running" })]);
+    const stop = tc.startImportJobSync();
+    onTestFinished(stop);
+    await handshake();
+    listJobs.mockResolvedValue([aJob({ job_id: "burst-job", state: "completed" })]);
+
+    socket.deliver({ type: "job", job_id: "burst-job", state: "running" });
+    await vi.advanceTimersByTimeAsync(100);
+    socket.deliver({ type: "job", job_id: "burst-job", state: "completed" });
+    await vi.advanceTimersByTimeAsync(150);
+
+    expect(listJobs).toHaveBeenCalledTimes(2);
+    expect(tc.listTasks()).toMatchObject([{ jobId: "burst-job", status: "completed" }]);
+    stop();
+  });
+
+  it("bounds the delay under continuing notices", async () => {
+    const stop = tc.startImportJobSync();
+    onTestFinished(stop);
+    await handshake();
+    listJobs.mockResolvedValue([aJob({ job_id: "busy-job", state: "running", progress: 50 })]);
+
+    socket.deliver({ type: "job", job_id: "busy-job", state: "running" });
+    await vi.advanceTimersByTimeAsync(200);
+    socket.deliver({ type: "job", job_id: "busy-job", state: "running" });
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(listJobs).toHaveBeenCalledTimes(2);
+    expect(tc.listTasks()).toMatchObject([{ jobId: "busy-job", progress: 50 }]);
+    stop();
+  });
+
+  it("repairs a dropped notice while connected", async () => {
+    listJobs.mockResolvedValue([aJob({ job_id: "quiet-job", state: "running" })]);
+    const stop = tc.startImportJobSync();
+    onTestFinished(stop);
+    await handshake();
+    listJobs.mockResolvedValue([aJob({ job_id: "quiet-job", state: "completed" })]);
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(listJobs).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(listJobs).toHaveBeenCalledTimes(2);
+    expect(tc.listTasks()).toMatchObject([{ jobId: "quiet-job", status: "completed" }]);
+    stop();
+  });
+
+  it("polls promptly without the events connection", async () => {
+    listJobs.mockResolvedValue([aJob({ job_id: "offline-job", state: "running" })]);
+    const stop = tc.startImportJobSync();
+    onTestFinished(stop);
+    await handshake();
+    socket.onclose?.();
+    await vi.advanceTimersByTimeAsync(10_000);
+    listJobs.mockResolvedValue([aJob({ job_id: "offline-job", state: "completed" })]);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(listJobs).toHaveBeenCalledTimes(3);
+    expect(tc.listTasks()).toMatchObject([{ jobId: "offline-job", status: "completed" }]);
+    stop();
+  });
+
+  it("keeps error backoff despite job notices", async () => {
+    listJobs.mockRejectedValueOnce(new Error("offline"));
+    const stop = tc.startImportJobSync();
+    onTestFinished(stop);
+    await handshake();
+    socket.deliver({ type: "job", job_id: "retry-job", state: "running" });
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(listJobs).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(listJobs).toHaveBeenCalledTimes(2);
+    stop();
+  });
 
   it("resumes Job synchronization when the tab becomes visible", async () => {
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     listJobs.mockResolvedValue([aJob({ job_id: "visible-job", state: "running" })]);
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     try {
       await handshake();
       visibility.mockReturnValue("hidden");
@@ -1433,6 +1515,7 @@ describe("createImportJobSynchronizer", () => {
 
   it("falls back after one second without a socket notice", async () => {
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await vi.advanceTimersByTimeAsync(999);
     expect(listJobs).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
@@ -1449,11 +1532,12 @@ describe("createImportJobSynchronizer", () => {
         }),
     );
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     socket.deliver({ type: "job", job_id: "changed-job", state: "completed" });
     listJobs.mockResolvedValue([aJob({ job_id: "changed-job", state: "completed" })]);
     deliver([aJob({ job_id: "changed-job", state: "running" })]);
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
     expect(listJobs).toHaveBeenCalledTimes(2);
     expect(tc.listTasks()).toMatchObject([{ jobId: "changed-job", status: "completed" }]);
     stop();
@@ -1461,6 +1545,7 @@ describe("createImportJobSynchronizer", () => {
 
   it("stops polling after the initial sync when the server is idle", async () => {
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     expect(listJobs).toHaveBeenCalledTimes(1);
 
@@ -1482,10 +1567,11 @@ describe("createImportJobSynchronizer", () => {
       }),
     ]);
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     expect(listJobs).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(listJobs).toHaveBeenCalledTimes(2);
     stop();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -1494,6 +1580,7 @@ describe("createImportJobSynchronizer", () => {
 
   it("wakes an idle synchronizer when a new server job is tracked", async () => {
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     expect(listJobs).toHaveBeenCalledTimes(1);
 
@@ -1506,6 +1593,7 @@ describe("createImportJobSynchronizer", () => {
   it("backs off after a failed sync even without a local task record", async () => {
     listJobs.mockRejectedValueOnce(new Error("offline")).mockResolvedValue([]);
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     expect(listJobs).toHaveBeenCalledTimes(1);
 
@@ -1518,6 +1606,7 @@ describe("createImportJobSynchronizer", () => {
 
   it("wakes immediately when connectivity returns", async () => {
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     window.dispatchEvent(new Event("online"));
     await vi.advanceTimersByTimeAsync(0);
@@ -1529,11 +1618,12 @@ describe("createImportJobSynchronizer", () => {
     // A worker finished the Job; without the notice an idle Task Center would
     // show the old state until something else woke it.
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     expect(listJobs).toHaveBeenCalledTimes(1);
 
     socket.deliver({ type: "job", job_id: "j1", state: "completed" });
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
 
     expect(listJobs).toHaveBeenCalledTimes(2);
     stop();
@@ -1542,6 +1632,7 @@ describe("createImportJobSynchronizer", () => {
   it("ignores maintenance outside the Task Center", async () => {
     listJobs.mockResolvedValue([aJob({ state: "completed" })]);
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     for (let i = 0; i < 60; i++) {
       socket.deliver({
@@ -1558,9 +1649,10 @@ describe("createImportJobSynchronizer", () => {
 
   it("refreshes tasks for visible Job notices", async () => {
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     socket.deliver({ type: "job", job_id: "owned-job", state: "completed", task_visible: true });
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
     expect(listJobs).toHaveBeenCalledTimes(2);
     stop();
   });
@@ -1568,6 +1660,7 @@ describe("createImportJobSynchronizer", () => {
   it("refetches after the events socket reconnects", async () => {
     listJobs.mockResolvedValue([aJob({ job_id: "reconnected-job", state: "running" })]);
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
     expect(tc.listTasks()).toMatchObject([{ jobId: "reconnected-job", status: "running" }]);
 
@@ -1582,6 +1675,7 @@ describe("createImportJobSynchronizer", () => {
 
   it("ignores notices about derivatives", async () => {
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
 
     socket.deliver({ type: "derivative", state: "ready" });
@@ -1593,6 +1687,7 @@ describe("createImportJobSynchronizer", () => {
 
   it("closes the events socket when nothing shows the Task Center", async () => {
     const stop = tc.startImportJobSync();
+    onTestFinished(stop);
     await handshake();
 
     stop();

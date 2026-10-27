@@ -115,6 +115,11 @@ export function setEventSocketFactory(factory: EventSocketFactory): void {
   void connect();
 }
 
+/** Whether notices can currently arrive; polling remains a recovery path. */
+export function isEventSocketOpen(): boolean {
+  return open;
+}
+
 function isBrowser(): boolean {
   return "window" in globalThis;
 }

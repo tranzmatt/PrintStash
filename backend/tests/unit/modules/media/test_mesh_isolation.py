@@ -87,6 +87,28 @@ def _wait_gone(pid: int, seconds: float = 5.0) -> bool:
 
 
 class TestSupervise:
+    def test_bounds_cancellation_reads_for_fragmented_output(self):
+        from app.core.cancellation import cancellation_scope
+
+        probes = []
+        chunks = []
+
+        def withdrawn():
+            probes.append(True)
+            return False
+
+        with cancellation_scope(withdrawn, idle=lambda: False):
+            reply = mesh_isolation.supervise_result(
+                _child("import sys; sys.stdout.buffer.write(b'x' * 1048576)"),
+                memory_budget=512 * MB,
+                timeout_seconds=30,
+                on_chunk=chunks.append,
+            )
+
+        assert reply.payload == b"x" * 1048576
+        assert len(chunks) >= 16
+        assert len(probes) == 1
+
     def test_returns_what_the_child_wrote(self):
         reply = supervise(
             _child("import sys; sys.stdout.buffer.write(b'framed')"),

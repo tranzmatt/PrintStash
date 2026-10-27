@@ -8,7 +8,7 @@ import { getSessionVersion, requireSessionVersion, withSessionRequest } from "./
 
 import { listJobs } from "@/lib/api/jobs";
 import { getSimilarityRun } from "@/lib/api/similarity";
-import { subscribeEvents } from "@/lib/events";
+import { isEventSocketOpen, subscribeEvents } from "@/lib/events";
 import type { JobState, JobStatus } from "@/types";
 import type { SimilarityRun } from "@/types/similarity";
 import { uiText, knownUiText, uiMessage, type MessageDescriptor } from "./locale";
@@ -158,11 +158,17 @@ export class JobStatusUnavailableError extends Error {
     this.name = "JobStatusUnavailableError";
   }
 }
+const JOB_NOTICE_BATCH_MS = 250;
+const CONNECTED_JOB_POLL_MS = 10_000;
+const DISCONNECTED_JOB_POLL_MS = 1_000;
+
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let syncDueAt: number | null = null;
+let syncRetryAt: number | null = null;
 let syncSubscribers = 0;
 let syncFailures = 0;
 let syncInFlight = false;
-let syncWakePending = false;
+let syncWakePending: number | null = null;
 let taskStoreEpoch = 0;
 let syncFlight: { epoch: number; promise: Promise<boolean> } | null = null;
 
@@ -447,8 +453,9 @@ function retireTasks(errorForWaiter: (jobId: string) => Error): void {
   taskStoreEpoch += 1;
   syncFlight = null;
   syncInFlight = false;
-  syncWakePending = false;
+  syncWakePending = null;
   syncFailures = 0;
+  syncRetryAt = null;
   clearSyncTimer();
   tasks = [];
   dismissedJobIds.clear();
@@ -981,6 +988,7 @@ function hasTrackedActiveJobs(): boolean {
 }
 
 function clearSyncTimer(): void {
+  syncDueAt = null;
   if (syncTimer !== null) {
     clearTimeout(syncTimer);
     syncTimer = null;
@@ -996,11 +1004,20 @@ function scheduleImportJobSync(delay: number): void {
   ) {
     return;
   }
+  const dueAt = Math.max(Date.now() + delay, syncRetryAt ?? 0);
+  // Keep the first notice's deadline: a steady stream must not postpone the
+  // snapshot, and a recovery poll must not replace an earlier event refresh.
+  if (syncDueAt !== null && syncDueAt <= dueAt) return;
   clearSyncTimer();
-  syncTimer = setTimeout(() => {
-    syncTimer = null;
-    void pollImportJobs();
-  }, delay);
+  syncDueAt = dueAt;
+  syncTimer = setTimeout(
+    () => {
+      syncTimer = null;
+      syncDueAt = null;
+      void pollImportJobs();
+    },
+    Math.max(0, dueAt - Date.now()),
+  );
 }
 
 async function pollImportJobs(): Promise<void> {
@@ -1013,33 +1030,38 @@ async function pollImportJobs(): Promise<void> {
     const serverHasActiveJobs = await syncImportJobs();
     if (!isCurrentScope(scope)) return;
     syncFailures = 0;
+    syncRetryAt = null;
     if (serverHasActiveJobs || hasTrackedActiveJobs()) {
-      scheduleImportJobSync(1_000);
+      scheduleImportJobSync(isEventSocketOpen() ? CONNECTED_JOB_POLL_MS : DISCONNECTED_JOB_POLL_MS);
     }
   } catch {
     if (!isCurrentScope(scope)) return;
     syncFailures += 1;
     // We could not learn whether the server has active work. Retry at a
     // bounded backoff even when this browser has no local task record.
-    scheduleImportJobSync(Math.min(30_000, 1_000 * 2 ** Math.max(0, syncFailures - 1)));
+    const delay = Math.min(30_000, 1_000 * 2 ** Math.max(0, syncFailures - 1));
+    syncRetryAt = Date.now() + delay;
+    clearSyncTimer();
+    scheduleImportJobSync(delay);
   } finally {
     if (isCurrentScope(scope)) {
       syncInFlight = false;
-      if (syncWakePending) {
-        syncWakePending = false;
-        scheduleImportJobSync(0);
+      if (syncWakePending !== null) {
+        const delay = syncWakePending;
+        syncWakePending = null;
+        scheduleImportJobSync(delay);
       }
     }
   }
 }
 
-function wakeImportJobSync(): void {
+function wakeImportJobSync(delay = 0): void {
   if (syncSubscribers === 0) return;
   if (syncInFlight) {
-    syncWakePending = true;
+    syncWakePending = Math.min(syncWakePending ?? delay, delay);
     return;
   }
-  scheduleImportJobSync(0);
+  scheduleImportJobSync(delay);
 }
 
 function onVisibilityChange(): void {
@@ -1048,15 +1070,17 @@ function onVisibilityChange(): void {
 }
 
 function onConnectivityRestored(): void {
-  scheduleImportJobSync(0);
+  syncRetryAt = null;
+  wakeImportJobSync();
 }
 
 let stopEvents: (() => void) | null = null;
 
 /**
  * Keep the Task Center in step with the server while anyone shows it. The
- * events socket wakes a sync the moment a Job changes (or after a reconnect);
- * the 1s poll while work is active is the fallback when a notice is dropped.
+ * events socket batches Job notices into a snapshot within 250 ms. Active
+ * work has a 10s recovery poll for missed notices, or 1s without a connection.
+ * Reconnects and locally tracked work request an immediate snapshot.
  */
 export function startImportJobSync(): () => void {
   if (!isBrowser()) return () => {};
@@ -1067,8 +1091,12 @@ export function startImportJobSync(): () => void {
     stopEvents = subscribeEvents((notice) => {
       // Administrators receive system maintenance on the shared socket, but
       // /jobs omits it. Older servers omit the hint, so keep their resync behavior.
-      if (notice.type === "resync" || (notice.type === "job" && notice.task_visible !== false))
+      if (notice.type === "resync") {
+        syncRetryAt = null;
         wakeImportJobSync();
+      } else if (notice.type === "job" && notice.task_visible !== false) {
+        wakeImportJobSync(JOB_NOTICE_BATCH_MS);
+      }
     });
     // The server's first resync owns the first snapshot. If no socket notice
     // arrives, this bounded fallback still discovers server-owned work.
@@ -1081,7 +1109,7 @@ export function startImportJobSync(): () => void {
     syncSubscribers = Math.max(0, syncSubscribers - 1);
     if (syncSubscribers === 0) {
       clearSyncTimer();
-      syncWakePending = false;
+      syncWakePending = null;
       stopEvents?.();
       stopEvents = null;
       document.removeEventListener("visibilitychange", onVisibilityChange);

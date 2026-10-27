@@ -225,7 +225,7 @@ def reserve_creation(
             existing.next_recovery_at = None
             writer.add(existing)
             writer.flush()
-        reservation = reserve_publication(
+        reservation = _reserve_locked_publication(
             writer,
             backend=backend_name,
             namespace=namespace,
@@ -268,6 +268,39 @@ def reserve_publication(
     ):
         raise UnsafeStorageDeleteError("storage_locator_mismatch")
     lock_publication_locator(session, backend=backend, namespace=namespace, key=key)
+    return _reserve_locked_publication(
+        session,
+        backend=backend,
+        namespace=namespace,
+        key=key,
+        provider_ref=provider_ref,
+        object_kind=object_kind,
+        expected_size=expected_size,
+        sha256=sha256,
+        token=token,
+        previous=previous,
+    )
+
+
+def _reserve_locked_publication(
+    session: Session,
+    *,
+    backend: str,
+    namespace: str,
+    key: str,
+    provider_ref: str,
+    object_kind: str,
+    expected_size: int | None = None,
+    sha256: str | None = None,
+    token: str | None = None,
+    previous: PublicationReservation | None = None,
+) -> PublicationReservation:
+    """Reserve under this transaction's already-held locator exclusion.
+
+    reserve_creation has checked physical absence outside SQL and acquired the
+    same lock to fence that observation. Keep the generation checks shared
+    without reacquiring or rereading the locator anchor.
+    """
     rows = session.exec(
         select(OwnedStorageObject)
         .where(
