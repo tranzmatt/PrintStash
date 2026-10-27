@@ -231,6 +231,8 @@ test.describe("profiles", () => {
           await page.getByRole("tab", { name: /Printers/ }).click();
           await second.getByRole("tab", { name: /Printers/ }).click();
         }
+        await page.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
+        await second.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
         // An invalid number captures the second editor's base without allowing
         // blur between browser tabs to save it before the competing edit.
         await second.getByRole("textbox", { name: numericLabel, exact: true }).fill("-1");
@@ -270,6 +272,7 @@ test.describe("profiles", () => {
         expect((await revisedSave).status()).toBe(200);
         await second.reload();
         if (kind === "printer") await second.getByRole("tab", { name: /Printers/ }).click();
+        await second.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
         await expect(second.getByRole("textbox", { name: numericLabel, exact: true })).toHaveValue(
           nextValue,
         );
