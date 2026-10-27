@@ -17,7 +17,7 @@ const profile: SlicerProfileRead = {
   slicer_version: "2.3.2",
   settings: {
     printer: { nozzle_diameter: "0.4" },
-    filament: { filament_flow_ratio: "0.98;1.02" },
+    filament: { filament_flow_ratio: "0.98;1.02", filament_type: "PLA" },
     process: { layer_height: "0.2" },
   },
 };
@@ -58,6 +58,20 @@ describe("SlicerProfileDetails", () => {
   });
 
   it("filters settings by value", async () => {
+    const user = userEvent.setup();
+    renderApp(<SlicerProfileDetails />, {
+      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
+    });
+    await user.click(await screen.findByRole("button", { name: "View settings" }));
+
+    await user.type(screen.getByRole("textbox", { name: "Find a setting or value" }), "0.98");
+
+    expect(screen.getAllByRole("term").map((term) => term.textContent)).toEqual([
+      "filament_flow_ratio",
+    ]);
+  });
+
+  it("shows no matching settings", async () => {
     const user = userEvent.setup();
     renderApp(<SlicerProfileDetails />, {
       seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
