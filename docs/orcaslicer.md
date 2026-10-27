@@ -90,6 +90,10 @@ the slicer exported: a missing setting does not imply its default value. Existin
 G-code files are reprocessed in the background after upgrading; use **Refresh**
 as processing completes. Only live files in Models you can access are listed.
 
+This first version captures standalone G-code files. The Detected settings tab
+does not yet inspect embedded plate G-code or project presets inside `.3mf` or
+`.gcode.3mf` containers.
+
 These entries describe individual prints. They are not a full slicer preset
 backup and cannot restore a complete OrcaSlicer or Bambu Studio configuration.
 Unused presets, inherited defaults and project overrides may be absent. Custom
