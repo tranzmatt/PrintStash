@@ -1076,7 +1076,7 @@ export function FilamentProfilesCard() {
                         !auth.isAuthenticated || linked || rowStatus[`f${profile.id}`] === "saving";
                       return (
                         <ProfileRow
-                          key={profile.id}
+                          key={`filament/${profile.id}`}
                           name={profile.name}
                           summary={[
                             profile.material_type,
@@ -1363,7 +1363,7 @@ export function FilamentProfilesCard() {
                       const edit = printerEdits[profile.id] ?? printerEdit(profile);
                       return (
                         <ProfileRow
-                          key={profile.id}
+                          key={`printer/${profile.id}`}
                           name={profile.name}
                           summary={[
                             profile.printer_model,

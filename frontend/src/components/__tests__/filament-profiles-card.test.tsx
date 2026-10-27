@@ -1580,6 +1580,25 @@ describe("Collapsible profile rows", () => {
 });
 
 describe("Profile consultation and editing", () => {
+  it("keeps expansion and editing separate between filament and printer rows with the same ID", async () => {
+    await renderCard();
+    await userEvent.click(screen.getByRole("tab", { name: /Printers/ }));
+    const printerDetails = screen.getByRole("button", {
+      name: "View details for Voron 2.4 — 0.4 mm",
+    });
+    expect(printerDetails).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    await userEvent.click(printerDetails);
+    expect(screen.getByRole("button", { name: "Edit profile Voron 2.4 — 0.4 mm" })).toBeVisible();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: /Filaments/ }));
+    expect(screen.getByRole("button", { name: "View details for Everyday PLA" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
   it.each(["filament", "printer"] as const)(
     "opens %s settings without editable fields or writes",
     async (kind) => {
