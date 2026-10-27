@@ -24,6 +24,7 @@ import {
 import { followModel } from "@/lib/events";
 import { useUiLocale } from "@/lib/i18n";
 import { uiText } from "@/lib/locale";
+import { stlPreviewMessage, type StlPreviewFailure } from "@/lib/use-stl-preview";
 import { toast } from "@/lib/toast";
 import type { DerivativeRead, DerivativeState } from "@/types";
 
@@ -55,11 +56,13 @@ export function DerivativeStatus({
   modelId,
   fileId,
   canRetry,
+  previewFailure = null,
   api = DERIVATIVE_API,
 }: {
   modelId: number;
   fileId: number;
   canRetry: boolean;
+  previewFailure?: StlPreviewFailure | null;
   api?: DerivativeStatusApi;
 }) {
   useUiLocale();
@@ -107,10 +110,23 @@ export function DerivativeStatus({
     failures.set(cause, [...(failures.get(cause) ?? []), item]);
   }
   const disabled = derivatives.some((item) => item.state === "disabled");
-  if (preparing.length === 0 && failed.length === 0 && !disabled) return null;
+  const previewMessage = previewFailure === null ? null : stlPreviewMessage(previewFailure);
+  const showPreviewFailure =
+    previewMessage !== null && ![...failures.keys()].some((cause) => cause === previewFailure);
+  if (preparing.length === 0 && failed.length === 0 && !disabled && !showPreviewFailure)
+    return null;
 
   return (
     <ul className="min-w-0 space-y-2">
+      {showPreviewFailure && (
+        <li role="status" className="flex items-start gap-1.5 text-2xs">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden />
+          <div className="min-w-0 flex-1 space-y-1 break-words">
+            <p className="font-medium text-on-surface">{uiText("Failed to load 3D preview")}</p>
+            <p className="text-xs leading-relaxed text-on-surface-variant">{previewMessage}</p>
+          </div>
+        </li>
+      )}
       {disabled && (
         <li role="status" className="text-2xs text-on-surface-variant">
           {uiText("Processing disabled")}

@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.errors import ErrorKind, OperationError
 from app.modules.sources.root_binding import ExternalRootBindingError
+from app.modules.storage.access_errors import StorageAccessError
 
 _STATUS = {
     ErrorKind.INVALID: 400,
@@ -47,3 +48,16 @@ async def external_root_binding_response(
 ) -> JSONResponse:
     """A write into a Library source that cannot take it is a conflict, not a crash."""
     return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+async def storage_access_response(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Provider authentication is separate from the user's PrintStash session."""
+    if not isinstance(exc, StorageAccessError):
+        raise exc
+    return JSONResponse(
+        status_code=409,
+        content={"detail": exc.problem.value},
+        headers={"Cache-Control": "private, no-store"},
+    )

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Already-processed linked STL files show current storage-access failures in the viewer and their Source Files card, with safe credential guidance instead of a generic server error and no extra probe.
+
 - New library thumbnails crossfade from their placeholder after decoding, while cached images stay visible on revisits without another download.
 - Source File retry actions have visible button boundaries. Narrow cards give filenames more room, and mobile 3D toolbars no longer cover loading or error messages.
 

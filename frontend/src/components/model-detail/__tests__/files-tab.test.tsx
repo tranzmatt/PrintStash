@@ -4,7 +4,7 @@
  */
 import "@testing-library/jest-dom/vitest";
 
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -56,6 +56,34 @@ const updatedModel: ModelRead = {
 };
 
 describe("FilesTab", () => {
+  it("associates the current preview failure with its source file", async () => {
+    renderApp(
+      <FilesTab
+        modelId={1}
+        sourceFiles={[artifact, { ...artifact, id: 8, original_filename: "healthy.stl" }]}
+        canEdit
+        onModel={() => {}}
+        previewFailure={{ fileId: 7, reason: "storage_authentication_failed" }}
+      />,
+      {
+        routes: {
+          "GET /api/v1/files/7/derivatives": json([]),
+          "GET /api/v1/files/8/derivatives": json([]),
+        },
+      },
+    );
+    expect(
+      await within(screen.getByRole("article", { name: "bracket.stl" })).findByText(
+        /provider rejected authentication/,
+      ),
+    ).toBeVisible();
+    expect(
+      within(screen.getByRole("article", { name: "healthy.stl" })).queryByText(
+        /provider rejected authentication/,
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     if (createObjectURLDescriptor) {

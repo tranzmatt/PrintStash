@@ -48,7 +48,11 @@ import {
   Wifi,
 } from "lucide-react";
 
-import type { STLViewerControls, ViewerDisplayMode } from "@/components/stl-viewer";
+import type {
+  STLViewerControls,
+  STLPreviewFeedback,
+  ViewerDisplayMode,
+} from "@/components/stl-viewer";
 import type { ViewerMode } from "@/components/model-detail/viewer-toolbar";
 import { deleteModel, getAssetUrl, getModel, updateModel } from "@/lib/api";
 import { useTags } from "@/lib/queries";
@@ -257,6 +261,7 @@ function ModelDetailPresentation({
   const [deleteTagBusy, setDeleteTagBusy] = useState(false);
   const [viewerMode, setViewerMode] = useState<ViewerMode>("model");
   const [viewerReady, setViewerReady] = useState(false);
+  const [previewFeedback, setPreviewFeedback] = useState<STLPreviewFeedback | null>(null);
   const viewerControls = useRef<STLViewerControls | null>(null);
   const canEditModel = model.effective_role === "edit" || model.effective_role === "admin";
   useEffect(() => {
@@ -1047,6 +1052,7 @@ function ModelDetailPresentation({
                       viewerControls.current = api;
                     }}
                     onReadyChange={setViewerReady}
+                    onFailureChange={setPreviewFeedback}
                     displayMode={displayMode}
                     showGrid={showGrid}
                     screenshotName={model.slug || model.name}
@@ -1315,6 +1321,13 @@ function ModelDetailPresentation({
                 <FilesTab
                   modelId={model.id}
                   sourceFiles={sourceFiles}
+                  previewFailure={
+                    meshFile &&
+                    previewFeedback?.url === getAssetUrl(`/api/v1/files/${meshFile.id}/stl`) &&
+                    previewFeedback.reason !== null
+                      ? { fileId: meshFile.id, reason: previewFeedback.reason }
+                      : null
+                  }
                   trashedSourceFiles={model.trashed_source_files ?? []}
                   canEdit={canEditModel}
                   onModel={setModel}

@@ -29,7 +29,7 @@ import {
 } from "@/lib/preview-preferences";
 import { fitCameraToBounds, heroCameraDirection } from "@/lib/thumbnail-camera";
 import { useViewerReadiness } from "@/lib/use-viewer-readiness";
-import { useStlPreview, stlPreviewMessage } from "@/lib/use-stl-preview";
+import { useStlPreview, stlPreviewMessage, type StlPreviewFailure } from "@/lib/use-stl-preview";
 
 export type ViewerDisplayMode = "solid" | "xray" | "wireframe";
 
@@ -41,12 +41,18 @@ export interface STLViewerControls {
   screenshot: () => Promise<void>;
 }
 
+export interface STLPreviewFeedback {
+  url: string;
+  reason: StlPreviewFailure | null;
+}
+
 export interface STLViewerProps {
   url: string;
   modelId?: number;
   previewFetcher?: NonNullable<Parameters<typeof useStlPreview>[2]>;
   onControlsReady?: (api: STLViewerControls) => void;
   onReadyChange?: (ready: boolean) => void;
+  onFailureChange?: (feedback: STLPreviewFeedback) => void;
   /** Largest loaded dimension, before viewer normalization, in source units. */
   onGeometrySize?: (size: number) => void;
   displayMode?: ViewerDisplayMode;
@@ -166,6 +172,7 @@ function Scene({
     | "previewFetcher"
     | "onControlsReady"
     | "onReadyChange"
+    | "onFailureChange"
     | "onGeometrySize"
     | "comparison"
     | "comparisonCamera"
@@ -562,6 +569,7 @@ export function STLViewer({
   previewFetcher,
   onControlsReady,
   onReadyChange,
+  onFailureChange,
   onGeometrySize,
   displayMode = "solid",
   showGrid = true,
@@ -585,6 +593,17 @@ export function STLViewer({
   useEffect(() => {
     onReadyChange?.(meshLoaded && preview.state === "ready");
   }, [meshLoaded, onReadyChange, preview.state]);
+
+  // Share this existing read with the owning file row; do not probe storage again.
+  const primaryFailure =
+    preview.state === "failed"
+      ? preview.reason
+      : parsed.state === "failed"
+        ? "invalid_source"
+        : null;
+  useEffect(() => {
+    onFailureChange?.({ url, reason: primaryFailure });
+  }, [url, primaryFailure, onFailureChange]);
 
   const failure =
     preview.state === "failed"

@@ -25,6 +25,73 @@ import { aDerivative, aMetadata, aModel, aRevision } from "../../src/test-suppor
 useMockApi();
 
 test.describe("model detail route", () => {
+  for (const width of [320, 1920]) {
+    test(`shows a current source access failure after processing succeeded at ${width}px`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 1080 });
+      const failedFile = aRevision({
+        id: 7,
+        file_type: "stl",
+        original_filename: "linked-already-processed.stl",
+        is_external: true,
+      });
+      const healthyFile = aRevision({
+        id: 8,
+        file_type: "stl",
+        original_filename: "another-source.stl",
+      });
+      await page.route("**/api/v1/models/1", (route) =>
+        route.fulfill({ json: aModel({ files: [failedFile, healthyFile] }) }),
+      );
+      await page.route(/\/api\/v1\/files\/[78]\/derivatives$/, (route) =>
+        route.fulfill({
+          json: [
+            aDerivative({ kind: "thumbnail", state: "ready" }),
+            aDerivative({ kind: "metadata", state: "ready" }),
+          ],
+        }),
+      );
+      let reads = 0;
+      await page.route("**/api/v1/files/7/stl", (route) => {
+        reads++;
+        return route.fulfill({
+          status: 409,
+          json: { detail: "storage_authentication_failed" },
+        });
+      });
+      await page.goto("/models/1");
+      await expect(
+        page
+          .getByRole("region", { name: "Preview", exact: true })
+          .getByText(/provider rejected authentication/),
+      ).toBeVisible();
+      // StrictMode may start an aborted read during mount. Opening Files
+      // must reuse the observed failure without adding a storage read.
+      const readsBeforeFiles = reads;
+      const pane = page.getByTestId("model-detail-sidebar");
+      await pane.getByRole("tab", { name: /Files/ }).click();
+      const card = pane.getByRole("article", { name: failedFile.original_filename });
+      const message = card.getByText(/provider rejected authentication/);
+      await expect(message).toBeVisible();
+      await expect(
+        pane
+          .getByRole("article", { name: healthyFile.original_filename })
+          .getByText(/provider rejected authentication/),
+      ).toHaveCount(0);
+      await card.evaluate((element) => element.scrollIntoView({ block: "center" }));
+      const bounds = (await card.boundingBox())!;
+      const text = (await message.boundingBox())!;
+      expect(text.x).toBeGreaterThanOrEqual(bounds.x);
+      expect(text.x + text.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await card.screenshot({ path: testInfo.outputPath("processed-source-access-error.png") });
+      expect(reads).toBe(readsBeforeFiles);
+    });
+  }
+
   for (const width of [320, 390, 1920]) {
     test(`keeps failed source controls inside the details panel at ${width}px`, async ({
       page,

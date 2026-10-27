@@ -12,6 +12,7 @@ import {
   restoreSourceFile,
   trashSourceFile,
 } from "@/lib/api";
+import type { StlPreviewFailure } from "@/lib/use-stl-preview";
 import { formatBytes } from "@/lib/format";
 import { useTags } from "@/lib/queries";
 import { toast } from "@/lib/toast";
@@ -30,12 +31,14 @@ const SLICEABLE_TYPES = new Set(["stl", "3mf", "obj"]);
 export function FilesTab({
   modelId,
   sourceFiles,
+  previewFailure = null,
   trashedSourceFiles = [],
   canEdit,
   onModel,
 }: {
   modelId: number;
   sourceFiles: FileRead[];
+  previewFailure?: { fileId: number; reason: StlPreviewFailure } | null;
   trashedSourceFiles?: TrashedSourceFileRead[];
   canEdit: boolean;
   onModel: (model: ModelRead) => void;
@@ -205,7 +208,12 @@ export function FilesTab({
                   </DropdownMenu>
                 </div>
               </div>
-              <DerivativeStatus modelId={modelId} fileId={f.id} canRetry={canEdit} />
+              <DerivativeStatus
+                modelId={modelId}
+                fileId={f.id}
+                canRetry={canEdit}
+                previewFailure={previewFailure?.fileId === f.id ? previewFailure.reason : null}
+              />
               <div className="mt-1.5">
                 <EntityTagsDialog
                   entityLabel={f.original_filename}

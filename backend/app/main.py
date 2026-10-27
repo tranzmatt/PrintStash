@@ -15,7 +15,11 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlmodel import col, select
 from starlette import status
 
-from app.api.errors import external_root_binding_response, operation_error_response
+from app.api.errors import (
+    external_root_binding_response,
+    operation_error_response,
+    storage_access_response,
+)
 from app.api.session_cookie import extract_access_token
 from app.api.v1 import api_router
 from app.api.vault_generation import VaultGenerationMiddleware
@@ -45,6 +49,7 @@ from app.modules.administration.audit import (
     set_audit_context,
 )
 from app.modules.sources.root_binding import ExternalRootBindingError
+from app.modules.storage.access_errors import StorageAccessError
 
 logger = get_logger(__name__)
 
@@ -68,6 +73,7 @@ app = FastAPI(
 
 app.add_exception_handler(OperationError, operation_error_response)
 app.add_exception_handler(ExternalRootBindingError, external_root_binding_response)
+app.add_exception_handler(StorageAccessError, storage_access_response)
 
 
 def _parse_cors_origins(value: object) -> list[str]:
