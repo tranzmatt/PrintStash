@@ -55,6 +55,8 @@
 
 ### Performance
 
+- Local AI model warm-up stops re-reading its settings every second while there is nothing to warm, and wakes as soon as a search needs a model.
+- Imports read collections less: a file's collection path is resolved once per commit instead of twice, and search finds every collection above a Model in one query.
 - Search updates share bounded preparation across overlapping Model and collection changes while retaining independent retry checkpoints.
 - G-code metadata and toolpath previews start once an import settles instead of re-checking for work every few seconds while Models are still arriving; mesh thumbnails still start during the import.
 - The background job engine on SQLite skips a connection check on every queue look, about a quarter fewer engine database statements during an import and a third fewer when idle.

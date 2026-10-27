@@ -117,3 +117,59 @@ class TestNewModelHome:
             first.model_id,
             "original",
         )
+
+
+class _Announcements:
+    """Records every content change the commit announces to search."""
+
+    def __init__(self) -> None:
+        self.sources: list[tuple[str, int]] = []
+
+    def refresh(self, _session: Session, sources) -> None:
+        self.sources.extend((source.kind, source.id) for source in sources)
+
+
+class TestTaxonomyReads:
+    def test_the_collection_path_is_resolved_once(
+        self, tmp_path: Path, db_session: Session
+    ) -> None:
+        use_local_storage(tmp_path)
+        lookups: list[str] = []
+
+        def record(_conn, _cursor, statement, *_rest) -> None:
+            if "FROM collections" in statement and "collections.path = " in statement:
+                lookups.append(statement)
+
+        target = db_session.get_bind()
+        event.listen(target, "before_cursor_execute", record)
+        try:
+            ingestion.commit_staged_artifact(
+                _staged(tmp_path, "shelf", "Home/Storage/Shelves"),
+                ingestion_key="home-7",
+            )
+        finally:
+            event.remove(target, "before_cursor_execute", record)
+
+        assert len(lookups) == 3
+
+    def test_a_collection_adds_no_announcement(
+        self, tmp_path: Path, db_session: Session
+    ) -> None:
+        from app.db.projections import bind_content_projection
+
+        use_local_storage(tmp_path)
+        announcements = _Announcements()
+        previous = bind_content_projection(announcements)
+        try:
+            loose = ingestion.commit_staged_artifact(
+                _staged(tmp_path, "hook", None), ingestion_key="home-8"
+            )
+            filed = ingestion.commit_staged_artifact(
+                _staged(tmp_path, "hanger", "Hooks"), ingestion_key="home-9"
+            )
+        finally:
+            bind_content_projection(previous)
+
+        assert announcements.sources.count(
+            ("model", filed.model_id)
+        ) == announcements.sources.count(("model", loose.model_id))
