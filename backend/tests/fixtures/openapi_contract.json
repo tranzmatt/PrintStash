@@ -3366,6 +3366,38 @@
         "title": "CaptureUploadSlotsRead",
         "type": "object"
       },
+      "CapturedSettingsRead": {
+        "properties": {
+          "filament": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Filament",
+            "type": "object"
+          },
+          "printer": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Printer",
+            "type": "object"
+          },
+          "process": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Process",
+            "type": "object"
+          }
+        },
+        "required": [
+          "printer",
+          "filament",
+          "process"
+        ],
+        "title": "CapturedSettingsRead",
+        "type": "object"
+      },
       "ChannelCreate": {
         "additionalProperties": false,
         "properties": {
@@ -19382,6 +19414,96 @@
           "is_active"
         ],
         "title": "ShareLinkRead",
+        "type": "object"
+      },
+      "SlicerProfilePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SlicerProfileRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_before_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before Id"
+          }
+        },
+        "required": [
+          "items",
+          "next_before_id"
+        ],
+        "title": "SlicerProfilePage",
+        "type": "object"
+      },
+      "SlicerProfileRead": {
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "integer"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/CapturedSettingsRead"
+          },
+          "slicer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slicer Name"
+          },
+          "slicer_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slicer Version"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "model_id",
+          "model_name",
+          "filename",
+          "uploaded_at",
+          "slicer_name",
+          "slicer_version",
+          "settings"
+        ],
+        "title": "SlicerProfileRead",
         "type": "object"
       },
       "SpoolRead": {
@@ -44314,6 +44436,73 @@
         "summary": "Similarity Status",
         "tags": [
           "similarity"
+        ]
+      }
+    },
+    "/api/v1/slicer-profiles": {
+      "get": {
+        "operationId": "list_slicer_profiles_api_v1_slicer_profiles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlicerProfilePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Slicer Profiles",
+        "tags": [
+          "slicer-profiles"
         ]
       }
     },

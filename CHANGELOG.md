@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Profiles has a searchable Detected settings tab with printer, filament and process values captured from G-code, linked to each source Model. Existing files are refreshed in the background. These are observed print settings, not restorable slicer preset backups.
+
 ### Fixed
 
 - Already-processed linked STL files show current storage-access failures in the viewer and their Source Files card, with safe credential guidance instead of a generic server error and no extra probe.

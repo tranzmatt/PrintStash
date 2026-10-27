@@ -75,6 +75,32 @@ python3 scripts/printstash_orca_push.py --diagnostic-output /tmp/orca-context.js
 The diagnostic never dumps the process environment, password, API key, or access
 token.
 
+## Inspect captured settings in Profiles
+
+After a G-code upload finishes processing, open **Profiles → Detected settings**.
+Each entry identifies its source file, Model, upload date and detected slicer.
+Expand **View settings** to browse printer, filament and process settings or
+search by a slicer's setting name or value. Supported values include nozzle
+diameter, temperatures, flow ratio, cooling, layer height, infill and speeds.
+Multiple filament values keep the original slicer serialization and order.
+
+The capture reads supported setting comments from the beginning and end of the
+G-code, including supported binary G-code metadata. Availability depends on what
+the slicer exported: a missing setting does not imply its default value. Existing
+G-code files are reprocessed in the background after upgrading; use **Refresh**
+as processing completes. Only live files in Models you can access are listed.
+
+These entries describe individual prints. They are not a full slicer preset
+backup and cannot restore a complete OrcaSlicer or Bambu Studio configuration.
+Unused presets, inherited defaults and project overrides may be absent. Custom
+G-code, post-processing scripts and connection credentials are not captured.
+The existing editable filament and printer cost profiles remain separate.
+
+The read-only `GET /api/v1/slicer-profiles` endpoint returns `items` and
+`next_before_id`. Follow that cursor even if a page has no items: older files
+without captured settings may still be waiting for reprocessing. `limit`
+defaults to 20 and is capped at 50.
+
 ## API contract
 
 `POST /api/v1/ingest/orca` is multipart form data with a required `file` and an

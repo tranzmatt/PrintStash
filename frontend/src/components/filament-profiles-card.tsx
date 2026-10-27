@@ -42,6 +42,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabBar } from "@/components/ui/tabs";
+import { SlicerProfileDetails } from "@/components/slicer-profile-details";
 import { Localized } from "@/components/ui/localized";
 import { useI18n } from "@/lib/i18n";
 import { translateUiText } from "@/lib/locale";
@@ -279,7 +280,7 @@ export function FilamentProfilesCard() {
   useUiLocale();
   const auth = useRequireAuth();
   const { locale } = useI18n();
-  const [activeTab, setActiveTab] = useState<"filaments" | "printers">("filaments");
+  const [activeTab, setActiveTab] = useState<"filaments" | "printers" | "detected">("filaments");
   const filamentQuery = useQuery({ ...filamentProfilesOptions(), enabled: auth.isAuthenticated });
   const printerQuery = useQuery({ ...printerProfilesOptions(), enabled: auth.isAuthenticated });
   const commands = useProfileCommands();
@@ -782,7 +783,7 @@ export function FilamentProfilesCard() {
           }
           confirmLabel={uiText("Delete preset")}
         />
-        {(error || activeQuery.isError) && (
+        {activeTab !== "detected" && (error || activeQuery.isError) && (
           <div
             role="alert"
             className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
@@ -800,6 +801,7 @@ export function FilamentProfilesCard() {
           <div className="flex flex-col gap-3 border-b bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
             <TabBar
               tabs={[
+                { key: "detected", label: uiText("profiles.detected") },
                 {
                   key: "filaments",
                   label: (
@@ -824,53 +826,57 @@ export function FilamentProfilesCard() {
               active={activeTab}
               onChange={setActiveTab}
               showIndicator={false}
-              className="gap-1 rounded-lg bg-background p-1 shadow-sm ring-1 ring-border"
+              className="max-w-full flex-wrap gap-1 rounded-lg bg-background p-1 shadow-sm ring-1 ring-border"
               tabClassName={tabClass}
               activeTabClassName="bg-accent text-accent-foreground"
             />
 
-            <div className="flex items-center justify-end gap-2">
-              {activeTab === "filaments" && spoolmanEnabled && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={handleSyncSpoolman}
-                  loading={syncing}
-                  disabled={!auth.isAuthenticated || activeDenied}
-                >
-                  {!syncing && <RefreshCw className="h-3.5 w-3.5" />}
-                  {translateUiText(locale, "Sync Spoolman")}
-                </Button>
-              )}
-              <Button
-                ref={newPresetButton}
-                type="button"
-                size="xs"
-                disabled={!auth.isAuthenticated || activeDenied}
-                aria-expanded={activeTab === "filaments" ? showAddFilament : showAddPrinter}
-                onClick={() => {
-                  if (!auth.isAuthenticated) {
-                    auth.showAuthRequiredToast();
-                    return;
-                  }
-                  if (activeTab === "filaments") setShowAddFilament((value) => !value);
-                  else setShowAddPrinter((value) => !value);
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {translateUiText(
-                  locale,
-                  activeTab === "filaments" ? uiText("New filament") : uiText("New printer"),
+            {activeTab !== "detected" && (
+              <div className="flex items-center justify-end gap-2">
+                {activeTab === "filaments" && spoolmanEnabled && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={handleSyncSpoolman}
+                    loading={syncing}
+                    disabled={!auth.isAuthenticated || activeDenied}
+                  >
+                    {!syncing && <RefreshCw className="h-3.5 w-3.5" />}
+                    {translateUiText(locale, "Sync Spoolman")}
+                  </Button>
                 )}
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform duration-press ${(activeTab === "filaments" ? showAddFilament : showAddPrinter) ? "rotate-180" : ""}`}
-                />
-              </Button>
-            </div>
+                <Button
+                  ref={newPresetButton}
+                  type="button"
+                  size="xs"
+                  disabled={!auth.isAuthenticated || activeDenied}
+                  aria-expanded={activeTab === "filaments" ? showAddFilament : showAddPrinter}
+                  onClick={() => {
+                    if (!auth.isAuthenticated) {
+                      auth.showAuthRequiredToast();
+                      return;
+                    }
+                    if (activeTab === "filaments") setShowAddFilament((value) => !value);
+                    else setShowAddPrinter((value) => !value);
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {translateUiText(
+                    locale,
+                    activeTab === "filaments" ? uiText("New filament") : uiText("New printer"),
+                  )}
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform duration-press ${(activeTab === "filaments" ? showAddFilament : showAddPrinter) ? "rotate-180" : ""}`}
+                  />
+                </Button>
+              </div>
+            )}
           </div>
 
-          {activeDenied ? null : activeTab === "filaments" ? (
+          {activeTab === "detected" ? (
+            <SlicerProfileDetails />
+          ) : activeDenied ? null : activeTab === "filaments" ? (
             <section aria-labelledby="filament-presets-heading">
               <div className="flex items-center justify-between border-b px-5 py-3">
                 <div>
