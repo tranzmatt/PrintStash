@@ -32,6 +32,7 @@ class ModelWarmup:
     def stop(self):
         self.stopped.set()
         requests.clear()
+        requests.wake()
 
     def work_one(self) -> bool:
         if not self.enabled():
@@ -57,7 +58,7 @@ class ModelWarmup:
                     model = model_cache.for_space(
                         EmbeddingSpace(**json.loads(row.config_json))
                     )
-                except (EmbeddingError, ValueError, TypeError):
+                except EmbeddingError, ValueError, TypeError:
                     continue
                 models.setdefault(model.id, model)
         requested = requests.take()
@@ -109,9 +110,16 @@ class WarmupSupervisor:
     process. It honours restore admission like a mutation, and yields on stop.
     """
 
-    def __init__(self, sessions, *, idle_seconds: float = 1.0):
+    def __init__(
+        self,
+        sessions,
+        *,
+        idle_seconds: float = 1.0,
+        max_idle_seconds: float = 60.0,
+    ):
         self.warmup = ModelWarmup(sessions)
         self.idle_seconds = idle_seconds
+        self.max_idle_seconds = max_idle_seconds
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -148,11 +156,18 @@ class WarmupSupervisor:
         from app.core.logging import get_logger
 
         logger = get_logger(__name__)
+        # Each idle look reads the search settings. With nothing to warm the
+        # look backs off, and a query asking for its model wakes it at once.
+        idle = self.idle_seconds
         while not self.warmup.stopped.is_set():
             worked = False
             try:
                 worked = self._unit()
             except Exception:  # noqa: BLE001 - warm-up is best effort
                 logger.warning("Local model warm-up deferred")
-            if not worked:
-                self.warmup.stopped.wait(self.idle_seconds)
+            if worked:
+                idle = self.idle_seconds
+            elif requests.wait(idle):
+                idle = self.idle_seconds
+            else:
+                idle = min(idle * 2, self.max_idle_seconds)

@@ -1,7 +1,7 @@
 """Bounded extraction inventory, separate from read-time access dependencies."""
 
 from printstash_core.search.passages import MAX_FIELD_ITEMS, SearchSubject, SubjectType
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.db.models import (
     Collection,
@@ -25,6 +25,31 @@ SUBJECT_MODELS = {
 }
 
 
+def _collection_chain(session: Session, collection_id: int) -> set[int]:
+    """``collection_id`` and every parent above it, in one statement.
+
+    Every parent a row names counts, existing or not, and a cycle stops at its
+    first repeat: UNION, not UNION ALL, discards a row already visited.
+    """
+    chain = (
+        select(col(Collection.id), col(Collection.parent_id))
+        .where(col(Collection.id) == collection_id)
+        .cte("collection_chain", recursive=True)
+    )
+    chain = chain.union(
+        select(col(Collection.id), col(Collection.parent_id)).join(
+            chain, col(Collection.id) == chain.c.parent_id
+        )
+    )
+    ids = {collection_id}
+    for _id, parent_id in session.execute(
+        select(chain.c.id, chain.c.parent_id)
+    ).tuples():
+        if parent_id is not None:
+            ids.add(parent_id)
+    return ids
+
+
 def extraction_dependencies(
     session: Session, subject: SearchSubject
 ) -> set[ContentSource]:
@@ -33,12 +58,11 @@ def extraction_dependencies(
         return set()
     refs = {ContentSource(subject.subject_type.value, subject.subject_id)}
     collection_id = row.id if isinstance(row, Collection) else row.collection_id
-    seen: set[int] = set()
-    while collection_id is not None and collection_id not in seen:
-        seen.add(collection_id)
-        refs.add(ContentSource("collection", collection_id))
-        collection = session.get(Collection, collection_id)
-        collection_id = collection.parent_id if collection else None
+    if collection_id is not None:
+        refs.update(
+            ContentSource("collection", ancestor)
+            for ancestor in _collection_chain(session, collection_id)
+        )
     if isinstance(row, Model):
         files = session.exec(
             select(File.id)

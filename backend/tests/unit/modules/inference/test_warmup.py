@@ -30,3 +30,27 @@ class TestWarmupRequests:
     def test_rejects_non_model_hints(self, value):
         with pytest.raises(ValueError, match="embedding_model_identity_invalid"):
             WarmupRequests().request(value)
+
+
+class TestWaiting:
+    def test_a_request_wakes_a_waiting_warmup(self):
+        import threading
+
+        requests = WarmupRequests()
+        woken = []
+        waiter = threading.Thread(target=lambda: woken.append(requests.wait(30)))
+        waiter.start()
+
+        requests.request("a" * 64)
+        waiter.join(timeout=5)
+
+        assert woken == [True]
+
+    def test_an_unrequested_wait_runs_out(self):
+        assert WarmupRequests().wait(0.01) is False
+
+    def test_a_wake_ends_the_wait(self):
+        requests = WarmupRequests()
+        requests.wake()
+
+        assert requests.wait(30) is True

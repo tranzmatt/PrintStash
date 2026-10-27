@@ -269,23 +269,40 @@ def _available_vault_key(backend, *, slug: str, version: int, filename: str) -> 
     return backend.blob_key("_objects", 0, f"{uuid.uuid4().hex}{suffix}")
 
 
+def _resolved_once(session: Session, path: str) -> Callable[[], Collection | None]:
+    """Resolve ``path`` on first use only: creating a Model and attaching its
+    taxonomy both ask for the same Collection in one commit."""
+    resolved: list[Collection | None] = []
+
+    def resolve() -> Collection | None:
+        if not resolved:
+            resolved.append(taxonomy.resolve_or_create_collection(session, path))
+        return resolved[0]
+
+    return resolve
+
+
 def _apply_taxonomy(
     session: Session,
     model: Model,
-    collection: Optional[str],
+    collection: Callable[[], Collection | None] | None,
     tags_raw: Optional[str],
     *,
     overwrite_collection: bool = False,
 ) -> None:
-    """Resolve & attach collection + tags. Idempotent."""
-    if collection:
-        cat = taxonomy.resolve_or_create_collection(session, collection)
-        if cat is not None:
+    """Resolve & attach collection + tags. Idempotent.
+
+    ``collection`` resolves the requested Collection; a Model that is already
+    there is neither rewritten nor re-announced.
+    """
+    if collection is not None:
+        cat = collection()
+        if cat is not None and model.collection_id != cat.id:
             if overwrite_collection or model.collection_id is None:
                 model.collection_id = cat.id
-            session.add(model)
-            content_changed(session, "model", [model.id])
-            session.commit()
+                session.add(model)
+                content_changed(session, "model", [model.id])
+                session.commit()
 
     tag_names = taxonomy.parse_tag_input(tags_raw)
     if tag_names:
@@ -1154,22 +1171,21 @@ def commit_staged_artifact(
     report(stage="ingesting", label="persisting", step=2, total_steps=2, progress=50)
     with session_factory.scoped_session() as session:
         actor = session.get(User, actor_user_id) if actor_user_id is not None else None
+        collection = (
+            None
+            if not artifact.collection
+            else _resolved_once(session, artifact.collection)
+        )
         model, created = resolve_or_create_model(
             session,
             dedup_hash=dedup_hash,
             model_name=artifact.model_name,
             source_url=artifact.source_url,
             actor=actor,
-            collection=(
-                None
-                if not artifact.collection
-                else lambda: taxonomy.resolve_or_create_collection(
-                    session, artifact.collection
-                )
-            ),
+            collection=collection,
         )
         assert model.id is not None
-        _apply_taxonomy(session, model, artifact.collection, artifact.tags)
+        _apply_taxonomy(session, model, collection, artifact.tags)
         dest = resolve_write_target(
             session,
             model=model,

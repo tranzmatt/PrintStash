@@ -212,6 +212,66 @@ class TestWarmupSupervisor:
 
         assert supervisor._thread is None
 
+    def test_an_idle_warmup_backs_off(self, monkeypatch):
+        from app.modules.search import model_warmup
+        from app.modules.search.model_warmup import WarmupSupervisor
+
+        supervisor = WarmupSupervisor(
+            get_session_factory(), idle_seconds=1.0, max_idle_seconds=4.0
+        )
+        waits: list[float] = []
+
+        def wait(seconds: float) -> bool:
+            waits.append(seconds)
+            if len(waits) == 5:
+                supervisor.warmup.stopped.set()
+            return False
+
+        monkeypatch.setattr(supervisor.warmup, "work_one", lambda: False)
+        monkeypatch.setattr(model_warmup.requests, "wait", wait)
+
+        supervisor._run()
+
+        assert waits == [1.0, 2.0, 4.0, 4.0, 4.0]
+
+    def test_a_request_resets_the_backoff(self, monkeypatch):
+        from app.modules.search import model_warmup
+        from app.modules.search.model_warmup import WarmupSupervisor
+
+        supervisor = WarmupSupervisor(
+            get_session_factory(), idle_seconds=1.0, max_idle_seconds=4.0
+        )
+        waits: list[float] = []
+
+        def wait(seconds: float) -> bool:
+            waits.append(seconds)
+            if len(waits) == 4:
+                supervisor.warmup.stopped.set()
+            return len(waits) == 3
+
+        monkeypatch.setattr(supervisor.warmup, "work_one", lambda: False)
+        monkeypatch.setattr(model_warmup.requests, "wait", wait)
+
+        supervisor._run()
+
+        assert waits == [1.0, 2.0, 4.0, 1.0]
+
+    def test_stopping_wakes_an_idle_warmup(self, monkeypatch):
+        import time
+
+        from app.modules.search.model_warmup import WarmupSupervisor
+
+        supervisor = WarmupSupervisor(get_session_factory(), idle_seconds=30.0)
+        monkeypatch.setattr(supervisor.warmup, "work_one", lambda: False)
+        supervisor.start()
+        time.sleep(0.1)
+
+        started = time.monotonic()
+        supervisor.stop()
+
+        assert time.monotonic() - started < 5
+        assert supervisor._thread is None
+
     def test_waits_while_a_restore_holds_maintenance(self, monkeypatch):
         from app.modules.search.model_warmup import WarmupSupervisor
         from app.runtime.maintenance import (
