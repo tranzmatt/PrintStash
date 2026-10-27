@@ -80,6 +80,17 @@ for (const width of [1440, 390]) {
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);
+      if (width >= 640) {
+        const label = await profileRow.getByText("Notes", { exact: true }).boundingBox();
+        const note = await profileRow
+          .getByText("Cost/kg inferred from slicer total filament cost.", { exact: true })
+          .boundingBox();
+        expect(label).not.toBeNull();
+        expect(note).not.toBeNull();
+        expect(
+          Math.abs(label!.y + label!.height / 2 - note!.y - note!.height / 2),
+        ).toBeLessThanOrEqual(1);
+      }
       await page.screenshot({ path: testInfo.outputPath("profile-overview.png"), fullPage: true });
       await profileRow
         .getByRole("button", { name: `Edit profile ${filament!.name}`, exact: true })

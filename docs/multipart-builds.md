@@ -2,6 +2,11 @@
 
 This feature shipped in 0.14.0.
 
+Manufacturing is reached from a Multipart Model's **Create build** or **Build
+history** links. It is no longer a destination in the general navigation.
+History remains available to viewers; creating runs requires edit access.
+Existing build URLs, saved runs and their results remain available.
+
 A Multipart Model describes a composition. Give each Part its quantity per
 object, then choose **Create build** to record a particular manufacturing run.
 Existing parts start at one. A build copies the composition, quantities and Model

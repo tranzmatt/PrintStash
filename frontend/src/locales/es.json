@@ -1563,7 +1563,7 @@
   "build.choosePrinter": "Selecciona una impresora",
   "build.excess": "Confirmo {count} piezas adicionales a las necesarias sin reservar.",
   "build.queue": "Encolar piezas",
-  "build.history": "Intentos de impresión",
+  "build.history": "Historial de fabricación",
   "build.attempt": "Trabajo n.º {id}",
   "build.planned": "{count} piezas previstas",
   "build.confirm": "Confirmar resultado",

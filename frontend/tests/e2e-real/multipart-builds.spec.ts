@@ -28,7 +28,13 @@ test.describe("Multipart manufacturing", () => {
       data: { parts: [{ name: "Leg", quantity: 4, choices: [{ model_id: modelId }] }] },
     });
     expect(saved.ok()).toBeTruthy();
-    await page.goto(`/builds?multipart=${composition.id}`);
+    await page.goto(`/multipart-models/${composition.id}`);
+    await expect(page.getByRole("link", { name: "Build history", exact: true })).toHaveAttribute(
+      "href",
+      "/builds",
+    );
+    await page.getByRole("link", { name: "Create build", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/builds\\?multipart=${composition.id}$`));
     await expect(page.getByLabel("Build name")).toHaveValue(name);
     await page.getByRole("button", { name: "Create build" }).click();
     await expect(page).toHaveURL(/\/builds\/\d+$/);

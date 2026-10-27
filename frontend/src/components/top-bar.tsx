@@ -12,7 +12,6 @@ import {
   ChevronDown,
   BookOpen,
   Inbox,
-  Layers,
   LogOut,
   Printer,
   Settings,
@@ -236,7 +235,6 @@ function WorkspaceMenu({
   const items = [
     { href: "/", label: t("nav.vault"), icon: Box },
     { href: "/inbox", label: t("nav.inbox"), icon: Inbox },
-    { href: "/builds", label: t("build.title"), icon: Layers },
     { href: "/printers", label: t("nav.printers"), icon: Printer, adminOnly: true },
     { href: "/statistics", label: t("nav.statistics"), icon: BarChart3, adminOnly: true },
     { href: "/profiles", label: t("nav.profiles"), icon: SlidersHorizontal },

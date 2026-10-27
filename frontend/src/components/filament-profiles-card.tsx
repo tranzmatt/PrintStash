@@ -347,7 +347,7 @@ function ProfileRow({
               {editor}
             </div>
           ) : notes ? (
-            <div className="flex flex-col gap-1 text-sm sm:flex-row sm:gap-3">
+            <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-baseline sm:gap-3">
               <span className="shrink-0 text-xs font-medium text-muted-foreground">
                 {uiText("Notes")}
               </span>

@@ -163,20 +163,22 @@ describe("TopBar", () => {
   });
 
   describe("account menu", () => {
-    it.each([true, false])("makes Builds reachable for either role (%s)", async (isAdmin) => {
-      const user = userEvent.setup();
-      renderTopBar({
-        at: "/builds/1",
-        auth: session({ user: { id: 1, username: "admin", email: null, is_superuser: isAdmin } }),
-      });
-      await openProfileMenu(user);
-      const link = screen.getByRole("menuitem", { name: "Builds" });
-      expect(link).toHaveAttribute("href", "/builds");
-      expect(link).toHaveAttribute("aria-current", "page");
-      await user.click(link);
-      expect(screen.getByTestId("location")).toHaveTextContent("/builds");
-      await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
-    });
+    it.each([true, false])(
+      "keeps Builds out of the workspace menu for either role (%s)",
+      async (isAdmin) => {
+        const user = userEvent.setup();
+        renderTopBar({
+          at: "/builds/1",
+          auth: session({ user: { id: 1, username: "admin", email: null, is_superuser: isAdmin } }),
+        });
+        await openProfileMenu(user);
+        expect(screen.queryByRole("menuitem", { name: "Builds" })).not.toBeInTheDocument();
+        expect(screen.getByRole("menuitem", { name: "Profiles" })).toHaveAttribute(
+          "href",
+          "/profiles",
+        );
+      },
+    );
 
     it("offers a log-in link to a signed-out visitor", () => {
       renderTopBar({ auth: session({ user: null }) });
@@ -228,7 +230,6 @@ describe("TopBar", () => {
       expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
         "Vault",
         "Pending",
-        "Builds",
         "Statistics",
         "Profiles",
         "Settings",

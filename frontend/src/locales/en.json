@@ -1563,7 +1563,7 @@
   "build.choosePrinter": "Select a printer",
   "build.excess": "I confirm {count} extra pieces beyond the unreserved requirement.",
   "build.queue": "Queue pieces",
-  "build.history": "Print attempts",
+  "build.history": "Build history",
   "build.attempt": "Job #{id}",
   "build.planned": "{count} planned pieces",
   "build.confirm": "Confirm result",
