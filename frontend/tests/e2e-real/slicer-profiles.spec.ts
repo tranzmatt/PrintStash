@@ -69,6 +69,32 @@ for (const width of [1440, 390]) {
         .getByRole("button", { name: `View details for ${filament!.name}`, exact: true })
         .click();
       await expect(filamentDetails.getByRole("article")).toHaveCount(2);
+      const profileRow = page.getByRole("region", {
+        name: `Profile: ${filament!.name}`,
+        exact: true,
+      });
+      await expect(profileRow.getByRole("textbox")).toHaveCount(0);
+      await expect(
+        profileRow.getByText("Cost/kg inferred from slicer total filament cost.", { exact: true }),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("profile-overview.png"), fullPage: true });
+      await profileRow
+        .getByRole("button", { name: `Edit profile ${filament!.name}`, exact: true })
+        .click();
+      await expect(
+        profileRow.getByRole("textbox", { name: `Filament notes ${filament!.id}`, exact: true }),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("profile-editor.png"), fullPage: true });
+      await profileRow
+        .getByRole("button", { name: `Close editor for ${filament!.name}`, exact: true })
+        .click();
+      await expect(profileRow.getByRole("textbox")).toHaveCount(0);
       const repeated = filamentDetails.getByRole("article").filter({ hasText: "Source files: 2" });
       await repeated.getByRole("button", { name: "View settings" }).click();
       await expect(repeated.getByText("0.98", { exact: true })).toBeVisible();

@@ -79,8 +79,11 @@ token.
 
 After a G-code upload finishes processing, open **Profiles → Filaments** or
 **Printers** and open **Details** on the corresponding profile. Profiles start
-collapsed with a compact summary. The expanded editor includes multiline notes
-and a collapsible slicer-settings section; each variant can also be collapsed. Material and brand match filament observations; the machine model
+collapsed with a compact summary. Details show notes and captured slicer
+configurations in a reading view. Choose **Edit** to reveal the profile fields
+and multiline notes editor; closing the editor saves valid changes and keeps
+unfinished drafts available. The slicer-settings section and each variant can
+also be collapsed. Material and brand match filament observations; the machine model
 matches printer observations. Matching is case-insensitive and ignores surrounding
 spaces. A name alone is never enough; profiles without those attributes have no
 associated observations. Changing those attributes changes the observations shown.

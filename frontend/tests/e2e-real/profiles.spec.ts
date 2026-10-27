@@ -15,6 +15,8 @@ async function inputByValue(scope: Locator, labelRe: RegExp, value: string): Pro
   const opener = row.getByRole("button", { name: `View details for ${value}`, exact: true });
   await expect(row).toBeVisible();
   if (await opener.count()) await opener.click();
+  const editor = row.getByRole("button", { name: `Edit profile ${value}`, exact: true });
+  if (await editor.count()) await editor.click();
   const inputs = scope.getByLabel(labelRe);
   let label: string | null = null;
   await expect
@@ -232,7 +234,9 @@ test.describe("profiles", () => {
           await second.getByRole("tab", { name: /Printers/ }).click();
         }
         await page.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
+        await page.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
         await second.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
+        await second.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
         // An invalid number captures the second editor's base without allowing
         // blur between browser tabs to save it before the competing edit.
         await second.getByRole("textbox", { name: numericLabel, exact: true }).fill("-1");
@@ -273,6 +277,7 @@ test.describe("profiles", () => {
         await second.reload();
         if (kind === "printer") await second.getByRole("tab", { name: /Printers/ }).click();
         await second.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
+        await second.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
         await expect(second.getByRole("textbox", { name: numericLabel, exact: true })).toHaveValue(
           nextValue,
         );

@@ -33,6 +33,7 @@ import {
   Trash2,
   X,
   ChevronDown,
+  Pencil,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -138,27 +139,6 @@ function printerDirty(profile: PrinterProfileRead, edit: PrinterEdit): boolean {
     base.nozzle !== edit.nozzle ||
     base.notes !== edit.notes
   );
-}
-
-// Material type is free-form user text, so the swatch lookup is a Map: an
-// unrecognised material reads back as `undefined` and takes the neutral swatch.
-const MATERIAL_COLORS = new Map([
-  ["pla", "bg-emerald-500"],
-  ["petg", "bg-primary"],
-  ["abs", "bg-primary"],
-  ["asa", "bg-teal-500"],
-  ["tpu", "bg-purple-500"],
-  ["flex", "bg-purple-400"],
-  ["nylon", "bg-yellow-500"],
-  ["pa", "bg-yellow-500"],
-  ["resin", "bg-red-500"],
-  ["pc", "bg-sky-500"],
-  ["hips", "bg-amber-400"],
-]);
-
-function materialColor(type: string): string {
-  const key = type.toLowerCase().trim();
-  return MATERIAL_COLORS.get(key) ?? "bg-slate-400";
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -279,17 +259,24 @@ function PresetReviewPanel({
 function ProfileRow({
   name,
   summary,
+  notes,
+  icon,
+  editor,
   onBlur,
   onClose,
   children,
 }: {
   name: string;
   summary: string;
+  notes: string | null;
+  icon: React.ReactNode;
+  editor: React.ReactNode;
   onBlur: React.FocusEventHandler<HTMLDivElement>;
   onClose: () => void;
   children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
   return (
     <div
       className="group min-w-0"
@@ -297,31 +284,76 @@ function ProfileRow({
       role="region"
       aria-label={uiText("profiles.profileRow", { name })}
     >
-      <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-5">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+          aria-hidden
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
           <h3 className="break-words text-sm font-semibold">{name}</h3>
           {summary && <p className="mt-1 break-words text-xs text-muted-foreground">{summary}</p>}
         </div>
-        <Button
-          variant="outline"
-          size="xs"
-          className="shrink-0"
-          aria-label={uiText(expanded ? "profiles.closeDetails" : "profiles.openDetails", { name })}
-          aria-expanded={expanded}
-          onClick={() => {
-            if (expanded) onClose();
-            setExpanded(!expanded);
-          }}
-        >
-          {uiText("profiles.details")}
-          <ChevronDown
-            aria-hidden
-            className={`h-3.5 w-3.5 transition-transform duration-press ${expanded ? "rotate-180" : ""}`}
-          />
-        </Button>
+        <div className="flex shrink-0 items-center gap-2 max-sm:w-full max-sm:justify-end">
+          {expanded && (
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label={uiText(editing ? "profiles.closeEditor" : "profiles.editProfile", {
+                name,
+              })}
+              aria-expanded={editing}
+              onClick={() => {
+                if (editing) onClose();
+                setEditing(!editing);
+              }}
+            >
+              {editing ? (
+                <X className="h-3.5 w-3.5" aria-hidden />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" aria-hidden />
+              )}
+              {uiText(editing ? "profiles.closeEditorLabel" : "Edit")}
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="xs"
+            aria-label={uiText(expanded ? "profiles.closeDetails" : "profiles.openDetails", {
+              name,
+            })}
+            aria-expanded={expanded}
+            onClick={() => {
+              if (expanded) onClose();
+              setExpanded(!expanded);
+            }}
+          >
+            {uiText("profiles.details")}
+            <ChevronDown
+              aria-hidden
+              className={`h-3.5 w-3.5 transition-transform duration-press ${expanded ? "rotate-180" : ""}`}
+            />
+          </Button>
+        </div>
       </div>
       {expanded && (
-        <div className="grid min-w-0 gap-4 border-t bg-muted/10 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
+        <div className="min-w-0 space-y-4 border-t bg-muted/10 px-4 py-4 sm:px-5">
+          {editing ? (
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+              <p className="col-span-full text-xs text-muted-foreground">
+                {uiText("Changes save automatically when leaving a row.")}
+              </p>
+              {editor}
+            </div>
+          ) : notes ? (
+            <div className="flex flex-col gap-1 text-sm sm:flex-row sm:gap-3">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                {uiText("Notes")}
+              </span>
+              <p className="min-w-0 whitespace-pre-wrap break-words text-sm">{notes}</p>
+            </div>
+          ) : null}
           {children}
         </div>
       )}
@@ -931,9 +963,7 @@ export function FilamentProfilesCard() {
                   <h2 id="filament-presets-heading" className="text-sm font-semibold">
                     {uiText("Filament presets")}
                   </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {uiText("Changes save automatically when leaving a row.")}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{uiText("profiles.browseHelp")}</p>
                 </div>
               </div>
 
@@ -1062,139 +1092,138 @@ export function FilamentProfilesCard() {
                             .join(" · ")}
                           onBlur={(e) => handleRowBlur(e, () => autoSaveFilament(profile))}
                           onClose={() => void autoSaveFilament(profile)}
-                        >
-                          <label className="min-w-0 sm:col-span-2">
-                            <RowLabel>{uiText("Name")}</RowLabel>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`h-2.5 w-2.5 shrink-0 rounded-full ${edit.materialType ? materialColor(edit.materialType) : "bg-muted-foreground/30"}`}
-                              />
-                              <Input
-                                value={edit.name}
-                                onChange={(e) =>
-                                  updateFilamentEdit(profile.id, { name: e.target.value })
-                                }
-                                disabled={locked}
-                                aria-label={uiText("Filament preset name {value1}", {
-                                  value1: String(profile.id),
-                                })}
-                                className={compactInputClass}
-                              />
-                            </div>
-                            {profile.usage_count > 0 && (
-                              <span className="mt-1 block pl-[1.125rem] text-3xs text-muted-foreground">
-                                {uiText("counts.usedByFiles", { count: profile.usage_count })}
-                              </span>
-                            )}
-                          </label>
-                          <label>
-                            <RowLabel>{uiText("Material")}</RowLabel>
-                            <Input
-                              value={edit.materialType}
-                              onChange={(e) =>
-                                updateFilamentEdit(profile.id, { materialType: e.target.value })
-                              }
-                              disabled={locked}
-                              aria-label={uiText("Filament type {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              placeholder="PLA"
-                              className={compactInputClass}
-                            />
-                          </label>
-                          <label>
-                            <RowLabel>{uiText("Brand")}</RowLabel>
-                            <Input
-                              value={edit.materialBrand}
-                              onChange={(e) =>
-                                updateFilamentEdit(profile.id, { materialBrand: e.target.value })
-                              }
-                              disabled={locked}
-                              aria-label={uiText("Filament brand {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              placeholder={uiText("Brand")}
-                              className={compactInputClass}
-                            />
-                          </label>
-                          <label>
-                            <RowLabel>{uiText("Cost / kg")}</RowLabel>
-                            <Input
-                              value={edit.cost}
-                              onChange={(e) =>
-                                updateFilamentEdit(profile.id, { cost: e.target.value })
-                              }
-                              disabled={locked}
-                              inputMode="decimal"
-                              aria-label={uiText("Filament cost per kg {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              aria-invalid={Boolean(filamentValidationErrors[profile.id])}
-                              aria-describedby={
-                                filamentValidationErrors[profile.id]
-                                  ? `filament-cost-error-${profile.id}`
-                                  : undefined
-                              }
-                              placeholder="0.00"
-                              className={compactInputClass}
-                            />
-                            {filamentValidationErrors[profile.id] && (
-                              <span
-                                id={`filament-cost-error-${profile.id}`}
-                                role="alert"
-                                className="mt-1 block text-xs text-destructive"
-                              >
-                                {filamentValidationErrors[profile.id]}
-                              </span>
-                            )}
-                          </label>
-                          <label className="min-w-0 sm:col-span-2 lg:col-span-3">
-                            <RowLabel>{uiText("Notes")}</RowLabel>
-                            <textarea
-                              value={edit.notes}
-                              onChange={(e) =>
-                                updateFilamentEdit(profile.id, { notes: e.target.value })
-                              }
-                              disabled={locked}
-                              aria-label={uiText("Filament notes {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              placeholder={uiText("Optional")}
-                              className="min-h-20 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                          </label>
-                          <div className="col-span-full flex items-center justify-end gap-1">
-                            {linked ? (
-                              <Badge variant="success">{uiText("Synced")}</Badge>
-                            ) : (
-                              <>
-                                <RowStatus state={rowStatus[`f${profile.id}`]} />
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={() =>
-                                    setDeleteTarget({
-                                      kind: "filament",
-                                      id: profile.id,
-                                      name: edit.name,
+                          notes={profile.notes}
+                          icon={<Layers className="h-4 w-4" />}
+                          editor={
+                            <>
+                              <label className="min-w-0 sm:col-span-2">
+                                <RowLabel>{uiText("Name")}</RowLabel>
+                                <Input
+                                  value={edit.name}
+                                  onChange={(e) =>
+                                    updateFilamentEdit(profile.id, { name: e.target.value })
+                                  }
+                                  disabled={locked}
+                                  aria-label={uiText("Filament preset name {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  className={compactInputClass}
+                                />
+                              </label>
+                              <label>
+                                <RowLabel>{uiText("Material")}</RowLabel>
+                                <Input
+                                  value={edit.materialType}
+                                  onChange={(e) =>
+                                    updateFilamentEdit(profile.id, { materialType: e.target.value })
+                                  }
+                                  disabled={locked}
+                                  aria-label={uiText("Filament type {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  placeholder="PLA"
+                                  className={compactInputClass}
+                                />
+                              </label>
+                              <label>
+                                <RowLabel>{uiText("Brand")}</RowLabel>
+                                <Input
+                                  value={edit.materialBrand}
+                                  onChange={(e) =>
+                                    updateFilamentEdit(profile.id, {
+                                      materialBrand: e.target.value,
                                     })
                                   }
-                                  disabled={
-                                    !auth.isAuthenticated ||
-                                    rowStatus[`f${profile.id}`] === "saving"
-                                  }
-                                  aria-label={uiText("Delete filament preset {value1}", {
-                                    value1: String(edit.name),
+                                  disabled={locked}
+                                  aria-label={uiText("Filament brand {value1}", {
+                                    value1: String(profile.id),
                                   })}
-                                  title={uiText("Delete")}
-                                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </>
-                            )}
-                          </div>
+                                  placeholder={uiText("Brand")}
+                                  className={compactInputClass}
+                                />
+                              </label>
+                              <label className="lg:col-span-2">
+                                <RowLabel>{uiText("Cost / kg")}</RowLabel>
+                                <Input
+                                  value={edit.cost}
+                                  onChange={(e) =>
+                                    updateFilamentEdit(profile.id, { cost: e.target.value })
+                                  }
+                                  disabled={locked}
+                                  inputMode="decimal"
+                                  aria-label={uiText("Filament cost per kg {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  aria-invalid={Boolean(filamentValidationErrors[profile.id])}
+                                  aria-describedby={
+                                    filamentValidationErrors[profile.id]
+                                      ? `filament-cost-error-${profile.id}`
+                                      : undefined
+                                  }
+                                  placeholder="0.00"
+                                  className={compactInputClass}
+                                />
+                                {filamentValidationErrors[profile.id] && (
+                                  <span
+                                    id={`filament-cost-error-${profile.id}`}
+                                    role="alert"
+                                    className="mt-1 block text-xs text-destructive"
+                                  >
+                                    {filamentValidationErrors[profile.id]}
+                                  </span>
+                                )}
+                              </label>
+                              <label className="col-span-full min-w-0">
+                                <RowLabel>{uiText("Notes")}</RowLabel>
+                                <textarea
+                                  value={edit.notes}
+                                  onChange={(e) =>
+                                    updateFilamentEdit(profile.id, { notes: e.target.value })
+                                  }
+                                  disabled={locked}
+                                  aria-label={uiText("Filament notes {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  placeholder={uiText("Optional")}
+                                  className="min-h-16 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                              </label>
+                              <div className="col-span-full flex items-center gap-2">
+                                {linked ? (
+                                  <Badge variant="success">{uiText("Synced")}</Badge>
+                                ) : (
+                                  <>
+                                    <RowStatus state={rowStatus[`f${profile.id}`]} />
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="xs"
+                                      onClick={() =>
+                                        setDeleteTarget({
+                                          kind: "filament",
+                                          id: profile.id,
+                                          name: edit.name,
+                                        })
+                                      }
+                                      disabled={
+                                        !auth.isAuthenticated ||
+                                        rowStatus[`f${profile.id}`] === "saving"
+                                      }
+                                      aria-label={uiText("Delete filament preset {value1}", {
+                                        value1: String(edit.name),
+                                      })}
+                                      title={uiText("Delete")}
+                                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                                      {uiText("Delete")}
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          }
+                        >
                           <ProfileSettingsDetails
                             kind="filament"
                             profile={profile}
@@ -1234,9 +1263,7 @@ export function FilamentProfilesCard() {
                 <h2 id="printer-presets-heading" className="text-sm font-semibold">
                   {uiText("Printer presets")}
                 </h2>
-                <p className="text-xs text-muted-foreground">
-                  {uiText("Changes save automatically when leaving a row.")}
-                </p>
+                <p className="text-xs text-muted-foreground">{uiText("profiles.browseHelp")}</p>
               </div>
 
               {showAddPrinter && (
@@ -1351,116 +1378,112 @@ export function FilamentProfilesCard() {
                             .join(" · ")}
                           onBlur={(e) => handleRowBlur(e, () => autoSavePrinter(profile))}
                           onClose={() => void autoSavePrinter(profile)}
+                          notes={profile.notes}
+                          icon={<Printer className="h-4 w-4" />}
+                          editor={
+                            <>
+                              <label className="min-w-0 sm:col-span-2">
+                                <RowLabel>{uiText("Name")}</RowLabel>
+                                <Input
+                                  value={edit.name}
+                                  onChange={(e) =>
+                                    updatePrinterEdit(profile.id, { name: e.target.value })
+                                  }
+                                  disabled={
+                                    !auth.isAuthenticated ||
+                                    rowStatus[`p${profile.id}`] === "saving"
+                                  }
+                                  aria-label={uiText("Printer preset name {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  className={compactInputClass}
+                                />
+                              </label>
+                              <label className="lg:col-span-2">
+                                <RowLabel>{uiText("Printer model")}</RowLabel>
+                                <Input
+                                  value={edit.model}
+                                  onChange={(e) =>
+                                    updatePrinterEdit(profile.id, { model: e.target.value })
+                                  }
+                                  disabled={
+                                    !auth.isAuthenticated ||
+                                    rowStatus[`p${profile.id}`] === "saving"
+                                  }
+                                  aria-label={uiText("Printer model {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  placeholder={uiText("Machine model")}
+                                  className={compactInputClass}
+                                />
+                              </label>
+                              <label className="lg:col-span-2">
+                                <RowLabel>{uiText("Nozzle")}</RowLabel>
+                                <Input
+                                  value={edit.nozzle}
+                                  onChange={(e) =>
+                                    updatePrinterEdit(profile.id, { nozzle: e.target.value })
+                                  }
+                                  disabled={
+                                    !auth.isAuthenticated ||
+                                    rowStatus[`p${profile.id}`] === "saving"
+                                  }
+                                  inputMode="decimal"
+                                  aria-label={uiText("Printer nozzle diameter {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  placeholder="0.4"
+                                  className={compactInputClass}
+                                />
+                              </label>
+                              <label className="col-span-full min-w-0">
+                                <RowLabel>{uiText("Notes")}</RowLabel>
+                                <textarea
+                                  value={edit.notes}
+                                  onChange={(e) =>
+                                    updatePrinterEdit(profile.id, { notes: e.target.value })
+                                  }
+                                  disabled={
+                                    !auth.isAuthenticated ||
+                                    rowStatus[`p${profile.id}`] === "saving"
+                                  }
+                                  aria-label={uiText("Printer notes {value1}", {
+                                    value1: String(profile.id),
+                                  })}
+                                  placeholder={uiText("Optional")}
+                                  className="min-h-16 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                              </label>
+                              <div className="col-span-full flex items-center gap-2">
+                                <RowStatus state={rowStatus[`p${profile.id}`]} />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="xs"
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      kind: "printer",
+                                      id: profile.id,
+                                      name: edit.name,
+                                    })
+                                  }
+                                  disabled={
+                                    !auth.isAuthenticated ||
+                                    rowStatus[`p${profile.id}`] === "saving"
+                                  }
+                                  aria-label={uiText("Delete printer preset {value1}", {
+                                    value1: String(edit.name),
+                                  })}
+                                  title={uiText("Delete")}
+                                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                                  {uiText("Delete")}
+                                </Button>
+                              </div>
+                            </>
+                          }
                         >
-                          <label className="min-w-0 sm:col-span-2">
-                            <RowLabel>{uiText("Name")}</RowLabel>
-                            <Input
-                              value={edit.name}
-                              onChange={(e) =>
-                                updatePrinterEdit(profile.id, { name: e.target.value })
-                              }
-                              disabled={
-                                !auth.isAuthenticated || rowStatus[`p${profile.id}`] === "saving"
-                              }
-                              aria-label={uiText("Printer preset name {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              className={compactInputClass}
-                            />
-                            {(profile.slicer_name || profile.usage_count > 0) && (
-                              <span className="mt-1 block text-3xs text-muted-foreground">
-                                {[
-                                  profile.slicer_name
-                                    ? uiText("Detected from {value1}", {
-                                        value1: String(profile.slicer_name),
-                                      })
-                                    : null,
-                                  profile.usage_count > 0
-                                    ? uiText("counts.usedByFiles", { count: profile.usage_count })
-                                    : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </span>
-                            )}
-                          </label>
-                          <label>
-                            <RowLabel>{uiText("Printer model")}</RowLabel>
-                            <Input
-                              value={edit.model}
-                              onChange={(e) =>
-                                updatePrinterEdit(profile.id, { model: e.target.value })
-                              }
-                              disabled={
-                                !auth.isAuthenticated || rowStatus[`p${profile.id}`] === "saving"
-                              }
-                              aria-label={uiText("Printer model {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              placeholder={uiText("Machine model")}
-                              className={compactInputClass}
-                            />
-                          </label>
-                          <label>
-                            <RowLabel>{uiText("Nozzle")}</RowLabel>
-                            <Input
-                              value={edit.nozzle}
-                              onChange={(e) =>
-                                updatePrinterEdit(profile.id, { nozzle: e.target.value })
-                              }
-                              disabled={
-                                !auth.isAuthenticated || rowStatus[`p${profile.id}`] === "saving"
-                              }
-                              inputMode="decimal"
-                              aria-label={uiText("Printer nozzle diameter {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              placeholder="0.4"
-                              className={compactInputClass}
-                            />
-                          </label>
-                          <label className="min-w-0 sm:col-span-2 lg:col-span-3">
-                            <RowLabel>{uiText("Notes")}</RowLabel>
-                            <textarea
-                              value={edit.notes}
-                              onChange={(e) =>
-                                updatePrinterEdit(profile.id, { notes: e.target.value })
-                              }
-                              disabled={
-                                !auth.isAuthenticated || rowStatus[`p${profile.id}`] === "saving"
-                              }
-                              aria-label={uiText("Printer notes {value1}", {
-                                value1: String(profile.id),
-                              })}
-                              placeholder={uiText("Optional")}
-                              className="min-h-20 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                          </label>
-                          <div className="col-span-full flex items-center justify-end gap-1">
-                            <RowStatus state={rowStatus[`p${profile.id}`]} />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() =>
-                                setDeleteTarget({
-                                  kind: "printer",
-                                  id: profile.id,
-                                  name: edit.name,
-                                })
-                              }
-                              disabled={
-                                !auth.isAuthenticated || rowStatus[`p${profile.id}`] === "saving"
-                              }
-                              aria-label={uiText("Delete printer preset {value1}", {
-                                value1: String(edit.name),
-                              })}
-                              title={uiText("Delete")}
-                              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
                           <ProfileSettingsDetails
                             kind="printer"
                             profile={profile}

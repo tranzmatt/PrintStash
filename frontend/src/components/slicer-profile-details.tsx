@@ -50,7 +50,7 @@ function Variant({ variant, index }: { variant: SettingsVariant; index: number }
   const source = variant.sources[0];
   const preset = variant.settings.filament_settings_id ?? variant.settings.printer_settings_id;
   return (
-    <article className="min-w-0 rounded-md border bg-background p-3">
+    <article className="min-w-0 p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <h4 className="break-words text-sm font-medium">
@@ -61,8 +61,7 @@ function Variant({ variant, index }: { variant: SettingsVariant; index: number }
             {[source.printer_model, source.slicer_name, source.slicer_version]
               .filter(Boolean)
               .join(" · ")}
-          </p>
-          <p className="text-xs text-muted-foreground">
+            {" · "}
             {uiText("profiles.sourceCount", { count: variant.sources.length })}
           </p>
         </div>
@@ -172,9 +171,11 @@ function ProfileSettingsContent({
                     files: new Set(captures.map((file) => file.file_id)).size,
                   })}
                 </p>
-                {variants.map((variant, index) => (
-                  <Variant key={variant.key} variant={variant} index={index} />
-                ))}
+                <div className="divide-y divide-border overflow-hidden rounded-md border bg-background">
+                  {variants.map((variant, index) => (
+                    <Variant key={variant.key} variant={variant} index={index} />
+                  ))}
+                </div>
               </>
             )}
             {query.hasNextPage && (
@@ -212,16 +213,20 @@ export function ProfileSettingsDetails({
   const [expanded, setExpanded] = useState(initiallyExpanded);
   return (
     <section
-      className="col-span-full min-w-0 border-t pt-4"
+      className="min-w-0"
       aria-label={uiText("profiles.settingsFor", { name: profile.name })}
     >
       <Button
         variant="ghost"
         size="xs"
+        className="-ml-2 font-semibold"
+        aria-label={uiText(
+          expanded ? "profiles.closeProfileSettings" : "profiles.openProfileSettings",
+        )}
         aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
       >
-        {uiText(expanded ? "profiles.closeProfileSettings" : "profiles.openProfileSettings")}
+        {uiText("profiles.settingsTitle")}
         <ChevronDown
           aria-hidden
           className={`h-3.5 w-3.5 transition-transform duration-press ${expanded ? "rotate-180" : ""}`}

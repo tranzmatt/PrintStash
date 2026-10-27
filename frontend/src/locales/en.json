@@ -4554,7 +4554,7 @@
   "storage_authentication_failed": "The storage provider rejected authentication. The access key or token may be invalid, revoked, or expired. Update the connection credentials, then test access again.",
   "storage_access_denied": "The storage provider denied access. Check that these credentials have permission for the selected bucket or folder.",
   "storage_signature_invalid": "The storage provider could not verify the request signature. Check the access key, secret, endpoint, region, and server clock.",
-  "profiles.integratedHelp": "Configurations observed in G-code for this material or machine. Different presets and values remain separate variants; your saved fields are unchanged.",
+  "profiles.integratedHelp": "Captured from G-code. Matching values are grouped; differences stay as separate variants.",
   "profiles.variant": "Variant {number}",
   "profiles.sourceCount": "Source files: {count}",
   "profiles.sourceFiles": "Source files",
@@ -4572,5 +4572,10 @@
   "profiles.closeDetails": "Hide details for {name}",
   "profiles.costSummary": "{cost} / kg",
   "profiles.nozzleSummary": "Nozzle {nozzle} mm",
-  "profiles.details": "Details"
+  "profiles.details": "Details",
+  "profiles.editProfile": "Edit profile {name}",
+  "profiles.closeEditor": "Close editor for {name}",
+  "profiles.closeEditorLabel": "Close editor",
+  "profiles.browseHelp": "Open a profile to inspect its slicer configurations or edit its details.",
+  "profiles.settingsTitle": "Slicer configurations"
 }

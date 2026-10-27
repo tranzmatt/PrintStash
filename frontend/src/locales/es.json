@@ -4554,7 +4554,7 @@
   "storage_authentication_failed": "El proveedor de almacenamiento ha rechazado la autenticación. La clave o el token puede ser incorrecto, haber sido revocado o haber caducado. Actualiza las credenciales de la conexión y vuelve a comprobar el acceso.",
   "storage_access_denied": "El proveedor de almacenamiento ha denegado el acceso. Comprueba que estas credenciales tengan permisos para el bucket o la carpeta seleccionados.",
   "storage_signature_invalid": "El proveedor de almacenamiento no ha podido verificar la firma de la petición. Comprueba la clave de acceso, el secreto, el endpoint, la región y el reloj del servidor.",
-  "profiles.integratedHelp": "Configuraciones observadas en G-code para este material o máquina. Los presets y valores distintos se conservan como variantes; tus campos guardados se mantienen.",
+  "profiles.integratedHelp": "Extraídas del G-code. Los valores iguales se agrupan y las diferencias se conservan como variantes.",
   "profiles.variant": "Variante {number}",
   "profiles.sourceCount": "Archivos de origen: {count}",
   "profiles.sourceFiles": "Archivos de origen",
@@ -4572,5 +4572,10 @@
   "profiles.closeDetails": "Ocultar detalles de {name}",
   "profiles.costSummary": "{cost} / kg",
   "profiles.nozzleSummary": "Boquilla {nozzle} mm",
-  "profiles.details": "Detalles"
+  "profiles.details": "Detalles",
+  "profiles.editProfile": "Editar perfil {name}",
+  "profiles.closeEditor": "Cerrar editor de {name}",
+  "profiles.closeEditorLabel": "Cerrar editor",
+  "profiles.browseHelp": "Abre un perfil para consultar sus configuraciones del laminador o editar sus datos.",
+  "profiles.settingsTitle": "Configuraciones del laminador"
 }

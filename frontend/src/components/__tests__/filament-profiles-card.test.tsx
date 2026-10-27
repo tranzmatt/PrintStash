@@ -72,6 +72,9 @@ async function openProfileRows() {
   for (const button of screen.queryAllByRole("button", { name: /^View details for / })) {
     await userEvent.click(button);
   }
+  for (const button of screen.queryAllByRole("button", { name: /^Edit profile / })) {
+    await userEvent.click(button);
+  }
   const heading =
     screen.queryByRole("heading", { name: "Filament presets" }) ??
     screen.queryByRole("heading", { name: "Printer presets" });
@@ -1519,8 +1522,15 @@ describe("Collapsible profile rows", () => {
     const button = await screen.findByRole("button", { name: "View details for Everyday PLA" });
     button.focus();
     await user.keyboard("{Enter}");
-    expect(screen.getByRole("textbox", { name: "Filament preset name 1" })).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: "Filament preset name 1" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Settings for Everyday PLA" })).toBeVisible();
     expect(button).toHaveAttribute("aria-expanded", "true");
+    const edit = screen.getByRole("button", { name: "Edit profile Everyday PLA" });
+    edit.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("textbox", { name: "Filament preset name 1" })).toBeVisible();
   });
 
   it("collapses the full profile details", async () => {
@@ -1566,5 +1576,57 @@ describe("Collapsible profile rows", () => {
     await renderCard({ filaments: [aFilamentProfile({ notes })] });
     expect(screen.getByRole("textbox", { name: "Filament notes 1" }).tagName).toBe("TEXTAREA");
     expect(screen.getByRole("textbox", { name: "Filament notes 1" })).toHaveValue(notes);
+  });
+});
+
+describe("Profile consultation and editing", () => {
+  it.each(["filament", "printer"] as const)(
+    "opens %s settings without editable fields or writes",
+    async (kind) => {
+      const app = await renderCard({
+        expand: false,
+        filaments: [aFilamentProfile({ notes: "Calibration notes" })],
+        printers: [aPrinterProfile({ notes: "Calibration notes" })],
+      });
+      if (kind === "printer") await userEvent.click(screen.getByRole("tab", { name: /Printers/ }));
+      await userEvent.click(await screen.findByRole("button", { name: /^View details for / }));
+      expect(screen.getByText("Calibration notes")).toBeVisible();
+      expect(screen.getByRole("button", { name: /^Edit profile / })).toBeVisible();
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Delete .* preset / })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: /^Hide details for / }));
+      expect(app.requestsWithMethod("PATCH")).toHaveLength(0);
+    },
+  );
+
+  it("preserves an invalid draft when closing and reopening the editor", async () => {
+    const app = await renderCard();
+    fireEvent.change(screen.getByRole("textbox", { name: "Filament cost per kg 1" }), {
+      target: { value: "-1" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Close editor for Everyday PLA" }));
+    expect(
+      screen.queryByRole("textbox", { name: "Filament cost per kg 1" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Edit profile Everyday PLA" }));
+    expect(screen.getByRole("textbox", { name: "Filament cost per kg 1" })).toHaveValue("-1");
+    expect(screen.getByText("Cost must be 0 or more.")).toBeVisible();
+    expect(app.requestsWithMethod("PATCH")).toHaveLength(0);
+  });
+
+  it("saves a changed value when returning from the editor to consultation", async () => {
+    const app = await renderCard({
+      routes: { "PATCH /api/v1/filament-profiles/1": json(aFilamentProfile({ cost_per_kg: 42 })) },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Filament cost per kg 1" }), {
+      target: { value: "42" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Close editor for Everyday PLA" }));
+    await waitFor(() => expect(app.requestsWithMethod("PATCH")).toHaveLength(1));
+    expect(JSON.parse(app.requestsWithMethod("PATCH")[0].body)).toEqual({ cost_per_kg: 42 });
+    expect(
+      screen.queryByRole("textbox", { name: "Filament cost per kg 1" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Settings for Everyday PLA" })).toBeVisible();
   });
 });
