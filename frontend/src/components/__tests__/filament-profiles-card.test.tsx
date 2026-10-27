@@ -1438,3 +1438,16 @@ describe("FilamentProfilesCard", () => {
     });
   });
 });
+
+describe("Integrated profile settings", () => {
+  it("offers settings within the existing tabs", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    expect(
+      await screen.findByRole("button", { name: "Slicer settings and variants" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "Detected settings" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Printers/ }));
+    expect(screen.getByRole("region", { name: "Settings for Voron 2.4 — 0.4 mm" })).toBeVisible();
+  });
+});

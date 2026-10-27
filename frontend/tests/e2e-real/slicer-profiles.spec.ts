@@ -1,55 +1,100 @@
-/** A real Orca upload makes its observed settings readable on desktop and mobile. */
+/** Profile details group repeated G-code settings while retaining distinct variants. */
 import { readFileSync } from "node:fs";
 import { test, expect } from "./helpers";
 import { uploadModel } from "./util";
+import type { FilamentProfileRead, PrinterProfileRead } from "../../src/types";
+import type { SlicerProfilePage } from "../../src/types/slicer-profiles";
 
 for (const width of [1440, 390]) {
-  test(`inspects uploaded slicer settings at ${width}px`, async ({ page }, testInfo) => {
-    // The shared upload helper follows Task Center in the desktop toolbar.
-    // The reading flow below is exercised at the requested viewport.
+  test(`inspects grouped profile variants at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
-    const name = `e2e-slicer-settings-${width}-${Date.now()}`;
-    const filename = `${name}.gcode`;
-    const source = readFileSync("../backend/tests/fixtures/real_orca_ender3_benchy.gcode");
-    await uploadModel(page, name, {
-      gcodeFile: {
-        name: filename,
-        mimeType: "text/plain",
-        buffer: Buffer.concat([source, Buffer.from(`\n; fixture marker: ${name}\n`)]),
-      },
-    });
-    let modelId = 0;
-    await expect
-      .poll(
-        async () => {
-          const result: { items: { filename: string; model_id: number }[] } = await (
-            await page.request.get("/api/v1/slicer-profiles")
-          ).json();
-          const captured = result.items.find((item) => item.filename === filename);
-          modelId = captured?.model_id ?? 0;
-          return Boolean(captured);
-        },
-        { timeout: 60_000 },
-      )
-      .toBe(true);
-
+    const name = `e2e-profile-variants-${width}-${Date.now()}`;
+    const source = readFileSync("../backend/tests/fixtures/real_orca_ender3_benchy.gcode", "utf8");
+    const modelIds: number[] = [];
     try {
+      for (const variant of ["first", "repeat", "changed"]) {
+        const filename = `${name}-${variant}.gcode`;
+        const content =
+          variant === "changed"
+            ? source.replace("; filament_flow_ratio = 0.98", "; filament_flow_ratio = 1.04")
+            : source;
+        await uploadModel(page, `${name}-${variant}`, {
+          gcodeFile: {
+            name: filename,
+            mimeType: "text/plain",
+            buffer: Buffer.from(`${content}\n; fixture marker: ${filename}\n`),
+          },
+        });
+        await expect
+          .poll(
+            async () => {
+              const result: SlicerProfilePage = await (
+                await page.request.get("/api/v1/slicer-profiles")
+              ).json();
+              const capture = result.items.find((item) => item.filename === filename);
+              if (capture && !modelIds.includes(capture.model_id)) modelIds.push(capture.model_id);
+              return Boolean(capture);
+            },
+            { timeout: 60_000 },
+          )
+          .toBe(true);
+      }
+      const filaments: FilamentProfileRead[] = await (
+        await page.request.get("/api/v1/filament-profiles")
+      ).json();
+      const filament = filaments.find((item) => item.material_type === "PLA");
+      expect(filament).toBeTruthy();
+      const printers: PrinterProfileRead[] = await (
+        await page.request.get("/api/v1/printer-profiles")
+      ).json();
+      const printer = printers.find((item) => item.printer_model === "Creality Ender-3 V3 SE");
+      expect(printer).toBeTruthy();
       await page.setViewportSize({ width, height: 1000 });
       await page.goto("/profiles");
-      await page.getByRole("tab", { name: "Detected settings", exact: true }).click();
-      const entry = page.getByRole("article").filter({ hasText: filename });
-      await entry.getByRole("button", { name: "View settings", exact: true }).click();
-      await expect(entry.getByText("0.98", { exact: true })).toBeVisible();
-      await entry.getByRole("tab", { name: "Printer settings", exact: true }).click();
-      await expect(entry.getByText("nozzle_diameter", { exact: true })).toBeVisible();
-      await entry.getByRole("tab", { name: "Process settings", exact: true }).click();
-      await entry.getByRole("textbox", { name: "Find a setting or value" }).fill("layer_height");
-      await expect(entry.getByText("0.2", { exact: true })).toBeVisible();
-      await page.screenshot({ path: testInfo.outputPath("detected-settings.png"), fullPage: true });
-      await entry.getByRole("link", { name: `Source: ${name}`, exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(`/models/${modelId}$`));
+      await expect(page.getByRole("tab", { name: "Detected settings", exact: true })).toHaveCount(
+        0,
+      );
+      const filamentDetails = page.getByRole("region", {
+        name: `Settings for ${filament!.name}`,
+        exact: true,
+      });
+      await filamentDetails.getByRole("button", { name: "Slicer settings and variants" }).click();
+      await expect(filamentDetails.getByRole("article")).toHaveCount(2);
+      const repeated = filamentDetails.getByRole("article").filter({ hasText: "Source files: 2" });
+      await repeated.getByRole("button", { name: "View settings" }).click();
+      await expect(repeated.getByText("0.98", { exact: true })).toBeVisible();
+      await expect(repeated.getByRole("link")).toHaveCount(2);
+      const changed = filamentDetails.getByRole("article").filter({ hasText: "Source files: 1" });
+      await changed.getByRole("button", { name: "View settings" }).click();
+      await expect(changed.getByText("1.04", { exact: true })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("filament-variants.png"), fullPage: true });
+
+      await page.getByRole("tab", { name: /Printers/ }).click();
+      const printerDetails = page.getByRole("region", {
+        name: `Settings for ${printer!.name}`,
+        exact: true,
+      });
+      await printerDetails.getByRole("button", { name: "Slicer settings and variants" }).click();
+      await expect(printerDetails.getByRole("article")).toHaveCount(1);
+      await printerDetails.getByRole("button", { name: "View settings" }).click();
+      await expect(printerDetails.getByRole("link")).toHaveCount(3);
+      await expect(printerDetails.getByText("nozzle_diameter", { exact: true })).toBeVisible();
+      await printerDetails
+        .getByText("Print settings for this file", { exact: true })
+        .first()
+        .click();
+      const search = printerDetails
+        .getByRole("textbox", { name: "Find a setting or value" })
+        .nth(1);
+      await search.fill("layer_height");
+      await expect(
+        printerDetails.getByRole("listitem").first().getByText("layer_height", { exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("printer-variants.png"), fullPage: true });
+      await printerDetails.getByRole("link").first().click();
+      await expect(page).toHaveURL(/\/models\/\d+$/);
     } finally {
-      await page.request.delete(`/api/v1/models/${modelId}`);
+      for (const id of modelIds) await page.request.delete(`/api/v1/models/${id}`);
     }
   });
 }

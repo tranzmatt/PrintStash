@@ -1,174 +1,162 @@
-/** Captured print settings remain read-only evidence tied to their source file. */
+/** Profiles expose grouped read-only observations with paginated source evidence. */
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { SlicerProfileDetails } from "@/components/slicer-profile-details";
+import { ProfileSettingsDetails } from "@/components/slicer-profile-details";
 import { slicerProfileKeys } from "@/lib/queries/slicer-profiles";
+import { aSlicerCapture, anEditingBase } from "@/test-support/factories";
 import { json, renderApp } from "@/test-support/render";
 import type { SlicerProfileRead } from "@/types/slicer-profiles";
 
-const profile: SlicerProfileRead = {
-  file_id: 10,
-  model_id: 4,
-  model_name: "Bracket",
-  filename: "bracket.gcode",
-  uploaded_at: "2026-10-27T10:00:00Z",
-  slicer_name: "OrcaSlicer",
-  slicer_version: "2.3.2",
-  settings: {
-    printer: { nozzle_diameter: "0.4" },
-    filament: { filament_flow_ratio: "0.98;1.02", filament_type: "PLA" },
-    process: { layer_height: "0.2" },
-  },
-};
+const profile = { id: 1, name: "Everyday PLA", ...anEditingBase() };
+const key = slicerProfileKeys.profile(
+  "filament",
+  profile.id,
+  profile.edit_epoch,
+  profile.edit_version,
+);
+const route = "GET /api/v1/slicer-profiles/filament/1";
+function renderDetails(
+  items: SlicerProfileRead[] = [aSlicerCapture()],
+  next: number | null = null,
+) {
+  return renderApp(<ProfileSettingsDetails kind="filament" profile={profile} />, {
+    seed: [[key, { pages: [{ items, next_before_id: next }], pageParams: [null] }]],
+  });
+}
+async function openDetails() {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Slicer settings and variants" }));
+  return user;
+}
 
-describe("SlicerProfileDetails", () => {
-  it("shows the source model link", async () => {
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
-    });
-
-    expect(await screen.findByRole("link", { name: "Source: Bracket" })).toHaveAttribute(
+describe("ProfileSettingsDetails", () => {
+  it("shows source files inside the profile", async () => {
+    renderDetails();
+    const user = await openDetails();
+    await user.click(screen.getByRole("button", { name: "View settings" }));
+    expect(screen.getByRole("link", { name: "bracket.gcode · Bracket" })).toHaveAttribute(
       "href",
       "/models/4",
     );
   });
-
   it("preserves multiple filament values", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
-    });
-
-    await user.click(await screen.findByRole("button", { name: "View settings" }));
-
+    renderDetails();
+    const user = await openDetails();
+    await user.click(screen.getByRole("button", { name: "View settings" }));
     expect(screen.getByText("0.98;1.02")).toBeVisible();
   });
-
-  it("shows process settings when selected", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
-    });
-
-    await user.click(await screen.findByRole("button", { name: "View settings" }));
-    await user.click(screen.getByRole("tab", { name: "Process settings" }));
-
-    expect(screen.getByText("layer_height")).toBeVisible();
-  });
-
   it("filters settings by value", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
-    });
-    await user.click(await screen.findByRole("button", { name: "View settings" }));
-
-    await user.type(screen.getByRole("textbox", { name: "Find a setting or value" }), "0.98");
-
-    expect(screen.getAllByRole("term").map((term) => term.textContent)).toEqual([
-      "filament_flow_ratio",
-    ]);
+    renderDetails();
+    const user = await openDetails();
+    await user.click(screen.getByRole("button", { name: "View settings" }));
+    await user.type(screen.getAllByRole("textbox", { name: "Find a setting or value" })[0], "0.98");
+    expect(screen.getByText("filament_flow_ratio")).toBeVisible();
+    expect(screen.queryByText("filament_type")).not.toBeInTheDocument();
   });
-
-  it("shows no matching settings", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
-    });
-    await user.click(await screen.findByRole("button", { name: "View settings" }));
-
-    await user.type(screen.getByRole("textbox", { name: "Find a setting or value" }), "missing");
-
+  it("explains an empty search result", async () => {
+    renderDetails();
+    const user = await openDetails();
+    await user.click(screen.getByRole("button", { name: "View settings" }));
+    await user.type(
+      screen.getAllByRole("textbox", { name: "Find a setting or value" })[0],
+      "missing",
+    );
     expect(screen.getByText("No matching settings were captured in this group.")).toBeVisible();
   });
-
-  it("shows an empty page without claiming a backup", async () => {
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [], next_before_id: null }]],
-    });
-
-    expect(await screen.findByText("No captured settings on this page")).toBeVisible();
-    expect(screen.getByText(/This is not a complete preset backup/)).toBeVisible();
+  it("shows an empty profile", async () => {
+    renderDetails([]);
+    await openDetails();
+    expect(
+      screen.getByText("No settings found for this profile's material and brand or printer model."),
+    ).toBeVisible();
   });
-
-  it("advances to the next bounded page", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: 10 }]],
+  it("keeps process settings with their file", async () => {
+    renderDetails();
+    const user = await openDetails();
+    await user.click(screen.getByRole("button", { name: "View settings" }));
+    await user.click(screen.getByText("Print settings for this file"));
+    expect(screen.getByText("layer_height")).toBeVisible();
+  });
+  it("groups sources loaded on later pages", async () => {
+    renderApp(<ProfileSettingsDetails kind="filament" profile={profile} />, {
+      seed: [
+        [key, { pages: [{ items: [aSlicerCapture()], next_before_id: 10 }], pageParams: [null] }],
+      ],
       routes: {
-        "GET /api/v1/slicer-profiles": json({
-          items: [{ ...profile, file_id: 9, filename: "older.gcode" }],
+        [route]: json({
+          items: [aSlicerCapture({ file_id: 9, filename: "older.gcode" })],
           next_before_id: null,
         }),
       },
     });
-
-    await user.click(await screen.findByRole("button", { name: "Older files" }));
-
-    expect(await screen.findByText("older.gcode")).toBeVisible();
-    expect(screen.queryByText("bracket.gcode")).not.toBeInTheDocument();
+    const user = await openDetails();
+    await user.click(screen.getByRole("button", { name: "Load more source files" }));
+    expect(await screen.findByText("Variants: 1 · Loaded files: 2")).toBeVisible();
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "View settings" }));
+    expect(screen.getByRole("link", { name: "older.gcode · Bracket" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "bracket.gcode · Bracket" })).toBeVisible();
   });
-
   it("offers retry after a failed read", async () => {
-    renderApp(<SlicerProfileDetails />, {
-      routes: { "GET /api/v1/slicer-profiles": json({ detail: "unavailable" }, 503) },
+    renderApp(<ProfileSettingsDetails kind="filament" profile={profile} />, {
+      routes: { [route]: json({ detail: "unavailable" }, 503) },
     });
-
+    await openDetails();
     expect(
       within(await screen.findByRole("alert")).getByRole("button", { name: "Retry" }),
     ).toBeVisible();
   });
-
-  it("refreshes newly captured settings", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [], next_before_id: null }]],
-      routes: { "GET /api/v1/slicer-profiles": json({ items: [profile], next_before_id: null }) },
+  it("refreshes observations", async () => {
+    renderApp(<ProfileSettingsDetails kind="filament" profile={profile} />, {
+      seed: [[key, { pages: [{ items: [], next_before_id: null }], pageParams: [null] }]],
+      routes: { [route]: json({ items: [aSlicerCapture()], next_before_id: null }) },
     });
-
+    const user = await openDetails();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
-
-    expect(await screen.findByText("bracket.gcode")).toBeVisible();
+    expect(await screen.findByText("Variants: 1 · Loaded files: 1")).toBeVisible();
   });
-
-  it("hides cached settings after access is denied", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
-      routes: { "GET /api/v1/slicer-profiles": json({ detail: "access_denied" }, 403) },
+  it("hides cached observations after access is denied", async () => {
+    renderApp(<ProfileSettingsDetails kind="filament" profile={profile} />, {
+      seed: [
+        [key, { pages: [{ items: [aSlicerCapture()], next_before_id: null }], pageParams: [null] }],
+      ],
+      routes: { [route]: json({ detail: "access_denied" }, 403) },
     });
-
+    const user = await openDetails();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByRole("alert");
-
-    expect(screen.queryByText("bracket.gcode")).not.toBeInTheDocument();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
   });
-
-  it("returns to the newer page", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [
-        [slicerProfileKeys.page(null), { items: [profile], next_before_id: 10 }],
-        [slicerProfileKeys.page(10), { items: [], next_before_id: null }],
-      ],
+  it("does not claim empty success after a failed read", async () => {
+    renderApp(<ProfileSettingsDetails kind="filament" profile={profile} />, {
+      routes: { [route]: json({ detail: "unavailable" }, 503) },
     });
-    await user.click(screen.getByRole("button", { name: "Older files" }));
-
-    await user.click(await screen.findByRole("button", { name: "Newer files" }));
-
-    expect(await screen.findByText("bracket.gcode")).toBeVisible();
+    await openDetails();
+    await screen.findByRole("alert");
+    expect(
+      screen.queryByText(
+        "No settings found for this profile's material and brand or printer model.",
+      ),
+    ).not.toBeInTheDocument();
   });
-
-  it("collapses expanded settings", async () => {
-    const user = userEvent.setup();
-    renderApp(<SlicerProfileDetails />, {
-      seed: [[slicerProfileKeys.page(null), { items: [profile], next_before_id: null }]],
-    });
+  it("offers continuation through empty source pages", async () => {
+    renderDetails([], 10);
+    await openDetails();
+    expect(screen.getByText("No captured settings in the loaded files yet.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Load more source files" })).toBeVisible();
+  });
+  it("collapses the profile details", async () => {
+    renderDetails();
+    const user = await openDetails();
+    await user.click(screen.getByRole("button", { name: "Hide slicer settings" }));
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  });
+  it("collapses a variant", async () => {
+    renderDetails();
+    const user = await openDetails();
     await user.click(screen.getByRole("button", { name: "View settings" }));
-
     await user.click(screen.getByRole("button", { name: "Hide settings" }));
-
-    expect(screen.queryByText("filament_flow_ratio")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 });

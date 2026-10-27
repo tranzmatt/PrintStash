@@ -251,3 +251,263 @@ class TestListSlicerProfiles:
 
     def test_requires_authentication(self, client):
         assert client.get("/api/v1/slicer-profiles").status_code == 401
+
+
+@pytest.fixture(params=["filament", "printer"])
+def scoped_profile(request, make_filament_profile, make_printer_profile):
+    if request.param == "filament":
+        profile = make_filament_profile(material=" PLA ", material_brand=" Acme ")
+    else:
+        profile = make_printer_profile(printer_model=" Machine A ")
+    return request.param, profile
+
+
+@pytest.fixture
+def matching_capture(make_model, make_file, make_derivative):
+    artifact = make_file(
+        make_model(),
+        filename="profile.gcode",
+        metadata={
+            "material_type": "pla",
+            "material_brand": "acme",
+            "printer_model": "machine a",
+        },
+    )
+    make_derivative(artifact, DerivativeKind.METADATA, output_json=OUTPUT)
+    return artifact
+
+
+class TestListProfileSettings:
+    def test_matches_explicit_attributes(
+        self, client, auth_headers, scoped_profile, matching_capture
+    ):
+        kind, profile = scoped_profile
+        response = client.get(
+            f"/api/v1/slicer-profiles/{kind}/{profile.id}", headers=auth_headers
+        )
+        assert response.status_code == 200, response.text
+        assert [item["file_id"] for item in response.json()["items"]] == [
+            matching_capture.id
+        ]
+
+    def test_excludes_other_profiles(
+        self,
+        client,
+        auth_headers,
+        scoped_profile,
+        matching_capture,
+        make_model,
+        make_file,
+        make_derivative,
+    ):
+        kind, profile = scoped_profile
+        other = make_file(
+            make_model(),
+            filename="other.gcode",
+            metadata={
+                "material_type": "PETG",
+                "material_brand": "other",
+                "printer_model": "machine b",
+            },
+        )
+        make_derivative(other, DerivativeKind.METADATA, output_json=OUTPUT)
+        result = client.get(
+            f"/api/v1/slicer-profiles/{kind}/{profile.id}", headers=auth_headers
+        ).json()
+        assert [item["file_id"] for item in result["items"]] == [matching_capture.id]
+
+    def test_requires_material_brand_match(
+        self, client, auth_headers, matching_capture, make_filament_profile
+    ):
+        profile = make_filament_profile(material="PLA", material_brand="Different")
+        result = client.get(
+            f"/api/v1/slicer-profiles/filament/{profile.id}", headers=auth_headers
+        ).json()
+        assert result["items"] == []
+
+    def test_matches_unbranded_filament(
+        self,
+        client,
+        auth_headers,
+        make_filament_profile,
+        make_model,
+        make_file,
+        make_derivative,
+    ):
+        profile = make_filament_profile(material="PLA", material_brand=None)
+        artifact = make_file(make_model(), metadata={"material_type": "PLA"})
+        make_derivative(artifact, DerivativeKind.METADATA, output_json=OUTPUT)
+        result = client.get(
+            f"/api/v1/slicer-profiles/filament/{profile.id}", headers=auth_headers
+        ).json()
+        assert [item["file_id"] for item in result["items"]] == [artifact.id]
+
+    def test_does_not_match_names_alone(
+        self,
+        client,
+        auth_headers,
+        matching_capture,
+        make_filament_profile,
+        make_printer_profile,
+    ):
+        profiles = [
+            ("filament", make_filament_profile(name="acme", material="")),
+            ("printer", make_printer_profile(name="machine a", printer_model=None)),
+        ]
+        for kind, profile in profiles:
+            response = client.get(
+                f"/api/v1/slicer-profiles/{kind}/{profile.id}", headers=auth_headers
+            )
+            assert response.json() == {"items": [], "next_before_id": None}
+
+    def test_paginates_matching_files(
+        self,
+        client,
+        auth_headers,
+        scoped_profile,
+        matching_capture,
+        make_model,
+        make_file,
+        make_derivative,
+    ):
+        kind, profile = scoped_profile
+        newer = make_file(
+            make_model(),
+            metadata={
+                "material_type": "PLA",
+                "material_brand": "Acme",
+                "printer_model": "Machine A",
+            },
+        )
+        make_derivative(newer, DerivativeKind.METADATA, output_json=OUTPUT)
+        url = f"/api/v1/slicer-profiles/{kind}/{profile.id}"
+        first = client.get(url, params={"limit": 1}, headers=auth_headers).json()
+        second = client.get(
+            url,
+            params={"limit": 1, "before_id": first["next_before_id"]},
+            headers=auth_headers,
+        ).json()
+        assert [row["file_id"] for row in first["items"] + second["items"]] == [
+            newer.id,
+            matching_capture.id,
+        ]
+        assert second["next_before_id"] is None
+
+    @pytest.mark.parametrize("hidden", ["private", "trashed-file", "trashed-model"])
+    def test_excludes_invisible_sources(
+        self,
+        client,
+        headers_for,
+        scoped_profile,
+        make_user,
+        make_model,
+        make_file,
+        make_collection,
+        make_derivative,
+        grant_role,
+        hidden,
+    ):
+        kind, profile = scoped_profile
+        user = make_user()
+        collection = make_collection()
+        if hidden != "private":
+            grant_role(user, collection, CollectionRole.VIEW)
+        artifact = make_file(
+            make_model(collection=collection, trashed=hidden == "trashed-model"),
+            trashed=hidden == "trashed-file",
+            metadata={
+                "material_type": "PLA",
+                "material_brand": "Acme",
+                "printer_model": "Machine A",
+            },
+        )
+        make_derivative(artifact, DerivativeKind.METADATA, output_json=OUTPUT)
+        response = client.get(
+            f"/api/v1/slicer-profiles/{kind}/{profile.id}",
+            headers=headers_for(user, scope="read"),
+        )
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+
+    def test_omits_other_settings_kinds(
+        self,
+        client,
+        auth_headers,
+        scoped_profile,
+        make_model,
+        make_file,
+        make_derivative,
+    ):
+        kind, profile = scoped_profile
+        artifact = make_file(
+            make_model(),
+            metadata={
+                "material_type": "PLA",
+                "material_brand": "Acme",
+                "printer_model": "Machine A",
+            },
+        )
+        capture = {**CAPTURE, kind: {}}
+        make_derivative(
+            artifact,
+            DerivativeKind.METADATA,
+            output_json=json.dumps({"slicer_settings": capture}),
+        )
+        result = client.get(
+            f"/api/v1/slicer-profiles/{kind}/{profile.id}", headers=auth_headers
+        ).json()
+        assert result["items"] == []
+
+    @pytest.mark.parametrize("kind", ["filament", "printer"])
+    def test_rejects_missing_profile(self, client, auth_headers, kind):
+        response = client.get(
+            f"/api/v1/slicer-profiles/{kind}/999999", headers=auth_headers
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize(
+        "suffix",
+        ["filament/0", "process/1", "printer/1?limit=51", "filament/1?before_id=0"],
+    )
+    def test_rejects_invalid_scope(self, client, auth_headers, suffix):
+        response = client.get("/api/v1/slicer-profiles/" + suffix, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_requires_authentication(self, client, scoped_profile):
+        kind, profile = scoped_profile
+        assert (
+            client.get(f"/api/v1/slicer-profiles/{kind}/{profile.id}").status_code
+            == 401
+        )
+
+    def test_includes_granted_sources(
+        self,
+        client,
+        headers_for,
+        scoped_profile,
+        make_user,
+        make_model,
+        make_file,
+        make_collection,
+        make_derivative,
+        grant_role,
+    ):
+        kind, profile = scoped_profile
+        user = make_user()
+        collection = make_collection()
+        grant_role(user, collection, CollectionRole.VIEW)
+        artifact = make_file(
+            make_model(collection=collection),
+            metadata={
+                "material_type": "PLA",
+                "material_brand": "Acme",
+                "printer_model": "Machine A",
+            },
+        )
+        make_derivative(artifact, DerivativeKind.METADATA, output_json=OUTPUT)
+        response = client.get(
+            f"/api/v1/slicer-profiles/{kind}/{profile.id}",
+            headers=headers_for(user, scope="read"),
+        )
+        assert response.status_code == 200
+        assert [item["file_id"] for item in response.json()["items"]] == [artifact.id]

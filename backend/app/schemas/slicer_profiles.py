@@ -1,8 +1,14 @@
 """Read-only print-specific slicer evidence, never a restorable preset claim."""
 
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel
+
+
+class ProfileSettingsKind(StrEnum):
+    FILAMENT = "filament"
+    PRINTER = "printer"
 
 
 class CapturedSettingsRead(BaseModel):
@@ -17,6 +23,7 @@ class SlicerProfileRead(BaseModel):
     model_name: str
     filename: str
     uploaded_at: datetime
+    printer_model: str | None
     slicer_name: str | None
     slicer_version: str | None
     settings: CapturedSettingsRead

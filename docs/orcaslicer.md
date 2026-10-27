@@ -77,12 +77,25 @@ token.
 
 ## Inspect captured settings in Profiles
 
-After a G-code upload finishes processing, open **Profiles → Detected settings**.
-Each entry identifies its source file, Model, upload date and detected slicer.
-Expand **View settings** to browse printer, filament and process settings or
-search by a slicer's setting name or value. Supported values include nozzle
-diameter, temperatures, flow ratio, cooling, layer height, infill and speeds.
-Multiple filament values keep the original slicer serialization and order.
+After a G-code upload finishes processing, open **Profiles → Filaments** or
+**Printers** and expand **Slicer settings and variants** on the corresponding
+profile. Material and brand match filament observations; the machine model
+matches printer observations. Matching is case-insensitive and ignores surrounding
+spaces. A name alone is never enough; profiles without those attributes have no
+associated observations. Changing those attributes changes the observations shown.
+
+Equal settings with the same slicer version and machine context form one variant.
+Different preset names or setting values stay separate. Missing slicer or machine
+identity keeps observations separate. Expand **View settings** to search values
+and inspect source files, upload dates and Model links. Process settings (layer
+height, infill, speeds) remain attached to each source file. Multiple filament
+values preserve their original serialization and order as a complete observed
+configuration, rather than being assigned individually to spools.
+
+Sources load in bounded pages on demand. **Load more source files** merges matching
+configurations into the variants already shown. Counts describe the loaded files;
+the page explicitly indicates when more remain. No saved profile fields, costs,
+notes or Spoolman values are replaced by these observations.
 
 The capture reads supported setting comments from the beginning and end of the
 G-code, including supported binary G-code metadata. Availability depends on what
@@ -90,17 +103,18 @@ the slicer exported: a missing setting does not imply its default value. Existin
 G-code files are reprocessed in the background after upgrading; use **Refresh**
 as processing completes. Only live files in Models you can access are listed.
 
-This first version captures standalone G-code files. The Detected settings tab
-does not yet inspect embedded plate G-code or project presets inside `.3mf` or
+This first version captures standalone G-code files. Profile details do not yet inspect embedded plate G-code or project presets inside `.3mf` or
 `.gcode.3mf` containers.
 
 These entries describe individual prints. They are not a full slicer preset
 backup and cannot restore a complete OrcaSlicer or Bambu Studio configuration.
 Unused presets, inherited defaults and project overrides may be absent. Custom
 G-code, post-processing scripts and connection credentials are not captured.
-The existing editable filament and printer cost profiles remain separate.
+Observed values are read-only details inside the editable profile.
 
-The read-only `GET /api/v1/slicer-profiles` endpoint returns `items` and
+The read-only `GET /api/v1/slicer-profiles/{kind}/{profile_id}` endpoint
+(`kind` is `filament` or `printer`) filters observations for a catalog profile.
+The original `GET /api/v1/slicer-profiles` endpoint remains available. Both return `items` and
 `next_before_id`. Follow that cursor even if a page has no items: older files
 without captured settings may still be waiting for reprocessing. `limit`
 defaults to 20 and is capped at 50.

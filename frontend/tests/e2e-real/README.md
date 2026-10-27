@@ -215,3 +215,5 @@ sends no further setup probe.
 - `saved-views.spec.ts`: keyboard save and rename starts in the named field, replaces the selected name, and persists after reload.
 
 - `uploads.spec.ts`: repeated identical STL uploads report the existing Model, retain the destination after reload, and link to the unchanged Model and downloadable bytes.
+
+- `slicer-profiles.spec.ts`: real G-code uploads group repeated filament/printer settings, preserve changed values, and expose source/process details at desktop and mobile widths.

@@ -16789,6 +16789,14 @@
         "title": "ProcessRole",
         "type": "string"
       },
+      "ProfileSettingsKind": {
+        "enum": [
+          "filament",
+          "printer"
+        ],
+        "title": "ProfileSettingsKind",
+        "type": "string"
+      },
       "ProvenanceCaptureSummaryRead": {
         "properties": {
           "adapter_version": {
@@ -19462,6 +19470,17 @@
             "title": "Model Name",
             "type": "string"
           },
+          "printer_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Model"
+          },
           "settings": {
             "$ref": "#/components/schemas/CapturedSettingsRead"
           },
@@ -19499,6 +19518,7 @@
           "model_name",
           "filename",
           "uploaded_at",
+          "printer_model",
           "slicer_name",
           "slicer_version",
           "settings"
@@ -44501,6 +44521,91 @@
           }
         ],
         "summary": "List Slicer Profiles",
+        "tags": [
+          "slicer-profiles"
+        ]
+      }
+    },
+    "/api/v1/slicer-profiles/{kind}/{profile_id}": {
+      "get": {
+        "operationId": "list_profile_settings_api_v1_slicer_profiles__kind___profile_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProfileSettingsKind"
+            }
+          },
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Profile Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlicerProfilePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Profile Settings",
         "tags": [
           "slicer-profiles"
         ]
