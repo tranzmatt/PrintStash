@@ -66,7 +66,10 @@ search. Starting a manual analysis retries previously failed, unsupported or
 partial geometry, which is useful after increasing a limit or enabling format
 support. Scheduled analysis keeps those cached results to avoid retry loops.
 Complete fingerprints are reused. Exact comparisons can also reuse their stored
-proof after both source digests and the verification recipe are checked.
+proof after both source digests and the verification recipe are checked. A pair
+that was compared without any match is not compared again for the same files and
+settings, whichever side shortlisted it. When two whole files are already proven
+identical, rescaled or mirrored, their individual parts are not compared.
 
 The repository Benchy and Spatula use complete geometry at the default limits.
 An existing explicit lower cap remains unchanged; increase it before a manual

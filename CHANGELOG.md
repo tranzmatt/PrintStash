@@ -69,6 +69,8 @@
 
 ### Performance
 
+- **Similar models analysis runs about 8× faster on libraries with duplicates and multi-part files.** A single-body Model is compared once per pair instead of four times; parts of two files already proven identical, rescaled or mirrored are not compared again; a pair that matched nothing is not re-verified from the other side or by later runs; and pair checks start from the pre-loaded mesh worker. A seven-Model test library went from 21 minutes to under 2.5 with the same matches.
+
 - Task Center batches job-change notices and checks active work every ten seconds while its events connection is open, with one-second polling when disconnected.
 - Mesh workers check cancellation before each output publication instead of forcing a database read for every output fragment.
 - Storage publication acquires its locator lock once per reservation while preserving the durable reservation and receipt needed for recovery.
