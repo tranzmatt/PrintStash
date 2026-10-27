@@ -1580,7 +1580,7 @@ describe("Collapsible profile rows", () => {
 });
 
 describe("Profile consultation and editing", () => {
-  it("keeps expansion and editing separate between filament and printer rows with the same ID", async () => {
+  it("isolates disclosure state by preset kind", async () => {
     await renderCard();
     await userEvent.click(screen.getByRole("tab", { name: /Printers/ }));
     const printerDetails = screen.getByRole("button", {
@@ -1618,7 +1618,7 @@ describe("Profile consultation and editing", () => {
     },
   );
 
-  it("preserves an invalid draft when closing and reopening the editor", async () => {
+  it("retains an invalid draft across editor toggles", async () => {
     const app = await renderCard();
     fireEvent.change(screen.getByRole("textbox", { name: "Filament cost per kg 1" }), {
       target: { value: "-1" },
