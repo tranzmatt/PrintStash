@@ -4543,5 +4543,9 @@
   "This file is too large or complex to process. You can still download it.": "This file is too large or complex to process. You can still download it.",
   "Processing stopped unexpectedly on the server. Try again; if it keeps failing, check the PrintStash logs.": "Processing stopped unexpectedly on the server. Try again; if it keeps failing, check the PrintStash logs.",
   "PrintStash couldn't read or save this file in storage. Check that the storage is reachable, then try again.": "PrintStash couldn't read or save this file in storage. Check that the storage is reachable, then try again.",
-  "This couldn't be produced. Try again; if it keeps failing, check the PrintStash logs.": "This couldn't be produced. Try again; if it keeps failing, check the PrintStash logs."
+  "This couldn't be produced. Try again; if it keeps failing, check the PrintStash logs.": "This couldn't be produced. Try again; if it keeps failing, check the PrintStash logs.",
+  "storage_credentials_expired": "The storage provider reports that these credentials have expired. Renew them, update the connection, then test access again.",
+  "storage_authentication_failed": "The storage provider rejected authentication. The access key or token may be invalid, revoked, or expired. Update the connection credentials, then test access again.",
+  "storage_access_denied": "The storage provider denied access. Check that these credentials have permission for the selected bucket or folder.",
+  "storage_signature_invalid": "The storage provider could not verify the request signature. Check the access key, secret, endpoint, region, and server clock."
 }

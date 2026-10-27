@@ -4543,5 +4543,9 @@
   "This file is too large or complex to process. You can still download it.": "Este archivo es demasiado grande o complejo para procesarlo. Aún puedes descargarlo.",
   "Processing stopped unexpectedly on the server. Try again; if it keeps failing, check the PrintStash logs.": "El procesamiento se detuvo de forma inesperada en el servidor. Vuelve a intentarlo; si sigue fallando, revisa los registros de PrintStash.",
   "PrintStash couldn't read or save this file in storage. Check that the storage is reachable, then try again.": "PrintStash no ha podido leer o guardar este archivo en el almacenamiento. Comprueba que el almacenamiento está accesible y vuelve a intentarlo.",
-  "This couldn't be produced. Try again; if it keeps failing, check the PrintStash logs.": "No se ha podido generar. Vuelve a intentarlo; si sigue fallando, revisa los registros de PrintStash."
+  "This couldn't be produced. Try again; if it keeps failing, check the PrintStash logs.": "No se ha podido generar. Vuelve a intentarlo; si sigue fallando, revisa los registros de PrintStash.",
+  "storage_credentials_expired": "El proveedor de almacenamiento indica que estas credenciales han caducado. Renuévalas, actualiza la conexión y vuelve a comprobar el acceso.",
+  "storage_authentication_failed": "El proveedor de almacenamiento ha rechazado la autenticación. La clave o el token puede ser incorrecto, haber sido revocado o haber caducado. Actualiza las credenciales de la conexión y vuelve a comprobar el acceso.",
+  "storage_access_denied": "El proveedor de almacenamiento ha denegado el acceso. Comprueba que estas credenciales tengan permisos para el bucket o la carpeta seleccionados.",
+  "storage_signature_invalid": "El proveedor de almacenamiento no ha podido verificar la firma de la petición. Comprueba la clave de acceso, el secreto, el endpoint, la región y el reloj del servidor."
 }

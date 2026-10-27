@@ -8,7 +8,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { onAuthChange } from "@/lib/auth-store";
 import { getSessionVersion } from "@/lib/session-transport";
-import { parseApiError } from "@/lib/errors";
+import { parseApiError, userMessage, type ApiError } from "@/lib/errors";
+import type { EditingBase } from "@/types/editing";
 import {
   storageConnectionsOptions,
   storageProvidersOptions,
@@ -157,6 +158,9 @@ export function RemoteStorageConnections({ disabled = false }: { disabled?: bool
   });
   const [editing, setEditing] = useState<StorageConnection | null>(null);
   const [removeTarget, setRemoveTarget] = useState<StorageConnection | null>(null);
+  const [probeFailures, setProbeFailures] = useState<
+    Record<number, { base: EditingBase; error: ApiError }>
+  >({});
 
   useEffect(() => {
     live.current = true;
@@ -166,6 +170,7 @@ export function RemoteStorageConnections({ disabled = false }: { disabled?: bool
       setName("");
       setEditing(null);
       setRemoveTarget(null);
+      setProbeFailures({});
       setPurpose("library");
       setRetired(true);
     });
@@ -320,12 +325,24 @@ export function RemoteStorageConnections({ disabled = false }: { disabled?: bool
   async function probe(connection: StorageConnection) {
     if (unavailable || busy !== null || command.blocked) return;
     const session = getSessionVersion();
+    const base = captureEditingBase(connection);
+    setProbeFailures((previous) => {
+      const next = { ...previous };
+      delete next[connection.id];
+      return next;
+    });
     try {
       await command.mutateAsync({ session, kind: "probe", id: connection.id });
       if (current(session))
         toast.success(uiText("{value1} is reachable.", { value1: connection.name }));
     } catch (error) {
-      if (current(session)) toast.error(error);
+      if (current(session)) {
+        setProbeFailures((previous) => ({
+          ...previous,
+          [connection.id]: { base, error: parseApiError(error) },
+        }));
+        toast.error(error);
+      }
     }
   }
   async function toggle(connection: StorageConnection) {
@@ -512,115 +529,132 @@ export function RemoteStorageConnections({ disabled = false }: { disabled?: bool
             </p>
           ) : (
             <ul className="divide-y divide-border border-t border-border">
-              {connections.map((connection) => (
-                <li
-                  key={connection.id}
-                  className="grid gap-3 px-4 py-3 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {connection.name}
-                      </p>
-                      <Badge variant="outline">{connection.kind.toUpperCase()}</Badge>
-                      {connection.kind === "gdrive" && (
-                        <Badge variant="secondary">{uiText("Beta")}</Badge>
-                      )}
-                      <Badge variant={connection.enabled ? "secondary" : "outline"}>
-                        {connection.enabled ? uiText("Enabled") : uiText("Paused")}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {uiText("counts.credentials", { count: connection.secret_fields_set.length })}
-                    </p>
-                    {connection.uses?.[connection.purpose === "library" ? "library" : "backup"]
-                      ?.available === false && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {storageOperationMessage(
-                          connection.uses[connection.purpose === "library" ? "library" : "backup"]
-                            .reason,
-                          i18n?.t,
+              {connections.map((connection) => {
+                const failure = probeFailures[connection.id];
+                const currentFailure =
+                  failure?.base.edit_epoch === connection.edit_epoch &&
+                  failure.base.edit_version === connection.edit_version
+                    ? failure.error
+                    : null;
+                return (
+                  <li
+                    key={connection.id}
+                    className="grid gap-3 px-4 py-3 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {connection.name}
+                        </p>
+                        <Badge variant="outline">{connection.kind.toUpperCase()}</Badge>
+                        {connection.kind === "gdrive" && (
+                          <Badge variant="secondary">{uiText("Beta")}</Badge>
                         )}
-                      </p>
-                    )}
-                    {connection.purpose !== "backup" && connection.source_operations && (
+                        <Badge variant={connection.enabled ? "secondary" : "outline"}>
+                          {connection.enabled ? uiText("Enabled") : uiText("Paused")}
+                        </Badge>
+                      </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {storageOperationMessage(
-                          connection.source_operations.catalog_purge.reason,
-                          i18n?.t,
-                        )}
+                        {uiText("counts.credentials", {
+                          count: connection.secret_fields_set.length,
+                        })}
                       </p>
-                    )}
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-[minmax(12rem,15rem)_auto] sm:items-end">
-                    <label className={FIELD_LABEL}>
-                      {uiText("Use for")}
-                      <select
-                        className={SELECT}
-                        aria-label={uiText("Use {value1} for", { value1: String(connection.name) })}
-                        value={connection.purpose}
-                        disabled={unavailable || busy !== null || command.blocked}
-                        onChange={(event) => {
-                          if (isPurpose(event.target.value)) {
-                            void changePurpose(connection, event.target.value);
-                          }
-                        }}
-                      >
-                        {PURPOSES.map((value) => (
-                          <option key={value} value={value}>
-                            {purposeLabel(value)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="flex flex-wrap gap-2 sm:justify-end">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={unavailable || busy !== null || command.blocked}
-                        onClick={() => edit(connection)}
-                      >
-                        {uiText("Edit")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={unavailable || busy !== null || !connection.enabled}
-                        onClick={() => void probe(connection)}
-                      >
-                        <CheckCircle2 className="h-4 w-4" aria-hidden />
-                        {uiText(" Test")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={unavailable || busy !== null || command.blocked}
-                        onClick={() => void toggle(connection)}
-                      >
-                        {connection.enabled ? (
-                          <PauseCircle className="h-4 w-4" aria-hidden />
-                        ) : (
-                          <PlayCircle className="h-4 w-4" aria-hidden />
-                        )}
-                        {connection.enabled ? uiText("Pause") : uiText("Resume")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={unavailable || busy !== null || command.blocked}
-                        onClick={() => setRemoveTarget(connection)}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden />
-                        {uiText(" Remove")}
-                      </Button>
+                      {connection.uses?.[connection.purpose === "library" ? "library" : "backup"]
+                        ?.available === false && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {storageOperationMessage(
+                            connection.uses[connection.purpose === "library" ? "library" : "backup"]
+                              .reason,
+                            i18n?.t,
+                          )}
+                        </p>
+                      )}
+                      {currentFailure && (
+                        <p role="alert" className="mt-2 text-sm text-destructive">
+                          {userMessage(currentFailure)}
+                        </p>
+                      )}
+                      {connection.purpose !== "backup" && connection.source_operations && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {storageOperationMessage(
+                            connection.source_operations.catalog_purge.reason,
+                            i18n?.t,
+                          )}
+                        </p>
+                      )}
                     </div>
-                  </div>
-                </li>
-              ))}
+                    <div className="grid gap-3 sm:grid-cols-[minmax(12rem,15rem)_auto] sm:items-end">
+                      <label className={FIELD_LABEL}>
+                        {uiText("Use for")}
+                        <select
+                          className={SELECT}
+                          aria-label={uiText("Use {value1} for", {
+                            value1: String(connection.name),
+                          })}
+                          value={connection.purpose}
+                          disabled={unavailable || busy !== null || command.blocked}
+                          onChange={(event) => {
+                            if (isPurpose(event.target.value)) {
+                              void changePurpose(connection, event.target.value);
+                            }
+                          }}
+                        >
+                          {PURPOSES.map((value) => (
+                            <option key={value} value={value}>
+                              {purposeLabel(value)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="flex flex-wrap gap-2 sm:justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={unavailable || busy !== null || command.blocked}
+                          onClick={() => edit(connection)}
+                        >
+                          {uiText("Edit")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={unavailable || busy !== null || !connection.enabled}
+                          onClick={() => void probe(connection)}
+                        >
+                          <CheckCircle2 className="h-4 w-4" aria-hidden />
+                          {uiText(" Test")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={unavailable || busy !== null || command.blocked}
+                          onClick={() => void toggle(connection)}
+                        >
+                          {connection.enabled ? (
+                            <PauseCircle className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <PlayCircle className="h-4 w-4" aria-hidden />
+                          )}
+                          {connection.enabled ? uiText("Pause") : uiText("Resume")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={unavailable || busy !== null || command.blocked}
+                          onClick={() => setRemoveTarget(connection)}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                          {uiText(" Remove")}
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

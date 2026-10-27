@@ -52,6 +52,13 @@ host mount is undesirable or unavailable.
    the connection and enter an optional source path.
 4. Run **Scan now**, then open and download a representative linked Artifact.
 
+If an S3-compatible provider rejects a connection test, the warning beside the
+connection distinguishes explicitly expired credentials, rejected authentication,
+insufficient permissions and an invalid request signature. Renew credentials at
+the provider when needed, use **Edit** to replace them, then choose **Test** again.
+An authentication rejection alone does not establish that a token has expired.
+Checking access does not add periodic polling or sign you out of PrintStash.
+
 For Amazon S3, enter the real AWS region and leave the endpoint empty. For a
 self-hosted S3 endpoint, enter its URL; path-style addressing is selected by
 default. If the server requires virtual-host addressing, configure the profile

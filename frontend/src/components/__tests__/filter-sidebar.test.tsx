@@ -3,6 +3,8 @@
  * Counts describe the whole visible branch; pages describe only downloaded
  * rows. Global name search is independent of which branches are open.
  */
+import { LibraryStartupProvider } from "@/lib/library-startup-provider";
+import { useLibraryStartup } from "@/lib/library-startup-context";
 import { setLocale } from "@/lib/locale";
 import { queryKeys } from "@/lib/query-client";
 import { outlinerRoutes } from "@/test-support/outliner";
@@ -67,12 +69,14 @@ function renderSidebar({
   models = [],
   multipartModels = [],
   routes = {},
+  startup = false,
   ...over
 }: Partial<FilterSidebarProps> & {
   collections?: CollectionRead[];
   models?: OutlinerModelRead[];
   multipartModels?: MultipartModelListItem[];
   routes?: RouteTable;
+  startup?: boolean;
 } = {}) {
   const handlers = {
     onCollectionChange: vi.fn<FilterSidebarProps["onCollectionChange"]>(),
@@ -115,13 +119,23 @@ function renderSidebar({
       </>
     );
   }
-  const result = renderApp(<SidebarHarness />, {
-    routes: {
-      ...collectionTreeRoutes(collections),
-      ...outlinerRoutes(collections, models, multipartModels),
-      ...routes,
+  const result = renderApp(
+    startup ? (
+      <LibraryStartupProvider active>
+        <SidebarHarness />
+        <StartupReadout />
+      </LibraryStartupProvider>
+    ) : (
+      <SidebarHarness />
+    ),
+    {
+      routes: {
+        ...collectionTreeRoutes(collections),
+        ...outlinerRoutes(collections, models, multipartModels),
+        ...routes,
+      },
     },
-  });
+  );
   return { ...result, ...handlers };
 }
 
@@ -132,6 +146,18 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+/** Other panels can finish while the real sidebar settles its own startup part. */
+function StartupReadout() {
+  const startup = useLibraryStartup();
+  return (
+    <>
+      <button onClick={() => startup.settle("cards", "ready")}>Cards ready</button>
+      <button onClick={() => startup.settle("media", "ready")}>Media ready</button>
+      <output aria-label="Library startup">{startup.complete ? "ready" : "pending"}</output>
+    </>
+  );
+}
 
 /** The row a folder's name sits in: its expand, delete and badge controls live there. */
 async function folderRow(name: string): Promise<HTMLElement> {
@@ -243,6 +269,106 @@ describe("FilterSidebar", () => {
     }
   });
   describe("the folder tree", () => {
+    it.each([
+      { label: "folders only", models: [] },
+      {
+        label: "folders with root models",
+        models: [
+          aOutlinerModel({ id: 55, name: "Root model", collection: null, collection_id: null }),
+        ],
+      },
+    ])("hides every child when All Models is collapsed: $label", async ({ models }) => {
+      const user = userEvent.setup();
+      renderSidebar({ models });
+      await screen.findByText("Parts");
+      if (models.length > 0) await screen.findByText("Root model");
+      const root = within(await folderRow("All Models"));
+      await user.click(root.getByRole("button", { name: "Collapse" }));
+      expect(screen.queryByRole("button", { name: "Parts" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Toys" })).toBeNull();
+      expect(screen.queryByText("Root model")).toBeNull();
+      expect(root.getByRole("button", { name: "Expand" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(root.getByRole("button", { name: "All Models" })).toBeVisible();
+    });
+
+    it("restores the open branch when All Models is expanded again", async () => {
+      const user = userEvent.setup();
+      renderSidebar({ selectedCollection: "parts/brackets" });
+      await screen.findByText("Brackets");
+      const root = within(await folderRow("All Models"));
+      await user.click(root.getByRole("button", { name: "Collapse" }));
+      await user.click(root.getByRole("button", { name: "Expand" }));
+      expect(await screen.findByText("Brackets")).toBeVisible();
+      expect(screen.getByRole("status", { name: "Selected collection" })).toHaveTextContent(
+        "parts/brackets",
+      );
+    });
+
+    it("restores a collapsed All Models root without loading hidden branches", async () => {
+      sessionStorage.setItem("ps-filter-all-expanded", "false");
+      sessionStorage.setItem("ps-filter-expanded", JSON.stringify(["parts"]));
+      const view = renderSidebar();
+      const root = within(await folderRow("All Models"));
+      expect(await root.findByRole("button", { name: "Expand" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Parts" })).toBeNull();
+      expect(view.requestsWithMethod("POST")).toHaveLength(0);
+    });
+
+    it("retries a failed root read while All Models stays collapsed", async () => {
+      const user = userEvent.setup();
+      let failed = true;
+      sessionStorage.setItem("ps-filter-all-expanded", "false");
+      renderSidebar({
+        routes: {
+          "GET /api/v1/outliner/collections": () =>
+            failed
+              ? json({ detail: "unavailable" }, 503)
+              : json({
+                  items: [],
+                  next_cursor: null,
+                  parent_direct_entry_count: 0,
+                  revealed: null,
+                }),
+        },
+      });
+      await screen.findByText("Could not load this list.");
+      failed = false;
+      await user.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(screen.queryByText("Could not load this list.")).toBeNull());
+      expect(screen.getByRole("button", { name: "All Models" })).toBeVisible();
+      expect(sessionStorage.getItem("ps-filter-all-expanded")).toBe("false");
+    });
+
+    it("finishes navigation startup with a collapsed root", async () => {
+      const user = userEvent.setup();
+      sessionStorage.setItem("ps-filter-all-expanded", "false");
+      renderSidebar({ startup: true });
+      const root = within(await folderRow("All Models"));
+      await root.findByRole("button", { name: "Expand" });
+      await user.click(screen.getByRole("button", { name: "Cards ready" }));
+      await user.click(screen.getByRole("button", { name: "Media ready" }));
+      await waitFor(() =>
+        expect(screen.getByRole("status", { name: "Library startup" })).toHaveTextContent("ready"),
+      );
+    });
+
+    it("searches folders while All Models is collapsed", async () => {
+      const user = userEvent.setup();
+      sessionStorage.setItem("ps-filter-all-expanded", "false");
+      renderSidebar();
+      const root = within(await folderRow("All Models"));
+      await root.findByRole("button", { name: "Expand" });
+      const search = screen.getByPlaceholderText("Filter outliner...");
+      await user.type(search, "Brackets");
+      expect(await screen.findByText("Brackets")).toBeVisible();
+      await user.clear(search);
+      expect(await screen.findByRole("button", { name: "All Models" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Parts" })).toBeNull();
+      expect(screen.queryByText("Brackets")).toBeNull();
+    });
     it("lists the root folders", async () => {
       renderSidebar();
 

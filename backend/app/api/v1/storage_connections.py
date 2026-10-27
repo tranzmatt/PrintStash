@@ -29,6 +29,7 @@ from app.modules.sources.library_source import (
     source_from_connection,
 )
 from app.modules.storage import connection_edits
+from app.modules.storage.access_errors import raise_storage_access_error
 from app.modules.storage.storage_backend.contracts import StorageConfigurationError
 from app.modules.storage.storage_connections import (
     StorageConnectionConfigError,
@@ -181,6 +182,7 @@ def probe_connection(
             try:
                 result = destination_from_connection(row).probe()
             except (BackupDestinationError, StorageConfigurationError) as exc:
+                raise_storage_access_error(exc)
                 raise HTTPException(
                     status_code=409, detail="storage_connection_backup_probe_failed"
                 ) from exc

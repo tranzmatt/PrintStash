@@ -872,3 +872,113 @@ describe("Connection review lifetime", () => {
     expect(app.requestsWithMethod("PATCH")).toHaveLength(1);
   });
 });
+
+describe("RemoteStorageConnections access warnings", () => {
+  it.each([
+    {
+      label: "expired",
+      code: "storage_credentials_expired",
+      guidance: /credentials have expired/i,
+    },
+    {
+      label: "rejected",
+      code: "storage_authentication_failed",
+      guidance: /rejected authentication/i,
+    },
+    {
+      label: "denied",
+      code: "storage_access_denied",
+      guidance: /permission for the selected bucket/i,
+    },
+    { label: "signature", code: "storage_signature_invalid", guidance: /request signature/i },
+  ])(
+    "shows storage access guidance on the affected connection: $label",
+    async ({ code, guidance }) => {
+      const user = userEvent.setup();
+      renderApp(<RemoteStorageConnections />, {
+        routes: {
+          "GET /api/v1/storage/providers": json(storageProviderCatalogue),
+          "GET /api/v1/storage-connections": json([
+            aStorageConnection(),
+            aStorageConnection({ id: 2, name: "Unaffected storage" }),
+          ]),
+          "POST /api/v1/storage-connections/1/probe": json({ detail: code }, 409),
+        },
+      });
+      const row = (await screen.findByText("Workshop storage")).closest("li")!;
+      await user.click(within(row).getByRole("button", { name: "Test" }));
+      expect(await within(row).findByRole("alert")).toHaveTextContent(guidance);
+      expect(within(row).getByRole("button", { name: "Edit" })).toBeEnabled();
+      expect(
+        within(screen.getByText("Unaffected storage").closest("li")!).queryByRole("alert"),
+      ).toBeNull();
+    },
+  );
+
+  it("clears the warning after a successful recheck", async () => {
+    const user = userEvent.setup();
+    let reachable = false;
+    renderApp(<RemoteStorageConnections />, {
+      routes: {
+        "GET /api/v1/storage/providers": json(storageProviderCatalogue),
+        "GET /api/v1/storage-connections": json([aStorageConnection()]),
+        "POST /api/v1/storage-connections/1/probe": () =>
+          reachable ? json({ ok: true }) : json({ detail: "storage_credentials_expired" }, 409),
+      },
+    });
+    const row = (await screen.findByText("Workshop storage")).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Test" }));
+    await within(row).findByRole("alert");
+    reachable = true;
+    await user.click(within(row).getByRole("button", { name: "Test" }));
+    expect(await screen.findByText("Workshop storage is reachable.")).toBeVisible();
+    expect(within(row).queryByRole("alert")).toBeNull();
+  });
+
+  it("retires the warning after connection settings change", async () => {
+    const user = userEvent.setup();
+    renderApp(<RemoteStorageConnections />, {
+      routes: {
+        "GET /api/v1/storage/providers": json(storageProviderCatalogue),
+        "GET /api/v1/storage-connections": json([aStorageConnection()]),
+        "POST /api/v1/storage-connections/1/probe": json(
+          { detail: "storage_credentials_expired" },
+          409,
+        ),
+        "PATCH /api/v1/storage-connections/1": json(aStorageConnection({ edit_version: 2 })),
+      },
+    });
+    const row = (await screen.findByText("Workshop storage")).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Test" }));
+    await within(row).findByRole("alert");
+    await user.click(within(row).getByRole("button", { name: "Edit" }));
+    await user.type(screen.getByLabelText("Secret key"), "FakeReplacementSecret");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(within(row).queryByRole("alert")).toBeNull());
+  });
+
+  it("discards a late probe failure after logout", async () => {
+    const user = userEvent.setup();
+    let finish: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const view = renderApp(<RemoteStorageConnections />, {
+      routes: {
+        "GET /api/v1/storage/providers": json(storageProviderCatalogue),
+        "GET /api/v1/storage-connections": json([aStorageConnection()]),
+        "POST /api/v1/storage-connections/1/probe": () => pending,
+      },
+    });
+    const row = (await screen.findByText("Workshop storage")).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Test" }));
+    await waitFor(() => expect(view.requestsWithMethod("POST")).toHaveLength(1));
+    await act(async () => {
+      clearLogin();
+      finish(json({ detail: "storage_credentials_expired" }, 409));
+      await pending;
+    });
+    expect(screen.queryByText(/credentials have expired/i)).toBeNull();
+    expect(screen.getByRole("button", { name: "Save connection" })).toBeDisabled();
+  });
+});
