@@ -117,9 +117,9 @@ export function FilesTab({
             <article
               key={f.id}
               aria-label={f.original_filename}
-              className="min-w-0 space-y-3 p-3 border border-outline-variant rounded hover:border-primary hover:shadow-sm transition-[border-color,box-shadow] group bg-surface"
+              className="@container/source-file min-w-0 space-y-3 p-3 border border-outline-variant rounded hover:border-primary hover:shadow-sm transition-[border-color,box-shadow] group bg-surface"
             >
-              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+              <div className="grid min-w-0 grid-cols-1 items-start gap-2 @sm/source-file:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="flex items-start gap-3 min-w-0">
                   <FileText className="h-5 w-5 flex-shrink-0 text-outline group-hover:text-primary" />
                   <div className="min-w-0">
@@ -145,7 +145,7 @@ export function FilesTab({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-0.5 flex-shrink-0">
+                <div className="flex items-center justify-self-end gap-0.5 flex-shrink-0">
                   {SLICEABLE_TYPES.has(f.file_type) && (
                     <SlicerOpenButton fileId={f.id} fileType={f.file_type} />
                   )}

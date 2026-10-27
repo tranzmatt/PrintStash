@@ -230,6 +230,14 @@
     color var(--duration-fast) var(--ease-out) !important;
 }
 
+/* New thumbnail bytes fade even when decoding finishes before the first paint.
+   Reused cache entries omit this class, so revisiting never hides an image. */
+@starting-style {
+  .thumbnail-reveal {
+    opacity: 0;
+  }
+}
+
 @keyframes theme-icon-in {
   from {
     opacity: 0;

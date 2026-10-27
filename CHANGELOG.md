@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- New library thumbnails crossfade from their placeholder after decoding, while cached images stay visible on revisits without another download.
+- Source File retry actions have visible button boundaries. Narrow cards give filenames more room, and mobile 3D toolbars no longer cover loading or error messages.
+
 - Model details retain storage failure guidance in the 3D viewer and Source Files. Long filenames, error explanations and retry controls fit narrow panels.
 - The Model Similar tab uses the same section headings, surfaces and compact empty states as the other detail tabs.
 

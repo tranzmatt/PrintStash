@@ -1024,52 +1024,57 @@ function ModelDetailPresentation({
         <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-y-auto md:overflow-hidden pb-24 md:pb-0">
           {/* Left: 3D Model Preview */}
           <div
-            className="relative m-2 flex min-h-80 flex-1 items-center justify-center overflow-hidden rounded border-b border-outline-variant bg-surface-container-low md:m-4 md:min-h-0 md:border-b-0 md:border-r"
+            role="region"
+            aria-label={uiText("Preview")}
+            className="relative m-2 flex min-h-80 flex-none flex-col items-center justify-center overflow-hidden rounded border-b border-outline-variant bg-surface-container-low md:m-4 md:min-h-0 md:flex-1 md:border-b-0 md:border-r"
             style={{ boxShadow: "inset 0 0 0 1px var(--outline-variant)" }}
           >
-            {viewerMode === "gcode" && hasGcode ? (
-              <Suspense fallback={ViewerFallback}>
-                <GcodeViewer
-                  url={`/api/v1/files/${(recommendedGcode ?? gcodeFiles[gcodeFiles.length - 1])!.id}/toolpath`}
-                  printerBedMm={getBedSize(meta?.printer_model)}
-                  screenshotName={model.slug || model.name}
+            <div className="relative flex min-h-64 w-full flex-1 items-center justify-center md:min-h-0">
+              {viewerMode === "gcode" && hasGcode ? (
+                <Suspense fallback={ViewerFallback}>
+                  <GcodeViewer
+                    url={`/api/v1/files/${(recommendedGcode ?? gcodeFiles[gcodeFiles.length - 1])!.id}/toolpath`}
+                    printerBedMm={getBedSize(meta?.printer_model)}
+                    screenshotName={model.slug || model.name}
+                  />
+                </Suspense>
+              ) : meshFile ? (
+                <Suspense key={meshFile.id} fallback={ViewerFallback}>
+                  <STLViewer
+                    url={getAssetUrl(`/api/v1/files/${meshFile.id}/stl`)}
+                    modelId={model.id}
+                    onControlsReady={(api) => {
+                      viewerControls.current = api;
+                    }}
+                    onReadyChange={setViewerReady}
+                    displayMode={displayMode}
+                    showGrid={showGrid}
+                    screenshotName={model.slug || model.name}
+                  />
+                </Suspense>
+              ) : thumbUrl ? (
+                <img
+                  src={thumbUrl}
+                  alt={model.name}
+                  className="max-w-full max-h-full object-contain"
                 />
-              </Suspense>
-            ) : meshFile ? (
-              <Suspense key={meshFile.id} fallback={ViewerFallback}>
-                <STLViewer
-                  url={getAssetUrl(`/api/v1/files/${meshFile.id}/stl`)}
-                  modelId={model.id}
-                  onControlsReady={(api) => {
-                    viewerControls.current = api;
-                  }}
-                  onReadyChange={setViewerReady}
-                  displayMode={displayMode}
-                  showGrid={showGrid}
-                  screenshotName={model.slug || model.name}
-                />
-              </Suspense>
-            ) : thumbUrl ? (
-              <img
-                src={thumbUrl}
-                alt={model.name}
-                className="max-w-full max-h-full object-contain"
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-2 text-on-surface-variant">
-                <FileText className="h-20 w-20 opacity-20" />
-                {sourceFiles.some((file) => file.file_type === "dxf") && (
-                  <span>
-                    {uiText("DXF preview is not supported yet. Download the original file below.")}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Viewer toolbar and context stay in one responsive overlay so
-                neither can cover the other on narrow touch screens. */}
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-2 text-on-surface-variant">
+                  <FileText className="h-20 w-20 opacity-20" />
+                  {sourceFiles.some((file) => file.file_type === "dxf") && (
+                    <span>
+                      {uiText(
+                        "DXF preview is not supported yet. Download the original file below.",
+                      )}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* On phones the toolbar owns space above the preview. Desktop
+                keeps the overlay without taking space from the 3D canvas. */}
             {(meshFile || hasGcode) && (
-              <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex min-w-0 flex-col gap-2 sm:inset-x-4 sm:top-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="pointer-events-none relative order-first m-3 flex min-w-0 self-stretch flex-col gap-2 md:absolute md:inset-x-4 md:top-4 md:z-10 md:m-0 xl:flex-row xl:items-start xl:justify-between">
                 <ViewerToolbar
                   displayMode={displayMode}
                   setDisplayMode={setDisplayMode}
@@ -1122,7 +1127,7 @@ function ModelDetailPresentation({
             )}
 
             {/* 3D Viewer Controls */}
-            {viewerMode === "model" && meshFile && (
+            {viewerMode === "model" && meshFile && viewerReady && (
               <div className="absolute bottom-4 right-4 flex flex-col gap-1 z-10">
                 <div className="flex bg-surface-container-lowest/90 backdrop-blur border border-outline-variant rounded overflow-hidden shadow-sm">
                   <button
@@ -1151,20 +1156,24 @@ function ModelDetailPresentation({
             )}
 
             {/* Dimensions overlay (bottom-left) */}
-            {viewerMode === "model" && meta?.bbox_x_mm && meta?.bbox_y_mm && meta?.bbox_z_mm && (
-              <div className="absolute bottom-4 left-4 z-10">
-                <div className="bg-surface-container-lowest/90 backdrop-blur border border-outline-variant rounded px-2 py-1 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="font-mono text-[13px] text-on-surface">
-                    {uiText("{value1}×{value2}×{value3} mm", {
-                      value1: String(meta.bbox_x_mm ?? ""),
-                      value2: String(meta.bbox_y_mm ?? ""),
-                      value3: String(meta.bbox_z_mm ?? ""),
-                    })}
-                  </span>
+            {viewerMode === "model" &&
+              viewerReady &&
+              meta?.bbox_x_mm &&
+              meta?.bbox_y_mm &&
+              meta?.bbox_z_mm && (
+                <div className="absolute bottom-4 left-4 z-10">
+                  <div className="bg-surface-container-lowest/90 backdrop-blur border border-outline-variant rounded px-2 py-1 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="font-mono text-[13px] text-on-surface">
+                      {uiText("{value1}×{value2}×{value3} mm", {
+                        value1: String(meta.bbox_x_mm ?? ""),
+                        value2: String(meta.bbox_y_mm ?? ""),
+                        value3: String(meta.bbox_z_mm ?? ""),
+                      })}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
 
           {/* Right: Settings & Files Panel */}

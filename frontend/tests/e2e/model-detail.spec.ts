@@ -20,12 +20,12 @@ import { expect, test } from "@playwright/test";
 
 import { collectPageProblems, useMockApi } from "./_setup";
 import type { ModelRead } from "../../src/types/models";
-import { aDerivative, aModel, aRevision } from "../../src/test-support/factories";
+import { aDerivative, aMetadata, aModel, aRevision } from "../../src/test-support/factories";
 
 useMockApi();
 
 test.describe("model detail route", () => {
-  for (const width of [320, 1920]) {
+  for (const width of [320, 390, 1920]) {
     test(`keeps failed source controls inside the details panel at ${width}px`, async ({
       page,
     }) => {
@@ -94,6 +94,15 @@ test.describe("model detail route", () => {
         ).toBe(true);
       }
       await expect(card.getByRole("button", { name: /^Retry / })).toHaveCount(3);
+      for (const retry of await card.getByRole("button", { name: /^Retry / }).all()) {
+        const style = await retry.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { border: parseFloat(style.borderTopWidth), background: style.backgroundColor };
+        });
+        expect(style.border).toBeGreaterThan(0);
+        expect(style.background).not.toBe("rgba(0, 0, 0, 0)");
+      }
+      await card.screenshot({ path: test.info().outputPath(`source-files-${width}.png`) });
       expect(await pane.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
         true,
       );
@@ -430,12 +439,92 @@ test.describe("model detail route", () => {
       .screenshot({ path: test.info().outputPath("derivative-failures.png") });
   });
 
+  for (const width of [320, 390]) {
+    test(`keeps a failed preview readable at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.route("**/api/v1/files/*/stl", (route) =>
+        route.fulfill({ status: 422, json: { detail: "storage_authentication_failed" } }),
+      );
+      await page.goto("/models/1");
+      const panel = page.getByRole("region", { name: "Preview", exact: true });
+      const cause = panel.getByText(/provider rejected authentication/);
+      await expect(cause).toBeVisible();
+      await cause.scrollIntoViewIfNeeded();
+      const labelBox = await panel
+        .getByText(/Viewing:/)
+        .locator("..")
+        .boundingBox();
+      const statusBox = await panel.getByRole("status").boundingBox();
+      expect(labelBox).not.toBeNull();
+      expect(statusBox).not.toBeNull();
+      expect(statusBox!.y).toBeGreaterThanOrEqual(labelBox!.y + labelBox!.height);
+      expect(
+        await cause.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return hit === element || element.contains(hit);
+        }),
+      ).toBe(true);
+      await expect(panel.getByRole("button", { name: "Solid", exact: true })).toBeDisabled();
+      await expect(panel.getByRole("button", { name: "Fit to view", exact: true })).toBeDisabled();
+      await expect(panel.getByTitle("Zoom in")).toHaveCount(0);
+      expect(
+        await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      const panelBox = await panel.boundingBox();
+      for (const content of [
+        panel.getByRole("status"),
+        ...(await panel.getByRole("button").all()),
+      ]) {
+        const box = await content.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.y).toBeGreaterThanOrEqual(panelBox!.y);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(panelBox!.y + panelBox!.height);
+      }
+      await panel.screenshot({ path: test.info().outputPath(`failed-preview-${width}.png`) });
+    });
+  }
+
+  test("shows mesh overlays only for a ready 3D preview", async ({ page }) => {
+    await page.route("**/api/v1/models/1", (route) =>
+      route.fulfill({
+        json: aModel({
+          files: [
+            aRevision({ id: 1, file_type: "stl", original_filename: "cube.stl" }),
+            aRevision({
+              id: 2,
+              file_type: "gcode",
+              metadata: aMetadata({ bbox_x_mm: 10, bbox_y_mm: 20, bbox_z_mm: 30 }),
+            }),
+          ],
+        }),
+      }),
+    );
+    await page.route("**/api/v1/files/2/toolpath", (route) =>
+      route.fulfill({ status: 202, json: { state: "queued" } }),
+    );
+    await page.goto("/models/1");
+    const panel = page.getByRole("region", { name: "Preview", exact: true });
+    await expect(panel.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
+    await expect(panel.getByTitle("Reset view")).toBeVisible();
+    await expect(panel.getByText("10×20×30 mm", { exact: true })).toBeVisible();
+    await panel.getByRole("button", { name: "GCode", exact: true }).click();
+    await expect(panel.getByTitle("Reset view")).toHaveCount(0);
+    await expect(panel.getByText("10×20×30 mm", { exact: true })).toHaveCount(0);
+    await panel.getByRole("button", { name: "3D", exact: true }).click();
+    await expect(panel.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
+    await expect(panel.getByTitle("Reset view")).toBeVisible();
+    await expect(panel.getByText("10×20×30 mm", { exact: true })).toBeVisible();
+  });
+
   test("keeps viewer controls reachable inside the phone preview", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
 
     await page.goto("/models/1");
 
-    const preview = page.getByLabel("3D model preview");
+    const preview = page.getByRole("region", { name: "Preview", exact: true });
+    await page.getByRole("button", { name: "Screenshot", exact: true }).waitFor();
+    await expect(page.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
     const previewBox = await preview.boundingBox();
     const controls = [
       page.getByRole("button", { name: "Fit to view" }),
@@ -463,6 +552,7 @@ test.describe("model detail route", () => {
 
     await page.goto("/models/1");
 
+    await expect(page.getByRole("button", { name: "Screenshot", exact: true })).toBeEnabled();
     const viewingLabel = page.getByText(/Viewing:/).locator("..");
     await expect(viewingLabel).toBeVisible();
     const modeControls = [

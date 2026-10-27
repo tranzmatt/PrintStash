@@ -144,8 +144,8 @@ export function DerivativeStatus({
                     <Button
                       key={item.kind}
                       size="sm"
-                      variant="ghost"
-                      className="h-auto min-h-8 max-w-full whitespace-normal text-left"
+                      variant="outline"
+                      className="h-auto min-h-11 max-w-full whitespace-normal text-left sm:min-h-8"
                       loading={retrying === item.kind}
                       onClick={() => void retry(item.kind)}
                     >
