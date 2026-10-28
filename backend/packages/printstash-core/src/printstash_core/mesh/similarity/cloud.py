@@ -9,8 +9,8 @@ mean symmetric distance is divided by each cloud's own sampling spacing.
 
 Independent samplings of one surface score about 1 whatever its area. Every
 labelled derivative in the similarity corpus (mirrored, rescaled, rotated,
-re-exported, subdivided and repaired copies) scores at most 1.04, and every pair
-the verifier accepted in a 200-design synthetic library at most 1.14; in both,
+re-exported, subdivided and repaired copies) scores at most 1.02, and every pair
+the verifier accepted in a 200-design synthetic library at most 1.13; in both,
 no pair scoring above that produced evidence. The rejection score leaves a
 margin above the larger. A pair below it is verified exactly as before, so a
 cloud never creates or changes evidence.
@@ -40,6 +40,7 @@ _STARTS_PER_PARITY = 3
 _ICP_STEPS = 12
 _CONVERGED = 1e-4
 _RANK_STRIDE = 4
+_MIN_SPACING = 1e-6
 _FLOATS = CLOUD_POINTS * 3 + 9 + 1
 CLOUD_BYTES = _FLOATS * 4
 
@@ -89,7 +90,8 @@ def surface_cloud(surface: Surface) -> SurfaceCloud:
         )
         / 2
     )
-    if not spacing > 0:
+    # Below float32 resolution of radius-scaled points the spacing is noise.
+    if not spacing > _MIN_SPACING:
         raise GeometryError("degenerate_surface_cloud")
     return SurfaceCloud(kept, surface.frame.astype("<f4").astype(np.float64), spacing)
 
@@ -143,7 +145,7 @@ def alignment_score(left: SurfaceCloud, right: SurfaceCloud) -> float:
                 moved = right.points @ rotation + offset
                 distances, nearest = left_index.query(moved, workers=1)
                 error = float(distances.mean())
-                if previous - error <= _CONVERGED * previous:
+                if error >= previous * (1 - _CONVERGED):
                     break
                 previous = error
                 step, shift = _kabsch(moved, left.points[nearest])

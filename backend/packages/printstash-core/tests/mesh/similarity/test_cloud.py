@@ -93,6 +93,15 @@ class TestSurfaceCloud:
                 cloud.SurfaceCloud(points, valid.frame, valid.spacing).encode()
             )
 
+    def test_refuses_samplings_without_spacing(self, tetra, monkeypatch):
+        # Two independent samplings of a real surface never coincide.
+        monkeypatch.setattr(
+            cloud, "sample_surface", lambda surface, count, seed: np.ones((count, 3))
+        )
+
+        with pytest.raises(GeometryError, match="degenerate_surface_cloud"):
+            surface_of(*tetra)
+
     def test_is_reproducible(self, tetra):
         assert surface_of(*tetra).encode() == surface_of(*tetra).encode()
 
