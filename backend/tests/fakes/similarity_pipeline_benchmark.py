@@ -82,10 +82,59 @@ def _corpus(kind: str, load):
     return corpus
 
 
+def _synthetic(count: int):
+    """Distinct procedural designs; one in ten also appears transformed."""
+    import numpy as np
+    import trimesh
+
+    rng = np.random.default_rng(154)
+    makers = (
+        lambda: trimesh.convex.convex_hull(
+            rng.normal(size=(int(rng.integers(12, 60)), 3))
+        ),
+        lambda: trimesh.creation.cylinder(
+            radius=float(rng.uniform(0.3, 2)),
+            height=float(rng.uniform(0.5, 4)),
+            sections=int(rng.integers(16, 96)),
+        ),
+        lambda: trimesh.creation.capsule(
+            height=float(rng.uniform(0.5, 4)),
+            radius=float(rng.uniform(0.3, 1.5)),
+        ),
+        lambda: trimesh.creation.annulus(
+            r_min=float(rng.uniform(0.2, 0.8)),
+            r_max=1.0,
+            height=float(rng.uniform(0.1, 1.5)),
+            sections=int(rng.integers(24, 96)),
+        ),
+        lambda: trimesh.creation.box(rng.uniform(0.2, 3, size=3)),
+    )
+    corpus, expected = [], set()
+    designs = count * 10 // 11
+    for index in range(designs):
+        mesh = makers[index % len(makers)]()
+        mesh.apply_scale(rng.uniform(0.5, 2, size=3))
+        mesh = mesh.subdivide() if len(mesh.faces) < 400 else mesh
+        name = f"design-{index:04d}"
+        corpus.append((name, mesh))
+        if index % 10 == 0 and len(corpus) < count:
+            variant = mesh.copy()
+            variant.apply_transform(
+                trimesh.transformations.random_rotation_matrix(rng.random(3))
+            )
+            variant.apply_scale(float(rng.choice([1.0, 2.0, 25.4])))
+            corpus.append((f"{name}-variant", variant))
+            expected.add((name, f"{name}-variant"))
+    return corpus[:count], expected
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--corpus", choices=("small", "wide"), default="small")
+    parser.add_argument(
+        "--corpus", choices=("small", "wide", "synthetic"), default="small"
+    )
+    parser.add_argument("--count", type=int, default=200)
     args = parser.parse_args()
     if args.root.exists():
         parser.error("root must be a new directory; existing results are preserved")
@@ -115,10 +164,16 @@ def main() -> None:
     configure_native_resources(args.root / "data")
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
-    corpus = _corpus(
-        args.corpus,
-        lambda path: _load(path, path.suffix[1:], triangle_cap=2_000_000).whole_mesh,
-    )
+    expected = None
+    if args.corpus == "synthetic":
+        corpus, expected = _synthetic(args.count)
+    else:
+        corpus = _corpus(
+            args.corpus,
+            lambda path: (
+                _load(path, path.suffix[1:], triangle_cap=2_000_000).whole_mesh
+            ),
+        )
     with Session(engine) as session:
         actor = build_user(session, superuser=True)
         configuration.update_settings(session, actor, {"enabled": True})
@@ -222,6 +277,18 @@ def main() -> None:
     print(json.dumps(report, indent=2), flush=True)
     if args.corpus == "small":
         assert found == SMALL_EXPECTED, found
+    if expected is not None:
+        pairs = {(a, b) for a, b, _ in found}
+        print(
+            json.dumps(
+                {
+                    "expected_found": len(expected & pairs),
+                    "expected": len(expected),
+                    "extra": sorted(pairs - expected)[:20],
+                }
+            ),
+            flush=True,
+        )
 
 
 if __name__ == "__main__":
