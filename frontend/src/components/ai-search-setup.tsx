@@ -594,7 +594,7 @@ export function AiSearchSetup({
                               ? choices.map((model) => (
                                   <label
                                     key={model.id}
-                                    className={`flex cursor-pointer items-start gap-2 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${local?.id === model.id ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
+                                    className={`flex cursor-action items-start gap-2 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${local?.id === model.id ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
                                   >
                                     <input
                                       type="radio"
@@ -626,7 +626,7 @@ export function AiSearchSetup({
                               : servers.map((server) => (
                                   <label
                                     key={server.id}
-                                    className={`flex cursor-pointer items-start gap-2 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${remote?.id === server.id ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
+                                    className={`flex cursor-action items-start gap-2 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${remote?.id === server.id ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
                                   >
                                     <input
                                       type="radio"

@@ -40,7 +40,7 @@ import { Localized } from "@/components/ui/localized";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 
 const selectClassName =
-  "h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-disabled disabled:opacity-50";
 
 /** Decode a `<select>` value into the routing strategy it names, or nothing. */
 function parseRoutingStrategy(value: string): RoutingStrategy | null {
@@ -684,7 +684,7 @@ export function SendToButtons({
                           selected
                             ? "border-primary bg-primary-soft"
                             : "border-border bg-background hover:bg-popover-hover"
-                        } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                        } ${disabled ? "cursor-disabled opacity-60" : "cursor-action"}`}
                       >
                         <Checkbox
                           checked={selected}

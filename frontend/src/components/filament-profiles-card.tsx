@@ -1185,7 +1185,7 @@ export function FilamentProfilesCard() {
                                     value1: String(profile.id),
                                   })}
                                   placeholder={uiText("Optional")}
-                                  className="min-h-16 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="min-h-16 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-disabled disabled:opacity-50"
                                 />
                               </label>
                               <div className="col-span-full flex items-center gap-2">
@@ -1451,7 +1451,7 @@ export function FilamentProfilesCard() {
                                     value1: String(profile.id),
                                   })}
                                   placeholder={uiText("Optional")}
-                                  className="min-h-16 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="min-h-16 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-disabled disabled:opacity-50"
                                 />
                               </label>
                               <div className="col-span-full flex items-center gap-2">

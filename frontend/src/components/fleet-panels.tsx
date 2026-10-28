@@ -702,7 +702,7 @@ function QueueSection({
               row(entries[0].job, entries[0].index)
             ) : (
               <details key={key} open className="border-b border-border last:border-b-0">
-                <summary className="cursor-pointer bg-muted/30 px-4 py-3 text-sm font-semibold text-foreground">
+                <summary className="cursor-action bg-muted/30 px-4 py-3 text-sm font-semibold text-foreground">
                   {uiText("Batch #{value1} · {value2} copies", {
                     value1: String(entries[0].job.batch_id ?? ""),
                     value2: String(entries.length ?? ""),

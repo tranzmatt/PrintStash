@@ -291,7 +291,7 @@ export default function GettingStartedPage() {
           <footer className="border-t border-border pt-5">
             {models.length ? (
               <details>
-                <summary className="cursor-pointer py-2 text-sm text-muted-foreground">
+                <summary className="cursor-action py-2 text-sm text-muted-foreground">
                   {t("setup.nextOptional")}
                 </summary>
                 <div className="mt-3 flex flex-col items-start gap-4 text-sm">

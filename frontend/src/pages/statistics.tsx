@@ -697,7 +697,7 @@ export default function StatisticsPage() {
               {WIDGETS.map((widget) => (
                 <label
                   key={widget.id}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-popover-hover"
+                  className="flex cursor-action items-center gap-2 rounded px-2 py-2 text-sm hover:bg-popover-hover"
                 >
                   <input
                     type="checkbox"

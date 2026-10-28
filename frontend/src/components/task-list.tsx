@@ -208,7 +208,7 @@ function TaskRow({ task, onNavigate }: { task: TaskItem; onNavigate?: () => void
             )}
           {!!task.failedItems?.length && (
             <details className="mt-2 text-xs text-muted-foreground">
-              <summary className="flex cursor-pointer list-none items-center gap-1 font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <summary className="flex cursor-action list-none items-center gap-1 font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <ChevronDown className="h-3.5 w-3.5" />
                 {uiText(" Failed item details")}
               </summary>
@@ -375,7 +375,7 @@ function UploadControls({ task }: { task: TaskItem }) {
           {uiText("Pause upload")}
         </button>
       ) : (
-        <label className="cursor-pointer rounded border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-within:outline-none focus-within:ring-2 focus-within:ring-ring">
+        <label className="cursor-action rounded border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-within:outline-none focus-within:ring-2 focus-within:ring-ring">
           {uiText("Resume upload")}
           <input
             type="file"

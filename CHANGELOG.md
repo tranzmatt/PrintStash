@@ -9,6 +9,10 @@
 
 ### Fixed
 
+- Library actions for Similar models, New collection and Select are visible beside Filters in the library toolbar, wrapping within the same area on narrow screens.
+
+- Buttons, links and clickable controls consistently show the arrow cursor, using shared action and disabled cursor tokens. Text editing, dragging and resizing retain their appropriate cursors.
+- Settings → Imports links directly to the published PrintStash Chrome extension, alongside its source instructions.
 - Multipart Models with uploaded covers can be deleted on Unraid/FUSE and other Guarded storage. Removing or replacing a cover also works: PrintStash verifies its recorded content hash, retires the reference, and retains the image bytes when safe physical deletion is unavailable. Unverifiable ownership returns storage guidance instead of a generic server error.
 
 - Detail tabs keep keyboard focus through route changes, mobile Library sort and display menus stay open, and touch previews reserve enough space for interaction.

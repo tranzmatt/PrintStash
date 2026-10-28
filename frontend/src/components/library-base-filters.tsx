@@ -92,7 +92,7 @@ export function LibraryBaseFilters({
             {visibleTags.map((tag) => (
               <label
                 key={tag.id}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
+                className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
               >
                 <Checkbox
                   ariaLabel={tag.name}

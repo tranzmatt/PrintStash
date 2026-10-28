@@ -215,7 +215,7 @@ function PolicyForm({ initial, blocked }: { initial: AuditPolicy; blocked: boole
               </label>
             )}
             <details className="border-t border-border pt-3">
-              <summary className="cursor-pointer text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <summary className="cursor-action text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {t("auditSchedule.advanced")}
               </summary>
               <div className="mt-4 space-y-3">

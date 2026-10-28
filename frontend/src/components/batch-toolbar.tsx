@@ -239,7 +239,7 @@ function MoveDialog({
             onConfirm(target.path, target.id);
           }}
           disabled={busy || target === null}
-          className="flex-1 h-9 rounded bg-primary text-primary-foreground text-sm font-mono uppercase tracking-wider hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 h-9 rounded bg-primary text-primary-foreground text-sm font-mono uppercase tracking-wider hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-disabled"
         >
           {uiText("Move here")}
         </button>
@@ -387,7 +387,7 @@ function TagDialog({
             reset();
           }}
           disabled={busy || (add.length === 0 && remove.length === 0)}
-          className="flex-1 h-9 rounded bg-primary text-primary-foreground text-sm font-mono uppercase tracking-wider hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 h-9 rounded bg-primary text-primary-foreground text-sm font-mono uppercase tracking-wider hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-disabled"
         >
           {uiText("Apply")}
         </button>

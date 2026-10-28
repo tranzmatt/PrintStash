@@ -419,7 +419,7 @@ export function VaultMigrationPanel() {
                   }
                 />
                 <details className="border-t pt-4">
-                  <summary className="cursor-pointer text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <summary className="cursor-action text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {t("migration.policy")} · {t("similarity.advanced")}
                   </summary>
                   <fieldset className="mt-3 space-y-3">
@@ -601,7 +601,7 @@ export function VaultMigrationPanel() {
                   ))}
                   {run.phase_history.length > 0 && (
                     <details className="text-xs">
-                      <summary className="cursor-pointer font-medium">
+                      <summary className="cursor-action font-medium">
                         {t("migration.timeline")}
                       </summary>
                       <ol className="mt-2 space-y-1">
@@ -618,7 +618,7 @@ export function VaultMigrationPanel() {
                   )}
                   {report?.id === run.id && report.resource_kind_totals.length > 0 && (
                     <details className="text-xs">
-                      <summary className="cursor-pointer font-medium">
+                      <summary className="cursor-action font-medium">
                         {t("migration.resourceKinds")}
                       </summary>
                       <ul className="mt-2 space-y-1">

@@ -521,7 +521,7 @@ function BackgroundWorkView({
           )}
 
           <details ref={advancedRef} className="group">
-            <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-5">
+            <summary className="flex cursor-action list-none items-start gap-3 px-4 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-5">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
                 <SlidersHorizontal className="h-4 w-4 text-muted-foreground" aria-hidden />
               </span>

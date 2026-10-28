@@ -40,7 +40,7 @@ export function ViewerToolbar({
   const cluster =
     "flex bg-surface-container-lowest/90 backdrop-blur border border-outline-variant rounded overflow-hidden shadow-sm";
   const iconBtn =
-    "disabled:cursor-not-allowed disabled:opacity-50 flex h-11 w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary sm:h-9 sm:w-9";
+    "disabled:cursor-disabled disabled:opacity-50 flex h-11 w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary sm:h-9 sm:w-9";
 
   return (
     <Localized>
@@ -82,7 +82,7 @@ export function ViewerToolbar({
                   key={m}
                   disabled={!viewerReady}
                   onClick={() => setDisplayMode(m)}
-                  className={`disabled:cursor-not-allowed disabled:opacity-50 h-11 px-2.5 font-mono text-2xs uppercase tracking-wider transition-colors sm:h-9 ${
+                  className={`disabled:cursor-disabled disabled:opacity-50 h-11 px-2.5 font-mono text-2xs uppercase tracking-wider transition-colors sm:h-9 ${
                     displayMode === m
                       ? "bg-accent text-accent-foreground"
                       : "text-on-surface-variant hover:bg-surface-container-high"
@@ -117,7 +117,7 @@ export function ViewerToolbar({
                   }
                 }}
                 disabled={!viewerReady}
-                className={`${iconBtn} border-r border-outline-variant disabled:cursor-not-allowed disabled:opacity-50`}
+                className={`${iconBtn} border-r border-outline-variant disabled:cursor-disabled disabled:opacity-50`}
                 title={uiText("Screenshot")}
                 aria-label={uiText("Screenshot")}
               >

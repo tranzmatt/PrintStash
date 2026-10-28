@@ -435,7 +435,7 @@ export default function InboxDetailPage({ api = defaultInboxDetailApi }: { api?:
                   {choices.map((file) => (
                     <label
                       key={file.id}
-                      className="flex cursor-pointer items-center gap-3 px-5 py-4 hover:bg-muted/50"
+                      className="flex cursor-action items-center gap-3 px-5 py-4 hover:bg-muted/50"
                     >
                       <Checkbox
                         checked={selected.includes(file.id)}

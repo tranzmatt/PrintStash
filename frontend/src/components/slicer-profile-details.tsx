@@ -97,7 +97,7 @@ function Variant({ variant, index }: { variant: SettingsVariant; index: number }
                 </p>
                 {Object.keys(file.settings.process).length > 0 && (
                   <details className="text-sm">
-                    <summary className="cursor-pointer py-1">
+                    <summary className="cursor-action py-1">
                       {uiText("profiles.fileProcess")}
                     </summary>
                     <SettingsTable settings={file.settings.process} />
