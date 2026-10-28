@@ -115,6 +115,8 @@ test.describe("search clarity", () => {
     ]) {
       await page.setViewportSize(viewport);
       await page.goto("/models/1");
+      // The dev-only query launcher overlaps the last tab on narrow screens.
+      await page.addStyleTag({ content: ".tsqd-parent-container{display:none!important}" });
       const tabs = page.getByTestId("model-detail-sidebar").getByRole("tablist");
       const overview = tabs.getByRole("tab", { name: "Overview", exact: true });
       const similar = tabs.getByRole("tab", { name: "Similar", exact: true });
@@ -171,7 +173,8 @@ test.describe("search clarity", () => {
     const libraryTools = page.getByRole("button", { name: "Library tools", exact: true });
     await expect(libraryTools).toHaveAttribute("aria-expanded", "false");
     await libraryTools.click();
-    await expect(page.getByRole("region", { name: "Library tools" })).toBeVisible();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "New collection", exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "New multipart set", exact: true }),
     ).toBeVisible();
@@ -182,8 +185,8 @@ test.describe("search clarity", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Library tools", exact: true }).click();
     await page
-      .getByRole("region", { name: "Library tools" })
-      .getByRole("link", {
+      .getByRole("menu")
+      .getByRole("menuitem", {
         name: "Similar models",
       })
       .click();

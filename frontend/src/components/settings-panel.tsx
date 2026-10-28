@@ -2697,6 +2697,7 @@ export function SettingsPanel() {
                             open={accessPickerOpen}
                             onOpenChange={setAccessPickerOpen}
                             role="dialog"
+                            aria-label={uiText("Collection access")}
                             align="start"
                             portal
                             contentClassName="w-80 max-w-[90vw] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg"

@@ -1034,7 +1034,7 @@ function ModelDetailPresentation({
             className="relative m-2 flex min-h-80 flex-none flex-col items-center justify-center overflow-hidden rounded border-b border-outline-variant bg-surface-container-low md:m-4 md:min-h-0 md:flex-1 md:border-b-0 md:border-r"
             style={{ boxShadow: "inset 0 0 0 1px var(--outline-variant)" }}
           >
-            <div className="relative flex min-h-64 w-full flex-1 items-center justify-center md:min-h-0">
+            <div className="relative flex min-h-80 w-full flex-1 items-center justify-center md:min-h-0">
               {viewerMode === "gcode" && hasGcode ? (
                 <Suspense fallback={ViewerFallback}>
                   <GcodeViewer

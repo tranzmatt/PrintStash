@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- Detail tabs keep keyboard focus through route changes, mobile Library sort and display menus stay open, and touch previews reserve enough space for interaction.
+
 - Keep the ZIP and multipart model browsers steady while changing folders, with coordinated content loading, directional transitions, and reduced-motion support.
 
 - New multipart sets let you browse collections, search and select Models before creating the set. The explorer shares search, breadcrumbs and selection cards with the ZIP importer, retains choices between folders and pages, selects whole folder trees through their checkboxes, and saves the selected pieces together. The destination dropdown shows readable folder names and full paths.

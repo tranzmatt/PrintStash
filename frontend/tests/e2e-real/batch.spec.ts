@@ -172,8 +172,14 @@ test.describe("batch actions", () => {
       .filter({ has: page.getByRole("option", { name: "Select user" }) })
       .selectOption({ label: viewer });
     await accessCard.getByRole("button", { name: "Select collection" }).click();
-    await accessCard.getByRole("dialog").getByPlaceholder("Find destination").fill(col);
-    await accessCard.getByRole("option", { name: new RegExp(`^${col} `) }).click();
+    await page
+      .getByRole("dialog", { name: "Collection access", exact: true })
+      .getByPlaceholder("Find destination")
+      .fill(col);
+    await page
+      .getByRole("dialog", { name: "Collection access", exact: true })
+      .getByRole("option", { name: new RegExp(`^${col} `) })
+      .click();
     await accessCard
       .getByRole("combobox")
       .filter({ has: page.getByRole("option", { name: "Admin", exact: true }) })

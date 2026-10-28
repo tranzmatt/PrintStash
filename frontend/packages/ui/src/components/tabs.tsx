@@ -62,14 +62,17 @@ export function TabBar<K extends string>({
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    if (buttons.length === 0) return;
     e.preventDefault();
-    const idx = tabs.findIndex((tab) => tab.key === active);
+    const focused = buttons.findIndex((button) => button === document.activeElement);
+    const idx = focused >= 0 ? focused : tabs.findIndex((tab) => tab.key === active);
     const next =
       e.key === "ArrowRight" ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
+    // Route-backed selection can commit later. Move focus to the requested
+    // button now, rather than reading the old active tab on the next frame.
+    buttons[next].focus();
     onChange(tabs[next].key);
-    requestAnimationFrame(() => {
-      listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.focus();
-    });
   }
 
   return (

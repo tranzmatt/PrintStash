@@ -197,6 +197,48 @@ describe("TabBar", () => {
       expect(onChange).not.toHaveBeenCalled();
     });
 
+    it.each([
+      { key: "ArrowRight", target: "Files" },
+      { key: "ArrowLeft", target: "History" },
+    ])("focuses $target before a delayed selection commits", ({ key, target }) => {
+      vi.useFakeTimers();
+      try {
+        const onChange = vi.fn<(key: string) => void>();
+        render(<TabBar tabs={TABS} active="overview" onChange={onChange} />);
+        screen.getByRole("tab", { name: "Overview" }).focus();
+
+        fireEvent.keyDown(screen.getByRole("tablist"), { key });
+        vi.advanceTimersToNextFrame();
+
+        expect(screen.getByRole("tab", { name: target })).toHaveFocus();
+        expect(onChange).toHaveBeenCalledWith(target.toLowerCase());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("continues from the focused tab before selection commits", () => {
+      const onChange = vi.fn<(key: string) => void>();
+      render(<TabBar tabs={TABS} active="overview" onChange={onChange} />);
+      screen.getByRole("tab", { name: "Overview" }).focus();
+
+      fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
+      fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
+
+      expect(screen.getByRole("tab", { name: "History" })).toHaveFocus();
+      expect(onChange).toHaveBeenLastCalledWith("history");
+    });
+
+    it("leaves arrow keys alone when no tabs are available", () => {
+      const onChange = vi.fn<(key: string) => void>();
+      render(<TabBar tabs={[]} active="overview" onChange={onChange} />);
+
+      const notCancelled = fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
+
+      expect(notCancelled).toBe(true);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
     it("carries focus to the tab an arrow key selected", () => {
       vi.useFakeTimers();
       try {
