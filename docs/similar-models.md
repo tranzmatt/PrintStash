@@ -71,6 +71,13 @@ that was compared without any match is not compared again for the same files and
 settings, whichever side shortlisted it. When two whole files are already proven
 identical, rescaled or mirrored, their individual parts are not compared.
 
+Each complete fingerprint also keeps a compact cloud of surface samples. Before a
+pair is verified, the two clouds are aligned; a pair whose clouds stay clearly
+apart is skipped, because it could not produce any evidence. A pair that passes
+is verified exactly as before, so the cloud never creates or changes evidence.
+Fingerprints made by an earlier version gain their cloud the next time an
+analysis reaches them, which recomputes them once.
+
 The repository Benchy and Spatula use complete geometry at the default limits.
 An existing explicit lower cap remains unchanged; increase it before a manual
 retry. See [the mesh pipeline](mesh-pipeline.md) for resource limits.
