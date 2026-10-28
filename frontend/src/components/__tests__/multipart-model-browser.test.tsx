@@ -80,6 +80,27 @@ const collection: CollectionRead = {
 };
 
 describe("MultipartModelDetailPage", () => {
+  it.each(["admin", "view"] as const)(
+    "offers contextual build history with %s access",
+    async (effective_role) => {
+      renderApp(<MultipartModelDetailPage />, {
+        at: "/multipart-models/7",
+        routePath: "/multipart-models/:id",
+        seed: [[queryKeys.multipartModel(7), aMultipart({ effective_role })]],
+        routes: { "GET /api/v1/multipart-models/7": json(aMultipart({ effective_role })) },
+      });
+      expect(await screen.findByRole("link", { name: "Build history" })).toHaveAttribute(
+        "href",
+        "/builds",
+      );
+      expect(
+        screen
+          .queryAllByRole("link", { name: "Create build" })
+          .map((link) => link.getAttribute("href")),
+      ).toEqual(effective_role === "admin" ? ["/builds?multipart=7"] : []);
+    },
+  );
+
   it("reflects an authorized Multipart refresh after a confirmed save", async () => {
     const user = userEvent.setup();
     const view = renderApp(<MultipartModelDetailPage />, {

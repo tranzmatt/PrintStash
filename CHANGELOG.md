@@ -2,7 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Filament and printer profiles use compact summaries and collapsible details with inline notes, an explicit editor and searchable slicer settings from G-code. Equal configurations are grouped with their source files, different presets and values remain separate variants, and print settings stay with each source file. Existing files are refreshed in the background. These are observed print settings, not restorable slicer preset backups.
+- Builds is now reached from Multipart Models through Create build and Build history, keeping manufacturing out of general navigation while preserving existing runs and viewer access.
+
 ### Fixed
+
+- Detail tabs keep keyboard focus through route changes, mobile Library sort and display menus stay open, and touch previews reserve enough space for interaction.
+
+- Keep the ZIP and multipart model browsers steady while changing folders, with coordinated content loading, directional transitions, and reduced-motion support.
+
+- New multipart sets let you browse collections, search and select Models before creating the set. The explorer shares search, breadcrumbs and selection cards with the ZIP importer, retains choices between folders and pages, selects whole folder trees through their checkboxes, and saves the selected pieces together. The destination dropdown shows readable folder names and full paths.
 
 - Already-processed linked STL files show current storage-access failures in the viewer and their Source Files card, with safe credential guidance instead of a generic server error and no extra probe.
 

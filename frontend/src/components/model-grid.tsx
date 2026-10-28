@@ -624,6 +624,8 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   }, [initialLibraryPreferences.view]);
   const [sortOpen, setSortOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [desktopSortOpen, setDesktopSortOpen] = useState(false);
+  const [desktopDisplayOpen, setDesktopDisplayOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [libraryToolsOpen, setLibraryToolsOpen] = useState(false);
   const [desktopLibraryToolsOpen, setDesktopLibraryToolsOpen] = useState(false);
@@ -2116,11 +2118,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
             key={selectedCollectionRow?.id ?? "vault"}
             open={multipartCreateOpen}
             onClose={() => setMultipartCreateOpen(false)}
-            collection={
-              selectedCollectionRow
-                ? { id: selectedCollectionRow.id, path: selectedCollectionRow.path }
-                : null
-            }
+            collection={selectedCollectionRow ?? null}
             returnTo={currentLibraryHref}
           />
         </DeferredDialog>
@@ -2724,8 +2722,8 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
               </DropdownMenu>
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 <SortMenu
-                  open={sortOpen}
-                  onOpenChange={setSortOpen}
+                  open={desktopSortOpen}
+                  onOpenChange={setDesktopSortOpen}
                   sortKey={sortKey}
                   onSelect={selectSort}
                   labelFor={ui}
@@ -2733,8 +2731,8 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   triggerClassName="h-8"
                 />
                 <DisplayMenu
-                  open={displayOpen}
-                  onOpenChange={setDisplayOpen}
+                  open={desktopDisplayOpen}
+                  onOpenChange={setDesktopDisplayOpen}
                   viewMode={viewMode}
                   compact={compact}
                   onSelectMode={selectViewMode}

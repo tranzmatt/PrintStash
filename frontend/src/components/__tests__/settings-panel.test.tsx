@@ -579,6 +579,7 @@ describe("SettingsPanel", () => {
       renderSettings({ at: "/settings?section=access" });
       const trigger = await screen.findByRole("button", { name: "Select collection" });
       await user.click(trigger);
+      expect(await screen.findByRole("dialog", { name: "Collection access" })).toBeVisible();
       await user.click(await screen.findByRole("textbox", { name: "Find destination" }));
 
       await user.keyboard("{Escape}");

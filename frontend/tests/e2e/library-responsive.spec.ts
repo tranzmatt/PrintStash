@@ -56,6 +56,20 @@ test.describe("Library responsive layout", () => {
     test(`keeps Recent folders inside the viewport at ${width}px`, async ({ page }) => {
       const label = "PrintStash/Organization/Gridfinity/Workshop/" + "NestedCollection".repeat(8);
       await page.setViewportSize({ width, height: 900 });
+      // Recent entries resolve their current server label when the menu opens.
+      await page.route("**/api/v1/collections/lookup?**", (route) =>
+        route.fulfill({
+          json: {
+            collection: aCollectionNode({
+              id: 1,
+              path: "maraio",
+              name: label,
+              display_path: label,
+            }),
+            ancestors: [],
+          },
+        }),
+      );
       await page.addInitScript((folderLabel) => {
         localStorage.setItem(
           "ps-recent-folders-labelled",

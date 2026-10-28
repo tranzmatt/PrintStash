@@ -86,6 +86,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("DropdownMenu", () => {
@@ -859,5 +861,188 @@ describe("DropdownMenu portals", () => {
     screen.getByRole("button", { name: "Select choice" }).focus();
     await user.tab();
     expect(screen.getByRole("button", { name: "Following control" })).toHaveFocus();
+  });
+
+  it.each([
+    { label: "hidden", attribute: "hidden", style: "" },
+    { label: "inert", attribute: "inert", style: "" },
+    { label: "display none", attribute: "", style: "display: none" },
+    { label: "visibility hidden", attribute: "", style: "visibility: hidden" },
+  ])("skips a $label control after a portaled picker", async ({ attribute, style }) => {
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    render(<Picker />);
+    const following = screen.getByRole("button", { name: "Following control" });
+    const hidden = document.createElement("button");
+    hidden.textContent = "Unavailable control";
+    if (attribute === "inert") hidden.inert = true;
+    else if (attribute) hidden.setAttribute(attribute, "");
+    if (style) hidden.setAttribute("style", style);
+    following.before(hidden);
+
+    screen.getByRole("button", { name: "Select choice" }).focus();
+    await user.tab();
+
+    expect(following).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Choose" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  it("wraps to the first modal control after its last picker field", async () => {
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    render(
+      <Modal open onClose={() => {}} title="Form" closeLabel="Close">
+        <DropdownMenu
+          portal
+          open
+          onOpenChange={() => {}}
+          role="dialog"
+          trigger={<button data-menu-trigger>Last trigger</button>}
+        >
+          <input aria-label="Last field" />
+        </DropdownMenu>
+      </Modal>,
+    );
+    screen.getByRole("textbox", { name: "Last field" }).focus();
+
+    await user.tab();
+
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("leaves forward Tab to the browser after the last page control", () => {
+    openMenu(
+      <DropdownMenu
+        portal
+        open
+        onOpenChange={() => {}}
+        role="dialog"
+        trigger={<button data-menu-trigger>Last trigger</button>}
+      >
+        <input aria-label="Last field" />
+      </DropdownMenu>,
+    );
+    const last = screen.getByRole("textbox", { name: "Last field" });
+    last.focus();
+
+    const notCancelled = fireEvent.keyDown(last, { key: "Tab" });
+
+    expect(notCancelled).toBe(true);
+    expect(screen.getByRole("button", { name: "Last trigger" })).toHaveFocus();
+  });
+
+  it.each(["Tab", "ArrowDown"])("leaves $0 alone when the portal is closed", (key) => {
+    render(
+      <DropdownMenu portal open={false} onOpenChange={() => {}} trigger={TRIGGER}>
+        <MenuItems />
+      </DropdownMenu>,
+    );
+
+    const notCancelled = fireEvent.keyDown(screen.getByRole("button", { name: "Actions" }), {
+      key,
+    });
+
+    expect(notCancelled).toBe(true);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
+describe("DropdownMenu viewport placement", () => {
+  function panelGeometry(height: number, top: number) {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(100, top, 120, 40),
+    );
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(200);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(height);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(height);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(height);
+    vi.stubGlobal("innerHeight", 500);
+    vi.stubGlobal("innerWidth", 500);
+  }
+
+  it("opens above a trigger when its contents do not fit below", () => {
+    panelGeometry(180, 400);
+    openMenu(
+      <DropdownMenu portal open onOpenChange={() => {}} trigger={TRIGGER}>
+        <MenuItems />
+      </DropdownMenu>,
+    );
+
+    expect(screen.getByRole("menu")).toHaveStyle({ top: "212px", transformOrigin: "right bottom" });
+  });
+
+  it("scrolls oversized contents within the available space", () => {
+    panelGeometry(800, 400);
+    openMenu(
+      <DropdownMenu portal open onOpenChange={() => {}} trigger={TRIGGER}>
+        <MenuItems />
+      </DropdownMenu>,
+    );
+
+    expect(screen.getByRole("menu")).toHaveStyle({
+      top: "8px",
+      maxHeight: "384px",
+      overflowY: "auto",
+    });
+  });
+
+  it("repositions after the anchor resizes", () => {
+    const deliveries: Array<() => void> = [];
+    class Observer implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        deliveries.push(() => callback([], this));
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", Observer);
+    panelGeometry(180, 400);
+    const { unmount } = openMenu(
+      <DropdownMenu portal open onOpenChange={() => {}} trigger={TRIGGER}>
+        <MenuItems />
+      </DropdownMenu>,
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(100, 40, 120, 40),
+    );
+
+    act(() => {
+      deliveries.at(-1)!();
+      deliveries.at(-1)!();
+      vi.advanceTimersToNextFrame();
+    });
+
+    expect(screen.getByRole("menu")).toHaveStyle({ top: "88px", transformOrigin: "right top" });
+    act(() => deliveries.at(-1)!());
+    unmount();
+    act(() => vi.advanceTimersToNextFrame());
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("follows the visual viewport while it scrolls", () => {
+    class Viewport extends EventTarget {
+      width = 300;
+      height = 300;
+      offsetLeft = 100;
+      offsetTop = 100;
+    }
+    const viewport = new Viewport();
+    vi.stubGlobal("visualViewport", viewport);
+    panelGeometry(180, 40);
+    openMenu(
+      <DropdownMenu portal open onOpenChange={() => {}} trigger={TRIGGER}>
+        <MenuItems />
+      </DropdownMenu>,
+    );
+
+    expect(screen.getByRole("menu")).toHaveStyle({ left: "108px", top: "108px" });
+    viewport.offsetLeft = 140;
+    viewport.offsetTop = 120;
+    act(() => viewport.dispatchEvent(new Event("scroll")));
+    expect(screen.getByRole("menu")).toHaveStyle({ left: "148px", top: "128px" });
   });
 });

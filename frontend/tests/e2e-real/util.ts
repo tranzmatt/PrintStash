@@ -246,7 +246,9 @@ export async function uploadModel(page: Page, name: string, opts: UploadOpts = {
     await dialog
       .getByRole("textbox", { name: "Find destination", exact: true })
       .fill(collection.slice(collection.lastIndexOf("/") + 1));
-    await dialog.getByRole("option", { name: new RegExp(collection) }).click();
+    // Anchor the path before its count so a parent's nested folders cannot
+    // match while the debounced search still shows the previous results.
+    await dialog.getByRole("option", { name: new RegExp(collection + " \\(\\d+\\)$") }).click();
   }
   if (tag) {
     const tagInput = page.getByPlaceholder("Search or create — press Enter");

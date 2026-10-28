@@ -10,10 +10,7 @@ export default function ProfilesPage() {
     <PageContainer>
       <PageHeader
         title={translateUiText(locale, "Profiles")}
-        description={translateUiText(
-          locale,
-          "Filament and printer presets for cost tracking and slicer defaults",
-        )}
+        description={translateUiText(locale, "profiles.description")}
       />
       <FilamentProfilesCard />
     </PageContainer>

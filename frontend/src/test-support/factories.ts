@@ -1,3 +1,4 @@
+import type { SlicerProfileRead } from "@/types/slicer-profiles";
 import type { ComputeStatus } from "@/types/system";
 import type { GcPlan } from "@/lib/api/gc";
 import type { TrashedModelRead } from "@/types";
@@ -1064,6 +1065,29 @@ export function aComputeStatus(overrides: Partial<ComputeStatus> = {}): ComputeS
     completed: 42,
     fallbacks: 3,
     cold_start_seconds: 1.2,
+    ...overrides,
+  };
+}
+
+export function aSlicerCapture(overrides: Partial<SlicerProfileRead> = {}): SlicerProfileRead {
+  return {
+    file_id: 10,
+    model_id: 4,
+    model_name: "Bracket",
+    filename: "bracket.gcode",
+    uploaded_at: "2026-10-27T10:00:00Z",
+    printer_model: "Machine A",
+    slicer_name: "OrcaSlicer",
+    slicer_version: "2.3.2",
+    settings: {
+      printer: { printer_settings_id: "Machine A 0.4", nozzle_diameter: "0.4" },
+      filament: {
+        filament_settings_id: "PLA Standard",
+        filament_flow_ratio: "0.98;1.02",
+        filament_type: "PLA",
+      },
+      process: { layer_height: "0.2" },
+    },
     ...overrides,
   };
 }

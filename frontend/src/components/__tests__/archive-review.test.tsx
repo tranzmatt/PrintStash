@@ -270,6 +270,7 @@ describe("ArchiveReviewDialog", () => {
     await user.click(await screen.findByRole("button", { name: "Open folder Animals" }));
     await user.click(screen.getByRole("button", { name: "Animals/cat.stl" }));
     await user.click(screen.getByRole("button", { name: "My Parts" }));
+    expect(await screen.findByRole("textbox", { name: "Find destination" })).toHaveFocus();
     await user.click(await screen.findByRole("option", { name: "Vault root" }));
     await user.click(screen.getByRole("button", { name: "Import 1 selected" }));
 

@@ -20,10 +20,20 @@ test.describe("profiles route", () => {
 
     await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Filament presets" })).toBeVisible();
+    await expect(page.getByLabel("Filament preset name 1")).toHaveCount(0);
+    await page.getByRole("button", { name: "View details for Generic PLA" }).click();
+    await expect(page.getByRole("region", { name: "Settings for Generic PLA" })).toBeVisible();
+    await page.getByRole("button", { name: "Edit profile Generic PLA" }).click();
     await expect(page.getByLabel("Filament preset name 1")).toHaveValue("Generic PLA");
     await expect(page.getByLabel("Filament brand 1")).toHaveValue("Generic");
     await page.getByRole("tab", { name: /Printers/ }).click();
     await expect(page.getByRole("heading", { name: "Printer presets" })).toBeVisible();
+    await expect(page.getByLabel("Printer preset name 1")).toHaveCount(0);
+    await page.getByRole("button", { name: "View details for Creality Ender-3 V3 SE" }).click();
+    await expect(
+      page.getByRole("region", { name: "Settings for Creality Ender-3 V3 SE" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Edit profile Creality Ender-3 V3 SE" }).click();
     await expect(page.getByLabel("Printer preset name 1")).toHaveValue("Creality Ender-3 V3 SE");
     await expect(page.getByText("Failed to fetch")).toHaveCount(0);
     await expect(page.getByText("This page could not be found")).toHaveCount(0);

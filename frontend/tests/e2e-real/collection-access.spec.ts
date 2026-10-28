@@ -49,7 +49,7 @@ test.describe("collection access", () => {
       expect(permissionsReadIds).toEqual([]);
 
       await card.getByRole("button", { name: "Select collection" }).click();
-      const picker = card.getByRole("dialog");
+      const picker = page.getByRole("dialog", { name: "Collection access", exact: true });
       await picker.getByPlaceholder("Find destination").fill(childName);
       await picker
         .getByRole("option", { name: new RegExp(`^${parentName}/${childName} `) })

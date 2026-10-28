@@ -81,11 +81,16 @@ test.describe("vault", () => {
     await uploadModel(page, tagged, { tag });
     await uploadGcodeModel(page, plain);
 
-    // Click the tag chip in the sidebar; the grid keeps the tagged model and
-    // drops the untagged one.
+    // Select a tag in the filter picker; only tagged Models remain.
     await page.goto("/");
     await page.getByRole("button", { name: "Filters", exact: true }).click();
-    await page.getByRole("button", { name: tag }).click();
+    await page.getByRole("button", { name: "Tags", exact: true }).click();
+    const tagChoice = page
+      .getByRole("dialog", { name: "Tags", exact: true })
+      .getByRole("checkbox", { name: tag, exact: true });
+    await tagChoice.click();
+    // Selection commits through the router before the controlled checkbox updates.
+    await expect(tagChoice).toBeChecked();
     await expect(modelCard(page, tagged)).toBeVisible();
     await expect(modelCard(page, plain)).toHaveCount(0);
   });

@@ -1352,16 +1352,26 @@ function MultipartDetail({ id }: { id: number }) {
               <Trash2 className="h-4 w-4" /> {t("multipart.delete")}
             </Button>
           </div>
-        ) : canEdit ? (
+        ) : (
           <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
-            <Link className="text-sm text-primary underline" href={`/builds?multipart=${model.id}`}>
-              {t("build.create")}
+            <Link className="text-sm text-primary underline" href="/builds">
+              {t("build.history")}
             </Link>
-            <Button type="button" size="sm" onClick={beginEditing}>
-              <Pencil className="h-4 w-4" /> {t("multipart.edit")}
-            </Button>
+            {canEdit && (
+              <>
+                <Link
+                  className="text-sm text-primary underline"
+                  href={`/builds?multipart=${model.id}`}
+                >
+                  {t("build.create")}
+                </Link>
+                <Button type="button" size="sm" onClick={beginEditing}>
+                  <Pencil className="h-4 w-4" /> {t("multipart.edit")}
+                </Button>
+              </>
+            )}
           </div>
-        ) : undefined}
+        )}
       </header>
       {isEditing ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-24 sm:px-6 md:pb-6">

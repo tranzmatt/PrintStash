@@ -41,6 +41,7 @@ class MultipartModelCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: Optional[str] = Field(default=None, max_length=1_000_000)
     collection_id: Optional[int] = None
+    parts: list[MultipartPartWrite] = Field(default_factory=list, max_length=100)
 
 
 class MultipartModelUpdate(BaseModel):

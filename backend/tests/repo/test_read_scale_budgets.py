@@ -59,6 +59,7 @@ BUDGET_SECONDS = {
     "/api/v1/documents": 0.5,
     "/api/v1/documents/trash": 0.5,
     "/api/v1/multipart-builds": 0.5,
+    "/api/v1/slicer-profiles": 0.5,
 }
 # Linear work grows eight times with an eight-times library; quadratic, 64.
 MAX_GROWTH = 16

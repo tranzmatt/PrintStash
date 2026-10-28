@@ -106,24 +106,23 @@ test.describe("app navigation", () => {
 });
 
 for (const width of [1280, 390]) {
-  test(`${width === 1280 ? "desktop" : "mobile"} navigation opens Builds`, async ({ page }) => {
+  test(`${width === 1280 ? "desktop" : "mobile"} navigation omits Builds`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "All Models" })).toBeVisible();
     if (width === 1280) {
       await page.getByRole("button", { name: "My workspace" }).click();
-      await page.getByRole("menuitem", { name: "Builds", exact: true }).click();
+      await expect(page.getByRole("menuitem", { name: "Builds", exact: true })).toHaveCount(0);
+      await page.getByRole("menuitem", { name: "Profiles", exact: true }).click();
     } else {
       await page.locator("nav").getByRole("button", { name: "More", exact: true }).click();
-      await page
-        .getByRole("dialog", { name: "More" })
-        .getByRole("link", { name: "Builds", exact: true })
-        .click();
-      await expect(page.getByRole("dialog", { name: "More" })).toHaveCount(0);
+      const more = page.getByRole("dialog", { name: "More" });
+      await expect(more.getByRole("link", { name: "Builds", exact: true })).toHaveCount(0);
+      await more.getByRole("link", { name: "Profiles", exact: true }).click();
+      await expect(more).toHaveCount(0);
     }
-    await expect(page).toHaveURL(/\/builds$/);
-    await expect(page.getByRole("heading", { name: "Builds", exact: true })).toBeVisible();
-    await expect(page).toHaveTitle("Builds · PrintStash");
+    await expect(page).toHaveURL(/\/profiles$/);
+    await expect(page.getByRole("heading", { name: "Profiles", exact: true })).toBeVisible();
   });
 }
 
@@ -151,7 +150,7 @@ test.describe("desktop workspace quick access", () => {
     const trigger = page.getByRole("button", { name: "My workspace", exact: true });
     await trigger.click();
     const menu = page.getByRole("menu");
-    await expect(menu.getByRole("menuitem", { name: "Builds", exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Builds", exact: true })).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "Statistics", exact: true })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "Printers" })).toHaveCount(0);
     await expect(page.locator('[aria-modal="true"]')).toHaveCount(0);

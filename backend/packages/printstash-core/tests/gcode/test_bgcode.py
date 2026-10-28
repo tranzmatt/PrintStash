@@ -45,6 +45,7 @@ from printstash_core.gcode import (
     is_valid_container,
     parse,
 )
+from printstash_core.gcode.settings import CapturedSettings, capture_settings
 
 _FILE_METADATA = 0
 _GCODE = 1
@@ -52,6 +53,20 @@ _SLICER_METADATA = 2
 _THUMBNAIL = 5
 # Block type 99 is not in the spec, so it declares no parameter bytes.
 _UNKNOWN_BLOCK = 99
+
+
+class TestCapturedSettings:
+    def test_reads_settings_from_binary_metadata(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.bgcode"
+        path.write_bytes(_sample_container())
+
+        assert capture_settings(path).filament == {"filament_type": "PETG"}
+
+    def test_omits_unavailable_binary_metadata(self, tmp_path: Path) -> None:
+        path = tmp_path / "plain.bgcode"
+        path.write_bytes(_container(_gcode_block()))
+
+        assert capture_settings(path) == CapturedSettings()
 
 
 def _block(

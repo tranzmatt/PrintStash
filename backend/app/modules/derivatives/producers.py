@@ -14,10 +14,11 @@ import tempfile
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from printstash_core.gcode.settings import CapturedSettings, capture_settings
 from printstash_core.mesh.measurements import (
     VolumeNotCalculated,
     VolumeNotCalculatedCause,
@@ -595,7 +596,7 @@ def _replace_material_requirements(
 
 
 def _derive_gcode(file_id: int, *, execution: JobExecution | None = None) -> Outcome:
-    """Slicer metadata and the embedded thumbnail from one header read."""
+    """Slicer metadata, captured settings and the embedded thumbnail."""
     begun = _begin(file_id, JobKind.DERIVATIVES_GCODE, execution=execution)
     if begun is None:
         return Outcome({})
@@ -606,11 +607,13 @@ def _derive_gcode(file_id: int, *, execution: JobExecution | None = None) -> Out
         return Outcome(outcome)
     started = time.monotonic()
     meta: dict[str, Any] = {}
+    captured = CapturedSettings()
     image: bytes | None = None
     try:
         with resolve(file_row).materialize() as source:
             if DerivativeKind.METADATA in needed:
                 meta = gcode_parser.parse(source)
+                captured = capture_settings(source)
             if DerivativeKind.THUMBNAIL in needed:
                 image = thumbnail.extract(source)
     except ArtifactContentError:
@@ -628,7 +631,10 @@ def _derive_gcode(file_id: int, *, execution: JobExecution | None = None) -> Out
                 session,
                 attempts[DerivativeKind.METADATA],
                 now=utcnow(),
-                output={"slicer": meta.get("slicer_name")},
+                output={
+                    "slicer": meta.get("slicer_name"),
+                    "slicer_settings": asdict(captured),
+                },
                 duration_ms=duration_ms,
             )
             row = _metadata_row(session, file_id)
