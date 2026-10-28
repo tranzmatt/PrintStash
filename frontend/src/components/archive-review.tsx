@@ -446,6 +446,7 @@ function ArchiveReview({
                     }
                   >
                     <CollectionPicker
+                      autoFocus
                       minRole="edit"
                       selectedPath={collection ?? ""}
                       onSelect={(picked) => {

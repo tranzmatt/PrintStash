@@ -393,6 +393,7 @@ test.describe("multipart models", () => {
     await page.getByRole("button", { name: "New multipart set" }).first().click();
     await page.getByLabel("Name", { exact: true }).fill("Desk organiser");
     await page.getByLabel("Description").fill("A complete desk organiser");
+    await page.getByRole("button", { name: "Collection", exact: true }).click();
     await page.getByRole("option", { name: /maraio/ }).click();
     await page.getByRole("button", { name: "Create multipart set" }).click();
 

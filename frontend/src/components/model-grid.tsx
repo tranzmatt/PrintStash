@@ -2118,7 +2118,12 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
             onClose={() => setMultipartCreateOpen(false)}
             collection={
               selectedCollectionRow
-                ? { id: selectedCollectionRow.id, path: selectedCollectionRow.path }
+                ? {
+                    id: selectedCollectionRow.id,
+                    path: selectedCollectionRow.path,
+                    name: selectedCollectionRow.name,
+                    display_path: selectedCollectionRow.display_path,
+                  }
                 : null
             }
             returnTo={currentLibraryHref}

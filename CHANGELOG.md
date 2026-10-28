@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- New multipart sets use the ZIP importer’s searchable destination dropdown. Folder names and full paths are readable on narrow screens, with focus placed in search when opened.
+
 - Already-processed linked STL files show current storage-access failures in the viewer and their Source Files card, with safe credential guidance instead of a generic server error and no extra probe.
 
 - New library thumbnails crossfade from their placeholder after decoding, while cached images stay visible on revisits without another download.
