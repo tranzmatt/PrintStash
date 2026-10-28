@@ -361,7 +361,7 @@ export function RevisionsTab({
                         onClick={() => startRevisionEdit(f)}
                         disabled={!auth.isAuthenticated}
                         title={auth.blockReason ?? uiText("Edit revision")}
-                        className="text-on-surface-variant hover:text-primary p-2 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="text-on-surface-variant hover:text-primary p-2 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-disabled"
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
@@ -394,7 +394,7 @@ export function RevisionsTab({
                         onClick={() => deleteRevision(f)}
                         disabled={!auth.isAuthenticated || saving === f.id}
                         title={auth.blockReason ?? uiText("Delete revision")}
-                        className="text-on-surface-variant hover:text-error p-2 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="text-on-surface-variant hover:text-error p-2 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-disabled"
                       >
                         {saving === f.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

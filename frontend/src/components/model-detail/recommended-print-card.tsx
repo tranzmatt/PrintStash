@@ -183,7 +183,7 @@ export function RecommendedPrintCard({
                   onMark(file, { is_recommended: true, revision_status: "known_good" })
                 }
                 disabled={isSaving || file.is_recommended}
-                className="py-2 rounded border border-outline-variant text-on-surface-variant font-mono text-2xs uppercase tracking-wider hover:bg-surface-container-low transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="py-2 rounded border border-outline-variant text-on-surface-variant font-mono text-2xs uppercase tracking-wider hover:bg-surface-container-low transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-disabled"
               >
                 {isSaving ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

@@ -9,6 +9,9 @@
 
 ### Fixed
 
+- Enabled buttons, links and clickable controls consistently show the hand cursor, using shared action and disabled cursor tokens. Disabled controls show the arrow, while text editing, dragging and resizing retain their appropriate cursors.
+- Settings → Imports links directly to the published PrintStash Chrome extension, alongside its source instructions.
+
 - Detail tabs keep keyboard focus through route changes, mobile Library sort and display menus stay open, and touch previews reserve enough space for interaction.
 
 - Keep the ZIP and multipart model browsers steady while changing folders, with coordinated content loading, directional transitions, and reduced-motion support.

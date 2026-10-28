@@ -245,7 +245,7 @@ export function SelectionItemCard({
       disabled={disabled}
       onClick={onToggle}
       className={cn(
-        "flex h-28 w-full flex-col justify-between gap-2 rounded-lg border p-3 text-left transition-transform duration-press active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-28 w-full flex-col justify-between gap-2 rounded-lg border p-3 text-left transition-transform duration-press active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-disabled disabled:opacity-50",
         selected
           ? "border-primary bg-accent text-accent-foreground"
           : "border-border bg-card text-card-foreground hover:bg-muted",

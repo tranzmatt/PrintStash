@@ -297,6 +297,20 @@ test.describe("settings route", () => {
     await expect(page.getByText(/Expires at/)).toBeVisible();
   });
 
+  test("Imports offers the published Chrome extension", async ({ page }) => {
+    await page.goto("/settings?section=imports");
+    const install = page.getByRole("link", { name: "Install Chrome extension" });
+    await expect(install).toBeVisible();
+    await expect(install).toHaveAttribute(
+      "href",
+      "https://chromewebstore.google.com/detail/printstash/dfeakldahcajangoijfldionahhbeajg",
+    );
+    await expect(install).toHaveAttribute("target", "_blank");
+    await expect(install).toHaveAttribute("rel", "noopener noreferrer");
+    await install.hover();
+    await expect(install).toHaveCSS("cursor", "pointer");
+  });
+
   test("preview settings persist quality choices and queue image recreation", async ({ page }) => {
     await page.goto("/settings?section=previews");
 

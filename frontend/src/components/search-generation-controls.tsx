@@ -192,7 +192,7 @@ export function SearchGenerationControls({
               {profileChoices.map((choice) => (
                 <label
                   key={choice.value}
-                  className={`flex cursor-pointer items-start gap-3 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${profile === choice.value ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
+                  className={`flex cursor-action items-start gap-3 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${profile === choice.value ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
                 >
                   <input
                     type="radio"
@@ -241,7 +241,7 @@ export function SearchGenerationControls({
                 {localChoices.map((model) => (
                   <label
                     key={model.id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${selection === `local:${model.id}` ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
+                    className={`flex cursor-action items-start gap-3 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${selection === `local:${model.id}` ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
                   >
                     <input
                       type="radio"
@@ -267,7 +267,7 @@ export function SearchGenerationControls({
                 {serverChoices.map((endpoint) => (
                   <label
                     key={endpoint.id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${selection === `endpoint:${endpoint.id}` ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
+                    className={`flex cursor-action items-start gap-3 rounded-md p-3 text-sm focus-within:ring-2 focus-within:ring-ring ${selection === `endpoint:${endpoint.id}` ? "bg-accent text-accent-foreground" : "outline outline-1 outline-border"}`}
                   >
                     <input
                       type="radio"

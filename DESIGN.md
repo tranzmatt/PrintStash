@@ -19,8 +19,10 @@ itself, it is wrong.
 
 ## Tokens
 
-All tokens are CSS custom properties in `frontend/src/globals.css`, mapped into
-Tailwind in `frontend/tailwind.config.cjs`. **Use the Tailwind class, not the raw
+Theme and motion tokens are CSS custom properties in `frontend/src/globals.css`,
+mapped into Tailwind in `frontend/tailwind.config.cjs`. Cursor tokens and their
+named utilities share `frontend/packages/ui/src/cursors.css` (see Cursors below).
+**Use the Tailwind class, not the raw
 variable** — `bg-primary`, not `bg-[var(--primary)]`.
 
 ### Color
@@ -172,6 +174,22 @@ not for primary titles or prose. Keep primary blue for actions that start work;
 status and selection use their semantic tokens. On narrow screens, rows stack
 into a readable content band and a separate action band. Text gets `min-w-0`
 and may wrap; actions must remain reachable without horizontal scrolling.
+
+## Cursors
+
+Enabled web actions use the hand cursor; unavailable controls use the arrow.
+The shared policy in `frontend/packages/ui/src/cursors.css` owns
+`--cursor-action` and `--cursor-disabled`, and is imported by both the app and
+the UI package's stylesheet. Native buttons, links, disclosure controls and ARIA
+widgets receive it automatically, including their icon and label content.
+
+Use `cursor-action` for clickable labels or cards that need an explicit
+affordance and `cursor-disabled` for unavailable custom surfaces. Never add
+`cursor-pointer`, `cursor-default`, `cursor-not-allowed`, or inline equivalents
+in a component. Disabled labels follow their contained control. Keep text
+editing, drag (`cursor-grab`/`cursor-grabbing`) and resize cursors where those
+operations actually apply. The source guard and browser hover suite prevent
+ordinary action cursors from drifting between components.
 
 ## Motion
 

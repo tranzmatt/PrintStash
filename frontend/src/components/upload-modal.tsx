@@ -570,7 +570,7 @@ export function UploadModal({
               </label>
               <label
                 htmlFor="setup-upload-file"
-                className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-3 rounded-md border border-dashed border-outline-variant bg-surface-container-low p-5 text-center hover:bg-surface-container focus-within:ring-2 focus-within:ring-ring"
+                className="flex min-h-32 cursor-action flex-col items-center justify-center gap-3 rounded-md border border-dashed border-outline-variant bg-surface-container-low p-5 text-center hover:bg-surface-container focus-within:ring-2 focus-within:ring-ring"
               >
                 <Upload className="h-6 w-6 text-muted-foreground" aria-hidden />
                 <span className="max-w-full break-all text-sm font-medium">
@@ -996,7 +996,7 @@ function FileSlot({
           }
           setFile(dropped);
         }}
-        className={`flex items-center justify-between rounded border border-dashed px-3 py-2.5 transition-colors cursor-pointer ${
+        className={`flex items-center justify-between rounded border border-dashed px-3 py-2.5 transition-colors cursor-action ${
           file
             ? "border-primary bg-primary/5"
             : dragActive
@@ -1104,7 +1104,7 @@ export function BulkFiles({
           }
         }}
         onDrop={handleDrop}
-        className={`flex flex-col items-center justify-center gap-1.5 rounded border border-dashed px-3 py-6 text-center transition-colors cursor-pointer ${
+        className={`flex flex-col items-center justify-center gap-1.5 rounded border border-dashed px-3 py-6 text-center transition-colors cursor-action ${
           dragActive
             ? "border-primary bg-primary/10"
             : "border-outline-variant hover:border-outline"

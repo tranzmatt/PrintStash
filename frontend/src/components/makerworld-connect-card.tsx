@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Localized } from "@/components/ui/localized";
 
 const EXTENSION_URL = "https://github.com/xiao-villamor/PrintStash/tree/main/browser-extension";
+const CHROME_EXTENSION_URL =
+  "https://chromewebstore.google.com/detail/printstash/dfeakldahcajangoijfldionahhbeajg";
 
 export function MakerWorldConnectCard() {
   useUiLocale();
@@ -47,12 +49,20 @@ export function MakerWorldConnectCard() {
               "MakerWorld collections are not supported; capture their model pages individually.",
             )}
           </p>
-          <Button asChild variant="outline" size="sm">
-            <a href={EXTENSION_URL} target="_blank" rel="noreferrer">
-              {uiText("Open extension source")}
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-            </a>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm">
+              <a href={CHROME_EXTENSION_URL} target="_blank" rel="noopener noreferrer">
+                {uiText("Install Chrome extension")}
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              </a>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <a href={EXTENSION_URL} target="_blank" rel="noreferrer">
+                {uiText("Open extension source")}
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              </a>
+            </Button>
+          </div>
         </div>
       </div>
     </Localized>

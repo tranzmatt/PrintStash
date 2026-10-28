@@ -246,7 +246,7 @@ function CandidateReview({
                   </p>
                 ) : null}
                 <details className="border-t border-border pt-3 text-xs">
-                  <summary className="cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <summary className="cursor-action font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {t("similarity.lineage")}
                   </summary>
                   <p className="mt-3 text-muted-foreground">{candidate.algorithm_version}</p>

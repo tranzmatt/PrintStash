@@ -2376,7 +2376,7 @@ export function SettingsPanel() {
                         </button>
                         {user?.is_superuser && (
                           <label
-                            className={`${BTN_SECONDARY} ${archiveBusy !== null ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
+                            className={`${BTN_SECONDARY} ${archiveBusy !== null ? "pointer-events-none opacity-50" : "cursor-action"}`}
                           >
                             <Download className="h-3.5 w-3.5 rotate-180" />{" "}
                             {archiveBusy === "import"
@@ -3755,7 +3755,7 @@ export function SettingsPanel() {
                     <label
                       className={cn(
                         BTN_SECONDARY,
-                        "cursor-pointer",
+                        "cursor-action",
                         (!user?.is_superuser || uploadingBackup) &&
                           "pointer-events-none opacity-50",
                       )}
@@ -4124,7 +4124,7 @@ export function SettingsPanel() {
                                     ? undefined
                                     : t("settings.backupSourceUnavailable")
                                 }
-                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-disabled"
                               >
                                 <RotateCcw className="h-3.5 w-3.5" />
                                 {uiText("Restore")}
@@ -4378,7 +4378,7 @@ export function SettingsPanel() {
                                   isSelected
                                     ? "border-transparent bg-accent text-accent-foreground"
                                     : usedInOther
-                                      ? "border-dashed border-border bg-transparent text-muted-foreground/50 cursor-not-allowed"
+                                      ? "border-dashed border-border bg-transparent text-muted-foreground/50 cursor-disabled"
                                       : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-muted"
                                 }`}
                               >
@@ -4940,7 +4940,7 @@ export function SettingsPanel() {
                             type="button"
                             onClick={() => setPurgeSelectionOpen(true)}
                             disabled={trashBusy !== null}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-disabled"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             {uiText("Delete selected")}
@@ -5024,7 +5024,7 @@ export function SettingsPanel() {
                               type="button"
                               onClick={() => purgeTrashItem(item.id)}
                               disabled={trashBusy !== null}
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-disabled"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               {uiText("Delete")}

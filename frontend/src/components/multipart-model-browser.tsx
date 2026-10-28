@@ -250,7 +250,7 @@ function ModelPicker({
                         })
                       }
                       className={cn(
-                        "relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-border text-left transition-transform duration-press active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+                        "relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-border text-left transition-transform duration-press active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-disabled disabled:opacity-50",
                         checked
                           ? "bg-accent text-accent-foreground"
                           : "bg-card text-card-foreground hover:bg-muted",

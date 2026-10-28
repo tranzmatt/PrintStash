@@ -155,7 +155,7 @@ function ShareContent({ token }: { token: string }) {
               type="button"
               onClick={() => setViewerMode("model")}
               disabled={!canShowModel}
-              className={`h-9 px-3 inline-flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`h-9 px-3 inline-flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-disabled ${
                 activeViewerMode === "model"
                   ? "bg-accent text-accent-foreground"
                   : "text-on-surface-variant hover:bg-surface-container-high"
@@ -168,7 +168,7 @@ function ShareContent({ token }: { token: string }) {
               type="button"
               onClick={() => setViewerMode("gcode")}
               disabled={!canShowGcode}
-              className={`h-9 px-3 inline-flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`h-9 px-3 inline-flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-disabled ${
                 activeViewerMode === "gcode"
                   ? "bg-accent text-accent-foreground"
                   : "text-on-surface-variant hover:bg-surface-container-high"

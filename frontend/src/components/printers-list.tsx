@@ -458,7 +458,7 @@ export function PrintersPage() {
                             handleDelete(p, e);
                           }}
                           disabled={!p.access.can_admin}
-                          className="flex items-center gap-1 rounded px-2 py-1 text-3xs uppercase tracking-wider text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex items-center gap-1 rounded px-2 py-1 text-3xs uppercase tracking-wider text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-disabled disabled:opacity-50"
                         >
                           <Trash2 className="h-3 w-3" />
                           {p.access.can_admin ? uiText("Remove") : uiText("Restricted")}
@@ -547,7 +547,7 @@ function PrinterModelBadge({ printer, canEdit }: { printer: PrinterRead; canEdit
     <button
       type="button"
       disabled={!canEdit}
-      className="flex max-w-full items-center gap-1 truncate rounded-md text-left text-xs font-medium text-foreground enabled:hover:text-primary disabled:cursor-default"
+      className="flex max-w-full items-center gap-1 truncate rounded-md text-left text-xs font-medium text-foreground enabled:hover:text-primary disabled:cursor-disabled"
       onClick={(e) => {
         if (!canEdit) return;
         e.preventDefault();

@@ -491,7 +491,7 @@ export function MaintenancePanel() {
                           : uiText("Not verified this session")}
                       </p>
                       <details className="mt-2 text-xs text-muted-foreground">
-                        <summary className="cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <summary className="cursor-action font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                           {t("maintenance.backupDetails")}
                         </summary>
                         <div className="mt-2 space-y-1 break-all font-mono text-2xs">
