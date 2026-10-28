@@ -35,6 +35,13 @@ through its existing manual action. Storage capability checks and the ownership
 ledger still apply, and a provider that cannot prove the object may retain bytes
 and report cleanup as blocked.
 
+Deleting a Multipart Model or removing/replacing its uploaded cover retires the
+cover reference. On Guarded storage, PrintStash first checks the committed
+ownership record, size and content hash, then retains the old image bytes in a
+blocked cleanup intent. This does not bypass physical-deletion safeguards or
+delete member Models. Missing or changed ownership evidence blocks the operation
+with storage guidance.
+
 Retention expiry is broader and runs without a person selecting each row. It
 uses the GC plan protocol below. The hourly coordinator may create a preview,
 wait, finalize an already approved plan after quarantine, or resume a durable

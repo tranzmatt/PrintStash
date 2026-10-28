@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime
 
 import httpx
 import pytest
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.api.v1 import multipart_models as multipart_router
 from app.core.time import utcnow
@@ -19,9 +20,14 @@ from app.db.models import (
     FileType,
     MultipartModel,
     MultipartModelChoice,
+    OwnedStorageObject,
+    StorageDeleteIntent,
+    StorageObjectState,
 )
 from app.modules.library import multipart_models
+from app.modules.storage.storage_backend.contracts import StorageTier
 from app.modules.storage.storage_backend.runtime import get_backend
+from app.modules.storage.storage_deletion import process_storage_delete_intents
 from tests.factories.content import png
 
 
@@ -2105,3 +2111,234 @@ class TestCoverUploadExecution:
             )
         assert response.status_code == 200, response.text
         assert observations == [200]
+
+
+class TestUploadedCoverRetirement:
+    """Probed NAS filesystems retain covers without trapping their grouping (#577)."""
+
+    @pytest.fixture
+    def fs_kind(self) -> str:
+        return "local"
+
+    @pytest.fixture
+    def cover(
+        self,
+        fs_kind,
+        client,
+        auth_headers,
+        make_multipart_model,
+        db_session,
+        local_storage,
+        monkeypatch,
+    ) -> tuple[int, str]:
+        from app.modules.storage.storage_backend import probes
+
+        monkeypatch.setattr(probes, "detect_fs_kind", lambda _path: fs_kind)
+        backend = get_backend()
+        backend.ensure_setup()
+        aggregate = make_multipart_model("Cover retirement")
+        response = client.put(
+            f"/api/v1/multipart-models/{aggregate.id}/cover",
+            headers=auth_headers,
+            files={"file": ("cover.png", png(width=8, height=8), "image/png")},
+        )
+        assert response.status_code == 200, response.text
+        db_session.refresh(aggregate)
+        assert aggregate.id is not None
+        assert aggregate.cover_filename is not None
+        key = backend.multipart_model_cover_key(aggregate.id, aggregate.cover_filename)
+        return aggregate.id, key
+
+    @pytest.fixture(params=["delete", "remove", "replace", "patch", "save"])
+    def change(
+        self, request, client, auth_headers, cover
+    ) -> Callable[[], httpx.Response]:
+        model_id, _key = cover
+        path = f"/api/v1/multipart-models/{model_id}"
+
+        def execute():
+            if request.param == "delete":
+                return client.delete(path, headers=auth_headers)
+            if request.param == "remove":
+                return client.delete(path + "/cover", headers=auth_headers)
+            if request.param == "replace":
+                return client.put(
+                    path + "/cover",
+                    headers=auth_headers,
+                    files={"file": ("new.png", png(width=9, height=9), "image/png")},
+                )
+            payload = {"cover_image_url": "https://images.example.test/cover.webp"}
+            if request.param == "save":
+                return client.put(
+                    path, headers=auth_headers, json={**payload, "parts": []}
+                )
+            return client.patch(path, headers=auth_headers, json=payload)
+
+        return execute
+
+    def test_retires_a_verified_cover(self, cover, change, db_session):
+        model_id, key = cover
+        response = change()
+        assert response.status_code in (200, 204), response.text
+        db_session.expire_all()
+        proof = db_session.exec(
+            select(OwnedStorageObject).where(OwnedStorageObject.key == key)
+        ).one()
+        intent = db_session.exec(
+            select(StorageDeleteIntent).where(StorageDeleteIntent.key == key)
+        ).one()
+        assert proof.state is StorageObjectState.RETIRING
+        assert intent.resource_kind == "multipart_model_cover"
+        assert intent.resource_id == str(model_id)
+        assert intent.sha256 == proof.sha256
+        backend = get_backend()
+        assert backend.capabilities.tier is StorageTier.VERIFIED
+        assert intent.status == "completed"
+        assert not backend.exists(key)
+
+    @pytest.mark.parametrize("fs_kind", ["unknown", "network"])
+    def test_retains_a_guarded_cover(self, cover, change, db_session):
+        model_id, key = cover
+        response = change()
+        assert response.status_code in (200, 204), response.text
+        db_session.expire_all()
+        proof = db_session.exec(
+            select(OwnedStorageObject).where(OwnedStorageObject.key == key)
+        ).one()
+        intent = db_session.exec(
+            select(StorageDeleteIntent).where(StorageDeleteIntent.key == key)
+        ).one()
+        assert proof.state is StorageObjectState.RETIRING
+        assert intent.resource_kind == "multipart_model_cover"
+        assert intent.resource_id == str(model_id)
+        assert intent.sha256 == proof.sha256
+        assert intent.authorization_mode == "guarded"
+        assert intent.status == "blocked"
+        assert intent.last_error == "storage_guarded_delete_unsupported"
+        assert get_backend().exists(key)
+        assert process_storage_delete_intents().completed == 0
+        assert get_backend().exists(key)
+
+    @pytest.mark.parametrize("fs_kind", ["unknown", "network"])
+    def test_deletes_after_removing_the_last_part(
+        self,
+        cover,
+        client,
+        auth_headers,
+        make_model,
+        make_file,
+        db_session,
+    ):
+        model_id, key = cover
+        member = make_model("Removed member")
+        artifact = make_file(member, file_type=FileType.STL)
+        path = f"/api/v1/multipart-models/{model_id}"
+        parts = client.put(
+            path + "/parts",
+            headers=auth_headers,
+            json={"parts": [{"name": "Part", "model_ids": [member.id]}]},
+        )
+        assert parts.status_code == 200, parts.text
+        assert (
+            client.delete(
+                f"/api/v1/models/{member.id}", headers=auth_headers
+            ).status_code
+            == 204
+        )
+        assert (
+            client.put(
+                path + "/parts", headers=auth_headers, json={"parts": []}
+            ).status_code
+            == 200
+        )
+
+        deleted = client.delete(path, headers=auth_headers)
+
+        assert deleted.status_code == 204, deleted.text
+        assert client.get(path, headers=auth_headers).status_code == 404
+        db_session.expire_all()
+        assert db_session.get(File, artifact.id) is not None
+        assert get_backend().exists(key)
+
+    @pytest.mark.parametrize("fs_kind", ["local", "unknown"])
+    @pytest.mark.parametrize(
+        "problem", ["no_proof", "changed", "missing", "wrong_provider", "blocked"]
+    )
+    def test_refuses_unverifiable_ownership(
+        self,
+        cover,
+        change,
+        problem,
+        db_session,
+        client,
+        auth_headers,
+    ):
+        from pathlib import Path
+
+        model_id, key = cover
+        proof = db_session.exec(
+            select(OwnedStorageObject).where(OwnedStorageObject.key == key)
+        ).one()
+        if problem == "no_proof":
+            db_session.delete(proof)
+        elif problem == "changed":
+            data = get_backend().read_bytes(key)
+            Path(key).write_bytes(bytes([data[0] ^ 1]) + data[1:])
+        elif problem == "missing":
+            Path(key).unlink()
+        elif problem == "wrong_provider":
+            proof.provider_ref = "different-provider"
+            db_session.add(proof)
+        else:
+            proof.state = StorageObjectState.BLOCKED
+            db_session.add(proof)
+        db_session.commit()
+
+        response = change()
+
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "storage_ownership_unverified"
+        current = client.get(
+            f"/api/v1/multipart-models/{model_id}", headers=auth_headers
+        )
+        assert current.status_code == 200
+        assert current.json()["cover_image_uploaded"] is True
+        assert get_backend().exists(key) is (problem != "missing")
+        db_session.expire_all()
+        assert (
+            db_session.exec(
+                select(StorageDeleteIntent).where(StorageDeleteIntent.key == key)
+            ).first()
+            is None
+        )
+
+    @pytest.mark.parametrize("fs_kind", ["unknown", "network"])
+    def test_requires_a_hash_on_guarded_storage(self, cover, change, db_session):
+        _model_id, key = cover
+        proof = db_session.exec(
+            select(OwnedStorageObject).where(OwnedStorageObject.key == key)
+        ).one()
+        proof.sha256 = None
+        db_session.add(proof)
+        db_session.commit()
+
+        response = change()
+
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "storage_ownership_unverified"
+        assert get_backend().exists(key)
+
+    def test_keeps_verified_inode_checks(self, cover, change):
+        from pathlib import Path
+
+        _model_id, key = cover
+        path = Path(key)
+        replacement = path.with_suffix(".replacement")
+        replacement.write_bytes(path.read_bytes())
+        replacement.replace(path)
+
+        response = change()
+
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "storage_ownership_unverified"
+        assert path.exists()
