@@ -145,20 +145,14 @@ test.describe("multipart models", () => {
 
     await openLibraryTools(page);
     await page.getByRole("button", { name: "New multipart set" }).first().click();
-    await expect(page.getByRole("dialog")).toContainText(
-      "Adding a part references an existing Model. It remains reusable and can always be found in Everything.",
-    );
-    await page.getByLabel("Name", { exact: true }).fill(group);
-    await page.getByRole("button", { name: "Create multipart set" }).click();
-    await page.getByRole("button", { name: "Add a part" }).click();
-    await page
-      .getByRole("dialog", { name: "Choose existing models" })
-      .getByRole("textbox", { name: "Search existing models" })
-      .fill(base);
-    await page.getByRole("button", { name: new RegExp(base) }).click();
-    await page.getByRole("button", { name: "Add parts (1)" }).click();
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByText("Changes saved")).toBeVisible();
+    const create = page.getByRole("dialog", { name: "New multipart set", exact: true });
+    await create.getByLabel("Name", { exact: true }).fill(group);
+    await create.getByRole("textbox", { name: "Search existing models" }).fill(base);
+    await create.getByRole("button", { name: base, exact: true }).click();
+    await expect(create.getByRole("status")).toHaveText("1 selected");
+    await create.getByRole("button", { name: "Create multipart set" }).click();
+    await expect(page.getByRole("heading", { name: group, exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: new RegExp(base) })).toBeVisible();
 
     await page.goto("/?type=all");
     await openLibraryTools(page);
