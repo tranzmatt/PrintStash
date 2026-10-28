@@ -26,6 +26,134 @@ from tests.factories.content import png
 
 
 class TestMultipartModels:
+    def test_create_persists_initial_parts(
+        self, client, auth_headers, make_model, make_collection
+    ):
+        collection = make_collection("Assembly destination")
+        first, second = make_model("Base"), make_model("Lid")
+        response = client.post(
+            "/api/v1/multipart-models",
+            headers=auth_headers,
+            json={
+                "name": "Selected assembly",
+                "description": "Chosen before creating",
+                "collection_id": collection.id,
+                "parts": [
+                    {"name": "Base", "choices": [{"model_id": first.id}]},
+                    {"name": "Lid", "choices": [{"model_id": second.id}]},
+                ],
+            },
+        )
+        assert response.status_code == 201, response.text
+        created = response.json()
+        saved = client.get(
+            f"/api/v1/multipart-models/{created['id']}", headers=auth_headers
+        ).json()
+        assert saved["description"] == "Chosen before creating"
+        assert saved["collection_id"] == collection.id
+        assert [
+            (part["name"], part["quantity"], part["models"][0]["id"])
+            for part in saved["parts"]
+        ] == [
+            ("Base", 1, first.id),
+            ("Lid", 1, second.id),
+        ]
+        assert saved["part_count"] == 2
+        assert (
+            client.get(f"/api/v1/models/{first.id}", headers=auth_headers).json()[
+                "collection_id"
+            ]
+            == first.collection_id
+        )
+
+    @pytest.mark.parametrize(
+        "problem,code",
+        [
+            ("missing", "multipart_model_member_not_found"),
+            ("duplicate", "multipart_model_duplicate_member"),
+            ("trashed", "multipart_model_member_not_found"),
+        ],
+    )
+    def test_create_rejects_invalid_initial_parts_atomically(
+        self, client, auth_headers, make_model, db_session, problem, code
+    ):
+        member = make_model("Initial member")
+        if problem == "trashed":
+            member.deleted_at = utcnow()
+            db_session.add(member)
+            db_session.commit()
+        ids = (
+            [member.id, 99999999]
+            if problem == "missing"
+            else [member.id, member.id]
+            if problem == "duplicate"
+            else [member.id]
+        )
+        before = client.get("/api/v1/multipart-models", headers=auth_headers).json()
+        response = client.post(
+            "/api/v1/multipart-models",
+            headers=auth_headers,
+            json={
+                "name": "Invalid selected assembly",
+                "parts": [
+                    {"name": f"Part {index}", "choices": [{"model_id": value}]}
+                    for index, value in enumerate(ids)
+                ],
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == code
+        assert (
+            client.get("/api/v1/multipart-models", headers=auth_headers).json()
+            == before
+        )
+
+    def test_create_rejects_unreadable_initial_member(
+        self,
+        client,
+        auth_headers,
+        make_model,
+        make_collection,
+        make_user,
+        headers_for,
+        grant_role,
+    ):
+        target = make_collection("Writable destination")
+        private = make_collection("Private source")
+        member = make_model("Hidden member", collection=private)
+        user = make_user("assembly-creator")
+        grant_role(user, target, CollectionRole.EDIT)
+        before = client.get("/api/v1/multipart-models", headers=auth_headers).json()
+        response = client.post(
+            "/api/v1/multipart-models",
+            headers=headers_for(user),
+            json={
+                "name": "Forbidden assembly",
+                "collection_id": target.id,
+                "parts": [{"name": "Hidden", "choices": [{"model_id": member.id}]}],
+            },
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "collection_permission_denied"
+        assert (
+            client.get("/api/v1/multipart-models", headers=auth_headers).json()
+            == before
+        )
+
+    def test_create_bounds_initial_parts(self, client, auth_headers):
+        response = client.post(
+            "/api/v1/multipart-models",
+            headers=auth_headers,
+            json={
+                "name": "Too many pieces",
+                "parts": [
+                    {"name": f"Part {index}", "choices": [{"model_id": index + 1}]}
+                    for index in range(101)
+                ],
+            },
+        )
+        assert response.status_code == 422
+
     def test_full_save_updates_metadata_with_composition_atomically(
         self, client, auth_headers, make_model
     ) -> None:

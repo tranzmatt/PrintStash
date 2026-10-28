@@ -2085,6 +2085,8 @@
   "multipart.collectionsError": "Couldn't load collections.",
   "multipart.candidatesError": "Couldn't load models. Try again.",
   "multipart.retry": "Retry",
+  "multipart.creationSelectionHelp": "{count} selected · Up to {limit} models per set",
+  "multipart.selectPage": "Select this page",
   "multipart.selectedCount": "{count} selected",
   "multipart.previousPage": "Previous",
   "multipart.nextPage": "Next",

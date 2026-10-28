@@ -2085,6 +2085,8 @@
   "multipart.collectionsError": "No se han podido cargar las colecciones.",
   "multipart.candidatesError": "No se han podido cargar los modelos. Inténtalo de nuevo.",
   "multipart.retry": "Reintentar",
+  "multipart.creationSelectionHelp": "{count} seleccionados · Hasta {limit} modelos por conjunto",
+  "multipart.selectPage": "Seleccionar esta página",
   "multipart.selectedCount": "{count} seleccionados",
   "multipart.previousPage": "Anterior",
   "multipart.nextPage": "Siguiente",

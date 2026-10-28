@@ -2116,16 +2116,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
             key={selectedCollectionRow?.id ?? "vault"}
             open={multipartCreateOpen}
             onClose={() => setMultipartCreateOpen(false)}
-            collection={
-              selectedCollectionRow
-                ? {
-                    id: selectedCollectionRow.id,
-                    path: selectedCollectionRow.path,
-                    name: selectedCollectionRow.name,
-                    display_path: selectedCollectionRow.display_path,
-                  }
-                : null
-            }
+            collection={selectedCollectionRow ?? null}
             returnTo={currentLibraryHref}
           />
         </DeferredDialog>

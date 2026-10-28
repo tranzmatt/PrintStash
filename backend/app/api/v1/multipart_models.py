@@ -187,8 +187,23 @@ def create_multipart_model(
     )
     session.add(aggregate)
     try:
-        content_changed(session, "multipart_model", (row.id for row in (aggregate,)))
+        if payload.parts:
+            session.flush()
+            multipart_models.save_in_transaction(
+                session, current_user, aggregate, payload.parts
+            )
+        else:
+            content_changed(
+                session, "multipart_model", (row.id for row in (aggregate,))
+            )
         session.commit()
+    except multipart_models.MultipartModelError as exc:
+        session.rollback()
+        code = exc.code
+        raise HTTPException(
+            status_code=403 if code == "collection_permission_denied" else 400,
+            detail=code,
+        ) from exc
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(

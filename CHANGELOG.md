@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- New multipart sets use the ZIP importer’s searchable destination dropdown. Folder names and full paths are readable on narrow screens, with focus placed in search when opened.
+- New multipart sets let you browse collections, search and select Models before creating the set. The explorer shares search, breadcrumbs and selection cards with the ZIP importer, retains choices between folders and pages, and saves the selected pieces together. The destination dropdown shows readable folder names and full paths.
 
 - Already-processed linked STL files show current storage-access failures in the viewer and their Source Files card, with safe credential guidance instead of a generic server error and no extra probe.
 
