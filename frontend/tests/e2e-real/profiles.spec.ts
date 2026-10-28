@@ -110,14 +110,10 @@ test.describe("profiles", () => {
       .getByRole("dialog", { name: "Delete filament preset?" })
       .getByRole("button", { name: "Delete preset" })
       .click();
-    await expect
-      .poll(async () => {
-        const inputs = section.getByLabel(/^Filament preset name/);
-        const n = await inputs.count();
-        for (let i = 0; i < n; i++) if ((await inputs.nth(i).inputValue()) === name) return true;
-        return false;
-      })
-      .toBe(false);
+    // Counting inputs before reading each one races with the row disappearing.
+    await expect(
+      section.getByRole("region", { name: `Profile: ${name}`, exact: true }),
+    ).toHaveCount(0);
   });
 
   test("keeps an invalid local draft while another preset refreshes the catalog", async ({
@@ -195,14 +191,10 @@ test.describe("profiles", () => {
       .getByRole("dialog", { name: "Delete printer preset?" })
       .getByRole("button", { name: "Delete preset" })
       .click();
-    await expect
-      .poll(async () => {
-        const inputs = section.getByLabel(/^Printer preset name/);
-        const n = await inputs.count();
-        for (let i = 0; i < n; i++) if ((await inputs.nth(i).inputValue()) === name) return true;
-        return false;
-      })
-      .toBe(false);
+    // Counting inputs before reading each one races with the row disappearing.
+    await expect(
+      section.getByRole("region", { name: `Profile: ${name}`, exact: true }),
+    ).toHaveCount(0);
   });
   for (const kind of ["filament", "printer"] as const) {
     test(`two ${kind} preset editors recover a competing save`, async ({ page }) => {
