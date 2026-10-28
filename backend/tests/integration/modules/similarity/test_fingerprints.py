@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from printstash_core.mesh.similarity import cloud
 from printstash_core.mesh.similarity.components import ExpandedScene
 from sqlmodel import Session, select
 
@@ -202,6 +203,39 @@ class TestFingerprintLeases:
         assert db_session.exec(select(GeometryFingerprint)).all() == []
 
 
+class TestSurfaceCloudBackfill:
+    def test_recomputes_a_ready_fingerprint_without_a_cloud(
+        self, db_session, make_model, make_file, make_geometry_fingerprint
+    ):
+        file = make_file(make_model())
+        previous = make_geometry_fingerprint(file, state="ready")
+
+        claimed = fingerprints.claim(db_session, file)
+
+        assert claimed is not None
+        assert claimed[0] == previous.id
+
+    def test_keeps_a_ready_fingerprint_with_a_cloud(
+        self, db_session, make_model, make_file, make_geometry_fingerprint, extracted
+    ):
+        file = make_file(make_model())
+        make_geometry_fingerprint(
+            file,
+            state="ready",
+            cloud_blob=extracted.records[0].values["cloud_blob"],
+        )
+
+        assert fingerprints.claim(db_session, file) is None
+
+    def test_keeps_a_partial_fingerprint_without_a_cloud(
+        self, db_session, make_model, make_file, make_geometry_fingerprint
+    ):
+        file = make_file(make_model())
+        make_geometry_fingerprint(file, state="partial")
+
+        assert fingerprints.claim(db_session, file) is None
+
+
 class TestFingerprintPublication:
     @pytest.mark.parametrize("state", list(FingerprintResultState))
     def test_persists_each_outcome_as_a_text_state(
@@ -249,6 +283,37 @@ class TestFingerprintPublication:
         assert all(row.volume == pytest.approx(1000) for row in rows)
         assert all(len(row.d2_blob) == len(row.sh_blob) == 256 for row in rows)
         assert all(row.lease_token is None for row in rows)
+
+    def test_persists_a_surface_cloud_for_every_complete_row(
+        self, db_session, make_model, make_file, extracted
+    ):
+        file = make_file(make_model())
+
+        fingerprints.publish_precomputed(db_session, file, extracted)
+
+        rows = db_session.exec(select(GeometryFingerprint)).all()
+        assert all(
+            cloud.SurfaceCloud.decode(row.cloud_blob).points.shape
+            == (cloud.CLOUD_POINTS, 3)
+            for row in rows
+        )
+
+    def test_persists_no_surface_cloud_for_partial_geometry(
+        self, db_session, make_model, make_file
+    ):
+        file = make_file(make_model())
+        partial = extract(
+            PreparedMesh(
+                tetrahedron(),
+                ExpandedScene((), ()),
+                SampledGeometry(FingerprintFailureCode.SAMPLED_SOURCE),
+            )
+        )
+
+        fingerprints.publish_precomputed(db_session, file, partial)
+
+        rows = db_session.exec(select(GeometryFingerprint)).all()
+        assert [row.cloud_blob for row in rows] == [None] * len(rows)
 
     def test_precomputed_publication_is_idempotent(
         self, db_session, make_model, make_file, extracted

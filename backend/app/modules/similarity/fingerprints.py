@@ -10,7 +10,7 @@ from datetime import timedelta
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
-from sqlmodel import Session, col, or_, select
+from sqlmodel import Session, and_, col, or_, select
 
 from app.core.time import ensure_utc, utcnow
 from app.db.models import ExternalLibraryTombstone, File, GeometryFingerprint, Model
@@ -135,7 +135,14 @@ def claim_in_transaction(
         update(GeometryFingerprint)
         .where(
             GeometryFingerprint.id == row.id,
-            col(GeometryFingerprint.state).in_(states),
+            or_(
+                col(GeometryFingerprint.state).in_(states),
+                # Fingerprinted before surface clouds existed: compute it once.
+                and_(
+                    GeometryFingerprint.state == "ready",
+                    col(GeometryFingerprint.cloud_blob).is_(None),
+                ),
+            ),
             or_(
                 col(GeometryFingerprint.lease_token).is_(None),
                 col(GeometryFingerprint.lease_expires_at) <= now,
@@ -244,6 +251,7 @@ def publish_in_transaction(
             "d2_blob",
             "sh_blob",
             "view_blob",
+            "cloud_blob",
         ):
             setattr(row, key, values.get(key))
         keys = values["keys"]

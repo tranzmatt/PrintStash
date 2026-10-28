@@ -88,6 +88,10 @@ class GeometryFingerprint(SQLModel, table=True):
     view_blob: bytes | None = Field(
         default=None, sa_column=Column(LargeBinary, nullable=True)
     )
+    # Complete geometry carries a surface cloud; partial geometry never does.
+    cloud_blob: bytes | None = Field(
+        default=None, sa_column=Column(LargeBinary, nullable=True)
+    )
     instance_count: int = Field(default=1)
     recipe_json: str = Field(default="{}", sa_column=Column(Text, nullable=False))
     metrics_json: str = Field(default="{}", sa_column=Column(Text, nullable=False))

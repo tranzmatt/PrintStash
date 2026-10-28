@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 
-from printstash_core.mesh.similarity import GeometryError
+from printstash_core.mesh.similarity import GeometryError, cloud
 from sqlmodel import Session, col, func, select
 
 from app.core.errors import OperationError
@@ -362,6 +362,16 @@ class SimilarityProcessor:
             triangle_cap=config.triangle_cap,
         ):
             counters["verification_cached"] = counters.get("verification_cached", 0) + 1
+            return
+        if (
+            first.cloud_blob is not None
+            and second.cloud_blob is not None
+            and cloud.rejects(
+                cloud.SurfaceCloud.decode(first.cloud_blob),
+                cloud.SurfaceCloud.decode(second.cloud_blob),
+            )
+        ):
+            counters["rejected_by_cloud"] = counters.get("rejected_by_cloud", 0) + 1
             return
         try:
             with prepare_sources(
