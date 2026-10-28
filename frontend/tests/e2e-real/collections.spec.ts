@@ -14,7 +14,6 @@ import {
   createCollectionViaVault,
   gcodeFor,
   modelCard,
-  libraryTool,
   openLibraryTools,
   uploadModel,
 } from "./util";
@@ -187,7 +186,7 @@ test.describe("collections", () => {
     // ── Bulk rename resolves persisted Recent entries through the same identity ──
     await page.goto("/");
     await openLibraryTools(page);
-    await libraryTool(page, "Select").click();
+
     await page.getByRole("checkbox", { name: `Select folder ${headingName}`, exact: true }).check();
     await page.getByRole("button", { name: "Rename", exact: true }).click();
     const rename = page.getByRole("dialog");

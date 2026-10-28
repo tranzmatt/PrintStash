@@ -231,8 +231,8 @@ function ModelCardInner({
             : "border-border hover:border-primary"
         }`}
       >
-        {selectable && (
-          <div className="absolute left-2 top-2 z-10">
+        {onToggleSelect && (
+          <div className="absolute left-2 top-2 z-10 rounded bg-card/90 p-1.5 shadow-sm">
             <Checkbox
               checked={selected}
               onChange={() => onToggleSelect?.(model.id)}

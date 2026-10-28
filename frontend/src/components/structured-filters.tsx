@@ -12,7 +12,7 @@ import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
 import { X } from "lucide-react";
 import { LibraryFilterMenu } from "@/components/library-filter-menu";
-import { useId, useState } from "react";
+import { useState } from "react";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Localized } from "@/components/ui/localized";
@@ -43,6 +43,36 @@ const GROUPS: FacetFilterKey[] = [
 
 /** Sliced output is listed apart from the source formats it was made from. */
 const SLICED_FILE_TYPES = new Set(["gcode"]);
+
+/** Every facet uses the same checkbox, spacing and count treatment. */
+function FilterChoice({
+  label,
+  count,
+  checked,
+  onChange,
+}: {
+  label: string;
+  count?: number | null;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors duration-press hover:bg-muted">
+      <Checkbox
+        className="h-4 w-4 shrink-0"
+        ariaLabel={label}
+        checked={checked}
+        onChange={onChange}
+      />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {count != null && (
+        <span className="min-w-[18px] rounded bg-muted px-1 py-0.5 text-center text-2xs font-medium text-muted-foreground">
+          {count}
+        </span>
+      )}
+    </label>
+  );
+}
 
 export function StructuredFilters({
   facets,
@@ -75,7 +105,6 @@ export function StructuredFilters({
   error?: boolean;
 }) {
   useUiLocale();
-  const printedGroupName = useId();
   const [open, setOpen] = useState<Partial<Record<FilterKey, boolean>>>({});
   const [extraOpen, setExtraOpen] = useState<{ history?: boolean; uploaded?: boolean }>({});
   const historyActive = historyKeys.some((key) => history[key] != null && history[key] !== "");
@@ -222,21 +251,13 @@ export function StructuredFilters({
             const contentId = `model-filter-${key}`;
             if (values.length === 0 && selected.length === 0) return null;
             const row = (item: FacetValueRead) => (
-              <label
+              <FilterChoice
                 key={item.value}
-                className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors duration-press hover:bg-muted"
-              >
-                <Checkbox
-                  className="h-4 w-4"
-                  ariaLabel={filterValueText(key, item.value)}
-                  checked={selected.includes(item.value)}
-                  onChange={() => toggleValue(key, item.value)}
-                />
-                <span className="min-w-0 flex-1 truncate">{filterValueText(key, item.value)}</span>
-                <span className="min-w-[18px] rounded bg-muted px-1 py-0.5 text-center text-2xs font-medium text-muted-foreground">
-                  {item.count}
-                </span>
-              </label>
+                label={filterValueText(key, item.value)}
+                count={item.count}
+                checked={selected.includes(item.value)}
+                onChange={() => toggleValue(key, item.value)}
+              />
             );
             const sources =
               key === "file_type"
@@ -251,10 +272,13 @@ export function StructuredFilters({
               if (key === "printed") {
                 const options = [
                   { value: null, label: uiText("All"), count: null },
-                  ...values.map((item) => ({ ...item, label: filterValueText(key, item.value) })),
+                  ...values.map((item) => ({
+                    ...item,
+                    label: item.value === "yes" ? uiText("Printed") : uiText("Not printed"),
+                  })),
                   ...missing.map((value) => ({
                     value,
-                    label: filterValueText(key, value),
+                    label: value === "yes" ? uiText("Printed") : uiText("Not printed"),
                     count: null,
                   })),
                 ];
@@ -265,30 +289,19 @@ export function StructuredFilters({
                     count={selected.length}
                   >
                     {options.map((item) => (
-                      <label
+                      <FilterChoice
                         key={item.value ?? "all"}
-                        className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-popover-hover"
-                      >
-                        <input
-                          type="radio"
-                          name={printedGroupName}
-                          aria-label={item.label}
-                          value={item.value ?? "all"}
-                          checked={
-                            item.value === null
-                              ? selected.length !== 1
-                              : selected.length === 1 && selected[0] === item.value
-                          }
-                          onChange={() => onChange(key, item.value === null ? [] : [item.value])}
-                          className="h-4 w-4 accent-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        />
-                        <span className="min-w-0 flex-1">{item.label}</span>
-                        {item.count !== null && (
-                          <span className="text-2xs tabular-nums text-muted-foreground">
-                            {item.count}
-                          </span>
-                        )}
-                      </label>
+                        label={item.label}
+                        count={item.count}
+                        checked={
+                          item.value === null
+                            ? selected.length !== 1
+                            : selected.length === 1 && selected[0] === item.value
+                        }
+                        onChange={(checked) =>
+                          onChange(key, item.value === null || !checked ? [] : [item.value])
+                        }
+                      />
                     ))}
                   </LibraryFilterMenu>
                 );
@@ -303,17 +316,12 @@ export function StructuredFilters({
                   {sources.length > 0 && sliced.length > 0 && <Separator className="my-1" />}
                   {sliced.map(row)}
                   {missing.map((value) => (
-                    <label
+                    <FilterChoice
                       key={value}
-                      className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
-                    >
-                      <Checkbox
-                        ariaLabel={filterValueText(key, value)}
-                        checked
-                        onChange={() => toggleValue(key, value)}
-                      />
-                      {filterValueText(key, value)}
-                    </label>
+                      label={filterValueText(key, value)}
+                      checked
+                      onChange={() => toggleValue(key, value)}
+                    />
                   ))}
                 </LibraryFilterMenu>
               );

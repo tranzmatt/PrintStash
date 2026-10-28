@@ -510,22 +510,73 @@ describe("StructuredFilters inline", () => {
       />,
     );
     await user.click(screen.getByRole("button", { name: "Printed" }));
-    expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "All",
+      }),
+    ).toBeChecked();
     expect(within(screen.getByRole("dialog", { name: "Printed" })).getByText("0")).toBeVisible();
-    await user.click(screen.getByRole("radio", { name: "Yes" }));
-    await user.click(screen.getByRole("radio", { name: "No" }));
-    expect(screen.getByRole("radio", { name: "Yes" })).not.toBeChecked();
-    expect(screen.getByRole("radio", { name: "No" })).toBeChecked();
-    expect(screen.getByRole("button", { name: "Printed" })).toHaveTextContent("Printed(1)");
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Printed",
+      }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Not printed",
+      }),
+    );
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Printed",
+      }),
+    ).not.toBeChecked();
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Not printed",
+      }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: "Printed", expanded: true })).toHaveTextContent(
+      "Printed(1)",
+    );
   });
 
   it("clears the printed status with All when its count is unavailable", async () => {
     const user = userEvent.setup();
     render(<StatefulFilters active={{ printed: ["no"] }} />);
     await user.click(screen.getByRole("button", { name: "Printed" }));
-    expect(screen.getByRole("radio", { name: "No" })).toBeChecked();
-    await user.click(screen.getByRole("radio", { name: "All" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Not printed",
+      }),
+    ).toBeChecked();
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "All",
+      }),
+    );
     expect(screen.queryByRole("button", { name: "Printed" })).not.toBeInTheDocument();
+  });
+
+  it("clears the active printed choice directly", async () => {
+    const user = userEvent.setup();
+    render(
+      <StatefulFilters
+        active={{ printed: ["no"] }}
+        facets={{
+          ...FACETS,
+          printed: [
+            { value: "yes", count: 0 },
+            { value: "no", count: 4 },
+          ],
+        }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Printed" }));
+    const menu = screen.getByRole("dialog", { name: "Printed" });
+    await user.click(within(menu).getByRole("checkbox", { name: "Not printed" }));
+    expect(within(menu).getByRole("checkbox", { name: "All" })).toBeChecked();
+    expect(within(menu).getByRole("checkbox", { name: "Not printed" })).not.toBeChecked();
   });
 
   it.each(["Uploaded", "Print history", "File type", "Material"])(

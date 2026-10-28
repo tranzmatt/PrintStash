@@ -28,7 +28,7 @@ test.describe("Library filter dropdowns", () => {
       await filters.getByRole("button", { name: "Printed", exact: true }).click();
       await page
         .getByRole("dialog", { name: "Printed" })
-        .getByRole("radio", { name: "No", exact: true })
+        .getByRole("checkbox", { name: "Not printed", exact: true })
         .click();
       await expect(page).toHaveURL(/printed=no/);
       await page.keyboard.press("Escape");
@@ -57,7 +57,7 @@ test.describe("Library filter dropdowns", () => {
       await filters.getByRole("button", { name: "Printed", exact: true }).click();
       await page
         .getByRole("dialog", { name: "Printed" })
-        .getByRole("radio", { name: "All", exact: true })
+        .getByRole("checkbox", { name: "All", exact: true })
         .click();
       await expect(page).not.toHaveURL(/printed=no/);
       await page.keyboard.press("Escape");

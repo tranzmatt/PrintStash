@@ -10,6 +10,48 @@ useMockApi();
 test.describe("compact Library filters", () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
 
+  test("uses the same checkbox choices for printed status", async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem("printstash.theme", "dark"));
+    await page.route("**/api/v1/models/facets**", (route) =>
+      route.fulfill({
+        json: {
+          file_type: [],
+          material_type: [],
+          slicer_name: [],
+          printer_model: [],
+          revision_status: [],
+          print_outcome: [],
+          storage: [],
+          printed: [
+            { value: "yes", count: 0 },
+            { value: "no", count: 3 },
+          ],
+        },
+      }),
+    );
+    await page.goto("/?printed=no");
+    await expect(page.getByRole("main")).toHaveAttribute("aria-busy", "false");
+    const filters = page.getByRole("main").getByRole("region", { name: "Filters", exact: true });
+    await filters.getByRole("button", { name: "Printed", exact: true }).click();
+    const menu = page.getByRole("dialog", { name: "Printed", exact: true });
+    await expect(menu.getByRole("checkbox", { name: "Not printed", exact: true })).toBeChecked();
+    await expect(menu.getByText("0", { exact: true })).toBeVisible();
+    await expect(menu).toHaveCSS("opacity", "1");
+    await page.screenshot({
+      path: testInfo.outputPath("printed-checkbox.png"),
+      animations: "disabled",
+      clip: { x: 220, y: 140, width: 1150, height: 450 },
+    });
+    await menu.getByRole("checkbox", { name: "Printed", exact: true }).click();
+    await expect(page).toHaveURL(/printed=yes/);
+    await expect(
+      menu.getByRole("checkbox", { name: "Not printed", exact: true }),
+    ).not.toBeChecked();
+    await expect(menu.getByRole("checkbox", { name: "Printed", exact: true })).toBeChecked();
+    await menu.getByRole("checkbox", { name: "All", exact: true }).click();
+    await expect(page).not.toHaveURL(/printed=/);
+  });
+
   test("keeps loading feedback in the existing filter row", async ({ page }) => {
     const pending = Promise.withResolvers<void>();
     await page.route("**/api/v1/models/facets**", async (route) => {

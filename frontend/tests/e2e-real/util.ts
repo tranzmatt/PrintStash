@@ -92,7 +92,7 @@ export async function openLibraryTools(page: Page): Promise<void> {
 }
 
 /** Toolbar actions use native button semantics on every viewport. */
-export function libraryTool(page: Page, name: "New collection" | "Select") {
+export function libraryTool(page: Page, name: "New collection") {
   return page
     .getByRole("group", { name: "Library tools", exact: true })
     .getByRole("button", { name, exact: true });

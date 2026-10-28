@@ -4,14 +4,14 @@
 
 ### Added
 
-- Library filters use compact dropdowns for upload dates, print history, file types and printed status. Date fields offer calendar pickers, file formats support multiple selections, and printed status offers All, Yes and No with model counts. Neutral picker buttons show selection counts, while blue chips below show the active values.
+- Library filters use compact dropdowns for upload dates, print history, file types and printed status. Date fields offer calendar pickers, file formats support multiple selections, and printed status offers All, Printed and Not printed using the same checkbox rows and count badges as the other facets. Neutral picker buttons show selection counts, while blue chips below show the active values.
 
 - Filament and printer profiles use compact summaries and collapsible details with inline notes, an explicit editor and searchable slicer settings from G-code. Equal configurations are grouped with their source files, different presets and values remain separate variants, and print settings stay with each source file. Existing files are refreshed in the background. These are observed print settings, not restorable slicer preset backups.
 - Builds is now reached from Multipart Models through Create build and Build history, keeping manufacturing out of general navigation while preserving existing runs and viewer access.
 
 ### Fixed
 
-- Library actions for Similar models, New collection and Select are visible beside Filters in the library toolbar, wrapping within the same area on narrow screens.
+- Library actions for Similar models and New collection are visible beside Filters in the library toolbar, wrapping within the same area on narrow screens. Models and folders offer direct selection checkboxes in grid and list views; batch actions appear after the first selection and close when the last item is deselected.
 
 - Buttons, links and clickable controls consistently show the arrow cursor, using shared action and disabled cursor tokens. Text editing, dragging and resizing retain their appropriate cursors.
 - Settings → Imports links directly to the published PrintStash Chrome extension, alongside its source instructions.
