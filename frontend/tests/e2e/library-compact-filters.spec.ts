@@ -34,7 +34,7 @@ test.describe("compact Library filters", () => {
       const uploaded = filters.getByRole("button", { name: "Uploaded", exact: true });
       await expect(loading).toBeVisible();
       await expect(filters.getByRole("button", { name: "File type", exact: true })).toContainText(
-        "3MF",
+        "(1)",
       );
       await expect(uploaded).toBeEnabled();
       await expect(page.getByTitle("Remove File type: 3MF", { exact: true })).toBeVisible();
@@ -62,7 +62,7 @@ test.describe("compact Library filters", () => {
       await expect(similar).toBeChecked();
       await expect(page).toHaveURL(/has_similar_candidates=yes/);
       await expect(filters.getByRole("button", { name: "File type", exact: true })).toContainText(
-        "3MF",
+        "(1)",
       );
       expect((await uploaded.boundingBox())!.y).toBe(before!.y);
       expect((await filters.boundingBox())!.height).toBe(panel!.height);
@@ -80,9 +80,11 @@ test.describe("compact Library filters", () => {
     const filters = main.getByRole("region", { name: "Filters", exact: true });
     await expect(main).toHaveAttribute("aria-busy", "false");
     await expect(filters.getByRole("button", { name: "File type", exact: true })).toContainText(
-      "3MF",
+      "(1)",
     );
-    await expect(filters.getByRole("button", { name: "Printed", exact: true })).toContainText("No");
+    await expect(filters.getByRole("button", { name: "Printed", exact: true })).toContainText(
+      "(1)",
+    );
     await expect(page.getByRole("dialog")).toHaveCount(0);
     const closedHeight = (await filters.boundingBox())!.height;
     const uploaded = filters.getByRole("button", { name: "Uploaded", exact: true });
@@ -130,6 +132,7 @@ test.describe("compact Library filters", () => {
     });
     await page.screenshot({ path: "../reports/desktop-compact-filters-1080p.png" });
     await uploaded.click();
+    await expect(dates).toHaveCSS("opacity", "1");
     await page.screenshot({
       path: "../reports/library-date-dropdown.png",
       animations: "disabled",

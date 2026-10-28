@@ -263,7 +263,6 @@ export function StructuredFilters({
                     key={key}
                     label={structuredLibraryFilterLabel(key)}
                     count={selected.length}
-                    summary={selected.length === 1 ? filterValueText(key, selected[0]) : undefined}
                   >
                     {options.map((item) => (
                       <label
@@ -299,11 +298,6 @@ export function StructuredFilters({
                   key={key}
                   label={structuredLibraryFilterLabel(key)}
                   count={selected.length}
-                  summary={
-                    key === "file_type" && selected.length > 0
-                      ? selected.map((value) => filterValueText(key, value)).join(", ")
-                      : undefined
-                  }
                 >
                   {sources.map(row)}
                   {sources.length > 0 && sliced.length > 0 && <Separator className="my-1" />}

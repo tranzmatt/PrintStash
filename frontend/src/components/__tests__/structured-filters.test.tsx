@@ -436,7 +436,8 @@ describe("StructuredFilters inline", () => {
     await user.click(screen.getByRole("checkbox", { name: "G-code" }));
     expect(screen.getByRole("checkbox", { name: "STL" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "G-code" })).toBeChecked();
-    expect(screen.getByRole("button", { name: "File type" })).toHaveTextContent("STL, G-code");
+    expect(screen.getByRole("button", { name: "File type" })).toHaveTextContent("File type(2)");
+    expect(screen.getByRole("button", { name: "File type" })).not.toHaveTextContent("STL");
     expect(within(screen.getByRole("dialog", { name: "File type" })).getByText("12")).toBeVisible();
   });
 
@@ -515,7 +516,7 @@ describe("StructuredFilters inline", () => {
     await user.click(screen.getByRole("radio", { name: "No" }));
     expect(screen.getByRole("radio", { name: "Yes" })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: "No" })).toBeChecked();
-    expect(screen.getByRole("button", { name: "Printed" })).toHaveTextContent("No");
+    expect(screen.getByRole("button", { name: "Printed" })).toHaveTextContent("Printed(1)");
   });
 
   it("clears the printed status with All when its count is unavailable", async () => {
