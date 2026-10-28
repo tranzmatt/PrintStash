@@ -66,13 +66,6 @@ errors still fail the operation. See [deployment layout](deployment.md#hard-link
 
 Directory `fsync` support is diagnostic only. Local paths on network or unknown filesystems are capped at Guarded even when hardlinks work.
 
-Deleting a Multipart Model or removing/replacing its uploaded cover retires the
-cover reference. On Guarded storage, PrintStash first checks the committed
-ownership record, size and content hash, then retains the old image bytes in a
-blocked cleanup intent. This does not bypass physical-deletion safeguards or
-delete member Models. Missing or changed ownership evidence blocks the operation
-with storage guidance.
-
 ## local
 
 Local filesystem directories.
