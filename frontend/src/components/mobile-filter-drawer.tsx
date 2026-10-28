@@ -33,6 +33,7 @@ interface MobileFilterDrawerProps {
   canViewPrinters?: boolean;
   loading?: boolean;
   structuredFilters?: React.ReactNode;
+  libraryActions?: React.ReactNode;
   libraryView: LibraryViewMode;
   onLibraryViewChange: (view: LibraryViewMode) => void;
 }
@@ -69,6 +70,7 @@ export function MobileFilterDrawer({ open, onClose, ...filterProps }: MobileFilt
         </button>
       </div>
       <div className="overflow-y-auto" style={{ height: "calc(100dvh - 60px)" }}>
+        {filterProps.libraryActions}
         <FilterSidebarContent {...filterProps} readinessEnabled={open} />
       </div>
     </Drawer>

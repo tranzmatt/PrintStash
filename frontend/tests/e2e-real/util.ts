@@ -86,25 +86,21 @@ export async function seedExpiredStaging(): Promise<{ itemId: number; path: stri
   return JSON.parse(stdout);
 }
 
-/** Reveal the library's secondary commands through its visible toolbar. */
+/** Desktop actions are visible; phones reveal the same left sidebar in Filters. */
 export async function openLibraryTools(page: Page): Promise<void> {
-  if (await page.getByRole("region", { name: "Library tools", exact: true }).isVisible()) return;
-  const trigger = page.getByRole("button", { name: "Library tools", exact: true });
-  const more = page.getByRole("main").getByRole("button", { name: "More", exact: true });
-  await expect(trigger.or(more).first()).toBeVisible();
-  if (!(await trigger.isVisible())) {
-    await more.click();
-    await page.getByRole("menuitem", { name: "Library tools", exact: true }).click();
-  } else if ((await trigger.getAttribute("aria-expanded")) === "false") {
-    await trigger.click();
+  const actions = page.getByRole("navigation", { name: "Library tools", exact: true });
+  await expect(page.locator("main").first()).toBeVisible();
+  if (!(await actions.isVisible())) {
+    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
   }
+  await expect(actions).toBeVisible();
 }
 
-/** The same command is a desktop menu item or a mobile disclosure button. */
+/** Sidebar actions use native button semantics on every viewport. */
 export function libraryTool(page: Page, name: "New collection" | "Select") {
   return page
-    .getByRole("button", { name, exact: true })
-    .or(page.getByRole(name === "Select" ? "menuitemcheckbox" : "menuitem", { name, exact: true }));
+    .getByRole("navigation", { name: "Library tools", exact: true })
+    .getByRole("button", { name, exact: true });
 }
 
 // The backend dedupes files by content hash, so the bytes must be unique per

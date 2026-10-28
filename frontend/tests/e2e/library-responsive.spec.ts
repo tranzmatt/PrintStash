@@ -217,9 +217,53 @@ test.describe("Library responsive layout", () => {
     await page.getByRole("main").getByRole("button", { name: "More", exact: true }).click();
 
     const menu = page.getByRole("menu");
-    await expect(menu.getByRole("menuitem", { name: "Library tools" })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Library tools" })).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "New multipart set" })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "Display", exact: true })).toBeVisible();
+  });
+
+  test("shows library actions in the phone sidebar", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto("/");
+    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
+    const drawer = page.getByRole("dialog", { name: "Filters", exact: true });
+    const actions = drawer.getByRole("navigation", { name: "Library tools" });
+    await expect(actions.getByRole("link", { name: "Similar models" })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "New collection" })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Select", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await page.screenshot({ path: testInfo.outputPath("library-actions-phone.png") });
+
+    await actions.getByRole("button", { name: "Select", exact: true }).click();
+
+    await expect(drawer).toBeHidden();
+    await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+  });
+
+  test("starts collection creation from the phone sidebar", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto("/");
+    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
+    const drawer = page.getByRole("dialog", { name: "Filters", exact: true });
+
+    await drawer.getByRole("button", { name: "New collection", exact: true }).click();
+
+    await expect(drawer).toBeHidden();
+    await expect(page.getByPlaceholder("Collection name...")).toBeVisible();
+  });
+
+  test("navigates to Similar models from the phone sidebar", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto("/");
+    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
+    const drawer = page.getByRole("dialog", { name: "Filters", exact: true });
+
+    await drawer.getByRole("link", { name: "Similar models", exact: true }).click();
+
+    await expect(drawer).toBeHidden();
+    await expect(page).toHaveURL(/\/library\/similar$/);
   });
 
   test("reserves the same card columns while results load", async ({ page }) => {

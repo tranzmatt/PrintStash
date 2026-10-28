@@ -42,8 +42,10 @@ test.describe("vault route", () => {
       });
     });
     await page.goto("/?type=all&sort=name-asc");
-    await page.getByRole("button", { name: "Library tools" }).click();
-    await page.getByRole("menuitemcheckbox", { name: "Select", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Library tools" })
+      .getByRole("button", { name: "Select", exact: true })
+      .click();
     await page.getByRole("checkbox", { name: "Select Selection 2", exact: true }).click();
 
     await page.locator('main [data-library-entry="/models/103"]').click({ modifiers: ["Shift"] });
@@ -85,8 +87,10 @@ test.describe("vault route", () => {
       }),
     );
     await page.goto("/");
-    await page.getByRole("button", { name: "Library tools" }).click();
-    await page.getByRole("menuitemcheckbox", { name: "Select", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Library tools" })
+      .getByRole("button", { name: "Select", exact: true })
+      .click();
     await page.getByRole("checkbox", { name: "Select Review bracket" }).click();
     await page.getByRole("button", { name: "Tag", exact: true }).click();
     const editor = page.getByRole("dialog");
@@ -233,8 +237,10 @@ test.describe("vault route", () => {
       return route.fulfill({ status: 412, json: { detail: "edit_conflict" } });
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "Library tools" }).click();
-    await page.getByRole("menuitemcheckbox", { name: "Select", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Library tools" })
+      .getByRole("button", { name: "Select", exact: true })
+      .click();
     await page.getByRole("checkbox", { name: "Select Undo bracket" }).click();
     await page.getByRole("button", { name: "Tag", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -593,14 +599,14 @@ test.describe("vault route on a phone-width viewport", () => {
     await expect(sort).toContainText("Best success rate");
   });
 
-  test("puts every secondary action in the More menu", async ({ page }) => {
+  test("keeps remaining secondary actions in the More menu", async ({ page }) => {
     await gotoMobileVault(page);
 
     const menu = await openMobileMore(page);
 
     await expect(menu.getByRole("menuitemcheckbox", { name: "Favorites" })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: /Saved views/ })).toBeVisible();
-    await expect(menu.getByRole("menuitemcheckbox", { name: "Select" })).toBeVisible();
+    await expect(menu.getByRole("menuitemcheckbox", { name: "Select" })).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "Display" })).toBeVisible();
     if (process.env.PRINTSTASH_CAPTURE_UI) {
       await page.screenshot({ path: "/tmp/printstash-all-models-360-more.png", fullPage: true });
@@ -615,10 +621,6 @@ test.describe("vault route on a phone-width viewport", () => {
     const menu = await openMobileMore(page);
 
     await expect(menu.getByRole("menuitemcheckbox", { name: "Favorites" })).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
-    await expect(menu.getByRole("menuitemcheckbox", { name: "Select" })).toHaveAttribute(
       "aria-checked",
       "false",
     );
@@ -647,18 +649,19 @@ test.describe("vault route on a phone-width viewport", () => {
   });
 
   test("offers a way out of selection mode", async ({ page }) => {
-    // Entering it renames the item to "Done"; without that the only escape is a
-    // reload, and the user has a bar of batch actions they cannot dismiss.
     await gotoMobileVault(page);
-    const menu = await openMobileMore(page);
-    await menu.getByRole("menuitemcheckbox", { name: "Select" }).click();
+    const filters = page.getByRole("main").getByRole("button", { name: "Filters", exact: true });
+    await filters.click();
+    const actions = page.getByRole("navigation", { name: "Library tools", exact: true });
+    await actions.getByRole("button", { name: "Select", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Filters", exact: true })).toBeHidden();
 
-    await openMobileMore(page);
+    await filters.click();
+    const select = actions.getByRole("button", { name: "Select", exact: true });
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await select.click();
 
-    await expect(page.getByRole("menuitemcheckbox", { name: "Done" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveCount(0);
   });
 
   test("switches the display from the menu", async ({ page }) => {

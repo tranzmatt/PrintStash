@@ -108,7 +108,6 @@ import { useI18n } from "@/lib/i18n";
 import { useMobileFilterDrawer } from "@/lib/mobile-filter-context";
 import {
   SlidersHorizontal,
-  Settings2,
   Grid,
   List,
   FileText,
@@ -627,8 +626,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   const [desktopSortOpen, setDesktopSortOpen] = useState(false);
   const [desktopDisplayOpen, setDesktopDisplayOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [libraryToolsOpen, setLibraryToolsOpen] = useState(false);
-  const [desktopLibraryToolsOpen, setDesktopLibraryToolsOpen] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState<boolean | null>(null);
   const [compact, setCompact] = useState(
     () => readVaultPreference("ps-vault-density") === "compact",
@@ -1339,8 +1336,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     );
   }
 
-  const showLibraryTools = libraryToolsOpen;
-
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Selected folders are kept as the rows they were picked from: they may leave
   // the view (another folder opened) and still need their names and paths.
@@ -2022,6 +2017,57 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       </div>
     );
 
+  const libraryActions = (
+    <nav
+      aria-label={t("vault.libraryTools")}
+      className="shrink-0 space-y-0.5 border-b border-border p-2"
+    >
+      <h3 className="mb-1 px-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+        {t("vault.libraryTools")}
+      </h3>
+      <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
+        <Link href="/library/similar" onClick={closeDrawer}>
+          <ScanSearch className="h-4 w-4 shrink-0" aria-hidden />
+          {t("similarity.title")}
+        </Link>
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start"
+        disabled={!canAdminSelectedCollection}
+        title={
+          canAdminSelectedCollection
+            ? uiText("Create a collection")
+            : uiText("Admin access required for this collection")
+        }
+        onClick={() => {
+          handleOpenCreateCollection();
+          closeDrawer();
+        }}
+      >
+        <Plus className="h-4 w-4 shrink-0" aria-hidden />
+        {uiText("New collection")}
+      </Button>
+      {auth.isAuthenticated && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn("w-full justify-start", selectMode && "bg-accent text-accent-foreground")}
+          aria-pressed={selectMode}
+          title={uiText("Select Models and folders (S)")}
+          onClick={() => {
+            toggleSelectMode();
+            closeDrawer();
+          }}
+        >
+          <CheckSquare className="h-4 w-4 shrink-0" aria-hidden />
+          {uiText("Select")}
+        </Button>
+      )}
+    </nav>
+  );
+
   return (
     <Localized>
       <>
@@ -2123,6 +2169,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           />
         </DeferredDialog>
         <MobileFilterDrawer
+          libraryActions={libraryActions}
           outlinerFilters={baseFilters}
           open={filterDrawerOpen}
           onClose={closeDrawer}
@@ -2164,6 +2211,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
 
         {/* Stitch layout: filter sidebar + main content */}
         <FilterSidebar
+          libraryActions={libraryActions}
           filtersOpen={false}
           outlinerFilters={baseFilters}
           tags={tags}
@@ -2490,18 +2538,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 }
                 contentClassName="w-64 rounded border border-border bg-popover p-1 text-popover-foreground shadow-lg"
               >
-                <Button
-                  variant="ghost"
-                  role="menuitem"
-                  className="w-full justify-start"
-                  onClick={() => {
-                    setLibraryToolsOpen(!showLibraryTools);
-                    setMoreOpen(false);
-                  }}
-                >
-                  <SlidersHorizontal className="h-4 w-4" aria-hidden />
-                  {t("vault.libraryTools")}
-                </Button>
                 {docView === "models" && (
                   <Button
                     variant="ghost"
@@ -2581,23 +2617,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                       triggerSize="sm"
                       triggerVariant="ghost"
                     />
-                    <button
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={selectMode}
-                      title={uiText("Select Models and folders (S)")}
-                      onClick={() => {
-                        toggleSelectMode();
-                        setMoreOpen(false);
-                      }}
-                      className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm transition-colors hover:bg-popover-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectMode ? "bg-accent text-accent-foreground" : ""}`}
-                    >
-                      <CheckSquare className="h-4 w-4" />
-                      <span className="flex-1">
-                        {selectMode ? uiText("Done") : uiText("Select")}
-                      </span>
-                      {selectMode && <Check className="h-3.5 w-3.5" />}
-                    </button>
                   </>
                 )}
                 <DisplayMenu
@@ -2655,71 +2674,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 </Button>
               )}
 
-              <DropdownMenu
-                open={desktopLibraryToolsOpen}
-                onOpenChange={setDesktopLibraryToolsOpen}
-                align="start"
-                portal
-                trigger={
-                  <Button
-                    type="button"
-                    variant={desktopLibraryToolsOpen ? "secondary" : "outline"}
-                    size="xs"
-                    className="h-8"
-                    data-menu-trigger
-                    aria-haspopup="menu"
-                    aria-expanded={desktopLibraryToolsOpen}
-                    aria-label={t("vault.libraryTools")}
-                    onClick={() => setDesktopLibraryToolsOpen(!desktopLibraryToolsOpen)}
-                  >
-                    <Settings2 className="h-4 w-4" aria-hidden />
-                    {t("vault.libraryTools")}
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-                  </Button>
-                }
-                contentClassName="w-60 rounded border border-border bg-popover p-1 text-popover-foreground shadow-lg"
-              >
-                <Button variant="ghost" role="menuitem" className="w-full justify-start" asChild>
-                  <Link href="/library/similar" onClick={() => setDesktopLibraryToolsOpen(false)}>
-                    <ScanSearch className="h-4 w-4" aria-hidden />
-                    {t("similarity.title")}
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  role="menuitem"
-                  className="w-full justify-start"
-                  disabled={!canAdminSelectedCollection}
-                  title={
-                    canAdminSelectedCollection
-                      ? uiText("Create a collection")
-                      : uiText("Admin access required for this collection")
-                  }
-                  onClick={() => {
-                    setDesktopLibraryToolsOpen(false);
-                    handleOpenCreateCollection();
-                  }}
-                >
-                  <Plus className="h-4 w-4" aria-hidden />
-                  {uiText("New collection")}
-                </Button>
-                {auth.isAuthenticated && (
-                  <Button
-                    variant="ghost"
-                    role="menuitemcheckbox"
-                    aria-checked={selectMode}
-                    className="w-full justify-start"
-                    title={uiText("Select Models and folders (S)")}
-                    onClick={() => {
-                      setDesktopLibraryToolsOpen(false);
-                      toggleSelectMode();
-                    }}
-                  >
-                    <CheckSquare className="h-4 w-4" aria-hidden />
-                    {selectMode ? uiText("Done") : uiText("Select")}
-                  </Button>
-                )}
-              </DropdownMenu>
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 <SortMenu
                   open={desktopSortOpen}
@@ -2900,104 +2854,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 </button>
               </form>
             </div>
-          )}
-
-          {showLibraryTools && (
-            <section
-              id="library-tools"
-              aria-label={t("vault.libraryTools")}
-              className="space-y-3 border-b border-border bg-muted/20 px-4 py-3 sm:px-6 @3xl/library:hidden"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="xs" asChild className="h-9">
-                  <Link href="/library/similar">
-                    <ScanSearch className="h-4 w-4" aria-hidden />
-                    {t("similarity.title")}
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={handleOpenCreateCollection}
-                  disabled={!canAdminSelectedCollection}
-                  title={
-                    canAdminSelectedCollection
-                      ? uiText("Create a collection")
-                      : uiText("Admin access required for this collection")
-                  }
-                  className="h-9"
-                >
-                  <Plus className="w-4 h-4 text-muted-foreground" />
-                  {uiText("New collection")}
-                </Button>
-                {auth.isAuthenticated && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant={favoritesOnly ? "secondary" : "outline"}
-                      size="xs"
-                      aria-pressed={favoritesOnly}
-                      onClick={toggleFavorites}
-                      className="h-10 sm:h-8"
-                    >
-                      <Star className={`h-4 w-4 ${favoritesOnly ? "fill-current" : ""}`} />{" "}
-                      {uiText("Favorites")}
-                    </Button>
-                    <SavedViewSelector
-                      key={savedViewsOwner.session}
-                      readState={savedViewReadState}
-                      views={savedViews}
-                      activeId={activeSavedViewId}
-                      modified={savedViewModified}
-                      onSelect={applySavedView}
-                      onCreate={openSaveView}
-                      onUpdate={(view) =>
-                        manageSavedView(
-                          {
-                            kind: "update",
-                            id: view.id,
-                            payload: { filters: currentFilters },
-                          },
-                          "savedView.updateSuccess",
-                        )
-                      }
-                      onRename={(view, name) =>
-                        manageSavedView(
-                          { kind: "update", id: view.id, payload: { name } },
-                          "savedView.renameSuccess",
-                        )
-                      }
-                      onDuplicate={(view) =>
-                        manageSavedView(
-                          {
-                            kind: "create",
-                            name: duplicateViewName(view.name),
-                            filters: effectiveLibraryView(view.filters, canViewPrinters),
-                          },
-                          "savedView.duplicateSuccess",
-                        )
-                      }
-                      onDelete={(view) =>
-                        manageSavedView({ kind: "delete", id: view.id }, "savedView.deleteSuccess")
-                      }
-                      triggerClassName="h-10 sm:h-8"
-                    />
-                    {!selectMode && (
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        aria-pressed={selectMode}
-                        title={uiText("Select Models and folders (S)")}
-                        onClick={toggleSelectMode}
-                        className="h-10 sm:h-8"
-                      >
-                        <CheckSquare className="w-4 h-4" />
-                        {uiText("Select")}
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
           )}
 
           {selectMode && (

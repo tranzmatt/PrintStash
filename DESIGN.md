@@ -126,8 +126,10 @@ information; when several technical views need separation, use the existing
 for a small set of related status values instead of a row of decorative badges.
 For current storage, lead with the provider and one active safety state. Keep
 paths readable but secondary; explain migration in its workflow, not in the
-status card. Similar candidates belong in each Model's Similar tab; do not
-duplicate that entry in the library toolbar or global header. Keep Model detail
+status card. Similar candidates belong in each Model's Similar tab. The library-wide Similar
+models page, New collection and Select actions stay visible in the left sidebar;
+small screens expose the same actions in the Filters drawer. Keep these actions
+out of the library toolbar and global header. Keep Model detail
 tabs in one row, with horizontal scrolling only when their labels cannot fit.
 Async settings cards keep their header and reserve the shape of their content
 with skeletons until initial reads settle. Do not expose a partial form whose
