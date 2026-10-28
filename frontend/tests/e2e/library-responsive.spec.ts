@@ -222,47 +222,100 @@ test.describe("Library responsive layout", () => {
     await expect(menu.getByRole("menuitem", { name: "Display", exact: true })).toBeVisible();
   });
 
-  test("shows library actions in the phone sidebar", async ({ page }, testInfo) => {
+  for (const width of [320, 390, 824, 1440]) {
+    test(`fits library actions within the toolbar at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/");
+      const actions = page.getByRole("main").getByRole("group", { name: "Library tools" });
+      const toolbar = actions.locator("..");
+      await expect(toolbar.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
+      await expect(actions.getByRole("link", { name: "Similar models" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "New collection" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "Select", exact: true })).toBeVisible();
+      const bounds = await toolbar.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+  }
+
+  test("aligns library actions with Filters", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto("/");
+    const actions = page.getByRole("main").getByRole("group", { name: "Library tools" });
+    const filters = actions.locator("..").getByRole("button", { name: "Filters", exact: true });
+    const boxes = await Promise.all([
+      filters.boundingBox(),
+      actions.getByRole("link", { name: "Similar models" }).boundingBox(),
+      actions.getByRole("button", { name: "New collection" }).boundingBox(),
+      actions.getByRole("button", { name: "Select", exact: true }).boundingBox(),
+    ]);
+    expect(boxes.every((box) => box !== null)).toBe(true);
+    expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1);
+    expect(boxes[1]!.x).toBeGreaterThan(boxes[0]!.x);
+    await page.screenshot({
+      path: testInfo.outputPath("library-actions-toolbar.png"),
+      animations: "disabled",
+    });
+  });
+
+  test("follows the visible toolbar order with the keyboard on phones", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.goto("/");
-    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
-    const drawer = page.getByRole("dialog", { name: "Filters", exact: true });
-    const actions = drawer.getByRole("navigation", { name: "Library tools" });
-    await expect(actions.getByRole("link", { name: "Similar models" })).toBeVisible();
-    await expect(actions.getByRole("button", { name: "New collection" })).toBeVisible();
+    const main = page.getByRole("main");
+    await main.getByRole("button", { name: "Filters", exact: true }).focus();
+
+    await page.keyboard.press("Tab");
+    await expect(main.getByRole("button", { name: "Sort models", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(main.getByRole("button", { name: "More", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(main.getByRole("link", { name: "Similar models", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(main.getByRole("button", { name: "New collection", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(main.getByRole("button", { name: "Select", exact: true })).toBeFocused();
+  });
+
+  test("shows library actions in the phone toolbar", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto("/");
+    const actions = page.getByRole("main").getByRole("group", { name: "Library tools" });
     await expect(actions.getByRole("button", { name: "Select", exact: true })).toHaveAttribute(
       "aria-pressed",
       "false",
     );
-    await page.screenshot({ path: testInfo.outputPath("library-actions-phone.png") });
 
     await actions.getByRole("button", { name: "Select", exact: true }).click();
 
-    await expect(drawer).toBeHidden();
     await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Filters", exact: true })).toHaveCount(0);
   });
 
-  test("starts collection creation from the phone sidebar", async ({ page }) => {
+  test("starts collection creation from the phone toolbar", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.goto("/");
-    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
-    const drawer = page.getByRole("dialog", { name: "Filters", exact: true });
 
-    await drawer.getByRole("button", { name: "New collection", exact: true }).click();
+    await page
+      .getByRole("group", { name: "Library tools" })
+      .getByRole("button", { name: "New collection", exact: true })
+      .click();
 
-    await expect(drawer).toBeHidden();
     await expect(page.getByPlaceholder("Collection name...")).toBeVisible();
   });
 
-  test("navigates to Similar models from the phone sidebar", async ({ page }) => {
+  test("navigates to Similar models from the phone toolbar", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.goto("/");
-    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
-    const drawer = page.getByRole("dialog", { name: "Filters", exact: true });
 
-    await drawer.getByRole("link", { name: "Similar models", exact: true }).click();
+    await page
+      .getByRole("group", { name: "Library tools" })
+      .getByRole("link", { name: "Similar models", exact: true })
+      .click();
 
-    await expect(drawer).toBeHidden();
     await expect(page).toHaveURL(/\/library\/similar$/);
   });
 

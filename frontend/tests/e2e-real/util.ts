@@ -86,20 +86,15 @@ export async function seedExpiredStaging(): Promise<{ itemId: number; path: stri
   return JSON.parse(stdout);
 }
 
-/** Desktop actions are visible; phones reveal the same left sidebar in Filters. */
+/** Library commands are visible beside Filters at every viewport width. */
 export async function openLibraryTools(page: Page): Promise<void> {
-  const actions = page.getByRole("navigation", { name: "Library tools", exact: true });
-  await expect(page.locator("main").first()).toBeVisible();
-  if (!(await actions.isVisible())) {
-    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
-  }
-  await expect(actions).toBeVisible();
+  await expect(page.getByRole("group", { name: "Library tools", exact: true })).toBeVisible();
 }
 
-/** Sidebar actions use native button semantics on every viewport. */
+/** Toolbar actions use native button semantics on every viewport. */
 export function libraryTool(page: Page, name: "New collection" | "Select") {
   return page
-    .getByRole("navigation", { name: "Library tools", exact: true })
+    .getByRole("group", { name: "Library tools", exact: true })
     .getByRole("button", { name, exact: true });
 }
 

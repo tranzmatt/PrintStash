@@ -1343,7 +1343,6 @@ export interface FilterSidebarProps {
   canManageLibrary?: boolean;
   /** Library actions kept outside the independently scrolling outliner. */
   quickAccess?: React.ReactNode;
-  libraryActions?: React.ReactNode;
   loading?: boolean;
   outlinerFilter?: string;
   structuredFilters?: React.ReactNode;
@@ -1398,7 +1397,6 @@ export function FilterSidebar(props: FilterSidebarProps) {
         style={{ width: sidebarWidth }}
         className="bg-sidebar border-r border-border flex min-h-0 flex-col shrink-0 hidden md:flex relative"
       >
-        {props.libraryActions}
         <div className="p-2 border-b border-border bg-sidebar">
           <div className="relative">
             <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-muted-foreground">

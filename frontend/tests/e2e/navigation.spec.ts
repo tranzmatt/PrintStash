@@ -26,12 +26,10 @@ test.describe("app navigation", () => {
     await expect(page.locator("header").getByRole("searchbox")).toBeVisible();
   });
 
-  test("desktop sidebar opens Similar models", async ({ page }, testInfo) => {
+  test("desktop toolbar opens Similar models", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto("/");
-    const actions = page
-      .getByRole("complementary")
-      .getByRole("navigation", { name: "Library tools" });
+    const actions = page.getByRole("main").getByRole("group", { name: "Library tools" });
     const similar = actions.getByRole("link", { name: "Similar models", exact: true });
     await expect(similar).toBeVisible();
     await expect(similar).toHaveAttribute("href", "/library/similar");

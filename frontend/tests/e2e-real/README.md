@@ -168,7 +168,7 @@ Only the test certificate's trust check is relaxed; browser CORS remains enabled
 
 - `migration/vault-migration.spec.ts` (isolated `playwright.migration.config.ts`): real backup, preflight, online delta ingestion, API restart, recovery/resume, explicit cutover, byte-exact Artifact downloads, Full audit and JSON report. Source cleanup remains disabled during grace. Included in `pnpm test:e2e:real`.
 
-Search clarity: the AI-search flow verifies that Enter preserves the live library filter, explicit AI search opens results, and retrieval explanations stay hidden. Library workflows use visible Library tools in the left sidebar; phones expose the same actions through the Filters drawer.
+Search clarity: the AI-search flow verifies that Enter preserves the live library filter, explicit AI search opens results, and retrieval explanations stay hidden. Library workflows use visible Library tools beside Filters in the library toolbar, with the same actions wrapping on narrow panes.
 
 AI Search settings: the Settings browser flow waits for loaded AI data, visits guided setup, search types, AI servers and technical options, captures desktop and mobile views, and checks visible choices and horizontal fit.
 

@@ -2018,54 +2018,46 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     );
 
   const libraryActions = (
-    <nav
+    <div
+      role="group"
       aria-label={t("vault.libraryTools")}
-      className="shrink-0 space-y-0.5 border-b border-border p-2"
+      className="order-3 flex basis-full flex-wrap items-center gap-2 @3xl/library:order-2 @3xl/library:basis-auto"
     >
-      <h3 className="mb-1 px-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-        {t("vault.libraryTools")}
-      </h3>
-      <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
-        <Link href="/library/similar" onClick={closeDrawer}>
+      <Button variant="outline" size="xs" className="h-10 @3xl/library:h-8" asChild>
+        <Link href="/library/similar">
           <ScanSearch className="h-4 w-4 shrink-0" aria-hidden />
           {t("similarity.title")}
         </Link>
       </Button>
       <Button
-        variant="ghost"
-        size="sm"
-        className="w-full justify-start"
+        variant="outline"
+        size="xs"
+        className="h-10 @3xl/library:h-8"
         disabled={!canAdminSelectedCollection}
         title={
           canAdminSelectedCollection
             ? uiText("Create a collection")
             : uiText("Admin access required for this collection")
         }
-        onClick={() => {
-          handleOpenCreateCollection();
-          closeDrawer();
-        }}
+        onClick={handleOpenCreateCollection}
       >
         <Plus className="h-4 w-4 shrink-0" aria-hidden />
         {uiText("New collection")}
       </Button>
       {auth.isAuthenticated && (
         <Button
-          variant="ghost"
-          size="sm"
-          className={cn("w-full justify-start", selectMode && "bg-accent text-accent-foreground")}
+          variant={selectMode ? "ghost" : "outline"}
+          size="xs"
+          className={cn("h-10 @3xl/library:h-8", selectMode && "bg-accent text-accent-foreground")}
           aria-pressed={selectMode}
           title={uiText("Select Models and folders (S)")}
-          onClick={() => {
-            toggleSelectMode();
-            closeDrawer();
-          }}
+          onClick={toggleSelectMode}
         >
           <CheckSquare className="h-4 w-4 shrink-0" aria-hidden />
           {uiText("Select")}
         </Button>
       )}
-    </nav>
+    </div>
   );
 
   return (
@@ -2169,7 +2161,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           />
         </DeferredDialog>
         <MobileFilterDrawer
-          libraryActions={libraryActions}
           outlinerFilters={baseFilters}
           open={filterDrawerOpen}
           onClose={closeDrawer}
@@ -2211,7 +2202,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
 
         {/* Stitch layout: filter sidebar + main content */}
         <FilterSidebar
-          libraryActions={libraryActions}
           filtersOpen={false}
           outlinerFilters={baseFilters}
           tags={tags}
@@ -2484,177 +2474,168 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 {uiText("Upload")}
               </Button>
             </div>
-            <div className="grid w-full min-w-0 grid-cols-3 gap-2 @3xl/library:hidden">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={openDrawer}
-                className="w-full min-w-0 px-2 md:hidden"
+                className="order-1 h-10 min-w-0 flex-1 px-2 md:hidden"
               >
                 <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                 <span className="min-w-0 truncate">{uiText("Filters")}</span>
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={toggleStructuredFilters}
-                aria-expanded={filtersExpanded ?? activeFilterItems.length > Number(!!query.trim())}
-                aria-controls="library-filter-panel"
-                className="hidden w-full min-w-0 px-2 md:inline-flex"
-              >
-                <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-                <span className="min-w-0 truncate">{uiText("Filters")}</span>
-              </Button>
-              <SortMenu
-                open={sortOpen}
-                onOpenChange={setSortOpen}
-                sortKey={sortKey}
-                onSelect={selectSort}
-                labelFor={ui}
-                triggerSize="sm"
-                triggerClassName="h-10 w-full min-w-0 px-2 text-xs"
-                wrapperClassName="min-w-0"
-              />
-              <DropdownMenu
-                open={moreOpen}
-                onOpenChange={setMoreOpen}
-                align="end"
-                className="min-w-0"
-                trigger={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    data-menu-trigger
-                    aria-haspopup="menu"
-                    aria-expanded={moreOpen}
-                    aria-label={t("nav.more")}
-                    onClick={() => setMoreOpen(!moreOpen)}
-                    className="w-full min-w-0 px-2"
-                  >
-                    <MoreHorizontal className="h-4 w-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{t("nav.more")}</span>
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  </Button>
-                }
-                contentClassName="w-64 rounded border border-border bg-popover p-1 text-popover-foreground shadow-lg"
-              >
-                {docView === "models" && (
-                  <Button
-                    variant="ghost"
-                    role="menuitem"
-                    className="w-full justify-start"
-                    disabled={!user?.is_superuser && !canWriteCollection(selectedCollectionRow)}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setMultipartCreateOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" aria-hidden />
-                    {t("multipart.new")}
-                  </Button>
-                )}
-                {auth.isAuthenticated && (
-                  <>
-                    <button
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={favoritesOnly}
-                      onClick={() => {
-                        toggleFavorites();
-                        setMoreOpen(false);
-                      }}
-                      className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm transition-colors hover:bg-popover-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${favoritesOnly ? "bg-accent text-accent-foreground" : ""}`}
-                    >
-                      <Star className={`h-4 w-4 ${favoritesOnly ? "fill-current" : ""}`} />
-                      <span className="flex-1">{uiText("Favorites")}</span>
-                      {favoritesOnly && <Check className="h-3.5 w-3.5" />}
-                    </button>
-                    <SavedViewSelector
-                      key={savedViewsOwner.session}
-                      readState={savedViewReadState}
-                      views={savedViews}
-                      activeId={activeSavedViewId}
-                      modified={savedViewModified}
-                      onSelect={(view) => {
-                        applySavedView(view);
-                        setMoreOpen(false);
-                      }}
-                      onCreate={() => {
-                        setMoreOpen(false);
-                        openSaveView();
-                      }}
-                      onUpdate={(view) =>
-                        manageSavedView(
-                          {
-                            kind: "update",
-                            id: view.id,
-                            payload: { filters: currentFilters },
-                          },
-                          "savedView.updateSuccess",
-                        )
-                      }
-                      onRename={(view, name) =>
-                        manageSavedView(
-                          { kind: "update", id: view.id, payload: { name } },
-                          "savedView.renameSuccess",
-                        )
-                      }
-                      onDuplicate={(view) =>
-                        manageSavedView(
-                          {
-                            kind: "create",
-                            name: duplicateViewName(view.name),
-                            filters: effectiveLibraryView(view.filters, canViewPrinters),
-                          },
-                          "savedView.duplicateSuccess",
-                        )
-                      }
-                      onDelete={(view) =>
-                        manageSavedView({ kind: "delete", id: view.id }, "savedView.deleteSuccess")
-                      }
-                      triggerClassName="max-w-none w-full justify-start px-2.5 py-2 text-sm"
-                      triggerRole="menuitem"
-                      triggerSize="sm"
-                      triggerVariant="ghost"
-                    />
-                  </>
-                )}
-                <DisplayMenu
-                  open={displayOpen}
-                  onOpenChange={setDisplayOpen}
-                  viewMode={viewMode}
-                  compact={compact}
-                  onSelectMode={selectViewMode}
-                  onSelectDensity={selectDensity}
-                  labelFor={ui}
-                  triggerSize="sm"
-                  triggerVariant="ghost"
-                  triggerRole="menuitem"
-                  triggerClassName="w-full justify-start"
-                  onSelectComplete={() => setMoreOpen(false)}
-                />
-              </DropdownMenu>
-            </div>
-            <div className="hidden min-w-0 flex-wrap items-center gap-2 @3xl/library:flex">
               <Button
                 type="button"
                 variant="outline"
                 size="xs"
-                className="hidden h-8 md:inline-flex"
-                aria-label={uiText("Filters")}
+                onClick={toggleStructuredFilters}
                 aria-expanded={filtersExpanded ?? activeFilterItems.length > Number(!!query.trim())}
                 aria-controls="library-filter-panel"
-                onClick={toggleStructuredFilters}
+                className="order-1 hidden h-10 min-w-0 flex-1 px-2 md:inline-flex @3xl/library:h-8 @3xl/library:flex-none @3xl/library:px-3"
               >
-                <SlidersHorizontal className="h-4 w-4" aria-hidden />
-                {uiText("Filters")}
+                <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                <span className="min-w-0 truncate">{uiText("Filters")}</span>
                 {activeFilterItems.length > Number(!!query.trim()) && (
                   <span className="font-mono tabular-nums">
                     {activeFilterItems.length - Number(!!query.trim())}
                   </span>
                 )}
               </Button>
-
+              <div className="order-2 grid min-w-0 flex-2 grid-cols-2 gap-2 @3xl/library:hidden">
+                <SortMenu
+                  open={sortOpen}
+                  onOpenChange={setSortOpen}
+                  sortKey={sortKey}
+                  onSelect={selectSort}
+                  labelFor={ui}
+                  triggerSize="sm"
+                  triggerClassName="h-10 w-full min-w-0 px-2 text-xs"
+                  wrapperClassName="min-w-0"
+                />
+                <DropdownMenu
+                  open={moreOpen}
+                  onOpenChange={setMoreOpen}
+                  align="end"
+                  className="min-w-0"
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      data-menu-trigger
+                      aria-haspopup="menu"
+                      aria-expanded={moreOpen}
+                      aria-label={t("nav.more")}
+                      onClick={() => setMoreOpen(!moreOpen)}
+                      className="w-full min-w-0 px-2"
+                    >
+                      <MoreHorizontal className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">{t("nav.more")}</span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </Button>
+                  }
+                  contentClassName="w-64 rounded border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+                >
+                  {docView === "models" && (
+                    <Button
+                      variant="ghost"
+                      role="menuitem"
+                      className="w-full justify-start"
+                      disabled={!user?.is_superuser && !canWriteCollection(selectedCollectionRow)}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setMultipartCreateOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" aria-hidden />
+                      {t("multipart.new")}
+                    </Button>
+                  )}
+                  {auth.isAuthenticated && (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        aria-checked={favoritesOnly}
+                        onClick={() => {
+                          toggleFavorites();
+                          setMoreOpen(false);
+                        }}
+                        className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm transition-colors hover:bg-popover-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${favoritesOnly ? "bg-accent text-accent-foreground" : ""}`}
+                      >
+                        <Star className={`h-4 w-4 ${favoritesOnly ? "fill-current" : ""}`} />
+                        <span className="flex-1">{uiText("Favorites")}</span>
+                        {favoritesOnly && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                      <SavedViewSelector
+                        key={savedViewsOwner.session}
+                        readState={savedViewReadState}
+                        views={savedViews}
+                        activeId={activeSavedViewId}
+                        modified={savedViewModified}
+                        onSelect={(view) => {
+                          applySavedView(view);
+                          setMoreOpen(false);
+                        }}
+                        onCreate={() => {
+                          setMoreOpen(false);
+                          openSaveView();
+                        }}
+                        onUpdate={(view) =>
+                          manageSavedView(
+                            {
+                              kind: "update",
+                              id: view.id,
+                              payload: { filters: currentFilters },
+                            },
+                            "savedView.updateSuccess",
+                          )
+                        }
+                        onRename={(view, name) =>
+                          manageSavedView(
+                            { kind: "update", id: view.id, payload: { name } },
+                            "savedView.renameSuccess",
+                          )
+                        }
+                        onDuplicate={(view) =>
+                          manageSavedView(
+                            {
+                              kind: "create",
+                              name: duplicateViewName(view.name),
+                              filters: effectiveLibraryView(view.filters, canViewPrinters),
+                            },
+                            "savedView.duplicateSuccess",
+                          )
+                        }
+                        onDelete={(view) =>
+                          manageSavedView(
+                            { kind: "delete", id: view.id },
+                            "savedView.deleteSuccess",
+                          )
+                        }
+                        triggerClassName="max-w-none w-full justify-start px-2.5 py-2 text-sm"
+                        triggerRole="menuitem"
+                        triggerSize="sm"
+                        triggerVariant="ghost"
+                      />
+                    </>
+                  )}
+                  <DisplayMenu
+                    open={displayOpen}
+                    onOpenChange={setDisplayOpen}
+                    viewMode={viewMode}
+                    compact={compact}
+                    onSelectMode={selectViewMode}
+                    onSelectDensity={selectDensity}
+                    labelFor={ui}
+                    triggerSize="sm"
+                    triggerVariant="ghost"
+                    triggerRole="menuitem"
+                    triggerClassName="w-full justify-start"
+                    onSelectComplete={() => setMoreOpen(false)}
+                  />
+                </DropdownMenu>
+              </div>
+              {libraryActions}
               {docView === "models" && (
                 <Button
                   type="button"
@@ -2667,14 +2648,14 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                       ? undefined
                       : t("multipart.editAccess")
                   }
-                  className="h-8"
+                  className="order-3 hidden h-8 @3xl/library:inline-flex"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
                   {t("multipart.new")}
                 </Button>
               )}
 
-              <div className="ml-auto flex shrink-0 items-center gap-2">
+              <div className="order-4 ml-auto hidden shrink-0 items-center gap-2 @3xl/library:flex">
                 <SortMenu
                   open={desktopSortOpen}
                   onOpenChange={setDesktopSortOpen}

@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- Library actions for Similar models, New collection and Select are visible in the left sidebar, with the same controls in the mobile Filters drawer.
+- Library actions for Similar models, New collection and Select are visible beside Filters in the library toolbar, wrapping within the same area on narrow screens.
 
 - Buttons, links and clickable controls consistently show the arrow cursor, using shared action and disabled cursor tokens. Text editing, dragging and resizing retain their appropriate cursors.
 - Settings → Imports links directly to the published PrintStash Chrome extension, alongside its source instructions.

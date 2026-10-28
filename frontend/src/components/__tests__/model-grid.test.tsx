@@ -276,7 +276,7 @@ async function openFilters() {
 }
 
 async function waitForLibraryActions() {
-  expect(await screen.findByRole("navigation", { name: "Library tools" })).toBeVisible();
+  expect(await screen.findByRole("group", { name: "Library tools" })).toBeVisible();
 }
 
 beforeEach(() => {
@@ -289,11 +289,17 @@ afterEach(() => {
 
 describe("ModelBrowser", () => {
   describe("library actions", () => {
-    it("keeps library commands in the left sidebar", async () => {
+    it("keeps library commands beside Filters", async () => {
       renderVault({ models: [aModelListItem({ name: "Benchy" })] });
       await screen.findByText("Benchy");
-      const sidebar = screen.getByRole("complementary");
-      const actions = within(sidebar).getByRole("navigation", { name: "Library tools" });
+      const main = screen.getByRole("main");
+      const actions = within(main).getByRole("group", { name: "Library tools" });
+      expect(within(main).getAllByRole("button", { name: "Filters" })).not.toHaveLength(0);
+      expect(
+        within(screen.getByRole("complementary")).queryByRole("navigation", {
+          name: "Library tools",
+        }),
+      ).not.toBeInTheDocument();
 
       expect(within(actions).getByRole("link", { name: "Similar models" })).toBeVisible();
       expect(within(actions).getByRole("button", { name: "New collection" })).toBeVisible();
@@ -304,7 +310,7 @@ describe("ModelBrowser", () => {
     it("links to library-wide similar models", async () => {
       renderVault({ models: [aModelListItem({ name: "Benchy" })] });
       await screen.findByText("Benchy");
-      const actions = screen.getByRole("navigation", { name: "Library tools" });
+      const actions = screen.getByRole("group", { name: "Library tools" });
 
       expect(within(actions).getByRole("link", { name: "Similar models" })).toHaveAttribute(
         "href",
@@ -319,10 +325,10 @@ describe("ModelBrowser", () => {
       await user.click(screen.getByRole("menuitem", { name: "New multipart set" }));
       expect(screen.getByRole("dialog", { name: "New multipart set" })).toBeVisible();
     });
-    it("reflects selection state in the sidebar", async () => {
+    it("reflects selection state in the toolbar", async () => {
       const user = userEvent.setup();
       renderVault();
-      const actions = screen.getByRole("navigation", { name: "Library tools" });
+      const actions = screen.getByRole("group", { name: "Library tools" });
       const select = within(actions).getByRole("button", { name: "Select" });
       expect(select).toHaveAttribute("aria-pressed", "false");
 
@@ -336,7 +342,7 @@ describe("ModelBrowser", () => {
       const user = userEvent.setup();
       renderVault({ models: [aModelListItem({ name: "Benchy" })] });
       await screen.findByText("Benchy");
-      const actions = screen.getByRole("navigation", { name: "Library tools" });
+      const actions = screen.getByRole("group", { name: "Library tools" });
 
       await user.keyboard("s");
 
@@ -348,7 +354,7 @@ describe("ModelBrowser", () => {
     it("hides selection for signed-out readers", async () => {
       renderVault({ auth: signedOutSession(), models: [aModelListItem({ name: "Benchy" })] });
       await screen.findByText("Benchy");
-      const actions = screen.getByRole("navigation", { name: "Library tools" });
+      const actions = screen.getByRole("group", { name: "Library tools" });
 
       expect(within(actions).queryByRole("button", { name: "Select" })).not.toBeInTheDocument();
       expect(within(actions).getByRole("button", { name: "New collection" })).toBeDisabled();

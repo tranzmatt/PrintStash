@@ -43,7 +43,7 @@ test.describe("vault route", () => {
     });
     await page.goto("/?type=all&sort=name-asc");
     await page
-      .getByRole("navigation", { name: "Library tools" })
+      .getByRole("group", { name: "Library tools" })
       .getByRole("button", { name: "Select", exact: true })
       .click();
     await page.getByRole("checkbox", { name: "Select Selection 2", exact: true }).click();
@@ -88,7 +88,7 @@ test.describe("vault route", () => {
     );
     await page.goto("/");
     await page
-      .getByRole("navigation", { name: "Library tools" })
+      .getByRole("group", { name: "Library tools" })
       .getByRole("button", { name: "Select", exact: true })
       .click();
     await page.getByRole("checkbox", { name: "Select Review bracket" }).click();
@@ -238,7 +238,7 @@ test.describe("vault route", () => {
     });
     await page.goto("/");
     await page
-      .getByRole("navigation", { name: "Library tools" })
+      .getByRole("group", { name: "Library tools" })
       .getByRole("button", { name: "Select", exact: true })
       .click();
     await page.getByRole("checkbox", { name: "Select Undo bracket" }).click();
@@ -650,17 +650,15 @@ test.describe("vault route on a phone-width viewport", () => {
 
   test("offers a way out of selection mode", async ({ page }) => {
     await gotoMobileVault(page);
-    const filters = page.getByRole("main").getByRole("button", { name: "Filters", exact: true });
-    await filters.click();
-    const actions = page.getByRole("navigation", { name: "Library tools", exact: true });
-    await actions.getByRole("button", { name: "Select", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Filters", exact: true })).toBeHidden();
-
-    await filters.click();
-    const select = actions.getByRole("button", { name: "Select", exact: true });
+    const select = page
+      .getByRole("group", { name: "Library tools", exact: true })
+      .getByRole("button", { name: "Select", exact: true });
+    await select.click();
     await expect(select).toHaveAttribute("aria-pressed", "true");
+
     await select.click();
 
+    await expect(select).toHaveAttribute("aria-pressed", "false");
     await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveCount(0);
   });
 
