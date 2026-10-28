@@ -7,10 +7,12 @@ import { DropdownMenu } from "@/components/ui/dropdown-menu";
 export function LibraryFilterMenu({
   label,
   count = 0,
+  summary,
   children,
 }: {
   label: string;
   count?: number;
+  summary?: string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -36,7 +38,13 @@ export function LibraryFilterMenu({
           onClick={() => setOpen(!open)}
         >
           {label}
-          {count > 0 && <span className="font-mono tabular-nums">{count}</span>}
+          {summary ? (
+            <span className="max-w-28 truncate font-normal" title={summary}>
+              {summary}
+            </span>
+          ) : count > 0 ? (
+            <span className="font-mono tabular-nums">{count}</span>
+          ) : null}
           <ChevronDown className="h-3.5 w-3.5" aria-hidden />
         </Button>
       }

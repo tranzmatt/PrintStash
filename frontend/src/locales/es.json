@@ -1,4 +1,5 @@
 {
+  "All": "Todos",
   "profiles.description": "Gestiona perfiles de filamento e impresora con los ajustes del slicer observados en tus G-code.",
   "profiles.searchSettings": "Buscar un ajuste o valor",
   "profiles.valuesHelp": "Nombres y valores originales del laminador. Los valores múltiples conservan el orden de filamentos o extrusores; no se deducen los ajustes ausentes.",

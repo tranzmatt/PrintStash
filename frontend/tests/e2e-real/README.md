@@ -27,6 +27,8 @@ Artifact bytes. Historical release archives are checked separately by the
 - Vite on `:3310` with `VITE_API_URL` pointed at that backend.
 - The standalone Moonraker/Spoolman emulator used by fleet scenarios.
 
+`library-filters.spec.ts` filters a real uploaded Model through file-type, printed-status and calendar dropdowns, restores the range after reload, and clears a print-history date to recover the result.
+
 Library navigation covers desktop grid and phone list reading positions through
 detail, Back and Forward with 101 Models spanning several pages. A controlled
 real revision change starts from an already paged view and holds its next cursor

@@ -1,4 +1,5 @@
 {
+  "All": "All",
   "profiles.description": "Manage filament and printer profiles with slicer settings observed in your G-code.",
   "profiles.searchSettings": "Find a setting or value",
   "profiles.valuesHelp": "Original slicer parameter names and values. Multiple values retain the slicer's filament or extruder order; missing settings are not inferred.",
