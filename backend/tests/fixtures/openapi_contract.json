@@ -12031,6 +12031,14 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/MultipartPartWrite"
+            },
+            "maxItems": 100,
+            "title": "Parts",
+            "type": "array"
           }
         },
         "required": [
