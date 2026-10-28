@@ -56,10 +56,12 @@ export function NewMultipartModelModal({
   const [target, setTarget] = useState<CollectionChoice | null>(collection);
   const [selected, setSelected] = useState<Map<number, ModelListItem>>(new Map());
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectingFolder, setSelectingFolder] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function closeModal() {
+    setSelectingFolder(false);
     setSelected(new Map());
     setName("");
     setDescription("");
@@ -71,7 +73,7 @@ export function NewMultipartModelModal({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!name.trim() || busy) return;
+    if (!name.trim() || busy || selectingFolder) return;
     const session = getSessionVersion();
     setBusy(true);
     setError(null);
@@ -126,6 +128,8 @@ export function NewMultipartModelModal({
           </label>
         </div>
         <MultipartCreationBrowser
+          active={open}
+          onBusyChange={setSelectingFolder}
           selected={selected}
           onSelectionChange={setSelected}
           initialCollection={collection}
@@ -196,7 +200,7 @@ export function NewMultipartModelModal({
             <Button type="button" variant="outline" onClick={closeModal} disabled={busy}>
               {t("multipart.cancel")}
             </Button>
-            <Button type="submit" loading={busy} disabled={!name.trim()}>
+            <Button type="submit" loading={busy} disabled={!name.trim() || selectingFolder}>
               {t("multipart.create")}
             </Button>
           </div>

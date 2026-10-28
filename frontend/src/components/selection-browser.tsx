@@ -1,9 +1,10 @@
 /** Shared ZIP/library selection UI; callers own browsing, permissions and pagination. */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CheckSquare, ChevronRight, Folder, Search, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { folderMove, FOLDER_MOVE_CLASS, type FolderMove } from "@/lib/folder-transition";
 
 export function SelectionBrowserToolbar({
   query,
@@ -79,9 +80,12 @@ export function SelectionBrowserBreadcrumbs({
   items: Array<{ key: string; label: string; current: boolean; onClick: () => void }>;
 }) {
   return (
-    <nav aria-label={label} className="flex flex-wrap items-center gap-1 text-sm">
+    <nav
+      aria-label={label}
+      className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto text-sm"
+    >
       {items.map((item, index) => (
-        <span key={item.key} className="flex min-w-0 items-center gap-1">
+        <span key={item.key} className="flex min-w-0 shrink-0 items-center gap-1">
           {index > 0 && (
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
           )}
@@ -89,15 +93,58 @@ export function SelectionBrowserBreadcrumbs({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-auto whitespace-normal break-words text-left"
+            className="max-w-64 justify-start text-left"
+            title={item.label}
             onClick={item.onClick}
             aria-current={item.current ? "page" : undefined}
           >
-            {item.label}
+            <span className="truncate">{item.label}</span>
           </Button>
         </span>
       ))}
     </nav>
+  );
+}
+
+/** A stable scroll area: wait for a complete page, then move its contents as one group. */
+export function SelectionBrowserViewport({
+  path,
+  pageKey,
+  loading = false,
+  loadingLabel,
+  children,
+}: {
+  path: string;
+  pageKey: string;
+  loading?: boolean;
+  loadingLabel?: string;
+  children: ReactNode;
+}) {
+  const [location, setLocation] = useState<{ path: string; move: FolderMove }>({
+    path,
+    move: "jump",
+  });
+  if (location.path !== path) {
+    setLocation({ path, move: folderMove(location.path, path) });
+  }
+  return (
+    <div
+      data-selection-viewport
+      aria-busy={loading}
+      className="h-72 min-h-0 min-w-0 shrink overflow-y-auto overflow-x-hidden overscroll-contain pr-1"
+    >
+      {loading ? (
+        <div className="fade-in flex h-full min-h-28 items-center justify-center">
+          <p role="status" className="text-sm text-muted-foreground">
+            {loadingLabel}
+          </p>
+        </div>
+      ) : (
+        <div key={pageKey} className={FOLDER_MOVE_CLASS[location.move]}>
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -114,7 +161,14 @@ export function SelectionFolderCard({
   openLabel: string;
   onOpen: () => void;
   summary: ReactNode;
-  selection?: { selected: boolean; partial: boolean; label: string; onToggle: () => void };
+  selection?: {
+    selected: boolean;
+    partial: boolean;
+    label: string;
+    disabled?: boolean;
+    pending?: boolean;
+    onToggle: () => void;
+  };
 }) {
   return (
     <div
@@ -145,6 +199,8 @@ export function SelectionFolderCard({
             variant="ghost"
             size="icon"
             className="h-7 w-7 shrink-0"
+            disabled={selection.disabled}
+            aria-busy={selection.pending}
             aria-pressed={selection.selected}
             aria-label={selection.label}
             onClick={selection.onToggle}

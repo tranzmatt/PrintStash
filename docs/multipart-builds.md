@@ -9,7 +9,10 @@ Existing build URLs, saved runs and their results remain available.
 
 Choose **New multipart set** in the library to name a set and select its initial
 Models. Browse collection folders or search across the library; selections stay
-when changing folders or pages. **Select this page** selects the visible Models,
+when changing folders or pages. A folder checkbox selects or deselects its Models,
+including subfolders; its counter shows the selection within that folder. A folder
+that exceeds the remaining space is left unselected so you can browse into it.
+**Select this page** selects the visible Models,
 up to 100 per set. Choose the destination collection separately, then create the
 set. Each selected Model starts as one Part with quantity one, and remains
 independently reusable. The set and its initial Parts are saved together.

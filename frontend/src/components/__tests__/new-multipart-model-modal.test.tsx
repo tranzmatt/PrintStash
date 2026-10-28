@@ -188,6 +188,29 @@ describe("NewMultipartModelModal destination", () => {
     });
   });
 
+  it("reveals a complete folder page after navigation finishes", async () => {
+    const user = userEvent.setup();
+    const pending = Promise.withResolvers<Response>();
+    renderModal(null, {
+      "GET /api/v1/models/page": (url) =>
+        new URL(url, "http://test").searchParams.get("collection") === "workshop"
+          ? pending.promise
+          : json({ items: [], total: 0, next_cursor: null }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Open folder Workshop" }));
+    await screen.findByText("Loading available models…");
+    expect(screen.queryByRole("button", { name: "Open folder Brackets" })).toBeNull();
+    pending.resolve(
+      json({
+        items: [aModelListItem({ id: 10, name: "Workshop base", collection: "workshop" })],
+        total: 1,
+        next_cursor: null,
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "Workshop base" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open folder Brackets" })).toBeVisible();
+  });
+
   it("keeps selections across model pages", async () => {
     const user = userEvent.setup();
     renderModal(null, {
@@ -281,5 +304,165 @@ describe("NewMultipartModelModal destination", () => {
     expect(screen.getByRole("button", { name: "Piece 101" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Piece 100" }));
     expect(screen.getByRole("button", { name: "Piece 101" })).toBeEnabled();
+  });
+
+  it("selects all descendants through the folder checkbox", async () => {
+    const user = userEvent.setup();
+    const outside = aModelListItem({ id: 10, name: "Outside", collection: null });
+    const direct = aModelListItem({ id: 11, name: "Base", collection: "workshop" });
+    const nested = aModelListItem({ id: 12, name: "Lid", collection: "workshop/brackets" });
+    const view = renderModal(null, {
+      "GET /api/v1/models/page": (url) => {
+        const params = new URL(url, "http://test").searchParams;
+        const folder = params.get("collection") === "workshop" && !params.has("direct");
+        const next = params.has("cursor");
+        return json({
+          items: folder ? [next ? nested : direct] : [outside],
+          total: folder ? 2 : 1,
+          next_cursor: folder && !next ? "nested" : null,
+        });
+      },
+    });
+    await user.type(screen.getByLabelText("Name", { exact: true }), "All pieces");
+    await user.click(await screen.findByRole("button", { name: "Outside" }));
+    await user.click(screen.getByRole("button", { name: "Select folder Workshop" }));
+    expect(await screen.findByRole("button", { name: "Deselect folder Workshop" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("2 of 2 models selected")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("3 selected");
+    await user.click(screen.getByRole("button", { name: "Create multipart set" }));
+    await waitFor(() => expect(view.requestsWithMethod("POST")).toHaveLength(1));
+    expect(JSON.parse(view.requestsWithMethod("POST")[0]!.body).parts).toEqual([
+      { name: "Outside", quantity: 1, choices: [{ model_id: 10 }] },
+      { name: "Base", quantity: 1, choices: [{ model_id: 11 }] },
+      { name: "Lid", quantity: 1, choices: [{ model_id: 12 }] },
+    ]);
+  });
+
+  it("deselects a folder without clearing models elsewhere", async () => {
+    const user = userEvent.setup();
+    const outside = aModelListItem({ id: 10, name: "Outside", collection: null });
+    const pieces = [
+      aModelListItem({ id: 11, name: "Base", collection: "workshop" }),
+      aModelListItem({ id: 12, name: "Lid", collection: "workshop/brackets" }),
+    ];
+    renderModal(null, {
+      "GET /api/v1/models/page": (url) => {
+        const folder = new URL(url, "http://test").searchParams.has("collection");
+        return json({
+          items: folder ? pieces : [outside],
+          total: folder ? 2 : 1,
+          next_cursor: null,
+        });
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "Outside" }));
+    await user.click(screen.getByRole("button", { name: "Select folder Workshop" }));
+    await user.click(await screen.findByRole("button", { name: "Deselect folder Workshop" }));
+    expect(screen.getByRole("status")).toHaveTextContent("1 selected");
+    expect(screen.getByRole("button", { name: "Outside" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("0 of 2 models selected")).toBeVisible();
+  });
+
+  it("keeps folder selection atomic across a failed page", async () => {
+    const user = userEvent.setup();
+    const outside = aModelListItem({ id: 10, name: "Outside", collection: null });
+    const direct = aModelListItem({ id: 11, name: "Base", collection: "workshop" });
+    const nested = aModelListItem({ id: 12, name: "Lid", collection: "workshop/brackets" });
+    let failing = true;
+    renderModal(null, {
+      "GET /api/v1/models/page": (url) => {
+        const params = new URL(url, "http://test").searchParams;
+        const folder = params.has("collection");
+        const next = params.has("cursor");
+        if (folder && next && failing) return json({ detail: "offline" }, 500);
+        return json({
+          items: folder ? [next ? nested : direct] : [outside],
+          total: folder ? 2 : 1,
+          next_cursor: folder && !next ? "nested" : null,
+        });
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "Outside" }));
+    await user.click(screen.getByRole("button", { name: "Select folder Workshop" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your selection is unchanged");
+    expect(screen.getByRole("status")).toHaveTextContent("1 selected");
+    failing = false;
+    await user.click(screen.getByRole("button", { name: "Select folder Workshop" }));
+    await screen.findByRole("button", { name: "Deselect folder Workshop" });
+    expect(screen.getByRole("status")).toHaveTextContent("3 selected");
+  });
+
+  it("rejects a folder beyond the selection limit", async () => {
+    const user = userEvent.setup();
+    renderModal(null, {
+      "GET /api/v1/models/page": (url) =>
+        json({
+          items: [],
+          total: new URL(url, "http://test").searchParams.has("collection") ? 101 : 0,
+          next_cursor: null,
+        }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Select folder Workshop" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("up to 100 models per set");
+    expect(screen.getByRole("status")).toHaveTextContent("0 selected");
+    expect(screen.getByRole("button", { name: "Select folder Workshop" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("waits for folder selection before enabling creation", async () => {
+    const user = userEvent.setup();
+    const pending = Promise.withResolvers<Response>();
+    renderModal(null, {
+      "GET /api/v1/models/page": (url) =>
+        new URL(url, "http://test").searchParams.has("collection")
+          ? pending.promise
+          : json({ items: [], total: 0, next_cursor: null }),
+    });
+    await user.type(screen.getByLabelText("Name", { exact: true }), "Folder set");
+    await user.click(await screen.findByRole("button", { name: "Select folder Workshop" }));
+    expect(screen.getByRole("button", { name: "Create multipart set" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Select folder Workshop" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    pending.resolve(
+      json({
+        items: [aModelListItem({ id: 11, name: "Base", collection: "workshop" })],
+        total: 1,
+        next_cursor: null,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create multipart set" })).toBeEnabled(),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("1 selected");
+  });
+
+  it("aborts a folder selection when the popup closes", async () => {
+    const user = userEvent.setup();
+    const pending = Promise.withResolvers<Response>();
+    const signals: AbortSignal[] = [];
+    const view = renderModal(null, {
+      "GET /api/v1/models/page": (url, init) => {
+        if (!new URL(url, "http://test").searchParams.has("collection"))
+          return json({ items: [], total: 0, next_cursor: null });
+        if (init?.signal) signals.push(init.signal);
+        return pending.promise;
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "Select folder Workshop" }));
+    expect(signals[0]?.aborted).toBe(false);
+    view.rerender(<NewMultipartModelModal open={false} collection={null} onClose={view.onClose} />);
+    await waitFor(() => expect(signals[0]?.aborted).toBe(true));
+    pending.resolve(json({ items: [], total: 0, next_cursor: null }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "New multipart set" })).toBeNull(),
+    );
+    expect(view.requestsWithMethod("POST")).toHaveLength(0);
   });
 });

@@ -23,6 +23,7 @@ import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { CollectionPicker } from "@/components/collection-picker";
 import {
   SelectionBrowserToolbar,
+  SelectionBrowserViewport,
   SelectionBrowserBreadcrumbs,
   SelectionFolderCard,
   SelectionItemCard,
@@ -284,7 +285,10 @@ function ArchiveReview({
                 })),
               ]}
             />
-            <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+            <SelectionBrowserViewport
+              path={folder ?? ""}
+              pageKey={JSON.stringify([folder, search])}
+            >
               {visibleFiles.length === 0 && (search || folders.length === 0) && (
                 <p className="py-8 text-sm text-muted-foreground">
                   {importable.length === 0
@@ -346,7 +350,7 @@ function ArchiveReview({
                   </li>
                 ))}
               </ul>
-            </div>
+            </SelectionBrowserViewport>
             <div className="flex flex-wrap items-end justify-between gap-3 border-t border-border pt-3">
               <p role="status" className="text-sm text-muted-foreground">
                 {uiText("{value1} of {value2} files selected", {
