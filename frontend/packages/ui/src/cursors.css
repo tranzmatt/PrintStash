@@ -1,7 +1,7 @@
 /* Shared by the app and @printstash/ui consumers; do not restate these values. */
 @layer base {
   :root {
-    --cursor-action: pointer;
+    --cursor-action: default;
     --cursor-disabled: default;
   }
 

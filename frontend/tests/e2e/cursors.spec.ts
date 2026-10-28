@@ -52,7 +52,7 @@ async function cursorFixture(page: Page) {
 
 test.describe("shared cursor policy", () => {
   for (const theme of ["light", "dark"]) {
-    test(`uses the hand for ordinary enabled controls in ${theme} theme`, async ({ page }) => {
+    test(`uses the arrow for ordinary enabled controls in ${theme} theme`, async ({ page }) => {
       const panel = await cursorFixture(page);
       await page.evaluate(
         (theme) => document.documentElement.classList.toggle("dark", theme === "dark"),
@@ -77,13 +77,13 @@ test.describe("shared cursor policy", () => {
       ];
       for (const control of controls) {
         await control.hover();
-        await expect(control).toHaveCSS("cursor", "pointer");
+        await expect(control).toHaveCSS("cursor", "default");
       }
       expect(
         await panel
           .getByLabel("File choice", { exact: true })
           .evaluate((element) => getComputedStyle(element, "::file-selector-button").cursor),
-      ).toBe("pointer");
+      ).toBe("default");
     });
   }
 
@@ -116,10 +116,10 @@ test.describe("shared cursor policy", () => {
     const panel = await cursorFixture(page);
     const label = panel.getByText("Nested action", { exact: true });
     await label.hover();
-    await expect(label).toHaveCSS("cursor", "pointer");
+    await expect(label).toHaveCSS("cursor", "default");
     const icon = panel.getByRole("button", { name: "Nested action" }).locator("svg");
     await icon.hover();
-    await expect(icon).toHaveCSS("cursor", "pointer");
+    await expect(icon).toHaveCSS("cursor", "default");
   });
 
   test("changes all ordinary actions through one shared token", async ({ page }) => {
@@ -204,7 +204,11 @@ test.describe("shared cursor policy", () => {
     test(`all visible buttons follow the hover policy on ${route}`, async ({ page }, testInfo) => {
       await page.goto(route, { waitUntil: "networkidle" });
       await expect(page.locator("main").first()).toBeVisible();
-      const buttons = page.locator('button:visible, [role="button"]:visible');
+      // TanStack's development-only launcher owns its styles and is absent
+      // from the production app. Audit every user-facing action here.
+      const buttons = page.locator(
+        'button:visible:not([aria-label="Open Tanstack query devtools"]), [role="button"]:visible',
+      );
       await expect(buttons.first()).toBeVisible();
       let checked = 0;
       for (const button of await buttons.all()) {
@@ -213,7 +217,7 @@ test.describe("shared cursor policy", () => {
         // A loading action may become enabled while Playwright moves to it.
         // Assert the state at hover time, not the earlier loading snapshot.
         const disabled = await button.isDisabled();
-        const allowed = disabled ? ["default"] : ["pointer", "grab", "grabbing", "col-resize"];
+        const allowed = disabled ? ["default"] : ["default", "grab", "grabbing", "col-resize"];
         const cursor = await button.evaluate((element) => getComputedStyle(element).cursor);
         const description = await button.evaluate((element) => element.outerHTML.slice(0, 500));
         expect(allowed, `${route}: ${description}`).toContain(cursor);

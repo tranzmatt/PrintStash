@@ -308,7 +308,7 @@ test.describe("settings route", () => {
     await expect(install).toHaveAttribute("target", "_blank");
     await expect(install).toHaveAttribute("rel", "noopener noreferrer");
     await install.hover();
-    await expect(install).toHaveCSS("cursor", "pointer");
+    await expect(install).toHaveCSS("cursor", "default");
   });
 
   test("preview settings persist quality choices and queue image recreation", async ({ page }) => {

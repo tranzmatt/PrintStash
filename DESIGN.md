@@ -177,7 +177,7 @@ and may wrap; actions must remain reachable without horizontal scrolling.
 
 ## Cursors
 
-Enabled web actions use the hand cursor; unavailable controls use the arrow.
+Ordinary web actions and unavailable controls use the arrow cursor.
 The shared policy in `frontend/packages/ui/src/cursors.css` owns
 `--cursor-action` and `--cursor-disabled`, and is imported by both the app and
 the UI package's stylesheet. Native buttons, links, disclosure controls and ARIA
