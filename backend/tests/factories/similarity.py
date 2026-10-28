@@ -5,6 +5,7 @@ import json
 import struct
 from dataclasses import asdict
 from datetime import timedelta
+from functools import cache
 from typing import Any
 
 from printstash_core.inference import EmbeddingSpace as SpaceContract
@@ -31,6 +32,17 @@ from app.modules.similarity.fingerprints import encode_json
 from tests.factories._support import nth, save, unique_hash
 
 
+@cache
+def _surface_cloud() -> bytes:
+    from printstash_core.mesh.similarity.cloud import surface_cloud
+    from printstash_core.mesh.similarity.geometry import prepare_surface
+
+    from tests.factories.geometry import tetrahedron
+
+    mesh = tetrahedron()
+    return surface_cloud(prepare_surface(mesh.vertices, mesh.faces)).encode()
+
+
 def build_geometry_fingerprint(
     session: Session, file: File, *, leased: bool = False, **overrides: Any
 ) -> GeometryFingerprint:
@@ -39,6 +51,10 @@ def build_geometry_fingerprint(
         "source_sha256": file.sha256,
         "algorithm_version": ALGORITHM_VERSION,
     }
+    # Complete geometry always carries a surface cloud; a pre-upgrade ready
+    # row is requested explicitly with ``cloud_blob=None``.
+    if overrides.get("state") == "ready":
+        defaults["cloud_blob"] = _surface_cloud()
     if leased:
         defaults.update(
             lease_token=f"lease-{nth('fingerprint-lease')}",

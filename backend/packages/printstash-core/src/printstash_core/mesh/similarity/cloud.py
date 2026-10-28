@@ -120,11 +120,11 @@ def _kabsch(source: FloatArray, target: FloatArray) -> tuple[FloatArray, FloatAr
 def alignment_score(left: SurfaceCloud, right: SurfaceCloud) -> float:
     """Best aligned symmetric distance, in units of the clouds' own spacing."""
     import numpy as np
-    from scipy.spatial import cKDTree  # pyright: ignore[reportMissingTypeStubs]
+    from scipy.spatial import KDTree  # pyright: ignore[reportMissingTypeStubs]
 
     # A score needs distances only, never tie-exact indices, so the plain index
     # suffices; one native thread keeps the caller's admission accounting.
-    left_index, right_index = cKDTree(left.points), cKDTree(right.points)
+    left_index, right_index = KDTree(left.points), KDTree(right.points)
     hypotheses = _hypotheses(left, right)
     probe = right.points[::_RANK_STRIDE]
     ranked = sorted(

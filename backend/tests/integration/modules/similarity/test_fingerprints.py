@@ -208,7 +208,7 @@ class TestSurfaceCloudBackfill:
         self, db_session, make_model, make_file, make_geometry_fingerprint
     ):
         file = make_file(make_model())
-        previous = make_geometry_fingerprint(file, state="ready")
+        previous = make_geometry_fingerprint(file, state="ready", cloud_blob=None)
 
         claimed = fingerprints.claim(db_session, file)
 
