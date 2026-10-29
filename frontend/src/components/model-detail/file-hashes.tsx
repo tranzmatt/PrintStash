@@ -1,5 +1,47 @@
+import { useState } from "react";
+import { Check, Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
+import { toast } from "@/lib/toast";
 import type { FileRead } from "@/types";
+
+function HashValue({ sha, label, filename }: { sha: string; label: string; filename: string }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(sha);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+      toast.error(t("modelHashes.copyFailed"));
+    }
+  }
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 gap-2 px-2 font-mono text-xs"
+        title={sha}
+        aria-label={t("modelHashes.copy", { kind: label, filename })}
+        onClick={() => void copy()}
+        onPointerLeave={() => setCopied(false)}
+        onBlur={() => setCopied(false)}
+      >
+        {sha.slice(0, 7)}
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-success" aria-hidden="true" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+        )}
+      </Button>
+      <span role="status" className="sr-only">
+        {copied ? t("modelHashes.copied") : ""}
+      </span>
+    </>
+  );
+}
 
 export function FileHashes({ files }: { files: FileRead[] }) {
   const { t } = useI18n();
@@ -15,22 +57,32 @@ export function FileHashes({ files }: { files: FileRead[] }) {
           <div key={file.id} className="min-w-0 space-y-2 py-3 first:pt-0 last:pb-0">
             <p className="break-words text-sm text-on-surface">{file.original_filename}</p>
             <dl className="space-y-2">
-              <div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <dt className="text-xs text-on-surface-variant">{t("modelHashes.file")}</dt>
-                <dd className="select-all break-all font-mono text-xs leading-relaxed text-on-surface">
-                  {file.sha256}
+                <dd>
+                  <HashValue
+                    key={file.sha256}
+                    sha={file.sha256}
+                    label={t("modelHashes.file")}
+                    filename={file.original_filename}
+                  />
                 </dd>
               </div>
               {file.geometric_sha256 !== null && (
-                <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <dt
                     className="text-xs text-on-surface-variant"
                     title={t("modelHashes.geometryHelp")}
                   >
                     {t("modelHashes.geometry")}
                   </dt>
-                  <dd className="select-all break-all font-mono text-xs leading-relaxed text-on-surface">
-                    {file.geometric_sha256}
+                  <dd>
+                    <HashValue
+                      key={file.geometric_sha256}
+                      sha={file.geometric_sha256}
+                      label={t("modelHashes.geometry")}
+                      filename={file.original_filename}
+                    />
                   </dd>
                 </div>
               )}

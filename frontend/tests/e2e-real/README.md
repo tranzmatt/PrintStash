@@ -30,7 +30,7 @@ Artifact bytes. Historical release archives are checked separately by the
 The former Model Overview caption editor flow is replaced by the hash display;
 caption conflict handling remains covered by the caption API and component suites.
 
-`model-hashes.spec.ts` verifies the uploaded file SHA-256, runs real geometry analysis, and checks the calculated geometric SHA-256 in desktop and mobile Overview layouts.
+`model-hashes.spec.ts` verifies the uploaded file SHA-256, runs real geometry analysis, and checks the compact hash controls in desktop and mobile Overview layouts, including complete file and geometric SHA-256 values copied to the clipboard.
 
 `batch.spec.ts` reveals a Model checkbox on hover before starting selection and applying real tags, deletes and moves, including undo and viewer permission checks.
 

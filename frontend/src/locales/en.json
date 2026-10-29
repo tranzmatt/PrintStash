@@ -4589,5 +4589,8 @@
   "modelHashes.title": "File hashes",
   "modelHashes.file": "File SHA-256",
   "modelHashes.geometry": "Geometric SHA-256",
-  "modelHashes.geometryHelp": "Whole-mesh fingerprint at physical scale. A matching fingerprint alone does not prove identical geometry."
+  "modelHashes.geometryHelp": "Whole-mesh fingerprint at physical scale. A matching fingerprint alone does not prove identical geometry.",
+  "modelHashes.copy": "Copy {kind} for {filename}",
+  "modelHashes.copied": "SHA-256 copied",
+  "modelHashes.copyFailed": "Could not copy SHA-256."
 }

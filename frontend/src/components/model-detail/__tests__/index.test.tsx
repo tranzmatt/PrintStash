@@ -1501,7 +1501,7 @@ describe("ModelDetail file hashes", () => {
   it("replaces the AI caption panel in Overview", async () => {
     renderDetail();
     const hashes = await screen.findByRole("region", { name: "File hashes" });
-    expect(within(hashes).getByText("a".repeat(64), { exact: true })).toBeVisible();
+    expect(within(hashes).getByTitle("a".repeat(64), { exact: true })).toBeVisible();
     expect(screen.queryByRole("region", { name: "AI caption" })).not.toBeInTheDocument();
   });
 });

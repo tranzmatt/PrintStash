@@ -4,7 +4,7 @@
 
 ### Added
 
-- Model Overview shows each file’s full SHA-256 in place of the AI caption panel, with its geometric SHA-256 when a current whole-mesh fingerprint is available.
+- Model Overview shows each file’s SHA-256 in place of the AI caption panel, with its geometric SHA-256 when a current whole-mesh fingerprint is available. Compact seven-character hashes reveal the full value on hover and copy the complete SHA with one click.
 
 - Library filters use compact dropdowns for upload dates, print history, file types and printed status. Date fields offer calendar pickers, file formats support multiple selections, and printed status offers All, Printed and Not printed using the same checkbox rows and count badges as the other facets. Printer location and Tags share these rows, including single-choice location selection and searchable tag multiselect. Neutral picker buttons show selection counts, while blue chips below show the active values.
 

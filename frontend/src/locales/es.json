@@ -4589,5 +4589,8 @@
   "modelHashes.title": "Hashes de archivos",
   "modelHashes.file": "SHA-256 del archivo",
   "modelHashes.geometry": "SHA-256 geométrico",
-  "modelHashes.geometryHelp": "Huella de la malla completa a escala física. Una huella coincidente por sí sola no demuestra que la geometría sea idéntica."
+  "modelHashes.geometryHelp": "Huella de la malla completa a escala física. Una huella coincidente por sí sola no demuestra que la geometría sea idéntica.",
+  "modelHashes.copy": "Copiar {kind} de {filename}",
+  "modelHashes.copied": "SHA-256 copiado",
+  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256."
 }
