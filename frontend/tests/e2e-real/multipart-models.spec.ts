@@ -1,5 +1,5 @@
 /** Multipart groupings link existing Models without taking ownership of their files. */
-import type { MultipartModelRead } from "../../src/types";
+import type { ModelPageRead, MultipartModelRead } from "../../src/types";
 import { openFilters, openLibraryTools } from "./util";
 import { test, expect } from "./helpers";
 import { createCollectionViaVault, modelCard, uploadModel } from "./util";
@@ -144,6 +144,21 @@ test.describe("multipart models", () => {
     const group = `e2e-first-set-${stamp}`;
     const secondGroup = `e2e-second-set-${stamp}`;
     await uploadModel(page, base, { mesh: true, gcode: true });
+    // Upload completion precedes the background search projection. Establish
+    // searchable setup before the picker can cache an empty result for this name.
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get("/api/v1/models/page", {
+            params: { q: base },
+          });
+          expect(response.ok()).toBe(true);
+          const result: ModelPageRead = await response.json();
+          return result.items.map((model) => model.name);
+        },
+        { timeout: 30_000 },
+      )
+      .toContain(base);
 
     await openLibraryTools(page);
     await page.getByRole("button", { name: "New multipart set" }).first().click();
