@@ -1876,6 +1876,9 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   useDialogPreload(startup.complete && browseReady);
   const canAdminSelectedCollection =
     user?.is_superuser || selectedCollectionRow?.effective_role === "admin";
+  // Even administrators must wait for the selected parent's identity before creating.
+  const canCreateCollection =
+    canAdminSelectedCollection && (selectedCollection === null || selectedCollectionRow !== null);
   // Whether there is anywhere this reader may upload to, without listing it.
   const writableProbe = useCollectionSearch("", "edit", {
     enabled: auth.isAuthenticated && !user?.is_superuser,
@@ -2110,7 +2113,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         variant="outline"
         size="xs"
         className="h-10 @3xl/library:h-8"
-        disabled={!canAdminSelectedCollection}
+        disabled={!canCreateCollection}
         title={
           canAdminSelectedCollection
             ? uiText("Create a collection")
@@ -2882,7 +2885,9 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 />
                 <button
                   type="submit"
-                  disabled={!newCollectionName.trim() || !auth.isAuthenticated}
+                  disabled={
+                    !newCollectionName.trim() || !auth.isAuthenticated || !canCreateCollection
+                  }
                   className="px-3 py-1.5 text-xs font-medium text-primary-foreground bg-primary rounded hover:bg-primary-hover transition-colors disabled:opacity-50"
                 >
                   {uiText("Create")}

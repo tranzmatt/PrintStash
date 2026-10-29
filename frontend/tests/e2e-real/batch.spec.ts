@@ -61,9 +61,9 @@ test.describe("batch actions", () => {
     await modelCard(page, m1).hover();
     await page.getByRole("checkbox", { name: `Select ${m1}`, exact: true }).click();
     await page.getByRole("button", { name: /Select all on screen \(2\)/ }).click();
-    // Scope to the floating toolbar — "Delete" otherwise also matches the sidebar's
-    // "Delete collection" button (substring match).
-    await page.locator("div.fixed.bottom-4").getByRole("button", { name: "Delete" }).click();
+    // Match the action name exactly so "Delete collection" cannot collide,
+    // regardless of where the responsive toolbar is positioned.
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
     // The toolbar's button and the confirm modal both say "Delete" — scope to the modal.
     await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
     await expect(modelCard(page, m1)).toHaveCount(0);
@@ -101,7 +101,7 @@ test.describe("batch actions", () => {
     await page.getByRole("checkbox", { name: `Select ${model}`, exact: true }).click();
     await page.getByRole("button", { name: /Select all on screen \(1\)/ }).click();
 
-    await page.locator("div.fixed.bottom-4").getByRole("button", { name: "Move" }).click();
+    await page.getByRole("button", { name: "Move", exact: true }).click();
     const moveDialog = page.getByRole("dialog", { name: /^Move \d+ item/ });
     await expect(moveDialog).toBeVisible();
     await moveDialog.getByPlaceholder("Find destination").fill(dest);
@@ -206,10 +206,7 @@ test.describe("batch actions", () => {
       await modelCard(viewerPage, model).hover();
       await viewerPage.getByRole("checkbox", { name: `Select ${model}`, exact: true }).click();
       await viewerPage.getByRole("button", { name: /Select all on screen \(1\)/ }).click();
-      await viewerPage
-        .locator("div.fixed.bottom-4")
-        .getByRole("button", { name: "Delete" })
-        .click();
+      await viewerPage.getByRole("button", { name: "Delete", exact: true }).click();
       await viewerPage
         .getByRole("dialog")
         .getByRole("button", { name: "Delete", exact: true })
