@@ -89,6 +89,7 @@ export interface FileRead {
   gcode_revision_number?: number | null;
   size_bytes: number;
   sha256: string;
+  geometric_sha256: string | null;
   revision_label?: string | null;
   revision_status: FileRevisionStatus | null;
   revision_notes: string | null;

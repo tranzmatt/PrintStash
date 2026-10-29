@@ -4585,5 +4585,9 @@
   "profiles.closeEditor": "Cerrar editor de {name}",
   "profiles.closeEditorLabel": "Cerrar editor",
   "profiles.browseHelp": "Abre un perfil para consultar sus configuraciones del laminador o editar sus datos.",
-  "profiles.settingsTitle": "Configuraciones del laminador"
+  "profiles.settingsTitle": "Configuraciones del laminador",
+  "modelHashes.title": "Hashes de archivos",
+  "modelHashes.file": "SHA-256 del archivo",
+  "modelHashes.geometry": "SHA-256 geométrico",
+  "modelHashes.geometryHelp": "Huella de la malla completa a escala física. Una huella coincidente por sí sola no demuestra que la geometría sea idéntica."
 }

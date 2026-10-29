@@ -19,6 +19,7 @@ from app.db.models import (
     FileRevisionStatus,
     FileTagLink,
     FileType,
+    GeometryFingerprint,
     Metadata,
     Model,
     ModelStar,
@@ -34,6 +35,7 @@ from app.db.scopes import live
 from app.modules.identity import rbac
 from app.modules.library import collection_tree
 from app.modules.library.volume_metadata import read_volume
+from app.modules.media.fingerprints import ALGORITHM_VERSION
 from app.modules.printing.costing import (
     cost_profiles,
     match_cost_profile,
@@ -105,9 +107,26 @@ def _file_tag_names(session: Session, file_ids: list[int]) -> dict[int, list[str
 
 
 def _file_reads_with_revisions(
-    session: Session, files_with_meta: list
+    session: Session, files_with_meta: list, model_id: int
 ) -> list[FileRead]:
     """Build FileReads with derived G-code revision numbers (1-based, by version)."""
+    # One narrow read for the Model, independent of its number of Artifacts.
+    # Components, stale source bytes and incomplete calculations are not a
+    # whole-file geometric fingerprint. This retrieval key is not proof of equality.
+    geometric_hashes = dict(
+        session.exec(
+            select(GeometryFingerprint.file_id, GeometryFingerprint.physical_hash_0)
+            .join(File, File.id == GeometryFingerprint.file_id)
+            .where(
+                File.model_id == model_id,
+                live(File),
+                GeometryFingerprint.source_sha256 == File.sha256,
+                GeometryFingerprint.algorithm_version == ALGORITHM_VERSION,
+                GeometryFingerprint.component_index == 0,
+                GeometryFingerprint.state == "ready",
+            )
+        ).all()
+    )
     gcode_revision_numbers: dict[int, int] = {}
     gcode_index = 1
     for f, _md in files_with_meta:
@@ -129,6 +148,7 @@ def _file_reads_with_revisions(
             gcode_revision_number=gcode_revision_numbers.get(f.id),
             size_bytes=f.size_bytes,
             sha256=f.sha256,
+            geometric_sha256=geometric_hashes.get(f.id),
             revision_label=f.revision_label,
             revision_status=f.revision_status,
             revision_notes=f.revision_notes,

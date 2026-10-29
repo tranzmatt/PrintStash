@@ -40,6 +40,7 @@ function aGcode(over: Partial<FileRead> = {}): FileRead {
     version: 1,
     size_bytes: 4096,
     sha256: "b".repeat(64),
+    geometric_sha256: null,
     revision_label: "PLA draft",
     revision_status: null,
     revision_notes: null,

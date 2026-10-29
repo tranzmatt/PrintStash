@@ -4585,5 +4585,9 @@
   "profiles.closeEditor": "Close editor for {name}",
   "profiles.closeEditorLabel": "Close editor",
   "profiles.browseHelp": "Open a profile to inspect its slicer configurations or edit its details.",
-  "profiles.settingsTitle": "Slicer configurations"
+  "profiles.settingsTitle": "Slicer configurations",
+  "modelHashes.title": "File hashes",
+  "modelHashes.file": "File SHA-256",
+  "modelHashes.geometry": "Geometric SHA-256",
+  "modelHashes.geometryHelp": "Whole-mesh fingerprint at physical scale. A matching fingerprint alone does not prove identical geometry."
 }

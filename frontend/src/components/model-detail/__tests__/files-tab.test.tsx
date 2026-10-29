@@ -24,6 +24,7 @@ const artifact: FileRead = {
   gcode_revision_number: null,
   size_bytes: 1024,
   sha256: "b".repeat(64),
+  geometric_sha256: null,
   revision_label: null,
   revision_status: null,
   revision_notes: null,
