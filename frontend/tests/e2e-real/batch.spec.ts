@@ -61,7 +61,8 @@ test.describe("batch actions", () => {
     await modelCard(page, m1).hover();
     await page.getByRole("checkbox", { name: `Select ${m1}`, exact: true }).click();
     await page.getByRole("button", { name: /Select all on screen \(2\)/ }).click();
-    // Match the action exactly so the sidebar's "Delete collection" is excluded.
+    // Match the action name exactly so "Delete collection" cannot collide,
+    // regardless of where the responsive toolbar is positioned.
     await page.getByRole("button", { name: "Delete", exact: true }).click();
     // The toolbar's button and the confirm modal both say "Delete" — scope to the modal.
     await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
