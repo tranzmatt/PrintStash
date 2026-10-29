@@ -206,7 +206,7 @@ describe("SettingsPanel", () => {
 
       await user.click(within(nav).getByRole("button", { name: /Trash/ }));
 
-      expect(await screen.findByText("Deleted models")).toBeInTheDocument();
+      expect(await screen.findByText("Deleted models and multipart sets")).toBeInTheDocument();
     });
   });
 
@@ -2823,7 +2823,7 @@ describe("SettingsPanel", () => {
     it("says so when the trash is empty", async () => {
       renderSettings({ at: "/settings?section=trash" });
 
-      expect(await screen.findByText("Deleted models")).toBeInTheDocument();
+      expect(await screen.findByText("Deleted models and multipart sets")).toBeInTheDocument();
       expect(screen.queryByLabelText("Trash size")).toBeNull();
     });
   });

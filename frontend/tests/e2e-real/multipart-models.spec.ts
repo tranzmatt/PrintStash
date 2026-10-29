@@ -129,7 +129,9 @@ test.describe("multipart models", () => {
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await expect(page.getByText("Uploaded from your computer")).toBeVisible();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await expect(page.getByRole("dialog")).toContainText("Models, files and revisions stay");
+    await expect(page.getByRole("dialog")).toContainText(
+      "models, files, revisions and guides stay",
+    );
     await page.getByRole("button", { name: "Move to Trash" }).click();
     await expect(page).toHaveURL(/\?type=all/);
     await expect(modelCard(page, base)).toBeVisible();
