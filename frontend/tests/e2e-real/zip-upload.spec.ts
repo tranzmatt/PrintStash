@@ -26,8 +26,8 @@ test.describe("ZIP upload", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Upload", exact: true }).click();
     const upload = page.getByRole("dialog", { name: "Upload model" });
-    await upload.getByRole("button", { name: "From ZIP" }).click();
-    await upload.locator('input[accept=".zip"]').setInputFiles({
+    await upload.getByRole("button", { name: "From archive" }).click();
+    await upload.locator('input[accept*=".zip"]').setInputFiles({
       name: `${name}.zip`,
       mimeType: "application/zip",
       buffer: archiveFor(name),
@@ -40,7 +40,7 @@ test.describe("ZIP upload", () => {
       await transferGate;
       await route.continue();
     });
-    await upload.getByRole("button", { name: "Prepare ZIP" }).click();
+    await upload.getByRole("button", { name: "Prepare archive" }).click();
     await expect(upload).toHaveCount(0);
     await page.getByRole("button", { name: "Notifications" }).click();
     const tasksMenu = page.getByRole("dialog");
@@ -81,8 +81,8 @@ test.describe("ZIP upload", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Upload", exact: true }).click();
     const upload = page.getByRole("dialog", { name: "Upload model" });
-    await upload.getByRole("button", { name: "From ZIP" }).click();
-    await upload.locator('input[accept=".zip"]').setInputFiles({
+    await upload.getByRole("button", { name: "From archive" }).click();
+    await upload.locator('input[accept*=".zip"]').setInputFiles({
       name: `${name}.zip`,
       mimeType: "application/zip",
       buffer: execFileSync("python3", [
@@ -94,7 +94,7 @@ test.describe("ZIP upload", () => {
       (response) =>
         response.url().endsWith("/api/v1/ingest/archive/inspect") && response.status() === 202,
     );
-    await upload.getByRole("button", { name: "Prepare ZIP" }).click();
+    await upload.getByRole("button", { name: "Prepare archive" }).click();
     const { job_id: jobId } = await (await accepted).json();
     await expect(upload).toHaveCount(0);
     await expect(async () => {

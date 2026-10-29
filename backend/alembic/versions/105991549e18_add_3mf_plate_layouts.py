@@ -1,7 +1,7 @@
 """Store the plates of slicer project 3MFs and derive them as a kind of their own.
 
 Revision ID: 105991549e18
-Revises: 08add6607321
+Revises: b2be6484da3f
 Create Date: 2026-10-29 16:03:27.713168
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "105991549e18"
-down_revision: Union[str, Sequence[str], None] = "08add6607321"
+down_revision: Union[str, Sequence[str], None] = "b2be6484da3f"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

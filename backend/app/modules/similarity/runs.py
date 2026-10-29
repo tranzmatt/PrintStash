@@ -249,7 +249,17 @@ def source_query(session: Session, run: SimilarityRun, actor: User):
             *live_source_predicates(),
             File.uploaded_at <= run.cutoff,
             col(File.file_type).in_(
-                (FileType.STL, FileType.OBJ, FileType.THREE_MF, FileType.STEP)
+                (
+                    FileType.STL,
+                    FileType.OBJ,
+                    FileType.GLB,
+                    FileType.PLY,
+                    FileType.GLTF,
+                    FileType.THREE_DM,
+                    FileType.FBX,
+                    FileType.THREE_MF,
+                    FileType.STEP,
+                )
             ),
             editable_models(session, actor),
         )

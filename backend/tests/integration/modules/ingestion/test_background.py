@@ -134,6 +134,34 @@ class TestDownloadAndCollect:
         assert not staged.exists()
 
     @pytest.mark.asyncio
+    async def test_extracts_the_entries_of_a_7z(
+        self, download_batch, tmp_path, monkeypatch
+    ):
+        from tests.factories.content import seven_zip_bytes
+
+        body = _cube_stl_bytes()
+        staged = tmp_path / "bundle.7z"
+        staged.write_bytes(seven_zip_bytes({"cube.stl": body}))
+        monkeypatch.setattr(
+            importer,
+            "download_to_staging",
+            AsyncMock(return_value=(staged, staged.name)),
+        )
+        url = "https://cdn.test/bundle.7z"
+        spec = EntrySpec(url, staged.name, RemoteSource(url), None)
+
+        await ingest_background._consume_download(
+            download_batch, url, spec=spec, source_url=None
+        )
+
+        record = batch_store.results(download_batch.owner, limit=1)[0]
+        assert record.published and record.spec.display_name == "cube.stl"
+        with get_session_factory().scoped_session() as session:
+            file = session.get(File, record.file_id)
+            assert file is not None
+            assert get_backend().read_bytes(file.path) == body
+
+    @pytest.mark.asyncio
     async def test_returns_a_direct_mesh_file_unchanged(
         self, download_batch, tmp_path, monkeypatch
     ):
@@ -531,6 +559,60 @@ class TestImportFromUrl:
         assert status is not None
         assert status.state == "completed"
         assert status.result["kind"] == "archive_manifest"
+
+    @pytest.mark.asyncio
+    async def test_import_from_url_reviews_an_unnamed_tar_by_its_bytes(
+        self,
+        owner: User,
+        tmp_path: Path,
+        job_id: str,
+    ) -> None:
+        use_local_storage(tmp_path)
+        from app.schemas.ingest import UrlIngestRequest
+        from tests.factories.content import tar_bytes
+
+        staged = settings.incoming_dir / _uuid.uuid4().hex
+        staged.write_bytes(tar_bytes({"parts/cube.stl": b"solid cube\nendsolid\n"}))
+        req = UrlIngestRequest(url="https://cdn.test/download/42")
+
+        async def fake_download(
+            url: str,
+            *,
+            window_max_bytes: int,
+            owner=None,
+            session_factory=None,
+            window=None,
+        ):
+            nonlocal staged
+            assert window is not None
+            target = window.directory / staged.name
+            staged.rename(target)
+            staged = target
+            window.seal(staged)
+            return staged, "42"
+
+        with (
+            patch.object(import_resolvers, "classify_collection", return_value=None),
+            patch.object(
+                import_resolvers, "list_model_files", AsyncMock(return_value=None)
+            ),
+            patch.object(
+                import_resolvers, "resolve_page_url", AsyncMock(return_value=None)
+            ),
+            patch.object(importer, "download_to_staging", fake_download),
+        ):
+            await ingest_background.import_from_url(
+                job_context=build_job_context(job_id),
+                req=req,
+                actor_user_id=owner.id,
+                session_factory=get_session_factory(),
+            )
+        status = jobs.get(job_id)
+        assert status is not None
+        assert status.state == "completed", status.error
+        assert [entry["name"] for entry in status.result["entries"]] == [
+            "parts/cube.stl"
+        ]
 
     @pytest.mark.asyncio
     async def test_import_from_url_multi_file_page_stages_files_manifest(

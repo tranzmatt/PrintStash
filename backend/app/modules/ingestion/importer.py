@@ -22,7 +22,8 @@ import stat
 import sys
 import tempfile
 import uuid
-from collections.abc import Callable, Generator, Iterable, Sequence
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Optional
@@ -64,7 +65,8 @@ from app.modules.ingestion.ingestion import StagedArtifact, commit_staged_artifa
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 from app.modules.work.contracts import JobContext, JobExecution
 
-from . import scratch_windows
+from . import archive_formats, scratch_windows
+from .archive_formats import ArchiveFormat
 from .batch_contracts import (
     ArchiveSource,
     BatchCommitReference,
@@ -259,21 +261,100 @@ def _safe_entry_name(name: str) -> bool:
     return safe_entry_name(name)
 
 
+def _archive_limits() -> ArchiveLimits:
+    return ArchiveLimits(
+        max_entries=settings.max_archive_entries,
+        max_entry_bytes=settings.max_archive_entry_mb * 1024 * 1024,
+        max_total_bytes=settings.max_archive_uncompressed_mb * 1024 * 1024,
+        max_central_directory_bytes=(
+            settings.max_archive_central_directory_mb * 1024 * 1024
+        ),
+        max_path_bytes=settings.max_archive_path_bytes,
+        max_depth=settings.max_archive_depth,
+    )
+
+
+def archive_format(path: Path, filename: str) -> ArchiveFormat | None:
+    """The archive *path* holds, or None for a single model or G-code file.
+
+    A named archive suffix decides; otherwise the bytes do, so a download link
+    without an extension still opens as the archive it is. A 3MF is a ZIP
+    container but one model, so a known model suffix is never an archive.
+    """
+    named = archive_formats.named_format(filename)
+    if named is not None:
+        return named
+    if Path(filename).suffix.lower() in _IMPORTABLE_SUFFIXES:
+        return None
+    return archive_formats.sniff_format(path)
+
+
+def _kept_in_review(name: str) -> bool:
+    suffix = Path(name).suffix.lower()
+    return suffix in _IMPORTABLE_SUFFIXES or suffix in _IMAGE_SUFFIXES
+
+
+@contextmanager
+def zip_view(
+    path: Path,
+    archive: ArchiveFormat,
+    *,
+    owner: scratch_windows.WindowOwner | None = None,
+    session_factory: SessionFactory | None = None,
+) -> Iterator[Path]:
+    """A ZIP holding *path*'s reviewable entries, for the ZIP-only review flow.
+
+    A ZIP is itself. Any other archive is planned under the archive limits,
+    then rewritten into a scratch window sized for exactly that plan, which is
+    released when the caller leaves. Only models and preview images are kept.
+    """
+    if archive is ArchiveFormat.ZIP:
+        yield path
+        return
+    checkpoint(force=True)
+    limits = _archive_limits()
+    try:
+        planned = archive_formats.planned_zip_bytes(
+            path, archive, limits=limits, keep=_kept_in_review
+        )
+        with scratch_windows.open_window(
+            kind=scratch_windows.WindowKind.ARCHIVE_TRANSCODE,
+            max_bytes=planned,
+            owner=owner,
+            session_factory=session_factory,
+        ) as window:
+            target = window.directory / "archive.zip"
+            archive_formats.transcode_to_zip(
+                path,
+                archive,
+                target,
+                limits=limits,
+                keep=_kept_in_review,
+                on_chunk=checkpoint,
+            )
+            yield target
+    except ArchivePolicyError as exc:
+        raise ImportError_(exc.code) from exc
+
+
+def inspect_archive_as_zip(
+    path: Path,
+    archive: ArchiveFormat,
+    *,
+    owner: scratch_windows.WindowOwner | None = None,
+    session_factory: SessionFactory | None = None,
+) -> list[ArchiveEntry]:
+    """The review entries of any archive, as its ZIP view lists them."""
+    with zip_view(path, archive, owner=owner, session_factory=session_factory) as view:
+        return inspect_archive(view)
+
+
 def inspect_archive(path: Path) -> list[ArchiveEntry]:
     """List archive entries, enforcing zip-bomb caps. Importable + image only."""
     try:
         return inspect_archive_entries(
             path,
-            limits=ArchiveLimits(
-                max_entries=settings.max_archive_entries,
-                max_entry_bytes=settings.max_archive_entry_mb * 1024 * 1024,
-                max_total_bytes=settings.max_archive_uncompressed_mb * 1024 * 1024,
-                max_central_directory_bytes=(
-                    settings.max_archive_central_directory_mb * 1024 * 1024
-                ),
-                max_path_bytes=settings.max_archive_path_bytes,
-                max_depth=settings.max_archive_depth,
-            ),
+            limits=_archive_limits(),
             file_types={
                 suffix: file_type.value
                 for suffix, file_type in SUFFIX_TO_FILE_TYPE.items()
@@ -497,7 +578,10 @@ def discard_staged_files(
 
 def archive_collection_path(parent: Optional[str], archive_name: str) -> str:
     """Nest an auto collection named after the archive under the chosen parent."""
-    base = Path(archive_name).stem or "import"
+    name = Path(archive_name).name
+    # ``pack.tar.gz`` names the collection ``pack``, not ``pack.tar``.
+    suffix = archive_formats.archive_suffix(name)
+    base = (name[: -len(suffix)] if suffix else Path(name).stem) or "import"
     if parent and parent.strip():
         return f"{parent.strip().rstrip('/')}/{base}"
     return base

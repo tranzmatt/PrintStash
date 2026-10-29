@@ -233,6 +233,8 @@ class TestLooksLikeDownload:
             "https://cdn.test/model.3MF?download=1",
             "https://cdn.test/pack.zip",
             "https://cdn.test/part.bgcode",
+            "https://cdn.test/scan.PLY",
+            "https://cdn.test/part.glb?v=2",
             "https://cdn.test/api/download/123",
         ],
     )

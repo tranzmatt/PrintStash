@@ -194,6 +194,26 @@ This page describes version 0.15.0, the latest published release (22 October
   came from. Restore does not silently retarget those objects to a different remote
   namespace. Valid pre-ledger local backups require explicit superuser adoption
   before they appear in the normal backup list.
+- GLB and glTF files are read as glTF 2.0 defines them, in metres with +Y up,
+  and are converted to millimetres with +Z up like every other source. A file
+  exported with millimetre values in metre units therefore measures 1,000 times
+  too large. A `.gltf` must embed its buffers as `data:` URIs: PrintStash never
+  reads a `.bin` or other file stored beside it. Draco- or meshopt-compressed
+  meshes, textures and materials are not read. PLY has no unit, so its values
+  are taken as millimetres, and a PLY holding only a point cloud has no preview.
+- Rhino 3DM files are converted from their model unit to millimetres. Meshes,
+  block placements and the render meshes Rhino saves with NURBS surfaces are
+  read; a file saved without render meshes has no preview. FBX files are
+  converted using the unit and axes in their global settings; animation,
+  skinning and materials are ignored.
+- Archive uploads and URL imports accept ZIP, 7z, RAR and TAR (plain, gzip,
+  bzip2 or xz). A non-ZIP archive is rewritten as an uncompressed ZIP of its
+  models and preview images for review, and again when the selection is
+  imported, so staging briefly needs room for those files uncompressed.
+  Encrypted archives, links inside archives and multi-volume archives are not
+  read. Compressed RAR members need `bsdtar`, which the container image
+  includes; uncompressed members are read without it. Browser captures and
+  Pending Imports accept ZIP only.
 - The G-code toolpath viewer is a browser-side visualization aid. It is not a
   slicer-grade simulator and does not validate firmware-specific macros,
   acceleration, pressure advance, or printer safety.

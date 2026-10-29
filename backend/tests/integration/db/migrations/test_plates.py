@@ -16,7 +16,7 @@ from tests.containers import fresh_postgres_database
 from tests.factories.migration_rows import seed_schema_row
 from tests.paths import ALEMBIC_DIR, ALEMBIC_INI
 
-BEFORE = "08add6607321"
+BEFORE = "b2be6484da3f"
 PLATES = "105991549e18"
 
 
