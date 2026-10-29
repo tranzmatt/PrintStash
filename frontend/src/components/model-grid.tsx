@@ -15,6 +15,7 @@ import {
 } from "@/features/library/collection-navigation";
 import { useTaxonomyCommands } from "@/features/library/taxonomy";
 
+import { LibraryCardSelection } from "@/components/library-card-selection";
 import { LibraryBatchRecovery } from "@/components/library-batch-recovery";
 
 import { useLibraryReadingPosition } from "@/features/library/reading-position";
@@ -3287,7 +3288,7 @@ function CollectionFolderCard({
           }
         }}
         {...handlers}
-        className={`${arriving ? "animate-card-arrive" : ""} group flex flex-col text-left bg-muted border rounded-lg hover:shadow-sm transition-[border-color,box-shadow,transform] duration-fast active:scale-[0.99] relative overflow-hidden ${
+        className={`${arriving ? "animate-card-arrive" : ""} group group/selection-card flex flex-col text-left bg-muted border rounded-lg hover:shadow-sm transition-[border-color,box-shadow,transform] duration-fast active:scale-[0.99] relative overflow-hidden ${
           selected
             ? "border-primary bg-accent"
             : dragOver
@@ -3297,13 +3298,12 @@ function CollectionFolderCard({
       >
         <div className="flex-1 flex items-center justify-center bg-muted/60 dark:bg-surface-container-high min-h-[100px] sm:min-h-[140px]">
           {onToggleSelect && (
-            <span className="absolute left-2 top-2 rounded bg-card/90 p-1.5 shadow-sm">
-              <Checkbox
-                checked={!!selected}
-                onChange={() => onToggleSelect?.(collection.id)}
-                ariaLabel={uiText("Select folder {value1}", { value1: String(collection.name) })}
-              />
-            </span>
+            <LibraryCardSelection
+              selecting={!!selectable}
+              checked={!!selected}
+              onChange={() => onToggleSelect(collection.id)}
+              label={uiText("Select folder {value1}", { value1: String(collection.name) })}
+            />
           )}
           <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-primary/30" />
         </div>

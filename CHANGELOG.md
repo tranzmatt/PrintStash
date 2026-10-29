@@ -11,7 +11,7 @@
 
 ### Fixed
 
-- Library actions for Similar models and New collection are visible beside Filters in the library toolbar, wrapping within the same area on narrow screens. Models and folders offer direct selection checkboxes in grid and list views; batch actions appear after the first selection and close when the last item is deselected.
+- Library actions for Similar models and New collection are visible beside Filters in the library toolbar, wrapping within the same area on narrow screens. Models and folders offer direct selection checkboxes in grid and list views. On devices with a mouse, card checkboxes appear on hover or keyboard focus and remain visible during selection. Touch devices retain visible controls. Batch actions appear after the first selection and close when the last item is deselected.
 
 - Buttons, links and clickable controls consistently show the arrow cursor, using shared action and disabled cursor tokens. Text editing, dragging and resizing retain their appropriate cursors.
 - Settings → Imports links directly to the published PrintStash Chrome extension, alongside its source instructions.

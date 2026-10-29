@@ -50,6 +50,7 @@ test.describe("collection tree", () => {
 
       await openLibraryTools(page);
 
+      await modelCard(page, model).hover();
       await page.getByRole("checkbox", { name: `Select ${model}` }).check();
       await page.locator("div.fixed.bottom-4").getByRole("button", { name: "Move" }).click();
       const moveDialog = page.getByRole("dialog", { name: /^Move \d+ item/ });

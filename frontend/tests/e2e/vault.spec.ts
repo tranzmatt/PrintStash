@@ -42,6 +42,10 @@ test.describe("vault route", () => {
       });
     });
     await page.goto("/?type=all&sort=name-asc");
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: /Selection 2/ })
+      .hover();
     await page.getByRole("checkbox", { name: "Select Selection 2", exact: true }).click();
 
     await page.locator('main [data-library-entry="/models/103"]').click({ modifiers: ["Shift"] });
@@ -83,6 +87,10 @@ test.describe("vault route", () => {
       }),
     );
     await page.goto("/");
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: /Review bracket/ })
+      .hover();
     await page.getByRole("checkbox", { name: "Select Review bracket" }).click();
     await page.getByRole("button", { name: "Tag", exact: true }).click();
     const editor = page.getByRole("dialog");
@@ -229,6 +237,10 @@ test.describe("vault route", () => {
       return route.fulfill({ status: 412, json: { detail: "edit_conflict" } });
     });
     await page.goto("/");
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: /Undo bracket/ })
+      .hover();
     await page.getByRole("checkbox", { name: "Select Undo bracket" }).click();
     await page.getByRole("button", { name: "Tag", exact: true }).click();
     const dialog = page.getByRole("dialog");

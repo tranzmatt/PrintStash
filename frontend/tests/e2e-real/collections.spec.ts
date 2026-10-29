@@ -187,7 +187,12 @@ test.describe("collections", () => {
     await page.goto("/");
     await openLibraryTools(page);
 
-    await page.getByRole("checkbox", { name: `Select folder ${headingName}`, exact: true }).check();
+    const folderChoice = page.getByRole("checkbox", {
+      name: `Select folder ${headingName}`,
+      exact: true,
+    });
+    await page.getByRole("main").getByRole("button").filter({ has: folderChoice }).hover();
+    await folderChoice.check();
     await page.getByRole("button", { name: "Rename", exact: true }).click();
     const rename = page.getByRole("dialog");
     await rename.getByRole("textbox").fill(bulkName);
