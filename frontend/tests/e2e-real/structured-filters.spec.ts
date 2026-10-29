@@ -24,7 +24,12 @@ test.describe("structured filters", () => {
     await expect(modelCard(page, mesh)).toBeVisible();
     await openFilters(page);
     const filters = page.getByRole("region", { name: "Filters", exact: true });
-    await filters.getByRole("checkbox", { name: "G-code", exact: true }).click();
+    await filters.getByRole("button", { name: "File type", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "File type", exact: true })
+      .getByRole("checkbox", { name: "G-code", exact: true })
+      .click();
+    await page.keyboard.press("Escape");
     await expect(page).toHaveURL(/file_type=gcode/);
     await expect(modelCard(page, gcode)).toBeVisible();
     await expect(modelCard(page, mesh)).toHaveCount(0);

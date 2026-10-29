@@ -37,6 +37,7 @@ function aRevision(over: Partial<FileRead> = {}): FileRead {
     gcode_revision_number: 1,
     size_bytes: 4096,
     sha256: "b".repeat(64),
+    geometric_sha256: null,
     revision_label: "PLA draft",
     revision_status: "needs_test",
     revision_notes: null,

@@ -19,7 +19,7 @@ import { ApiError } from "@/lib/errors";
 import { getSessionVersion, requireSessionVersion } from "@/lib/session-transport";
 import { Modal } from "@/components/ui/modal";
 import { TitleEditor } from "@/components/title-editor";
-import { SubjectCaption } from "@/components/subject-caption";
+import { FileHashes } from "./file-hashes";
 import { ModelSearchAction } from "@/components/model-search-action";
 
 import { currentLocale } from "@/lib/locale";
@@ -1283,9 +1283,7 @@ function ModelDetailPresentation({
                     onMark={(file, patch) => void revisionUpdater.update(file, patch)}
                     onAddRevision={requestAddRevision}
                   />
-                  {!editing && auth.isAuthenticated && (
-                    <SubjectCaption key={model.id} type="model" id={model.id} />
-                  )}
+                  {!editing && <FileHashes files={sortedFiles} />}
                 </div>
               )}
 

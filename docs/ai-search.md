@@ -456,8 +456,14 @@ Natural-language query parsing can remain disabled.
 all four Subject types. VIEW permits reading; EDIT permits editing, dismissal
 and explicit generation/reset. Automatic generation currently requires a Model
 with a supported mesh preview; the other Subject types support separate manual
-caption text and report that no automatic preview is available. Model detail
-shows Generated/Edited/Dismissed labels and preserves the human description.
+caption text and report that no automatic preview is available. Caption text remains
+separate from the human description and available through the caption API. Model
+Overview displays file hashes instead of a caption editor: each live Artifact
+shows its byte SHA-256 and, when available for its current bytes and
+geometry recipe, its whole-mesh physical-scale geometric SHA-256. The geometric
+value is a retrieval fingerprint, not proof of identical geometry. Both display
+seven characters; hover reveals the full value and the copy button copies all
+64 characters.
 
 A dismissal is a durable tombstone. Neither a sweep nor an endpoint/source
 change regenerates it. Edited text also survives automatic work. An explicit

@@ -359,6 +359,7 @@ export function aRevision(
     version: 1,
     size_bytes: 128,
     sha256: "a".repeat(64),
+    geometric_sha256: null,
     revision_status: null,
     revision_notes: null,
     is_recommended: false,

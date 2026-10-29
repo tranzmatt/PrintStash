@@ -5939,6 +5939,17 @@
             ],
             "title": "Gcode Revision Number"
           },
+          "geometric_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometric Sha256"
+          },
           "id": {
             "title": "Id",
             "type": "integer"

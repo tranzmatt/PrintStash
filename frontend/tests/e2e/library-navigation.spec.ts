@@ -125,7 +125,8 @@ test.describe("Library navigation", () => {
       expect(Math.max(...before.offsets)).toBeGreaterThan(100);
       const box = await link.boundingBox();
       if (!box) throw new Error("Reading anchor has no visible box");
-      await page.mouse.click(box.x + 20, box.y + 20);
+      // Navigate through the card body; its upper-left corner selects it.
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       await expect(
         page.getByRole("heading", { name: "skadis_kitchen-roll_screw", exact: true }),
       ).toBeVisible();
@@ -189,7 +190,8 @@ test.describe("Library navigation", () => {
       const before = await link.evaluate((node) => node.getBoundingClientRect().top);
       const box = await link.boundingBox();
       if (!box) throw new Error("Reading anchor has no visible box");
-      await page.mouse.click(box.x + 20, box.y + 20);
+      // Navigate through the card body; its upper-left corner selects it.
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       await expect(
         page.getByRole("heading", { name: "skadis_kitchen-roll_screw", exact: true }),
       ).toBeVisible();

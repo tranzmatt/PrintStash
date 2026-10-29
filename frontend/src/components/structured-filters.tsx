@@ -10,8 +10,8 @@ import { structuredLibraryFilterLabel } from "@/features/library/filters";
 import { Separator } from "@/components/ui/separator";
 import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
-import { ChevronDown, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
+import { LibraryFilterChoice } from "@/components/library-filter-choice";
 import { LibraryFilterMenu } from "@/components/library-filter-menu";
 import { useState } from "react";
 
@@ -113,10 +113,8 @@ export function StructuredFilters({
   const groups: FacetFilterKey[] = inline
     ? ["file_type", "printed", ...GROUPS.filter((key) => key !== "file_type" && key !== "printed")]
     : GROUPS;
-  const uploadedOpen = extraOpen.uploaded ?? uploadedActive;
-  const historyOpen = extraOpen.history ?? historyActive;
   const uploadFields = (
-    <div className={inline ? "grid grid-cols-2 gap-2" : "grid gap-2 py-1"}>
+    <div className="grid gap-2 py-1">
       <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
         {uiText("After")}
         <Input
@@ -185,28 +183,25 @@ export function StructuredFilters({
                 />
                 {structuredLibraryFilterLabel("has_similar_candidates")}
               </label>
-              <Button
-                variant={uploadedOpen ? "ghost" : "outline"}
-                size="xs"
-                className={uploadedOpen ? "h-8 bg-accent text-accent-foreground" : "h-8"}
-                aria-expanded={uploadedOpen}
-                aria-controls="library-uploaded-fields"
-                onClick={() => setExtraOpen((current) => ({ ...current, uploaded: !uploadedOpen }))}
+              <LibraryFilterMenu
+                label={uiText("Uploaded")}
+                count={(uploadedAfter ? 1 : 0) + (uploadedBefore ? 1 : 0)}
               >
-                {uiText("Uploaded")}
-                <ChevronDown className="h-3.5 w-3.5" aria-hidden />
-              </Button>
-              <Button
-                variant={historyOpen ? "ghost" : "outline"}
-                size="xs"
-                className={historyOpen ? "h-8 bg-accent text-accent-foreground" : "h-8"}
-                aria-expanded={historyOpen}
-                aria-controls="library-history-fields"
-                onClick={() => setExtraOpen((current) => ({ ...current, history: !historyOpen }))}
+                {uploadFields}
+              </LibraryFilterMenu>
+              <LibraryFilterMenu
+                label={uiText("Print history")}
+                count={
+                  historyKeys.filter((key) => history[key] != null && history[key] !== "").length
+                }
               >
-                {uiText("Print history")}
-                <ChevronDown className="h-3.5 w-3.5" aria-hidden />
-              </Button>
+                <PrintHistoryFields
+                  compact
+                  datePicker
+                  value={history}
+                  onChange={(key, value) => onDateChange?.(key, value)}
+                />
+              </LibraryFilterMenu>
             </>
           )}
           {inline && extraControls}
@@ -227,21 +222,13 @@ export function StructuredFilters({
             const contentId = `model-filter-${key}`;
             if (values.length === 0 && selected.length === 0) return null;
             const row = (item: FacetValueRead) => (
-              <label
+              <LibraryFilterChoice
                 key={item.value}
-                className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors duration-press hover:bg-muted"
-              >
-                <Checkbox
-                  className="h-4 w-4"
-                  ariaLabel={filterValueText(key, item.value)}
-                  checked={selected.includes(item.value)}
-                  onChange={() => toggleValue(key, item.value)}
-                />
-                <span className="min-w-0 flex-1 truncate">{filterValueText(key, item.value)}</span>
-                <span className="min-w-[18px] rounded bg-muted px-1 py-0.5 text-center text-2xs font-medium text-muted-foreground">
-                  {item.count}
-                </span>
-              </label>
+                label={filterValueText(key, item.value)}
+                count={item.count}
+                checked={selected.includes(item.value)}
+                onChange={() => toggleValue(key, item.value)}
+              />
             );
             const sources =
               key === "file_type"
@@ -253,62 +240,41 @@ export function StructuredFilters({
               const missing = selected.filter(
                 (value) => !values.some((item) => item.value === value),
               );
-              if (key === "file_type" || key === "printed") {
+              if (key === "printed") {
                 const options = [
-                  ...sources,
-                  ...sliced,
-                  ...missing.map((value) => ({ value, count: null })),
+                  { value: null, label: uiText("All"), count: null },
+                  ...values.map((item) => ({
+                    ...item,
+                    label: item.value === "yes" ? uiText("Printed") : uiText("Not printed"),
+                  })),
+                  ...missing.map((value) => ({
+                    value,
+                    label: value === "yes" ? uiText("Printed") : uiText("Not printed"),
+                    count: null,
+                  })),
                 ];
                 return (
-                  <div
+                  <LibraryFilterMenu
                     key={key}
-                    role="group"
-                    aria-label={structuredLibraryFilterLabel(key)}
-                    className="flex min-w-0 flex-wrap items-center gap-1.5"
+                    label={structuredLibraryFilterLabel(key)}
+                    count={selected.length}
                   >
-                    <span className="mr-1 text-xs font-medium text-muted-foreground">
-                      {structuredLibraryFilterLabel(key)}
-                    </span>
-                    {options.map((item) =>
-                      key === "printed" ? (
-                        <Button
-                          key={item.value}
-                          variant={selected.includes(item.value) ? "ghost" : "outline"}
-                          size="xs"
-                          aria-pressed={selected.includes(item.value)}
-                          onClick={() =>
-                            onChange(key, selected.includes(item.value) ? [] : [item.value])
-                          }
-                          className={
-                            selected.includes(item.value)
-                              ? "h-8 bg-accent text-accent-foreground"
-                              : "h-8"
-                          }
-                        >
-                          {filterValueText(key, item.value)}
-                          {item.count !== null && (
-                            <span className="text-muted-foreground">{item.count}</span>
-                          )}
-                        </Button>
-                      ) : (
-                        <label
-                          key={item.value}
-                          className={`flex h-8 cursor-action items-center gap-1.5 rounded-md px-2 text-xs ${selected.includes(item.value) ? "bg-accent text-accent-foreground" : "hover:bg-muted"}`}
-                        >
-                          <Checkbox
-                            className="h-4 w-4"
-                            ariaLabel={filterValueText(key, item.value)}
-                            checked={selected.includes(item.value)}
-                            onChange={() => toggleValue(key, item.value)}
-                          />
-                          {filterValueText(key, item.value)}
-                          {item.count !== null && (
-                            <span className="text-muted-foreground">{item.count}</span>
-                          )}
-                        </label>
-                      ),
-                    )}
-                  </div>
+                    {options.map((item) => (
+                      <LibraryFilterChoice
+                        key={item.value ?? "all"}
+                        label={item.label}
+                        count={item.count}
+                        checked={
+                          item.value === null
+                            ? selected.length !== 1
+                            : selected.length === 1 && selected[0] === item.value
+                        }
+                        onChange={(checked) =>
+                          onChange(key, item.value === null || !checked ? [] : [item.value])
+                        }
+                      />
+                    ))}
+                  </LibraryFilterMenu>
                 );
               }
               return (
@@ -321,17 +287,12 @@ export function StructuredFilters({
                   {sources.length > 0 && sliced.length > 0 && <Separator className="my-1" />}
                   {sliced.map(row)}
                   {missing.map((value) => (
-                    <label
+                    <LibraryFilterChoice
                       key={value}
-                      className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
-                    >
-                      <Checkbox
-                        ariaLabel={filterValueText(key, value)}
-                        checked
-                        onChange={() => toggleValue(key, value)}
-                      />
-                      {filterValueText(key, value)}
-                    </label>
+                      label={filterValueText(key, value)}
+                      checked
+                      onChange={() => toggleValue(key, value)}
+                    />
                   ))}
                 </LibraryFilterMenu>
               );
@@ -404,26 +365,6 @@ export function StructuredFilters({
             </div>
           )}
         </div>
-        {inline && (uploadedOpen || historyOpen) && (
-          <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-border pt-3">
-            {uploadedOpen && (
-              <fieldset id="library-uploaded-fields" className="min-w-0 max-w-md flex-1 basis-72">
-                <legend className="mb-1 text-xs font-medium">{uiText("Uploaded")}</legend>
-                {uploadFields}
-              </fieldset>
-            )}
-            {historyOpen && (
-              <fieldset id="library-history-fields" className="min-w-0 flex-[2] basis-96">
-                <legend className="mb-1 text-xs font-medium">{uiText("Print history")}</legend>
-                <PrintHistoryFields
-                  layout="inline"
-                  value={history}
-                  onChange={(key, value) => onDateChange?.(key, value)}
-                />
-              </fieldset>
-            )}
-          </div>
-        )}
       </section>
     </Localized>
   );

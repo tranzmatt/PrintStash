@@ -15,6 +15,7 @@ import {
 } from "@/features/library/collection-navigation";
 import { useTaxonomyCommands } from "@/features/library/taxonomy";
 
+import { LibraryCardSelection } from "@/components/library-card-selection";
 import { LibraryBatchRecovery } from "@/components/library-batch-recovery";
 
 import { useLibraryReadingPosition } from "@/features/library/reading-position";
@@ -116,7 +117,6 @@ import {
   Folder,
   ChevronRight,
   Plus,
-  CheckSquare,
   Star,
   ArrowUpDown,
   Rows3,
@@ -1131,7 +1131,14 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   const loadingMore = modelQuery.isFetchingNextPage || !browseReady;
   const hasMore = snapshot?.hasMore ?? false;
 
-  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Selected folders are kept as the rows they were picked from: they may leave
+  // the view (another folder opened) and still need their names and paths.
+  const [selectedCollectionRows, setSelectedCollectionRows] = useState<
+    Map<number, CollectionNodeRead>
+  >(new Map());
+  const [keyboardSelection, setKeyboardSelection] = useState(false);
+  const selectMode = keyboardSelection || selectedIds.size > 0 || selectedCollectionRows.size > 0;
 
   // What turned up since this view was last read eases in once; everything
   // already on screen keeps its place. A different folder starts a new reading.
@@ -1336,12 +1343,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     );
   }
 
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  // Selected folders are kept as the rows they were picked from: they may leave
-  // the view (another folder opened) and still need their names and paths.
-  const [selectedCollectionRows, setSelectedCollectionRows] = useState<
-    Map<number, CollectionNodeRead>
-  >(new Map());
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchRecovery, setBatchRecovery] = useState<{
     entry: typeof entry;
@@ -1410,7 +1411,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
     setSelectedCollectionRows(new Map());
-    setSelectMode(false);
+    setKeyboardSelection(false);
   }, []);
 
   function selectAllVisible() {
@@ -1477,12 +1478,12 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         document.querySelector<HTMLInputElement>("[data-model-search]")?.focus();
       } else if (event.key.toLowerCase() === "s" && !typing && auth.isAuthenticated) {
         event.preventDefault();
-        setSelectMode(true);
-      } else if (event.key === "Escape" && selectionCount > 0 && !typing) clearSelection();
+        setKeyboardSelection(true);
+      } else if (event.key === "Escape" && selectMode && !typing) clearSelection();
     }
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
-  }, [auth.isAuthenticated, clearSelection, selectionCount]);
+  }, [auth.isAuthenticated, clearSelection, selectMode]);
 
   async function runCollectionBatch(
     success: MessageKey,
@@ -1898,11 +1899,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     router.replace(params.size ? `/?${params}` : "/");
   }
 
-  function toggleSelectMode() {
-    if (selectMode) clearSelection();
-    else setSelectMode(true);
-  }
-
   function selectSort(value: SortKey) {
     const params = new URLSearchParams(searchParams);
     params.set("sort", value);
@@ -2044,19 +2040,6 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         <Plus className="h-4 w-4 shrink-0" aria-hidden />
         {uiText("New collection")}
       </Button>
-      {auth.isAuthenticated && (
-        <Button
-          variant={selectMode ? "ghost" : "outline"}
-          size="xs"
-          className={cn("h-10 @3xl/library:h-8", selectMode && "bg-accent text-accent-foreground")}
-          aria-pressed={selectMode}
-          title={uiText("Select Models and folders (S)")}
-          onClick={toggleSelectMode}
-        >
-          <CheckSquare className="h-4 w-4 shrink-0" aria-hidden />
-          {uiText("Select")}
-        </Button>
-      )}
     </div>
   );
 
@@ -2862,16 +2845,13 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                   </button>
                 </>
               )}
-              <Button size="xs" variant="outline" onClick={toggleSelectMode}>
+              <Button size="xs" variant="outline" onClick={clearSelection}>
                 {uiText("Done")}
               </Button>
               {selectionCount > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedIds(new Set());
-                    setSelectedCollectionRows(new Map());
-                  }}
+                  onClick={clearSelection}
                   className="font-medium text-muted-foreground hover:text-foreground"
                 >
                   {uiText("Clear")}
@@ -3060,7 +3040,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                         onDropModel={canUploadToVault ? handleMoveModel : undefined}
                         selectable={selectMode}
                         selected={selectedCollectionRows.has(collection.id)}
-                        onToggleSelect={toggleCollectionSelect}
+                        onToggleSelect={auth.isAuthenticated ? toggleCollectionSelect : undefined}
                       />
                     ))}
                     {libraryItems.map((item) =>
@@ -3084,7 +3064,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                           collectionLabel={item.value.collection_label}
                           selectable={selectMode}
                           selected={selectedIds.has(item.value.id)}
-                          onToggleSelect={toggleSelect}
+                          onToggleSelect={auth.isAuthenticated ? toggleSelect : undefined}
                           draggable={canUploadToVault && !selectMode}
                           onEditTags={openTagEditor}
                           onIntent={warmModel}
@@ -3116,6 +3096,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                 >
                   <div className="flex flex-col">
                     <div className="flex items-center gap-3 px-4 py-2 border-b border-border text-xs font-mono text-muted-foreground uppercase tracking-wider bg-muted/50">
+                      {auth.isAuthenticated && <span className="w-5 shrink-0" aria-hidden />}
                       <span className="w-10 flex-shrink-0">{uiText("Thumb")}</span>
                       <span className="flex-1">{uiText("Name")}</span>
                       <span className="w-24 text-right hidden sm:block">
@@ -3134,7 +3115,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                         onDropModel={canUploadToVault ? handleMoveModel : undefined}
                         selectable={selectMode}
                         selected={selectedCollectionRows.has(collection.id)}
-                        onToggleSelect={toggleCollectionSelect}
+                        onToggleSelect={auth.isAuthenticated ? toggleCollectionSelect : undefined}
                       />
                     ))}
                     <LoadMore
@@ -3150,6 +3131,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                       item.kind === "multipart" ? (
                         <MultipartModelListRow
                           key={`multipart-${item.value.id}`}
+                          selectionSpace={auth.isAuthenticated}
                           item={item.value}
                           collectionLabel={item.value.collection_label}
                           returnTo={currentLibraryHref}
@@ -3163,7 +3145,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                           collectionLabel={item.value.collection_label}
                           selectable={selectMode}
                           selected={selectedIds.has(item.value.id)}
-                          onToggleSelect={toggleSelect}
+                          onToggleSelect={auth.isAuthenticated ? toggleSelect : undefined}
                           draggable={canUploadToVault && !selectMode}
                         />
                       ),
@@ -3306,7 +3288,7 @@ function CollectionFolderCard({
           }
         }}
         {...handlers}
-        className={`${arriving ? "animate-card-arrive" : ""} group flex flex-col text-left bg-muted border rounded-lg hover:shadow-sm transition-[border-color,box-shadow,transform] duration-fast active:scale-[0.99] relative overflow-hidden ${
+        className={`${arriving ? "animate-card-arrive" : ""} group group/selection-card flex flex-col text-left bg-muted border rounded-lg hover:shadow-sm transition-[border-color,box-shadow,transform] duration-fast active:scale-[0.99] relative overflow-hidden ${
           selected
             ? "border-primary bg-accent"
             : dragOver
@@ -3315,14 +3297,13 @@ function CollectionFolderCard({
         }`}
       >
         <div className="flex-1 flex items-center justify-center bg-muted/60 dark:bg-surface-container-high min-h-[100px] sm:min-h-[140px]">
-          {selectable && (
-            <span className="absolute left-3 top-3">
-              <Checkbox
-                checked={!!selected}
-                onChange={() => onToggleSelect?.(collection.id)}
-                ariaLabel={uiText("Select folder {value1}", { value1: String(collection.name) })}
-              />
-            </span>
+          {onToggleSelect && (
+            <LibraryCardSelection
+              selecting={!!selectable}
+              checked={!!selected}
+              onChange={() => onToggleSelect(collection.id)}
+              label={uiText("Select folder {value1}", { value1: String(collection.name) })}
+            />
           )}
           <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-primary/30" />
         </div>
@@ -3391,8 +3372,9 @@ function CollectionListRow({
               : "border-border hover:bg-muted"
         }`}
       >
-        {selectable && (
+        {onToggleSelect && (
           <Checkbox
+            className="shrink-0"
             checked={!!selected}
             onChange={() => onToggleSelect?.(collection.id)}
             ariaLabel={uiText("Select folder {value1}", { value1: String(collection.name) })}
@@ -3425,11 +3407,13 @@ function CollectionListRow({
 }
 
 function MultipartModelListRow({
+  selectionSpace,
   item,
   collectionLabel,
   returnTo,
   origin,
 }: {
+  selectionSpace: boolean;
   item: MultipartModelListItem;
   collectionLabel: string | null;
   returnTo: string;
@@ -3444,6 +3428,7 @@ function MultipartModelListRow({
       aria-label={item.name}
       className="group flex items-center gap-2 border-b border-border px-4 py-3 transition-colors hover:bg-muted active:bg-muted md:gap-3"
     >
+      {selectionSpace && <span className="w-5 shrink-0" aria-hidden />}
       <ProtectedThumbnail
         path={item.cover_thumbnail_url}
         alt=""
@@ -3513,8 +3498,9 @@ function ModelListRow({
           draggable ? "cursor-grab active:cursor-grabbing" : ""
         } ${selected ? "bg-accent" : "hover:bg-muted"}`}
       >
-        {selectable && (
+        {onToggleSelect && (
           <Checkbox
+            className="shrink-0"
             checked={selected}
             onChange={() => onToggleSelect?.(model.id)}
             ariaLabel={uiText("Select {value1}", { value1: String(model.name) })}

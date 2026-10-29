@@ -71,6 +71,8 @@ class FileRead(BaseModel):
     gcode_revision_number: Optional[int] = None
     size_bytes: int
     sha256: str
+    # Whole-mesh, physical-scale fingerprint for the current source and recipe.
+    geometric_sha256: str | None = None
     revision_label: Optional[str] = None
     revision_status: Optional[FileRevisionStatus] = None
     revision_notes: Optional[str] = None

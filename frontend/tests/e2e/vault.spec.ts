@@ -43,9 +43,9 @@ test.describe("vault route", () => {
     });
     await page.goto("/?type=all&sort=name-asc");
     await page
-      .getByRole("group", { name: "Library tools" })
-      .getByRole("button", { name: "Select", exact: true })
-      .click();
+      .getByRole("main")
+      .getByRole("link", { name: /Selection 2/ })
+      .hover();
     await page.getByRole("checkbox", { name: "Select Selection 2", exact: true }).click();
 
     await page.locator('main [data-library-entry="/models/103"]').click({ modifiers: ["Shift"] });
@@ -88,9 +88,9 @@ test.describe("vault route", () => {
     );
     await page.goto("/");
     await page
-      .getByRole("group", { name: "Library tools" })
-      .getByRole("button", { name: "Select", exact: true })
-      .click();
+      .getByRole("main")
+      .getByRole("link", { name: /Review bracket/ })
+      .hover();
     await page.getByRole("checkbox", { name: "Select Review bracket" }).click();
     await page.getByRole("button", { name: "Tag", exact: true }).click();
     const editor = page.getByRole("dialog");
@@ -238,9 +238,9 @@ test.describe("vault route", () => {
     });
     await page.goto("/");
     await page
-      .getByRole("group", { name: "Library tools" })
-      .getByRole("button", { name: "Select", exact: true })
-      .click();
+      .getByRole("main")
+      .getByRole("link", { name: /Undo bracket/ })
+      .hover();
     await page.getByRole("checkbox", { name: "Select Undo bracket" }).click();
     await page.getByRole("button", { name: "Tag", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -648,17 +648,15 @@ test.describe("vault route on a phone-width viewport", () => {
     );
   });
 
-  test("offers a way out of selection mode", async ({ page }) => {
+  test("offers a way out of keyboard selection mode", async ({ page }) => {
     await gotoMobileVault(page);
-    const select = page
-      .getByRole("group", { name: "Library tools", exact: true })
-      .getByRole("button", { name: "Select", exact: true });
-    await select.click();
-    await expect(select).toHaveAttribute("aria-pressed", "true");
-
-    await select.click();
-
-    await expect(select).toHaveAttribute("aria-pressed", "false");
+    await page
+      .getByRole("group", { name: "Library tools" })
+      .getByRole("button", { name: "New collection" })
+      .focus();
+    await page.keyboard.press("s");
+    await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveCount(0);
   });
 

@@ -1,4 +1,5 @@
 {
+  "All": "All",
   "profiles.description": "Manage filament and printer profiles with slicer settings observed in your G-code.",
   "profiles.searchSettings": "Find a setting or value",
   "profiles.valuesHelp": "Original slicer parameter names and values. Multiple values retain the slicer's filament or extruder order; missing settings are not inferred.",
@@ -834,6 +835,7 @@
   "File type": "File type",
   "Slicer": "Slicer",
   "Revision": "Revision",
+  "Not printed": "Not printed",
   "Printed": "Printed",
   "Print outcome": "Print outcome",
   "Show fewer": "Show fewer",
@@ -4583,5 +4585,12 @@
   "profiles.closeEditor": "Close editor for {name}",
   "profiles.closeEditorLabel": "Close editor",
   "profiles.browseHelp": "Open a profile to inspect its slicer configurations or edit its details.",
-  "profiles.settingsTitle": "Slicer configurations"
+  "profiles.settingsTitle": "Slicer configurations",
+  "modelHashes.title": "File hashes",
+  "modelHashes.file": "File SHA-256",
+  "modelHashes.geometry": "Geometric SHA-256",
+  "modelHashes.geometryHelp": "Whole-mesh fingerprint at physical scale. A matching fingerprint alone does not prove identical geometry.",
+  "modelHashes.copy": "Copy {kind} for {filename}",
+  "modelHashes.copied": "SHA-256 copied",
+  "modelHashes.copyFailed": "Could not copy SHA-256."
 }

@@ -87,7 +87,9 @@ test.describe("Library navigation", () => {
         const originKey = await page.evaluate(() => history.state.key);
         const box = await link.boundingBox();
         if (!box) throw new Error("Missing visible reading anchor");
-        await page.mouse.click(box.x + 20, box.y + 20);
+        // The upper-left corner is the selection control; navigate through
+        // the visible card body without scrolling the captured reading anchor.
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         await expect(page).toHaveURL(new RegExp(`${targetHref}\\?return=`));
         await page.getByRole("link", { name: "Back", exact: true }).click();
 

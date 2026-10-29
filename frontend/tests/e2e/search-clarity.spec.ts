@@ -175,7 +175,7 @@ test.describe("search clarity", () => {
     await expect(
       actions.getByRole("button", { name: "New collection", exact: true }),
     ).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Select", exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Select", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Library tools", exact: true })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "New multipart set", exact: true }),

@@ -44,6 +44,7 @@ function aFile(over: Partial<FileRead> = {}): FileRead {
     version: 1,
     size_bytes: 2048,
     sha256: "a".repeat(64),
+    geometric_sha256: null,
     revision_status: null,
     revision_notes: null,
     is_recommended: false,
@@ -1493,5 +1494,14 @@ describe("ModelDetail", () => {
 
       expect(screen.queryByText("Add G-code revision")).toBeNull();
     });
+  });
+});
+
+describe("ModelDetail file hashes", () => {
+  it("replaces the AI caption panel in Overview", async () => {
+    renderDetail();
+    const hashes = await screen.findByRole("region", { name: "File hashes" });
+    expect(within(hashes).getByTitle("a".repeat(64), { exact: true })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "AI caption" })).not.toBeInTheDocument();
   });
 });

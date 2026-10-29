@@ -9,7 +9,7 @@ import { LibraryItemLink } from "@/features/library/navigation";
 import { memo, useEffect, useState } from "react";
 import { ModelListItem, FileRevisionStatus } from "@/types";
 import { FileText, Star, Tags, ScanSearch } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
+import { LibraryCardSelection } from "@/components/library-card-selection";
 import { Button } from "@/components/ui/button";
 import { useLibraryStar } from "@/features/library/mutations";
 import { toast } from "@/lib/toast";
@@ -223,7 +223,7 @@ function ModelCardInner({
             : undefined
         }
         onDragEnd={() => setDragging(false)}
-        className={`${origin ? "" : "animate-card-in"} ${arriving ? "animate-card-arrive" : ""} group relative flex h-full flex-col bg-card border rounded transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-fast active:scale-[0.99] overflow-hidden ${
+        className={`${origin ? "" : "animate-card-in"} ${arriving ? "animate-card-arrive" : ""} group group/selection-card relative flex h-full flex-col bg-card border rounded transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-fast active:scale-[0.99] overflow-hidden ${
           draggable ? "cursor-grab active:cursor-grabbing" : ""
         } ${dragging ? "opacity-40" : ""} ${
           selected
@@ -231,14 +231,13 @@ function ModelCardInner({
             : "border-border hover:border-primary"
         }`}
       >
-        {selectable && (
-          <div className="absolute left-2 top-2 z-10">
-            <Checkbox
-              checked={selected}
-              onChange={() => onToggleSelect?.(model.id)}
-              ariaLabel={uiText("Select {value1}", { value1: String(model.name) })}
-            />
-          </div>
+        {onToggleSelect && (
+          <LibraryCardSelection
+            selecting={selectable}
+            checked={selected}
+            onChange={() => onToggleSelect(model.id)}
+            label={uiText("Select {value1}", { value1: String(model.name) })}
+          />
         )}
         <button
           type="button"

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { aVaultConfig, aPrinter } from "../../src/test-support/factories";
+import { aVaultConfig, aPrinter, aRevision } from "../../src/test-support/factories";
 import type { VaultConfigUpdate, PrinterUpdate } from "../../src/types";
 import { aCaption } from "../../src/test-support/captions";
 import { searchPreferences, searchStatus } from "../../src/test-support/search";
@@ -90,7 +90,7 @@ const model = {
   created_at: "2026-05-31T10:46:55.658492",
   updated_at: now,
   files: [
-    {
+    aRevision({
       id: 1,
       model_id: 1,
       original_filename: "skadis_kitchen-roll_screw.stl",
@@ -106,8 +106,8 @@ const model = {
       tags: [],
       uploaded_at: "2026-05-31T10:46:55.705202",
       metadata: null,
-    },
-    {
+    }),
+    aRevision({
       id: 2,
       model_id: 1,
       original_filename: "skadis_kitchen-roll_screw_PLA_30m12s.gcode",
@@ -123,7 +123,7 @@ const model = {
       tags: [],
       uploaded_at: "2026-05-31T10:46:56.705262",
       metadata,
-    },
+    }),
   ],
 };
 
