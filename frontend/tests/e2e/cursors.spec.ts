@@ -213,6 +213,11 @@ test.describe("shared cursor policy", () => {
       let checked = 0;
       for (const button of await buttons.all()) {
         if (!(await button.isVisible())) continue;
+        // Card actions become interactive when the pointer enters the card.
+        // Move there first, then retain the ordinary hover actionability check.
+        await button.scrollIntoViewIfNeeded();
+        const box = await button.boundingBox();
+        if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await button.hover({ force: await button.isDisabled() });
         // A loading action may become enabled while Playwright moves to it.
         // Assert the state at hover time, not the earlier loading snapshot.
