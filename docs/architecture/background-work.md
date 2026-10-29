@@ -340,7 +340,7 @@ both Compose files run the first with no setting.
 | `ENGINE_HISTORY_RETENTION_DAYS` | 7 | Settled engine executions |
 | `DERIVATIVE_MAX_ATTEMPTS` / `DERIVATIVE_BACKOFF_SECONDS` | 5 / 30 | Derivative retries, doubling, capped at a day |
 | `FENCE_HEARTBEAT_SECONDS` / `FENCE_TTL_SECONDS` | 15 / 60 | Fence liveness |
-| `JOBS_<LANE>_CONCURRENCY` | ingest 2, derive.light 4, network 4, similarity 4, notify 1, printing 1, maintenance 1, search 1, captions 1, expansion 1 | Per-lane concurrency; `derive.native` defaults to `MAX_RENDER_JOBS` |
+| `JOBS_<LANE>_CONCURRENCY` | ingest 2, derive.light 4, network 4, notify 1, printing 1, maintenance 1, search 1, captions 1, expansion 1 | Per-lane concurrency; `derive.native` and `similarity` default to `MAX_RENDER_JOBS` (similarity at most 16) |
 | `JOBS_NOTIFY_RATE_PER_MINUTE` | 30 | Deliveries per channel |
 
 Administrators override lane concurrency at runtime on Settings → Background

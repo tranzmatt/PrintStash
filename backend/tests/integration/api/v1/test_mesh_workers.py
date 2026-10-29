@@ -79,6 +79,16 @@ class TestMeshWorkersConfig:
         config = db_session.get(SystemConfig, 1)
         assert config is not None and config.max_render_jobs == 2
 
+    def test_a_stored_count_resizes_the_similarity_lane(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        work_engine,
+    ) -> None:
+        _put(client, auth_headers, 2)
+
+        assert work_engine.concurrency[LaneName.SIMILARITY] == 2
+
     def test_an_administrators_lane_override_still_wins(
         self,
         client: TestClient,

@@ -26,6 +26,8 @@ from .contracts import (
 
 # How many reconcile passes run at once, deployment-wide.
 RECONCILE_CONCURRENCY = 4
+# The upper bound ``jobs_similarity_concurrency`` accepts.
+MAX_SIMILARITY_CONCURRENCY = 16
 
 
 def _native_default() -> int:
@@ -33,6 +35,17 @@ def _native_default() -> int:
     if settings.jobs_derive_native_concurrency is not None:
         return settings.jobs_derive_native_concurrency
     return max(1, settings.max_render_jobs)
+
+
+def _similarity_default() -> int:
+    """One slot per render slot: pair verifications are native processes too.
+
+    The lane's ceiling bounds a large host; a serial render budget (zero) still
+    leaves the one slot a run's analysis needs.
+    """
+    if settings.jobs_similarity_concurrency is not None:
+        return settings.jobs_similarity_concurrency
+    return min(MAX_SIMILARITY_CONCURRENCY, max(1, settings.max_render_jobs))
 
 
 def default_lanes() -> dict[LaneName, Lane]:
@@ -51,7 +64,7 @@ def default_lanes() -> dict[LaneName, Lane]:
         ),
         Lane(
             LaneName.SIMILARITY,
-            settings.jobs_similarity_concurrency,
+            _similarity_default(),
             scope="global",
             pace=LanePace.RELAXED,
         ),

@@ -269,12 +269,14 @@ class Settings(BaseSettings):
     derivative_backoff_seconds: int = Field(default=30, ge=1, le=86400)
     fence_heartbeat_seconds: int = Field(default=15, ge=1, le=3600)
     fence_ttl_seconds: int = Field(default=60, ge=3, le=86400)
-    # Lane concurrency. Unset ``derive_native`` follows ``max_render_jobs``.
+    # Lane concurrency. Unset ``derive_native`` and ``similarity`` follow
+    # ``max_render_jobs``.
     jobs_ingest_concurrency: int = Field(default=2, ge=1, le=64)
     jobs_derive_native_concurrency: int | None = Field(default=None, ge=1, le=64)
     jobs_derive_light_concurrency: int = Field(default=4, ge=1, le=64)
-    # One slot shortlists a run; the others verify its pairs at once.
-    jobs_similarity_concurrency: int = Field(default=4, ge=1, le=16)
+    # One slot shortlists a run; the others verify its pairs at once. Unset
+    # follows ``max_render_jobs``: each verification is a native mesh process.
+    jobs_similarity_concurrency: int | None = Field(default=None, ge=1, le=16)
     jobs_network_concurrency: int = Field(default=4, ge=1, le=64)
     jobs_notify_concurrency: int = Field(default=1, ge=1, le=16)
     jobs_notify_rate_per_minute: int = Field(default=30, ge=1, le=6000)

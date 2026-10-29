@@ -390,6 +390,11 @@ def lane(admin):
 
 
 class TestVerificationSource:
+    @pytest.fixture(autouse=True)
+    def verifier_slots(self, lane) -> None:
+        # The default follows this host's render budget; pin it.
+        lane(3)
+
     def test_offers_a_verifier_per_extra_lane_slot(
         self, db_session: Session, queued_run, lane
     ) -> None:
