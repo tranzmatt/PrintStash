@@ -1532,7 +1532,7 @@
   "build.snapshotHelp": "Se guarda una copia de las piezas y cantidades. Los cambios posteriores en la composición no alteran esta fabricación.",
   "build.showArchived": "Mostrar fabricaciones archivadas",
   "build.refresh": "Actualizar",
-  "build.empty": "Todavía no hay fabricaciones aquí. Abre un modelo multipieza para crear una.",
+  "build.empty": "Todavía no hay fabricaciones.",
   "build.complete": "Todas las piezas necesarias están confirmadas",
   "build.inProgress": "Quedan piezas pendientes",
   "build.previous": "Anterior",
@@ -2105,10 +2105,10 @@
   "multipart.saving": "Guardando…",
   "multipart.saved": "Cambios guardados",
   "multipart.delete": "Eliminar conjunto multiparte",
-  "multipart.deleteTitle": "¿Eliminar este conjunto multiparte?",
-  "multipart.deleteDescription": "Solo se eliminará la agrupación. Los modelos, archivos y revisiones permanecerán en tu biblioteca.",
-  "multipart.deleteConfirm": "Eliminar conjunto",
-  "multipart.deleted": "Conjunto multiparte eliminado",
+  "multipart.deleteTitle": "¿Mover este conjunto multiparte a la papelera?",
+  "multipart.deleteDescription": "La agrupación se moverá a la papelera y se podrá restaurar. Sus modelos, archivos, revisiones y guías permanecen en la biblioteca.",
+  "multipart.deleteConfirm": "Mover a la papelera",
+  "multipart.deleted": "Conjunto multiparte movido a la papelera",
   "multipart.unavailable": "Modelo no disponible",
   "multipart.noCandidates": "Ningún modelo coincide con esta búsqueda.",
   "multipart.alreadyAdded": "Ya está añadido a esta agrupación",
@@ -2804,20 +2804,20 @@
     "other": "{value1} modelos eliminados"
   },
   "trash.selectedCount": {
-    "one": "{value1} modelo seleccionado",
-    "other": "{value1} modelos seleccionados"
+    "one": "{value1} elemento seleccionado",
+    "other": "{value1} elementos seleccionados"
   },
   "trash.restoredCount": {
-    "one": "Se restauró {value1} modelo.",
-    "other": "Se restauraron {value1} modelos."
+    "one": "Se restauró {value1} elemento.",
+    "other": "Se restauraron {value1} elementos."
   },
   "trash.purgedCount": {
-    "one": "Se eliminó definitivamente {value1} modelo.",
-    "other": "Se eliminaron definitivamente {value1} modelos."
+    "one": "Se eliminó definitivamente {value1} elemento.",
+    "other": "Se eliminaron definitivamente {value1} elementos."
   },
   "trash.purgeSelectedTitle": {
-    "one": "¿Eliminar definitivamente {value1} modelo?",
-    "other": "¿Eliminar definitivamente {value1} modelos?"
+    "one": "¿Eliminar definitivamente {value1} elemento?",
+    "other": "¿Eliminar definitivamente {value1} elementos?"
   },
   "Select all deleted models": "Seleccionar todos los modelos eliminados",
   "Select deleted model {value1}": "Seleccionar el modelo eliminado {value1}",
@@ -4593,5 +4593,27 @@
   "modelHashes.geometryHelp": "Huella de la malla completa a escala física. Una huella coincidente por sí sola no demuestra que la geometría sea idéntica.",
   "modelHashes.copy": "Copiar {kind} de {filename}",
   "modelHashes.copied": "SHA-256 copiado",
-  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256."
+  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256.",
+  "multipart.deleteSelectedHelp": "Los conjuntos seleccionados se moverán a la papelera y se podrán restaurar. Sus modelos, archivos, revisiones y guías permanecen en la biblioteca.",
+  "multipart.mixedDeleteHelp": "Los modelos y conjuntos seleccionados se mueven a la papelera. Las carpetas no se pueden restaurar. Los modelos de un conjunto permanecen en la biblioteca salvo que también estén seleccionados o dentro de una carpeta seleccionada.",
+  "library.selectAllMatching": "Seleccionar todos los elementos coincidentes",
+  "library.matchingSelected": "{count} elementos coincidentes seleccionados",
+  "build.backToSet": "Volver al conjunto multiparte",
+  "build.plan": "Detalles de la fabricación",
+  "build.planHelp": "Asigna un nombre y elige cuántos objetos completos fabricar.",
+  "build.sourceSet": "Conjunto multiparte de origen",
+  "build.archivedEmptyHelp": "Las fabricaciones archivadas aparecerán aquí.",
+  "multipart.restored": "Conjunto multiparte restaurado.",
+  "multipart.selectTrashed": "Seleccionar conjunto multiparte eliminado {value1}",
+  "multipart.trashLabel": "Conjunto multiparte",
+  "multipart.trashHelp": "Restaura modelos y conjuntos multiparte o elimínalos definitivamente.",
+  "multipart.purgeHelp": "Se eliminarán definitivamente la agrupación y su portada. Sus modelos, archivos, revisiones y guías permanecen en la biblioteca. No se puede deshacer.",
+  "multipart.purgeMixedHelp": "Se eliminarán definitivamente los conjuntos seleccionados y sus portadas. Solo los modelos seleccionados directamente aquí perderán sus archivos. Los demás modelos de los conjuntos y sus guías permanecerán. No se puede deshacer.",
+  "multipart.partsCount": "{count} piezas",
+  "trash.itemsCount": {
+    "one": "{value1} elemento eliminado",
+    "other": "{value1} elementos eliminados"
+  },
+  "trash.selectAll": "Seleccionar todos los elementos eliminados",
+  "trash.itemsTitle": "Modelos y conjuntos multiparte eliminados"
 }

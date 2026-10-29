@@ -36,6 +36,7 @@ from app.db.models import (
     ModelProvenanceSource,
     ModelSourceCover,
     ModelStar,
+    MultipartModel,
     MultipartModelChoice,
     MultipartPart,
     NotificationDelivery,
@@ -306,7 +307,9 @@ def _prepare_primary_artifact(
 
 def prepare_purge_deletions(
     session: Session,
-    resources: Iterable[Model | File | Document | Collection | Printer],
+    resources: Iterable[
+        Model | File | Document | Collection | Printer | MultipartModel
+    ],
     *,
     confirm_storage_risk: bool = False,
 ) -> list[PurgeDeletion]:
@@ -334,6 +337,18 @@ def prepare_purge_deletions(
                 for cover in covers
                 if cover.id is not None
             )
+        elif isinstance(resource, MultipartModel):
+            if resource.cover_filename:
+                keys.append(
+                    (
+                        backend.multipart_model_cover_key(
+                            resource.id, resource.cover_filename
+                        ),
+                        True,
+                        "multipart_model_cover",
+                        resource.id,
+                    )
+                )
         elif isinstance(resource, File):
             files[resource.id] = resource
         elif isinstance(resource, Document):
@@ -427,7 +442,11 @@ def prepare_purge_deletions(
             required_proof=required,
             resource_kind=kind,
             resource_id=resource_id,
-            allow_unverified=confirm_storage_risk,
+            allow_unverified=confirm_storage_risk
+            and (
+                kind != "multipart_model_cover"
+                or backend.capabilities.tier is not StorageTier.VERIFIED
+            ),
         )
         if value is not None:
             prepared.append(value)
@@ -599,10 +618,58 @@ def restore_resource(session: Session, resource, *, commit: bool = True) -> None
     session.add(resource)
     if isinstance(resource, File):
         content_changed(session, "model", [resource.model_id])
+    elif isinstance(resource, MultipartModel):
+        content_changed(session, "multipart_model", [resource.id])
     elif isinstance(resource, (Model, Collection, Document)):
         content_changed(session, type(resource).__name__.lower(), [resource.id])
     if commit:
         session.commit()
+
+
+def soft_delete_multipart(
+    session: Session, aggregate: MultipartModel, actor: User
+) -> None:
+    """Trash the grouping without changing its Models, guides or owned cover."""
+    aggregate.deleted_at = utcnow()
+    aggregate.deleted_by = actor.id
+    aggregate.updated_at = aggregate.deleted_at
+    aggregate.edit_version += 1
+    session.add(aggregate)
+    content_changed(session, "multipart_model", [aggregate.id])
+    session.commit()
+
+
+@guarded_destructive_operation
+def hard_delete_multipart(
+    session: Session,
+    aggregate: MultipartModel,
+    *,
+    confirm_storage_risk: bool = False,
+    prepared_deletions: list[PurgeDeletion] | None = None,
+) -> None:
+    """Purge only the grouping and its owned cover; guides detach via their FK."""
+    if aggregate.deleted_at is None:
+        raise PurgeConflictError("multipart_model_not_in_trash")
+    _require_storage_risk(
+        operation="purge_multipart",
+        storage_backed=bool(aggregate.cover_filename),
+        confirmed=confirm_storage_risk,
+    )
+    own_deletions = prepared_deletions is None
+    deletions = (
+        prepare_purge_deletions(
+            session, [aggregate], confirm_storage_risk=confirm_storage_risk
+        )
+        if own_deletions
+        else prepared_deletions
+    )
+    assert deletions is not None
+    _require_destructive_maintenance_safe(session)
+    _claim_purge(session, aggregate)
+    session.delete(aggregate)
+    content_changed(session, "multipart_model", [aggregate.id])
+    if own_deletions:
+        enqueue_purge_deletions(session, deletions)
 
 
 def restore_model(session: Session, model: Model) -> None:

@@ -623,6 +623,40 @@ describe("Manufacturing discovery", () => {
       },
     });
   }
+
+  it("shows source context while planning a build", async () => {
+    renderList();
+    await screen.findByRole("link", { name: "Table" });
+    expect(screen.getByRole("region", { name: "Source multipart set" })).toHaveTextContent("Table");
+    expect(screen.getByRole("link", { name: "Back to multipart set" })).toHaveAttribute(
+      "href",
+      "/multipart-models/7",
+    );
+    expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute(
+      "href",
+      "/multipart-models/7",
+    );
+  });
+  it("omits pagination for empty build history", async () => {
+    renderList({}, "/builds");
+    await screen.findByText(/No builds here yet/);
+    expect(screen.queryByRole("button", { name: "Previous" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument();
+  });
+  it("disables build creation while its composition is loading", async () => {
+    const pending = Promise.withResolvers<Response>();
+    renderList({ "GET /api/v1/multipart-models/7": () => pending.promise });
+    expect(screen.getByRole("button", { name: "Create build" })).toBeDisabled();
+    await act(async () => pending.resolve(json(aMultipartModel())));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create build" })).toBeEnabled());
+  });
+  it("disables build creation for a read-only composition", async () => {
+    renderList({
+      "GET /api/v1/multipart-models/7": json(aMultipartModel({ effective_role: "view" })),
+    });
+    await screen.findByDisplayValue("Table");
+    expect(screen.getByRole("button", { name: "Create build" })).toBeDisabled();
+  });
   it("keeps the selected build history after an older page resolves", async () => {
     const pending = Promise.withResolvers<Response>();
     renderList(

@@ -1,7 +1,7 @@
 import type { SlicerProfileRead } from "@/types/slicer-profiles";
 import type { ComputeStatus } from "@/types/system";
 import type { GcPlan } from "@/lib/api/gc";
-import type { TrashedModelRead } from "@/types";
+import type { TrashedModelRead, TrashedMultipartModelRead } from "@/types";
 import type { VolumeMeasurement } from "@/types/models";
 import type { ArtifactCacheRead } from "@/lib/api/artifact-cache";
 import type { MeshWorkersRead } from "@/lib/api/mesh-workers";
@@ -1090,5 +1090,20 @@ export function aSlicerCapture(overrides: Partial<SlicerProfileRead> = {}): Slic
       process: { layer_height: "0.2" },
     },
     ...overrides,
+  };
+}
+
+export function aTrashedMultipartModel(
+  override?: Partial<TrashedMultipartModelRead>,
+): TrashedMultipartModelRead {
+  return {
+    id: 7,
+    name: "Deleted kit",
+    slug: "deleted-kit",
+    collection: null,
+    part_count: 2,
+    deleted_at: "2026-01-01T00:00:00Z",
+    expires_at: "2026-01-31T00:00:00Z",
+    ...override,
   };
 }

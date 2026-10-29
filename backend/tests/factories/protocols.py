@@ -194,6 +194,7 @@ class MakeMultipartModel(Protocol):
         name: str = "Multipart bracket",
         *,
         collection: Collection | None = None,
+        trashed: bool | datetime = False,
         **overrides: Any,
     ) -> MultipartModel: ...
 

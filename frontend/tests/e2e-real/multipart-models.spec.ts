@@ -129,8 +129,10 @@ test.describe("multipart models", () => {
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await expect(page.getByText("Uploaded from your computer")).toBeVisible();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await expect(page.getByRole("dialog")).toContainText("Models, files and revisions stay");
-    await page.getByRole("button", { name: "Delete set" }).click();
+    await expect(page.getByRole("dialog")).toContainText(
+      "models, files, revisions and guides stay",
+    );
+    await page.getByRole("button", { name: "Move to Trash" }).click();
     await expect(page).toHaveURL(/\?type=all/);
     await expect(modelCard(page, base)).toBeVisible();
     await expect(modelCard(page, short)).toBeVisible();
@@ -203,11 +205,11 @@ test.describe("multipart models", () => {
 
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Delete set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
     await page.getByRole("link", { name: secondGroup, exact: true }).click();
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Delete set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
     await page.goto("/?type=all");
     await expect(modelCard(page, base)).toHaveCount(1);
   });
@@ -242,7 +244,7 @@ test.describe("multipart models", () => {
 
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Delete set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
     await page.goto(`/?c=${folder}`);
     const sidebar = page.locator("aside");
     const label = sidebar.getByRole("button", { name: folder, exact: true });
@@ -374,4 +376,101 @@ test.describe("Multipart auxiliary editing", () => {
       expect(removed.ok(), await removed.text()).toBe(true);
     }
   });
+});
+
+test.describe("Multipart selection", () => {
+  for (const viewport of [
+    { label: "desktop grid", width: 1440, height: 1000, view: "grid" },
+    { label: "mobile list", width: 390, height: 844, view: "list" },
+  ]) {
+    test(`deletes a selected set from ${viewport.label}`, async ({ page }, testInfo) => {
+      const api = `http://127.0.0.1:${process.env.PLAYWRIGHT_REAL_API_PORT ?? 8410}/api/v1`;
+      const name = `selection-${viewport.view}-${Date.now()}`;
+      await uploadModel(page, name, { mesh: true, gcode: true });
+      const href = await modelCard(page, name).getAttribute("href");
+      if (!href) throw new Error("Uploaded Model has no link");
+      const modelId = Number(new URL(href, page.url()).pathname.split("/").pop());
+      const response = await page.request.post(`${api}/multipart-models`, {
+        data: {
+          name: `${name}-set`,
+          parts: [{ name: "Body", quantity: 2, choices: [{ model_id: modelId }] }],
+        },
+      });
+      expect(response.status()).toBe(201);
+      const set: MultipartModelRead = await response.json();
+      try {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto(`/multipart-models/${set.id}`);
+        await expect(
+          page.getByRole("button", { name: "Move to Trash", exact: true }),
+        ).toBeVisible();
+        await page.screenshot({
+          path: testInfo.outputPath(`multipart-detail-${viewport.view}.png`),
+          fullPage: true,
+        });
+        await page.getByRole("link", { name: "Create build", exact: true }).click();
+        await expect(page.getByLabel("Build name")).toHaveValue(set.name);
+        await expect(page.getByRole("region", { name: "Source multipart set" })).toContainText(
+          "Body",
+        );
+        await expect(page.getByRole("link", { name: "Cancel", exact: true })).toBeVisible();
+        await page.screenshot({
+          path: testInfo.outputPath(`build-create-${viewport.view}.png`),
+          fullPage: true,
+        });
+        await page.getByRole("link", { name: "Cancel", exact: true }).click();
+        await page.getByRole("link", { name: "Build history", exact: true }).click();
+        await expect(page.getByRole("checkbox", { name: "Show archived builds" })).toBeVisible();
+        await page.screenshot({
+          path: testInfo.outputPath(`build-history-${viewport.view}.png`),
+          fullPage: true,
+        });
+        await page.evaluate((view) => localStorage.setItem("ps-vault-view", view), viewport.view);
+        await page.goto(`/?type=multipart&q=${encodeURIComponent(set.name)}`);
+        const checkbox = page.getByRole("checkbox", { name: `Select ${set.name}`, exact: true });
+        await expect(page.getByRole("link", { name: set.name, exact: true })).toBeVisible();
+        if (viewport.view === "grid")
+          await page.getByRole("link", { name: set.name, exact: true }).hover();
+        await checkbox.check();
+        await expect(checkbox).toBeChecked();
+        await page.screenshot({
+          path: testInfo.outputPath(`multipart-selected-${viewport.view}.png`),
+          fullPage: true,
+        });
+        await page.getByRole("button", { name: "Delete", exact: true }).click();
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toContainText("models, files, revisions and guides stay");
+        await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+        await expect(page.getByRole("link", { name: set.name, exact: true })).toHaveCount(0);
+        expect((await page.request.get(`${api}/multipart-models/${set.id}`)).status()).toBe(404);
+        await page.goto("/settings?section=trash");
+        const trashedSet = page.getByRole("checkbox", {
+          name: `Select deleted multipart set ${set.name}`,
+          exact: true,
+        });
+        await expect(trashedSet).toBeVisible();
+        await trashedSet.check();
+        await page.getByRole("button", { name: "Restore selected", exact: true }).click();
+        await expect(trashedSet).toHaveCount(0);
+        await page.goto(`/multipart-models/${set.id}`);
+        await expect(page.getByRole("heading", { name: set.name, exact: true })).toBeVisible();
+        await expect(
+          page
+            .getByRole("region", { name: "Body", exact: true })
+            .getByRole("heading", { name, exact: true }),
+        ).toBeVisible();
+        await page.goto(`/models/${modelId}`);
+        await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+        await page.getByRole("tab", { name: "Revisions" }).click();
+        await expect(page.getByText("Rev 1", { exact: true }).first()).toBeVisible();
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBe(true);
+      } finally {
+        await page.request.delete(`${api}/multipart-models/${set.id}`);
+        await page.request.delete(`${api}/multipart-models/${set.id}/purge`);
+        await page.request.delete(`${api}/models/${modelId}`);
+      }
+    });
+  }
 });

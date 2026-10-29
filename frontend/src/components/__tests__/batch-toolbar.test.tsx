@@ -74,6 +74,17 @@ function setup({
 }
 
 describe("BatchToolbar", () => {
+  it("limits mixed selections to shared actions", async () => {
+    setup({ multipartCount: 1 });
+    expect(screen.getByText("3 selected")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Move" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tag" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Selected models and multipart sets move to Trash",
+    );
+  });
+
   it("renders nothing when nothing is selected", () => {
     setup({ modelCount: 0 });
     expect(screen.queryByText(/selected/)).not.toBeInTheDocument();

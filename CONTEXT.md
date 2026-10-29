@@ -42,8 +42,9 @@ _Avoid_: Part Option, source file option, revision
 
 **Multipart Guide**:
 A Document linked to one Multipart Model for assembly or printing guidance.
-Guides may be Markdown, PDF or raster images, remain visible in Documents, and
-survive deletion of the grouping as ordinary Documents.
+Guides may be Markdown, PDF or raster images and remain visible in Documents.
+Moving a grouping to Trash retains its guide links; permanent purge detaches
+them as ordinary Documents.
 _Avoid_: Model file, Artifact, attachment
 
 Multipart Models and ordinary Models share one library. Everything is the
@@ -130,6 +131,11 @@ Permission to see a grouping does not grant permission to see its restricted mem
 _Avoid_: user index, public passage
 
 ### Trash
+
+Multipart Models follow the same soft-delete, restore and expiry lifecycle as
+Models. Trashing a grouping retains its parts, choices, tags, stars and uploaded
+cover without trashing any member Model. Purging it removes only its grouping
+rows and owned cover; member Models and guide Documents remain.
 
 **Live**:
 A row not in the trash. Expressed in queries only via the

@@ -12666,6 +12666,66 @@
         "title": "MultipartPartsReplace",
         "type": "object"
       },
+      "MultipartTrashPurgeRead": {
+        "properties": {
+          "purged_count": {
+            "default": 0,
+            "title": "Purged Count",
+            "type": "integer"
+          },
+          "purged_model_ids": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Purged Model Ids",
+            "type": "array"
+          },
+          "purged_multipart_model_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Purged Multipart Model Ids",
+            "type": "array"
+          },
+          "resources_blocked": {
+            "default": 0,
+            "title": "Resources Blocked",
+            "type": "integer"
+          },
+          "storage_blocked": {
+            "default": 0,
+            "title": "Storage Blocked",
+            "type": "integer"
+          },
+          "storage_cleanup_status": {
+            "default": "completed",
+            "enum": [
+              "completed",
+              "pending",
+              "blocked",
+              "partial"
+            ],
+            "title": "Storage Cleanup Status",
+            "type": "string"
+          },
+          "storage_completed": {
+            "default": 0,
+            "title": "Storage Completed",
+            "type": "integer"
+          },
+          "storage_pending": {
+            "default": 0,
+            "title": "Storage Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "purged_multipart_model_ids"
+        ],
+        "title": "MultipartTrashPurgeRead",
+        "type": "object"
+      },
       "NotCalculatedVolumeRead": {
         "additionalProperties": false,
         "properties": {
@@ -20796,6 +20856,65 @@
           "deleted_at"
         ],
         "title": "TrashedModelRead",
+        "type": "object"
+      },
+      "TrashedMultipartModelRead": {
+        "properties": {
+          "collection": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection"
+          },
+          "deleted_at": {
+            "format": "date-time",
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "part_count": {
+            "title": "Part Count",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "collection",
+          "part_count",
+          "deleted_at",
+          "expires_at"
+        ],
+        "title": "TrashedMultipartModelRead",
         "type": "object"
       },
       "TrashedSourceFileRead": {
@@ -37611,6 +37730,71 @@
         ]
       }
     },
+    "/api/v1/multipart-models/trash": {
+      "get": {
+        "operationId": "list_multipart_trash_api_v1_multipart_models_trash_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrashedMultipartModelRead"
+                  },
+                  "title": "Response List Multipart Trash Api V1 Multipart Models Trash Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List multipart sets in Trash",
+        "tags": [
+          "multipart-models"
+        ]
+      }
+    },
     "/api/v1/multipart-models/{multipart_model_id}": {
       "delete": {
         "operationId": "delete_multipart_model_api_v1_multipart_models__multipart_model_id__delete",
@@ -37645,7 +37829,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Delete a multipart model grouping",
+        "summary": "Move a multipart set to Trash",
         "tags": [
           "multipart-models"
         ]
@@ -38303,6 +38487,110 @@
           }
         ],
         "summary": "Replace multipart model composition",
+        "tags": [
+          "multipart-models"
+        ]
+      }
+    },
+    "/api/v1/multipart-models/{multipart_model_id}/purge": {
+      "delete": {
+        "operationId": "purge_multipart_model_api_v1_multipart_models__multipart_model_id__purge_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "multipart_model_id",
+            "required": true,
+            "schema": {
+              "title": "Multipart Model Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confirm_storage_risk",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Confirm Storage Risk",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartTrashPurgeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Permanently delete a multipart set from Trash",
+        "tags": [
+          "multipart-models"
+        ]
+      }
+    },
+    "/api/v1/multipart-models/{multipart_model_id}/restore": {
+      "post": {
+        "operationId": "restore_multipart_model_api_v1_multipart_models__multipart_model_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "multipart_model_id",
+            "required": true,
+            "schema": {
+              "title": "Multipart Model Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartModelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Restore a multipart set from Trash",
         "tags": [
           "multipart-models"
         ]

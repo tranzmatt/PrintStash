@@ -34,6 +34,7 @@ from app.db.models import (
     Model,
     ModelProvenanceSource,
     ModelSourceCover,
+    MultipartModel,
     OwnedStorageObject,
     Printer,
     RestoreMarker,
@@ -210,6 +211,20 @@ def _candidate_pool(session: Session, cutoff: datetime) -> list[_Candidate]:
     ).all()
     candidates = [_model_candidate(session, row) for row in models]
     candidates.extend(_document_candidate(row) for row in documents)
+    candidates.extend(
+        _Candidate(
+            kind="multipart_model",
+            resource_id=int(row.id),
+            deleted_at=row.deleted_at,
+            key_count=int(bool(row.cover_filename)),
+            size_bytes=row.cover_size_bytes or 0,
+        )
+        for row in session.exec(
+            select(MultipartModel).where(
+                trashed(MultipartModel), MultipartModel.deleted_at <= cutoff
+            )
+        ).all()
+    )
     candidates.extend(
         _Candidate(
             kind="file",
@@ -446,6 +461,7 @@ def _items(session: Session, run_id: int) -> list[GcItem]:
 def _resource(session: Session, item: GcItem):
     resource_type = {
         "model": Model,
+        "multipart_model": MultipartModel,
         "document": Document,
         "file": File,
         "collection": Collection,
@@ -571,6 +587,7 @@ def finalize_plan(session: Session, run_id: int) -> GcRun:
         hard_delete_document,
         hard_delete_file,
         hard_delete_model,
+        hard_delete_multipart,
         hard_delete_printer,
         prepare_purge_deletions,
     )
@@ -603,6 +620,8 @@ def finalize_plan(session: Session, run_id: int) -> GcRun:
         for resource in resources:
             if isinstance(resource, Model):
                 hard_delete_model(session, resource, prepared_deletions=prepared)
+            elif isinstance(resource, MultipartModel):
+                hard_delete_multipart(session, resource, prepared_deletions=prepared)
             elif isinstance(resource, Document):
                 hard_delete_document(session, resource, prepared_deletions=prepared)
             elif isinstance(resource, File):

@@ -1673,6 +1673,141 @@ describe("ModelBrowser", () => {
   });
 
   describe("selection", () => {
+    it.each(["grid", "list"])("selects a multipart set directly in %s view", async (view) => {
+      const user = userEvent.setup();
+      localStorage.setItem("ps-vault-view", view);
+      renderVault({ at: "/?type=multipart", multipartModels: [aMultipartSet()] });
+      const checkbox = await screen.findByRole("checkbox", { name: "Select Dragon figure" });
+      await user.click(checkbox);
+      expect(checkbox).toBeChecked();
+      expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
+      expect(screen.getByRole("button", { name: "Delete" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Move" })).not.toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it.each(["grid", "list"])(
+      "selects multipart cards instead of navigating in selection mode (%s)",
+      async (view) => {
+        const user = userEvent.setup();
+        localStorage.setItem("ps-vault-view", view);
+        renderVault({ at: "/?type=multipart", multipartModels: [aMultipartSet()] });
+        await screen.findByRole("link", { name: "Dragon figure" });
+        await user.keyboard("s");
+        await user.click(screen.getByRole("link", { name: "Dragon figure" }));
+        expect(screen.getByRole("checkbox", { name: "Select Dragon figure" })).toBeChecked();
+      },
+    );
+
+    it("selects a range of multipart sets", async () => {
+      const user = userEvent.setup();
+      renderVault({
+        multipartModels: [
+          aMultipartSet(),
+          aMultipartSet({ id: 41, name: "Middle" }),
+          aMultipartSet({ id: 42, name: "Last" }),
+        ],
+      });
+      await user.click(await screen.findByRole("checkbox", { name: "Select Dragon figure" }));
+      await user.keyboard("{Shift>}");
+      await user.click(screen.getByRole("link", { name: "Last" }));
+      await user.keyboard("{/Shift}");
+      expect(screen.getByRole("checkbox", { name: "Select Middle" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Select Last" })).toBeChecked();
+      expect(screen.getAllByText("3 selected").length).toBeGreaterThan(0);
+    });
+
+    it("counts mixed selections independently when IDs overlap", async () => {
+      const user = userEvent.setup();
+      renderVault({
+        models: [aModelListItem({ id: 40, name: "Standalone" })],
+        multipartModels: [aMultipartSet()],
+      });
+      await user.click(await screen.findByRole("checkbox", { name: "Select Dragon figure" }));
+      await user.click(screen.getByRole("button", { name: /Select all on screen/ }));
+      expect(screen.getByRole("checkbox", { name: "Select Standalone" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Select Dragon figure" })).toBeChecked();
+      expect(screen.getAllByText("2 selected").length).toBeGreaterThan(0);
+    });
+
+    it("clears multipart selection when changing library view", async () => {
+      const user = userEvent.setup();
+      renderVault({ multipartModels: [aMultipartSet()], historyProbe: true });
+      await user.click(await screen.findByRole("checkbox", { name: "Select Dragon figure" }));
+      await user.click(screen.getByRole("button", { name: "Open multipart location" }));
+      await waitFor(() =>
+        expect(screen.getByRole("checkbox", { name: "Select Dragon figure" })).not.toBeChecked(),
+      );
+    });
+
+    it("hides multipart selection for signed-out readers", async () => {
+      renderVault({ auth: signedOutSession(), multipartModels: [aMultipartSet()] });
+      await screen.findByRole("link", { name: "Dragon figure" });
+      expect(
+        screen.queryByRole("checkbox", { name: "Select Dragon figure" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("deletes only selected groupings", async () => {
+      const user = userEvent.setup();
+      const app = renderVault({
+        at: "/?type=multipart",
+        multipartModels: [aMultipartSet()],
+        routes: { "DELETE /api/v1/multipart-models/40": json(null, 204) },
+      });
+      await user.click(await screen.findByRole("checkbox", { name: "Select Dragon figure" }));
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toHaveTextContent("models, files, revisions and guides stay");
+      await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+      await waitFor(() =>
+        expect(screen.getByRole("checkbox", { name: "Select Dragon figure" })).not.toBeChecked(),
+      );
+      expect(app.requestsWithMethod("DELETE").map((r) => r.url)).toEqual([
+        "/api/v1/multipart-models/40",
+      ]);
+      expect(
+        app.requestsWithMethod("POST").filter((r) => r.url.includes("/models/batch/delete")),
+      ).toHaveLength(0);
+    });
+
+    it("keeps a failed grouping selected after partial deletion", async () => {
+      const user = userEvent.setup();
+      const app = renderVault({
+        multipartModels: [aMultipartSet(), aMultipartSet({ id: 41, name: "Protected set" })],
+        routes: {
+          "DELETE /api/v1/multipart-models/40": json(null, 204),
+          "DELETE /api/v1/multipart-models/41": json({ detail: "permission_denied" }, 403),
+        },
+      });
+      await user.click(await screen.findByRole("checkbox", { name: "Select Dragon figure" }));
+      await user.click(screen.getByRole("button", { name: /Select all on screen/ }));
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Delete",
+        }),
+      );
+      await waitFor(() => expect(app.requestsWithMethod("DELETE")).toHaveLength(2));
+      await waitFor(() =>
+        expect(screen.getByRole("checkbox", { name: "Select Dragon figure" })).not.toBeChecked(),
+      );
+      expect(screen.getByRole("checkbox", { name: "Select Protected set" })).toBeChecked();
+    });
+
+    it("cancels grouping deletion without sending a request", async () => {
+      const user = userEvent.setup();
+      const app = renderVault({ multipartModels: [aMultipartSet()] });
+      await user.click(await screen.findByRole("checkbox", { name: "Select Dragon figure" }));
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.click(
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }),
+      );
+      expect(app.requestsWithMethod("DELETE")).toHaveLength(0);
+      expect(screen.getByRole("checkbox", { name: "Select Dragon figure" })).toBeChecked();
+    });
+
     it.each(["grid", "list"])("starts batch actions from a %s checkbox", async (view) => {
       const user = userEvent.setup();
       window.localStorage.setItem("ps-vault-view", view);
@@ -1690,7 +1825,7 @@ describe("ModelBrowser", () => {
       expect(checkbox).not.toBeChecked();
       expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Select all matching models" }),
+        screen.queryByRole("button", { name: "Select all matching items" }),
       ).not.toBeInTheDocument();
     });
 
@@ -2018,9 +2153,9 @@ describe("ModelBrowser", () => {
       await waitForLibraryActions();
       await user.keyboard("s");
       selecting = true;
-      await user.click(screen.getByRole("button", { name: /Select all matching models/ }));
+      await user.click(screen.getByRole("button", { name: /Select all matching items/ }));
 
-      expect(await screen.findAllByText("2 selected")).not.toHaveLength(0);
+      expect(await screen.findAllByText("3 selected")).not.toHaveLength(0);
       const pages = requests().filter((call) => call.url.includes("/models/browse?"));
       expect(
         pages.some(
@@ -2062,13 +2197,13 @@ describe("ModelBrowser", () => {
       });
       await selectBoth(user);
       selecting = true;
-      await user.click(screen.getByRole("button", { name: /Select all matching models/ }));
+      await user.click(screen.getByRole("button", { name: /Select all matching items/ }));
 
       await waitFor(() =>
         expect(requests().some((call) => call.url.includes("cursor=stale"))).toBe(true),
       );
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: /Select all matching models/ })).toBeEnabled(),
+        expect(screen.getByRole("button", { name: /Select all matching items/ })).toBeEnabled(),
       );
       expect(screen.getByRole("checkbox", { name: "Select Benchy" })).toBeChecked();
       expect(screen.getByRole("checkbox", { name: "Select Cube" })).toBeChecked();

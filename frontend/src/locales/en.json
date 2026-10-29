@@ -1532,7 +1532,7 @@
   "build.snapshotHelp": "This saves a copy of the pieces and quantities. Later composition changes do not alter this build.",
   "build.showArchived": "Show archived builds",
   "build.refresh": "Refresh",
-  "build.empty": "No builds here yet. Open a multipart model to create one.",
+  "build.empty": "No builds here yet.",
   "build.complete": "All required pieces confirmed",
   "build.inProgress": "Pieces still needed",
   "build.previous": "Previous",
@@ -2105,10 +2105,10 @@
   "multipart.saving": "Saving…",
   "multipart.saved": "Changes saved",
   "multipart.delete": "Delete multipart set",
-  "multipart.deleteTitle": "Delete this multipart set?",
-  "multipart.deleteDescription": "Only this grouping will be removed. Models, files and revisions stay in your library.",
-  "multipart.deleteConfirm": "Delete set",
-  "multipart.deleted": "Multipart set deleted",
+  "multipart.deleteTitle": "Move this multipart set to Trash?",
+  "multipart.deleteDescription": "The grouping will move to Trash and can be restored. Its models, files, revisions and guides stay in your library.",
+  "multipart.deleteConfirm": "Move to Trash",
+  "multipart.deleted": "Multipart set moved to Trash",
   "multipart.unavailable": "Model unavailable",
   "multipart.noCandidates": "No models match this search.",
   "multipart.alreadyAdded": "Already added to this grouping",
@@ -2804,20 +2804,20 @@
     "other": "{value1} deleted models"
   },
   "trash.selectedCount": {
-    "one": "{value1} model selected",
-    "other": "{value1} models selected"
+    "one": "{value1} item selected",
+    "other": "{value1} items selected"
   },
   "trash.restoredCount": {
-    "one": "Restored {value1} model.",
-    "other": "Restored {value1} models."
+    "one": "Restored {value1} item.",
+    "other": "Restored {value1} items."
   },
   "trash.purgedCount": {
-    "one": "Permanently deleted {value1} model.",
-    "other": "Permanently deleted {value1} models."
+    "one": "Permanently deleted {value1} item.",
+    "other": "Permanently deleted {value1} items."
   },
   "trash.purgeSelectedTitle": {
-    "one": "Permanently delete {value1} model?",
-    "other": "Permanently delete {value1} models?"
+    "one": "Permanently delete {value1} item?",
+    "other": "Permanently delete {value1} items?"
   },
   "Select all deleted models": "Select all deleted models",
   "Select deleted model {value1}": "Select deleted model {value1}",
@@ -4593,5 +4593,27 @@
   "modelHashes.geometryHelp": "Whole-mesh fingerprint at physical scale. A matching fingerprint alone does not prove identical geometry.",
   "modelHashes.copy": "Copy {kind} for {filename}",
   "modelHashes.copied": "SHA-256 copied",
-  "modelHashes.copyFailed": "Could not copy SHA-256."
+  "modelHashes.copyFailed": "Could not copy SHA-256.",
+  "multipart.deleteSelectedHelp": "Selected multipart sets move to Trash and can be restored. Their models, files, revisions and guides stay in your library.",
+  "multipart.mixedDeleteHelp": "Selected models and multipart sets move to Trash. Folders cannot be restored. Models referenced by a set stay in your library unless selected separately or inside a selected folder.",
+  "library.selectAllMatching": "Select all matching items",
+  "library.matchingSelected": "{count} matching items selected",
+  "build.backToSet": "Back to multipart set",
+  "build.plan": "Build details",
+  "build.planHelp": "Name this build and choose how many complete objects to make.",
+  "build.sourceSet": "Source multipart set",
+  "build.archivedEmptyHelp": "Archived builds will appear here when you archive a run.",
+  "multipart.restored": "Multipart set restored.",
+  "multipart.selectTrashed": "Select deleted multipart set {value1}",
+  "multipart.trashLabel": "Multipart set",
+  "multipart.trashHelp": "Restore models and multipart sets, or delete them permanently.",
+  "multipart.purgeHelp": "This permanently deletes the grouping and its cover. Its models, files, revisions and guides stay in your library. This cannot be undone.",
+  "multipart.purgeMixedHelp": "Selected sets and their covers will be permanently deleted. Only models selected directly here lose their files. Other models referenced by the sets and their guides remain. This cannot be undone.",
+  "multipart.partsCount": "{count} parts",
+  "trash.itemsCount": {
+    "one": "{value1} deleted item",
+    "other": "{value1} deleted items"
+  },
+  "trash.selectAll": "Select all deleted items",
+  "trash.itemsTitle": "Deleted models and multipart sets"
 }

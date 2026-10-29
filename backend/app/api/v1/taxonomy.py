@@ -688,12 +688,13 @@ def list_tags(
     ).all()
     if current_user.is_superuser:
         visible = None
-        accessible_multipart_ids = select(MultipartModel.id)
+        accessible_multipart_ids = select(MultipartModel.id).where(live(MultipartModel))
     else:
         # A subquery, never the id set bound one parameter per collection.
         visible = rbac.accessible_collection_ids_stmt(session, current_user)
         accessible_multipart_ids = select(MultipartModel.id).where(
-            MultipartModel.collection_id.in_(visible)  # type: ignore[union-attr]
+            live(MultipartModel),
+            MultipartModel.collection_id.in_(visible),  # type: ignore[union-attr]
         )
     counts = dict(
         session.exec(library_search.accessible_tag_counts_stmt(visible)).all()

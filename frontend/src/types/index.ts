@@ -249,3 +249,5 @@ export type {
   OAuthAuthorizeRead,
   ProviderConnectionRead,
 } from "./provider-connections";
+
+export type { TrashedMultipartModelRead, MultipartTrashPurgeRead } from "./multipart-models";
