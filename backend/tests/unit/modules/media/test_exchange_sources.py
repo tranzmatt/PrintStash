@@ -85,6 +85,43 @@ class TestRhino:
 
         assert mesh_loading.load_mesh(path) is None
 
+    def test_skips_surfaces_saved_without_render_meshes(self, tmp_path) -> None:
+        import rhino3dm
+
+        model = rhino3dm.File3dm()
+        box = rhino3dm.Box(
+            rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(1, 1, 1))
+        )
+        model.Objects.AddBrep(rhino3dm.Brep.CreateFromBox(box))
+        circle = rhino3dm.Circle(rhino3dm.Point3d(0, 0, 0), 5).ToNurbsCurve()
+        model.Objects.AddExtrusion(rhino3dm.Extrusion.Create(circle, 10, True))
+        path = tmp_path / "surfaces.3dm"
+        model.Write(str(path), 8)
+
+        assert mesh_loading.load_mesh(path) is None
+
+    def test_skips_a_mesh_without_faces(self, tmp_path) -> None:
+        import rhino3dm
+
+        model = rhino3dm.File3dm()
+        empty = rhino3dm.Mesh()
+        empty.Vertices.Add(0.0, 0.0, 0.0)
+        model.Objects.AddMesh(empty)
+        path = tmp_path / "empty.3dm"
+        model.Write(str(path), 8)
+
+        assert mesh_loading.load_mesh(path) is None
+
+    def test_declines_more_block_placements_than_the_limit(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(exchange_sources, "_RHINO_MAX_PLACEMENTS", 2)
+        path = _write(
+            tmp_path, "many.3dm", rhino_cube(block_offsets=((0, 0, 0), (5, 0, 0)))
+        )
+
+        assert mesh_loading.load_mesh(path) is None
+
     def test_declines_bytes_that_are_not_a_3dm(self, tmp_path) -> None:
         path = _write(tmp_path, "renamed.3dm", b"solid not rhino")
 
@@ -121,6 +158,22 @@ class TestFBXFrame:
         frame = exchange_sources.fbx_print_frame(data)
 
         assert np.linalg.det(frame[:3, :3]) < 0
+
+    def test_ignores_other_ascii_settings(self) -> None:
+        frame = exchange_sources.fbx_print_frame(
+            fbx_cube_ascii(axes={"OriginalUpAxis": 2})
+        )
+
+        np.testing.assert_allclose(
+            frame[:3, :3], [[10, 0, 0], [0, 0, -10], [0, 10, 0]], atol=1e-12
+        )
+
+    def test_ignores_other_binary_settings(self) -> None:
+        data = fbx_binary_settings({"OriginalUpAxis": 2.0, "UnitScaleFactor": 100.0})
+
+        frame = exchange_sources.fbx_print_frame(data)
+
+        assert frame[0, 0] == pytest.approx(1000.0)
 
     def test_refuses_an_axis_named_twice(self) -> None:
         with pytest.raises(exchange_sources.FBXSettingsError):
@@ -166,6 +219,15 @@ class TestFBXMesh:
 
     def test_declines_a_scene_with_an_impossible_frame(self, tmp_path) -> None:
         path = _write(tmp_path, "bad.fbx", fbx_cube_ascii(axes={"FrontAxis": 1}))
+
+        assert mesh_loading.load_mesh(path) is None
+
+    def test_declines_a_scene_without_geometry(self, tmp_path) -> None:
+        text = fbx_cube_ascii().decode()
+        objects = text.index("Objects:")
+        connections = text.index("Connections:")
+        empty = text[:objects] + "Objects:  {\n}\n" + text[connections:]
+        path = _write(tmp_path, "empty.fbx", empty.encode())
 
         assert mesh_loading.load_mesh(path) is None
 
