@@ -1944,6 +1944,29 @@ describe("ModelBrowser", () => {
   });
 
   describe("creating a folder", () => {
+    it("waits for the selected parent before offering collection creation", async () => {
+      const pending = Promise.withResolvers<Response>();
+      const { requests } = renderVault({
+        at: "/?c=parts&cid=1",
+        collections: [aCollection()],
+        routes: {
+          "GET /api/v1/collections/lookup": () =>
+            pending.promise.then((response) => response.clone()),
+        },
+      });
+      await waitFor(() =>
+        expect(
+          requests().some((request) => request.url.startsWith("/api/v1/collections/lookup")),
+        ).toBe(true),
+      );
+      const create = screen.getByRole("button", { name: "New collection" });
+      expect(create).toBeDisabled();
+
+      pending.resolve(json({ collection: aCollectionNode(), ancestors: [] }));
+
+      await waitFor(() => expect(create).toBeEnabled());
+    });
+
     it("POSTs the folder under the one the user is in", async () => {
       const user = userEvent.setup();
       const { requestsWithMethod } = renderVault({
