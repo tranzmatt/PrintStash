@@ -38,6 +38,7 @@ from app.db.models import (
     PartGroup,
     PartOption,
 )
+from app.modules.derivatives import producers
 from app.modules.library import multipart_models, part_options, trash
 from app.schemas.models import PartGroupWrite, PartOptionWrite
 from app.schemas.multipart_models import MultipartPartWrite
@@ -50,6 +51,7 @@ from tests.factories import (
     detached_file,
     detached_model,
 )
+from tests.fixtures.three_mf_projects import build_multi_plate_project
 
 
 class TestHardDeleteFile:
@@ -177,19 +179,10 @@ class TestHardDeleteFile:
             model,
             filename="plated.3mf",
             file_type=FileType.THREE_MF,
+            data=build_multi_plate_project(),
         )
-        db_session.add(
-            FilePlate(
-                file_id=artifact.id,
-                number=1,
-                object_count=1,
-                min_x=0.0,
-                min_y=0.0,
-                max_x=256.0,
-                max_y=256.0,
-            )
-        )
-        db_session.commit()
+        producers.derive_plates(artifact.id)
+        assert db_session.exec(select(FilePlate)).all() != []
 
         trash.hard_delete_file(db_session, artifact)
         db_session.commit()

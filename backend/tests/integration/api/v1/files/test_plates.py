@@ -132,6 +132,13 @@ class TestFilePlates:
             "plates_not_supported",
         )
 
+    def test_requires_authentication(self, client, project):
+        artifact = project(build_multi_plate_project())
+
+        response = client.get(f"/api/v1/files/{artifact.id}/plates")
+
+        assert response.status_code == 401, response.text
+
     def test_denies_a_user_without_the_collection(
         self, client, project, make_collection, make_user, headers_for
     ):
@@ -241,6 +248,14 @@ class TestFilePlateImage:
             410,
             "file_blob_missing",
         )
+
+    def test_requires_authentication(self, client, project):
+        artifact = project(build_multi_plate_project())
+        producers.derive_plates(artifact.id)
+
+        response = client.get(f"/api/v1/files/{artifact.id}/plates/1/image")
+
+        assert response.status_code == 401, response.text
 
     def test_denies_a_user_without_the_collection(
         self, client, project, make_collection, make_user, headers_for
