@@ -9,6 +9,7 @@ import type {
   SearchStatus,
 } from "../../../src/types/search";
 import type { ModelRead } from "../../../src/types/models";
+import type { SubjectCaption } from "../../../src/types/captions";
 
 const API = `http://127.0.0.1:${process.env.PLAYWRIGHT_REAL_API_PORT ?? 8410}`;
 
@@ -415,7 +416,7 @@ test.describe("AI Search", () => {
     }
   });
 
-  test("controls a separately searchable caption", async ({ page }, testInfo) => {
+  test("controls a separately searchable caption", async ({ page }) => {
     const name = `Caption source ${Date.now()}`;
     const phrase = `zygomatic${Date.now()}`;
     let id: number | undefined;
@@ -428,37 +429,27 @@ test.describe("AI Search", () => {
       });
       expect(response.ok()).toBe(true);
       await page.goto(`/models/${id}`);
-      const caption = page.getByRole("region", { name: "AI caption", exact: true });
-      await caption.getByRole("button", { name: "Edit caption" }).click();
-      await caption
-        .getByRole("textbox", { name: "Caption text" })
-        .fill(`${phrase} mounting fixture`);
-      await caption.getByRole("button", { name: "Save caption" }).click();
-      await expect(caption.getByText("Edited", { exact: true })).toBeVisible();
+      const captionEndpoint = `${API}/api/v1/subjects/model/${id}/caption`;
+      // Model Overview now shows file hashes. Caption indexing remains an API
+      // capability, independent of that presentation and the human description.
+      const edited = await page.request.patch(captionEndpoint, {
+        data: { action: "edit", text: `${phrase} mounting fixture` },
+      });
+      expect(edited.ok()).toBe(true);
+      const caption: SubjectCaption = await edited.json();
+      expect(caption.state).toBe("edited");
       await expect(
         page.getByText("Human description remains separate.", { exact: true }),
       ).toBeVisible();
-      for (const [label, width, height] of [
-        ["desktop", 1280, 900],
-        ["mobile", 390, 844],
-      ] as const) {
-        await page.setViewportSize({ width, height });
-        await caption.scrollIntoViewIfNeeded();
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-          true,
-        );
-        await page.screenshot({
-          path: testInfo.outputPath(`caption-${label}.png`),
-          fullPage: true,
-        });
-      }
       await page.goto(`/search?q=${phrase}`);
       await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
       await page.goto(`/models/${id}`);
-      await caption.getByRole("button", { name: "Dismiss caption" }).click();
-      await expect(caption.getByText("Dismissed", { exact: true })).toBeVisible();
-      await page.reload();
-      await expect(caption.getByText("Dismissed", { exact: true })).toBeVisible();
+      const dismissed = await page.request.patch(captionEndpoint, {
+        data: { action: "dismiss", version_token: caption.version_token },
+      });
+      expect(dismissed.ok()).toBe(true);
+      const stored: SubjectCaption = await (await page.request.get(captionEndpoint)).json();
+      expect(stored.state).toBe("dismissed");
       await page.goto(`/search?q=${phrase}`);
       await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
       const model: ModelRead = await (await page.request.get(`${API}/api/v1/models/${id}`)).json();
