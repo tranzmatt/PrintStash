@@ -169,15 +169,18 @@ class TestTranscoding:
             _transcode(tmp_path, archive, data)
 
 
-# py7zr refuses to write a traversing name, so no 7z fixture can hold one.
-@pytest.mark.parametrize(
-    "archive", [ArchiveFormat.TAR, ArchiveFormat.RAR], ids=lambda archive: archive.value
-)
-def test_refuses_a_traversing_path(tmp_path, archive) -> None:
-    data = _build(archive, {"../escape.stl": b"x"})
+class TestTranscodingPaths:
+    # py7zr refuses to write a traversing name, so no 7z fixture can hold one.
+    @pytest.mark.parametrize(
+        "archive",
+        [ArchiveFormat.TAR, ArchiveFormat.RAR],
+        ids=lambda archive: archive.value,
+    )
+    def test_refuses_a_traversing_path(self, tmp_path, archive) -> None:
+        data = _build(archive, {"../escape.stl": b"x"})
 
-    with pytest.raises(ArchivePolicyError, match="archive_unsafe_entry"):
-        _transcode(tmp_path, archive, data)
+        with pytest.raises(ArchivePolicyError, match="archive_unsafe_entry"):
+            _transcode(tmp_path, archive, data)
 
 
 class TestTarMembers:

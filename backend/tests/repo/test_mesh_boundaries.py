@@ -30,6 +30,8 @@ OWNERS = {
     # Broker renderer consumes only bounded validated array frames, never files.
     "modules/media/webgpu_render.py",
     "modules/media/step_geometry.py",
+    # Rhino and FBX readers, reached only through mesh_loading.load_mesh.
+    "modules/media/exchange_sources.py",
     "modules/media/stl_fallback.py",
     "modules/media/mesh_worker.py",
     # Guarded CPU fallback accepts only an owned, validated geometry packet.
@@ -133,7 +135,13 @@ RAW = {
 
 
 def _native(target: str) -> bool:
-    return target.split(".", 1)[0] in {"trimesh", "OCP", "cascadio"}
+    return target.split(".", 1)[0] in {
+        "trimesh",
+        "OCP",
+        "cascadio",
+        "rhino3dm",
+        "assimp_py",
+    }
 
 
 def _violations(source: str, package: str) -> list[str]:
