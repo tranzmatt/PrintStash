@@ -318,6 +318,31 @@ class TestLoadExchangeMeshes:
 
         assert mesh_loading.load_mesh(path) is None
 
+    def test_reads_an_embedded_gltf_in_millimetres_with_z_up(
+        self, tmp_path: Path
+    ) -> None:
+        from tests.factories.geometry import gltf_embedded
+
+        part = trimesh.creation.box(extents=[0.03, 0.02, 0.01])
+        path = tmp_path / "part.gltf"
+        path.write_bytes(gltf_embedded(part))
+
+        mesh = mesh_loading.load_mesh(path)
+
+        assert mesh is not None
+        np.testing.assert_allclose(mesh.extents, [30.0, 10.0, 20.0], atol=1e-4)
+
+    def test_never_reads_a_file_beside_a_gltf(self, tmp_path: Path) -> None:
+        from tests.factories.geometry import gltf_embedded
+
+        part = trimesh.creation.box(extents=[0.01, 0.01, 0.01])
+        files = part.export(file_type="gltf")
+        (tmp_path / "neighbour.bin").write_bytes(files["gltf_buffer_0.bin"])
+        path = tmp_path / "referencing.gltf"
+        path.write_bytes(gltf_embedded(part, external_buffer="neighbour.bin"))
+
+        assert mesh_loading.load_mesh(path) is None
+
     def test_reads_a_ply_in_its_own_units(self, tmp_path: Path) -> None:
         part = trimesh.creation.box(extents=[30, 20, 10])
         path = tmp_path / "part.ply"

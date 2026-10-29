@@ -35,6 +35,9 @@ class TestRecipesFor:
             FileType.OBJ,
             FileType.GLB,
             FileType.PLY,
+            FileType.GLTF,
+            FileType.THREE_DM,
+            FileType.FBX,
             FileType.STEP,
         ],
     )
@@ -120,7 +123,17 @@ class TestGroups:
             VIEWER_STL: kinds.STEP_VIEWER_STL_RECIPE
         }
 
-    @pytest.mark.parametrize("file_type", [FileType.OBJ, FileType.GLB, FileType.PLY])
+    @pytest.mark.parametrize(
+        "file_type",
+        [
+            FileType.OBJ,
+            FileType.GLB,
+            FileType.PLY,
+            FileType.GLTF,
+            FileType.THREE_DM,
+            FileType.FBX,
+        ],
+    )
     def test_keeps_the_shared_viewer_preview_recipe_for_other_meshes(
         self, file_type: FileType
     ) -> None:

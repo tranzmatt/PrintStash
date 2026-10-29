@@ -94,7 +94,9 @@ class PortableArtifact(BaseModel):
     source_id: int | None = None
     entry: str = PydanticField(min_length=1, max_length=1024)
     original_filename: str = PydanticField(min_length=1, max_length=255)
-    file_type: Literal["stl", "3mf", "gcode", "obj", "glb", "ply", "step", "dxf"]
+    file_type: Literal[
+        "stl", "3mf", "gcode", "obj", "glb", "gltf", "ply", "3dm", "fbx", "step", "dxf"
+    ]
     version: int = PydanticField(gt=0)
     size_bytes: int = PydanticField(ge=0)
     sha256: str = PydanticField(pattern=r"^[0-9a-fA-F]{64}$")

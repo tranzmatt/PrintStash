@@ -207,6 +207,9 @@ def _list_related_queries():
                     FileType.OBJ,
                     FileType.GLB,
                     FileType.PLY,
+                    FileType.GLTF,
+                    FileType.THREE_DM,
+                    FileType.FBX,
                 ]
             ),
             live(File),

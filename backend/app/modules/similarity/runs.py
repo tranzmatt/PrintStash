@@ -254,6 +254,9 @@ def source_query(session: Session, run: SimilarityRun, actor: User):
                     FileType.OBJ,
                     FileType.GLB,
                     FileType.PLY,
+                    FileType.GLTF,
+                    FileType.THREE_DM,
+                    FileType.FBX,
                     FileType.THREE_MF,
                     FileType.STEP,
                 )

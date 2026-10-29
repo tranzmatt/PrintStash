@@ -21,6 +21,7 @@ from app.modules.media import mesh_policy
 
 if TYPE_CHECKING:
     from trimesh import Trimesh
+    from trimesh.resolvers import Resolver
 
 logger = get_logger(__name__)
 
@@ -238,14 +239,16 @@ def load_mesh(path: Path, *, file_type: str | None = None) -> Trimesh | None:
         return _load_3mf_mesh(path)
     if suffix == ".stl":
         return _load_stl_mesh(path)
-    if suffix == ".glb":
-        return _load_glb_mesh(path, file_type=file_type)
+    if suffix in (".glb", ".gltf"):
+        return _load_gltf_mesh(path, suffix)
+    if suffix in (".3dm", ".fbx"):
+        return _load_exchange_mesh(path, suffix)
     return _load_scene_mesh(path, suffix, file_type=file_type)
 
 
 # glTF 2.0 stores metres with +Y up; every other source and the print bed are
 # millimetres with +Z up. Rotate +90 degrees about X (y -> z, z -> -y) and scale,
-# so a GLB of a part measures, renders and fingerprints like its STL.
+# so a glTF part measures, renders and fingerprints like its STL.
 _GLTF_TO_PRINT_FRAME = (
     (1000.0, 0.0, 0.0, 0.0),
     (0.0, 0.0, -1000.0, 0.0),
@@ -254,11 +257,59 @@ _GLTF_TO_PRINT_FRAME = (
 )
 
 
-def _load_glb_mesh(path: Path, *, file_type: str | None) -> Trimesh | None:
-    """A flattened GLB scene in the print frame shared with STL, 3MF and OBJ."""
+def _load_exchange_mesh(path: Path, suffix: str) -> Trimesh | None:
+    """Rhino and FBX readers decline like trimesh does for any other format."""
+    from app.modules.media import exchange_sources
+
+    try:
+        if suffix == ".3dm":
+            return exchange_sources.load_3dm_mesh(path)
+        return exchange_sources.load_fbx_mesh(path)
+    except MemoryError:
+        raise
+    except Exception:
+        logger.warning(
+            "mesh_processing: %s reader failed for %s",
+            suffix,
+            path.name,
+            exc_info=True,
+        )
+        return None
+
+
+def _self_contained_resolver() -> Resolver:
+    """A glTF resolver that refuses every external URI.
+
+    An Artifact is one stored object, so a glTF may only use buffers embedded in
+    its own bytes (GLB chunks or ``data:`` URIs). Resolving a relative URI would
+    read whatever file sits beside it in storage or staging instead.
+    """
+    from trimesh.resolvers import Resolver
+
+    class SelfContained(Resolver):
+        def __init__(self) -> None:
+            pass
+
+        def get(self, name: str) -> bytes:
+            raise KeyError(name)
+
+        def write(self, name: str, data: str | bytes) -> None:
+            raise KeyError(name)
+
+        def namespaced(self, namespace: str) -> SelfContained:
+            return self
+
+        def keys(self):
+            return iter(())
+
+    return SelfContained()
+
+
+def _load_gltf_mesh(path: Path, suffix: str) -> Trimesh | None:
+    """A flattened, self-contained glTF scene in the print frame of STL and 3MF."""
     import numpy as np
 
-    mesh = _load_scene_mesh(path, ".glb", file_type=file_type)
+    mesh = _load_scene_mesh(path, suffix, resolver=_self_contained_resolver())
     if mesh is None:
         return None
     mesh.apply_transform(np.asarray(_GLTF_TO_PRINT_FRAME))
@@ -266,7 +317,11 @@ def _load_glb_mesh(path: Path, *, file_type: str | None) -> Trimesh | None:
 
 
 def _load_scene_mesh(
-    path: Path, suffix: str, *, file_type: str | None
+    path: Path,
+    suffix: str,
+    *,
+    file_type: str | None = None,
+    resolver: Resolver | None = None,
 ) -> Trimesh | None:
     """Load a scene-capable source through trimesh and bake its placements."""
     import trimesh
@@ -279,7 +334,15 @@ def _load_scene_mesh(
         # trimesh releases, and flattening ``Scene.geometry`` directly drops
         # those instance transforms. Keep the scene until ``dump`` explicitly
         # bakes every graph path into each mesh instance.
-        if file_type is None:
+        if resolver is not None:
+            with path.open("rb") as source:
+                loaded = trimesh.load_scene(
+                    source,
+                    file_type=suffix.lstrip("."),
+                    resolver=resolver,
+                    process=False,
+                )
+        elif file_type is None:
             loaded = trimesh.load_scene(str(path), process=False)
         else:
             loaded = trimesh.load_scene(

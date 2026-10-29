@@ -14,6 +14,9 @@ class FileType(str, Enum):
     DXF = "dxf"
     GLB = "glb"
     PLY = "ply"
+    GLTF = "gltf"
+    THREE_DM = "3dm"
+    FBX = "fbx"
 
 
 class FileRevisionStatus(str, Enum):
@@ -33,6 +36,9 @@ SUFFIX_TO_FILE_TYPE: dict[str, FileType] = {
     ".dxf": FileType.DXF,
     ".glb": FileType.GLB,
     ".ply": FileType.PLY,
+    ".gltf": FileType.GLTF,
+    ".3dm": FileType.THREE_DM,
+    ".fbx": FileType.FBX,
     ".gcode": FileType.GCODE,
     ".g": FileType.GCODE,
     ".gco": FileType.GCODE,

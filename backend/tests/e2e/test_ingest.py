@@ -427,6 +427,45 @@ class TestMetadata:
             assert 0 < top < bottom < 384
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("file_type", ["gltf", "3dm", "fbx"])
+    async def test_previews_an_exchange_format_in_millimetres(
+        self, api, tmp_path, e2e_db, file_type
+    ):
+        """glTF, Rhino and FBX each name their unit; the stored geometry is in mm."""
+        import trimesh
+
+        from tests.factories.geometry import fbx_cube_ascii, gltf_embedded, rhino_cube
+
+        source = {
+            # Every source describes a 10 mm cube in its own unit.
+            "gltf": lambda: gltf_embedded(
+                trimesh.creation.box(extents=[0.01, 0.01, 0.01])
+            ),
+            "3dm": lambda: rhino_cube(unit="Centimeters"),
+            "fbx": lambda: fbx_cube_ascii(unit_scale=1.0),
+        }[file_type]()
+        headers = await _setup_and_login(api, tmp_path)
+        uploaded = await api.post(
+            "/api/v1/ingest/model",
+            files={"file": (f"cube.{file_type}", source, "application/octet-stream")},
+            data={"model_name": f"Cube {file_type}"},
+            headers=headers,
+        )
+        assert uploaded.status_code == 202, uploaded.text
+        job = await _await_job(api, headers, uploaded.json()["job_id"])
+        assert job["state"] == "completed", job
+        file_id = job["file_id"]
+
+        assert (await _thumbnail_derivative(api, headers, file_id))["state"] == "ready"
+        from app.db.models import Metadata
+
+        metadata = e2e_db.exec(
+            select(Metadata).where(Metadata.file_id == file_id)
+        ).one()
+        assert metadata.triangle_count == 12
+        assert metadata.volume_mm3 == pytest.approx(1000.0, rel=1e-3)
+
+    @pytest.mark.asyncio
     async def test_over_cap_mesh_upload_has_a_visible_thumbnail(
         self, api, tmp_path, e2e_db, monkeypatch
     ):

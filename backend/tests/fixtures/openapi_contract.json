@@ -1483,7 +1483,7 @@
           },
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "A .stl, .3mf, .obj, .glb, .ply, .step, .stp, or .dxf file",
+            "description": "A .stl, .3mf, .obj, .glb, .gltf, .ply, .3dm, .fbx, .step, .stp, or .dxf file",
             "title": "File",
             "type": "string"
           },
@@ -6152,7 +6152,10 @@
           "step",
           "dxf",
           "glb",
-          "ply"
+          "ply",
+          "gltf",
+          "3dm",
+          "fbx"
         ],
         "title": "FileType",
         "type": "string"

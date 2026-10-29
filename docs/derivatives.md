@@ -199,7 +199,7 @@ preview, but is not zero-copy instancing.
 A group may version a kind separately for one source format when only that
 format's reader changes. 3MF scenes are read by lib3mf in single precision and
 STEP is tessellated at 0.05 mm, so 3MF and STEP Artifacts re-derive at their
-own recipes while STL, OBJ, GLB and PLY keep the shared ones.
+own recipes while STL, OBJ, glTF, PLY, 3DM and FBX keep the shared ones.
 
 The mesh recipes refresh prior measurements/previews under the retained-scene
 eligibility and budget policy. The fingerprint version invalidates earlier
@@ -369,7 +369,7 @@ historical rather than actionable as a current interpretation.
 ## On-demand 3D viewer STL
 
 `viewer_stl` recipe 3 is produced by `derivatives.viewer_stl` in `derive.native`.
-Only 3MF, OBJ, GLB, PLY and STEP Artifacts with `files.viewer_requested_at` set are eligible;
+Only 3MF, OBJ, glTF, PLY, 3DM, FBX and STEP Artifacts with `files.viewer_requested_at` set are eligible;
 uploads, scans and card hover do not request conversion. The first authorized
 `GET /api/v1/files/{id}/stl` (or the scoped share endpoint) persists this demand
 and nudges the source. Reconciliation recovers it after a lost nudge or restart.

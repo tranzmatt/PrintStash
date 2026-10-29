@@ -53,6 +53,9 @@ VIEWER_TYPES = (
     FileType.OBJ,
     FileType.GLB,
     FileType.PLY,
+    FileType.GLTF,
+    FileType.THREE_DM,
+    FileType.FBX,
     FileType.STEP,
 )
 
@@ -62,6 +65,9 @@ MESH_TYPES = (
     FileType.OBJ,
     FileType.GLB,
     FileType.PLY,
+    FileType.GLTF,
+    FileType.THREE_DM,
+    FileType.FBX,
     FileType.STEP,
 )
 BINARY_GCODE_SUFFIXES = (".bgcode", ".bgc")

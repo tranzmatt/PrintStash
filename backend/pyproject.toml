@@ -42,6 +42,14 @@ dependencies = [
     "sqlmodel>=0.0.39,<0.0.45",
     "starlette>=1.6,<2",
     "trimesh>=5.1.1,<6",
+    # Rhino .3dm meshes; ships amd64 and arm64 Linux wheels.
+    "rhino3dm>=8.35,<9",
+    # FBX through assimp; the scene's unit and axes are read separately.
+    "assimp-py>=1.2,<2",
+    # 7z and RAR archives are transcoded to ZIP before review. RAR extraction
+    # needs the bsdtar tool, installed in the image.
+    "py7zr>=1.1.4,<2",
+    "rarfile>=4.5,<5",
     "uvicorn[standard]>=0.52,<1",
     "watchfiles>=1.2,<2",
     "pycentauri==0.9.1",

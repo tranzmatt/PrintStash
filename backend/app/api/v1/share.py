@@ -29,6 +29,9 @@ _MESH_TYPES = {
     FileType.OBJ,
     FileType.GLB,
     FileType.PLY,
+    FileType.GLTF,
+    FileType.THREE_DM,
+    FileType.FBX,
     FileType.STEP,
 }
 
