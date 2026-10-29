@@ -1483,7 +1483,7 @@
           },
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "A .stl, .3mf, .obj, .step, .stp, or .dxf file",
+            "description": "A .stl, .3mf, .obj, .glb, .gltf, .ply, .3dm, .fbx, .step, .stp, or .dxf file",
             "title": "File",
             "type": "string"
           },
@@ -1678,7 +1678,7 @@
         "properties": {
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "The .zip archive",
+            "description": "A .zip, .7z, .rar, .tar, .tar.gz or .tgz archive",
             "title": "File",
             "type": "string"
           }
@@ -6161,7 +6161,12 @@
           "gcode",
           "obj",
           "step",
-          "dxf"
+          "dxf",
+          "glb",
+          "ply",
+          "gltf",
+          "3dm",
+          "fbx"
         ],
         "title": "FileType",
         "type": "string"
@@ -30872,7 +30877,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Stage a ZIP archive and list its importable entries in the background",
+        "summary": "Stage an archive and list its importable entries in the background",
         "tags": [
           "ingest"
         ]

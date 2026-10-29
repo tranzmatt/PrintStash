@@ -305,6 +305,18 @@ class TestInventory:
             "backups": 30,
         }
 
+    @pytest.mark.parametrize("kind", [FileType.GLB, FileType.PLY], ids=str)
+    def test_history_counts_exchange_meshes_as_live_originals(
+        self, db_session, make_model, make_file, kind
+    ):
+        make_file(make_model(), file_type=kind, size_bytes=11)
+        current = inventory(db_session)
+
+        record_sample(db_session, current)
+
+        categories = history(db_session, current.target_ref)[0]["categories"]
+        assert categories["live_originals"] == 11
+
     def test_hides_inaccessible_model_drilldowns(
         self, db_session, make_user, make_model, make_file
     ):

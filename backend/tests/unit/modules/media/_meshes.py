@@ -274,6 +274,35 @@ def _write_obj(path: Path, tri_faces: int, *, quads: int = 0) -> None:
     path.write_bytes(b"".join(lines))
 
 
+def _write_glb_document(path: Path, document: dict, *, version: int = 2) -> None:
+    """A GLB container holding only *document* as its JSON chunk, no binary body."""
+    import json
+
+    raw = json.dumps(document).encode()
+    raw += b" " * (-len(raw) % 4)
+    path.write_bytes(
+        b"glTF"
+        + struct.pack("<II", version, 20 + len(raw))
+        + struct.pack("<II", len(raw), 0x4E4F534A)
+        + raw
+    )
+
+
+def _glb_scene(*, nodes: list[dict], roots: list[int], primitives: list[dict]) -> dict:
+    """One mesh of *primitives* over accessor 0 (90 indices) and 1 (12 positions)."""
+    return {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": roots}],
+        "nodes": nodes,
+        "meshes": [{"primitives": primitives}],
+        "accessors": [
+            {"componentType": 5125, "type": "SCALAR", "count": 90},
+            {"componentType": 5126, "type": "VEC3", "count": 12},
+        ],
+    }
+
+
 def _largest_component_fraction(mask: np.ndarray) -> float:
     visible = int(mask.sum())
     if visible == 0:

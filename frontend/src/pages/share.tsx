@@ -30,7 +30,7 @@ const GcodeViewer = lazy(() =>
   import("@/components/gcode-viewer").then((m) => ({ default: m.GcodeViewer })),
 );
 
-const MESH_TYPES = new Set(["stl", "3mf", "obj", "step"]);
+const MESH_TYPES = new Set(["stl", "3mf", "obj", "glb", "gltf", "ply", "3dm", "fbx", "step"]);
 const DISPLAY_MODES: readonly ViewerDisplayMode[] = ["solid", "xray", "wireframe"];
 type ShareViewerMode = "model" | "gcode";
 

@@ -137,7 +137,7 @@ import {
 import {
   isMeshFile,
   isGcodeFile,
-  extensionOf,
+  isArchiveFile,
   walkEntries,
   entriesFromDataTransfer,
   BulkItem,
@@ -666,7 +666,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   function classifyDrop(files: File[]): { files: File[]; mode: UploadMode } | null {
     const meshes = files.filter((f) => isMeshFile(f.name));
     const gcodes = files.filter((f) => isGcodeFile(f.name));
-    const zips = files.filter((f) => extensionOf(f.name) === ".zip");
+    const zips = files.filter((f) => isArchiveFile(f.name));
     if (meshes.length >= 2) return { mode: "bulk", files: meshes };
     if (meshes.length === 1) return { mode: "files", files: [...meshes, ...gcodes.slice(0, 1)] };
     if (gcodes.length > 0) return { mode: "files", files: [gcodes[0]] };

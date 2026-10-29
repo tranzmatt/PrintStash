@@ -457,11 +457,13 @@ export function SimilarityQueue({ modelId }: { modelId?: number }) {
                   onChange={(event) => setFilters({ file_type: event.target.value || undefined })}
                 >
                   <option value="">{t("similarity.allFormats")}</option>
-                  {["stl", "obj", "3mf", "step"].map((value) => (
-                    <option key={value} value={value}>
-                      {value.toUpperCase()}
-                    </option>
-                  ))}
+                  {["stl", "obj", "glb", "gltf", "ply", "3dm", "fbx", "3mf", "step"].map(
+                    (value) => (
+                      <option key={value} value={value}>
+                        {value.toUpperCase()}
+                      </option>
+                    ),
+                  )}
                 </select>
               </label>
               <label className="min-w-0 flex-1 basis-32 space-y-1 text-xs">

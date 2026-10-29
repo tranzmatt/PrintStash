@@ -25,7 +25,17 @@ from app.schemas.models import (
 )
 
 _SOURCE_TYPES = frozenset(
-    {FileType.STL, FileType.THREE_MF, FileType.OBJ, FileType.STEP}
+    {
+        FileType.STL,
+        FileType.THREE_MF,
+        FileType.OBJ,
+        FileType.GLB,
+        FileType.PLY,
+        FileType.GLTF,
+        FileType.THREE_DM,
+        FileType.FBX,
+        FileType.STEP,
+    }
 )
 
 

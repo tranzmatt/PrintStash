@@ -52,10 +52,13 @@ describe("STLViewer", () => {
       <STLViewer url="/api/v1/files/7/stl" previewFetcher={fetcher} onFailureChange={feedback} />,
     );
     await screen.findByText(/provider rejected authentication/);
-    expect(feedback).toHaveBeenLastCalledWith({
-      url: "/api/v1/files/7/stl",
-      reason: "storage_authentication_failed",
-    });
+    // The failure is reported from an effect that may commit after the text.
+    await waitFor(() =>
+      expect(feedback).toHaveBeenLastCalledWith({
+        url: "/api/v1/files/7/stl",
+        reason: "storage_authentication_failed",
+      }),
+    );
     expect(fetcher).toHaveBeenCalledOnce();
   });
 

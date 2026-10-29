@@ -4,6 +4,8 @@
 
 ### Added
 
+- **GLB, glTF, PLY, Rhino 3DM and FBX models.** Upload, import or scan `.glb`, `.gltf`, `.ply`, `.3dm` and `.fbx` files like STL and OBJ: they get a thumbnail, measurements, the 3D viewer and similar-model analysis. Each format's own unit and axes are converted to millimetres with Z up, so a part reads at the same size and orientation as its STL. A `.gltf` must embed its buffers.
+- **7z, RAR and TAR archives.** Upload or link a `.7z`, `.rar`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2` or `.tar.xz` archive and review its models exactly like a ZIP, with the same size, entry and path limits.
 - Model Overview shows each file’s SHA-256 in place of the AI caption panel, with its geometric SHA-256 when a current whole-mesh fingerprint is available. Compact seven-character hashes reveal the full value on hover and copy the complete SHA with one click.
 
 - Library filters use compact dropdowns for upload dates, print history, file types and printed status. Date fields offer calendar pickers, file formats support multiple selections, and printed status offers All, Printed and Not printed using the same checkbox rows and count badges as the other facets. Printer location and Tags share these rows, including single-choice location selection and searchable tag multiselect. Neutral picker buttons show selection counts, while blue chips below show the active values.

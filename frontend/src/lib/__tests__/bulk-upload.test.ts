@@ -28,6 +28,7 @@ import {
   fileListToItems,
   GCODE_ACCEPT,
   isGcodeFile,
+  isArchiveFile,
   isMeshFile,
   mergeBulkItems,
   walkEntries,
@@ -104,6 +105,11 @@ describe("isMeshFile", () => {
     ["foo.stl", true],
     ["foo.3mf", true],
     ["foo.obj", true],
+    ["foo.glb", true],
+    ["foo.ply", true],
+    ["foo.gltf", true],
+    ["foo.3dm", true],
+    ["foo.fbx", true],
     ["foo.step", true],
     ["foo.stp", true],
     ["foo.dxf", true],
@@ -113,6 +119,24 @@ describe("isMeshFile", () => {
     ["foo", false],
   ])("%s → %s", (name, expected) => {
     expect(isMeshFile(name)).toBe(expected);
+  });
+});
+
+// --- isArchiveFile ------------------------------------------------------
+
+describe("isArchiveFile", () => {
+  it.each([
+    ["parts.zip", true],
+    ["parts.7z", true],
+    ["parts.RAR", true],
+    ["parts.tar", true],
+    ["parts.tar.gz", true],
+    ["parts.tgz", true],
+    ["parts.tar.xz", true],
+    ["part.stl.gz", false],
+    ["part.3mf", false],
+  ])("%s → %s", (name, expected) => {
+    expect(isArchiveFile(name)).toBe(expected);
   });
 });
 

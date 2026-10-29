@@ -220,13 +220,15 @@ export async function uploadModel(page: Page, name: string, opts: UploadOpts = {
     );
   }
   if (mesh) {
-    await page.locator('input[accept=".stl,.3mf,.obj,.step,.stp,.dxf"]').setInputFiles(
-      opts.meshFile ?? {
-        name: `${name}.stl`,
-        mimeType: "model/stl",
-        buffer: Buffer.from(stlFor(name)),
-      },
-    );
+    await page
+      .locator('input[accept=".stl,.3mf,.obj,.glb,.gltf,.ply,.3dm,.fbx,.step,.stp,.dxf"]')
+      .setInputFiles(
+        opts.meshFile ?? {
+          name: `${name}.stl`,
+          mimeType: "model/stl",
+          buffer: Buffer.from(stlFor(name)),
+        },
+      );
   }
   await page.getByPlaceholder("e.g. Bracket v2").fill(name);
 
