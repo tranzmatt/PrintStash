@@ -1,0 +1,67 @@
+/* Shared by the app and @printstash/ui consumers; do not restate these values. */
+@layer base {
+  :root {
+    --cursor-action: default;
+    --cursor-disabled: default;
+  }
+
+  :where(
+    button,
+    a[href],
+    area[href],
+    summary,
+    select,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"],
+    input[type="checkbox"],
+    input[type="radio"],
+    input[type="range"],
+    input[type="color"],
+    input[type="file"],
+    [role="button"],
+    [role="link"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"],
+    [role="tab"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="option"],
+    label:has(input[type="checkbox"], input[type="radio"], input[type="file"])
+  ) {
+    cursor: var(--_control-cursor, var(--cursor-action));
+  }
+
+  :where([aria-disabled="false"]) {
+    --_control-cursor: var(--cursor-action);
+  }
+
+  :where(
+    :disabled:not(fieldset),
+    [aria-disabled="true"],
+    [data-disabled]:not([data-disabled="false"]),
+    label:has(:disabled)
+  ) {
+    /* Inherit disabled state through ARIA wrappers and control contents.
+       Fieldsets use each control's :disabled state, preserving first legends. */
+    --_control-cursor: var(--cursor-disabled);
+    cursor: var(--_control-cursor);
+  }
+
+  :where(input[type="file"])::file-selector-button {
+    cursor: inherit;
+  }
+}
+
+/* Explicit affordances for clickable labels/cards without native semantics.
+   Manipulation utilities (grab, grabbing, col-resize) keep their own cursors. */
+@utility cursor-action {
+  cursor: var(--_control-cursor, var(--cursor-action));
+}
+
+@utility cursor-disabled {
+  --_control-cursor: var(--cursor-disabled);
+  cursor: var(--_control-cursor);
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckSquare, ChevronRight, File, Folder, Search, Square } from "lucide-react";
+import { File } from "lucide-react";
 
 import { getJobStatus } from "@/lib/api/jobs";
 import { selectArchiveEntries } from "@/lib/api/models";
@@ -21,7 +21,13 @@ import type { ArchiveEntry, ArchiveManifest, CollectionNodeRead, JobStatus } fro
 import { Button } from "@/components/ui/button";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { CollectionPicker } from "@/components/collection-picker";
-import { Input } from "@/components/ui/input";
+import {
+  SelectionBrowserToolbar,
+  SelectionBrowserViewport,
+  SelectionBrowserBreadcrumbs,
+  SelectionFolderCard,
+  SelectionItemCard,
+} from "@/components/selection-browser";
 import { Modal } from "@/components/ui/modal";
 
 class ArchiveReviewUnavailableError extends Error {}
@@ -246,70 +252,43 @@ function ArchiveReview({
         )}
         {manifest && (
           <>
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              <Input
-                autoFocus
-                aria-label={uiText("Search ZIP files")}
-                placeholder={uiText("Search ZIP files")}
-                value={query}
-                maxLength={128}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-muted/30 px-3 py-2">
-              <p className="text-xs text-muted-foreground">
-                {uiText("{value1} importable files in this ZIP", {
-                  value1: String(importable.length),
-                })}
-              </p>
-              <div className="flex flex-wrap items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={importable.length === 0 || selected.size === importable.length}
-                  onClick={() => setSelected(new Set(importable.map((entry) => entry.name)))}
-                >
-                  {uiText("Select all {value1} ZIP files", { value1: String(importable.length) })}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={selected.size === 0}
-                  onClick={() => setSelected(new Set())}
-                >
-                  {uiText("Clear selection")}
-                </Button>
-              </div>
-            </div>
-            <nav
-              aria-label={uiText("Browse ZIP folders")}
-              className="flex flex-wrap items-center gap-1 text-sm"
+            <SelectionBrowserToolbar
+              query={query}
+              onQueryChange={setQuery}
+              searchLabel={uiText("Search ZIP files")}
+              summary={uiText("{value1} importable files in this ZIP", {
+                value1: String(importable.length),
+              })}
+              selectLabel={uiText("Select all {value1} ZIP files", {
+                value1: String(importable.length),
+              })}
+              clearLabel={uiText("Clear selection")}
+              selectDisabled={importable.length === 0 || selected.size === importable.length}
+              clearDisabled={selected.size === 0}
+              onSelectAll={() => setSelected(new Set(importable.map((entry) => entry.name)))}
+              onClear={() => setSelected(new Set())}
+            />
+            <SelectionBrowserBreadcrumbs
+              label={uiText("Browse ZIP folders")}
+              items={[
+                {
+                  key: "root",
+                  label: uiText("ZIP root"),
+                  current: folder === null,
+                  onClick: () => setFolder(null),
+                },
+                ...breadcrumbs.map((path) => ({
+                  key: path,
+                  label: path.split("/").at(-1) ?? path,
+                  current: folder === path,
+                  onClick: () => setFolder(path),
+                })),
+              ]}
+            />
+            <SelectionBrowserViewport
+              path={folder ?? ""}
+              pageKey={JSON.stringify([folder, search])}
             >
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setFolder(null)}
-                aria-current={folder === null ? "page" : undefined}
-              >
-                {uiText("ZIP root")}
-              </Button>
-              {breadcrumbs.map((path) => (
-                <span key={path} className="flex min-w-0 items-center gap-1">
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-auto whitespace-normal break-words text-left"
-                    onClick={() => setFolder(path)}
-                    aria-current={folder === path ? "page" : undefined}
-                  >
-                    {path.split("/").at(-1)}
-                  </Button>
-                </span>
-              ))}
-            </nav>
-            <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
               {visibleFiles.length === 0 && (search || folders.length === 0) && (
                 <p className="py-8 text-sm text-muted-foreground">
                   {importable.length === 0
@@ -331,87 +310,47 @@ function ArchiveReview({
                     const name = path.slice(path.lastIndexOf("/") + 1);
                     return (
                       <li key={path} className="min-w-0">
-                        <div
-                          className={`flex h-28 flex-col justify-between gap-2 rounded-lg border p-3 ${allSelected ? "border-primary bg-accent text-accent-foreground" : selectedCount > 0 ? "border-border bg-accent/50 text-accent-foreground" : "border-border bg-card text-card-foreground"}`}
-                        >
-                          <div className="flex min-w-0 items-start gap-2">
-                            <Button
-                              variant="ghost"
-                              className="h-auto min-w-0 flex-1 justify-start gap-2 whitespace-normal p-0 text-left hover:bg-transparent"
-                              aria-label={uiText("Open folder {value1}", { value1: name })}
-                              title={path}
-                              onClick={() => setFolder(path)}
-                            >
-                              <Folder
-                                className="h-5 w-5 shrink-0 text-muted-foreground"
-                                aria-hidden
-                              />
-                              <span className="line-clamp-2 break-words text-sm font-medium">
-                                {name}
-                              </span>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 shrink-0"
-                              aria-pressed={allSelected}
-                              aria-label={uiText(
-                                allSelected ? "Deselect folder {value1}" : "Select folder {value1}",
-                                { value1: name },
-                              )}
-                              onClick={() => toggleFolder(path)}
-                            >
-                              {allSelected ? (
-                                <CheckSquare className="h-5 w-5" aria-hidden />
-                              ) : (
-                                <Square className="h-5 w-5" aria-hidden />
-                              )}
-                            </Button>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {uiText("{value1} of {value2} files selected", {
-                              value1: String(selectedCount),
-                              value2: String(children.length),
-                            })}
-                          </p>
-                        </div>
+                        <SelectionFolderCard
+                          name={name}
+                          path={path}
+                          openLabel={uiText("Open folder {value1}", { value1: name })}
+                          onOpen={() => setFolder(path)}
+                          summary={uiText("{value1} of {value2} files selected", {
+                            value1: String(selectedCount),
+                            value2: String(children.length),
+                          })}
+                          selection={{
+                            selected: allSelected,
+                            partial: selectedCount > 0,
+                            label: uiText(
+                              allSelected ? "Deselect folder {value1}" : "Select folder {value1}",
+                              { value1: name },
+                            ),
+                            onToggle: () => toggleFolder(path),
+                          }}
+                        />
                       </li>
                     );
                   })}
-                {visibleFiles.map((entry) => {
-                  const checked = selected.has(entry.name);
-                  return (
-                    <li key={entry.name} className="min-w-0">
-                      <button
-                        type="button"
-                        aria-pressed={checked}
-                        aria-label={entry.name}
-                        onClick={() => toggle(entry.name)}
-                        className={`flex h-28 w-full flex-col justify-between gap-2 rounded-lg border p-3 text-left transition-transform duration-press active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${checked ? "border-primary bg-accent text-accent-foreground" : "border-border bg-card text-card-foreground hover:bg-muted"}`}
-                      >
-                        <span className="flex w-full items-start justify-between gap-2">
-                          <File className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
-                          {checked ? (
-                            <CheckSquare className="h-5 w-5 shrink-0" aria-hidden />
-                          ) : (
-                            <Square className="h-5 w-5 shrink-0" aria-hidden />
-                          )}
-                        </span>
-                        <span
-                          className="line-clamp-2 break-words text-sm font-medium"
-                          title={entry.name}
-                        >
-                          {search ? entry.name : segments(entry).at(-1)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
+                {visibleFiles.map((entry) => (
+                  <li key={entry.name} className="min-w-0">
+                    <SelectionItemCard
+                      name={search ? entry.name : (segments(entry).at(-1) ?? entry.name)}
+                      label={entry.name}
+                      title={entry.name}
+                      icon={<File className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />}
+                      summary={
+                        <>
                           {entry.file_type?.toUpperCase()} · {formatBytes(entry.size_bytes)}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
+                        </>
+                      }
+                      selected={selected.has(entry.name)}
+                      onToggle={() => toggle(entry.name)}
+                    />
+                  </li>
+                ))}
               </ul>
-            </div>
+            </SelectionBrowserViewport>
             <div className="flex flex-wrap items-end justify-between gap-3 border-t border-border pt-3">
               <p role="status" className="text-sm text-muted-foreground">
                 {uiText("{value1} of {value2} files selected", {
@@ -446,6 +385,7 @@ function ArchiveReview({
                     }
                   >
                     <CollectionPicker
+                      autoFocus
                       minRole="edit"
                       selectedPath={collection ?? ""}
                       onSelect={(picked) => {

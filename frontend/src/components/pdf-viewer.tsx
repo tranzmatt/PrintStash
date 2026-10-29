@@ -22,7 +22,7 @@ type DocumentRenderer = (props: ComponentProps<typeof Document>) => ReactNode;
 const defaultDocumentRenderer: DocumentRenderer = (props) => <Document {...props} />;
 
 const btn =
-  "flex items-center justify-center p-1.5 rounded border border-border bg-background text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-default";
+  "flex items-center justify-center p-1.5 rounded border border-border bg-background text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-disabled";
 
 export function PdfViewer({
   file,

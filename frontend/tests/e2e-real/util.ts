@@ -86,25 +86,16 @@ export async function seedExpiredStaging(): Promise<{ itemId: number; path: stri
   return JSON.parse(stdout);
 }
 
-/** Reveal the library's secondary commands through its visible toolbar. */
+/** Library commands are visible beside Filters at every viewport width. */
 export async function openLibraryTools(page: Page): Promise<void> {
-  if (await page.getByRole("region", { name: "Library tools", exact: true }).isVisible()) return;
-  const trigger = page.getByRole("button", { name: "Library tools", exact: true });
-  const more = page.getByRole("main").getByRole("button", { name: "More", exact: true });
-  await expect(trigger.or(more).first()).toBeVisible();
-  if (!(await trigger.isVisible())) {
-    await more.click();
-    await page.getByRole("menuitem", { name: "Library tools", exact: true }).click();
-  } else if ((await trigger.getAttribute("aria-expanded")) === "false") {
-    await trigger.click();
-  }
+  await expect(page.getByRole("group", { name: "Library tools", exact: true })).toBeVisible();
 }
 
-/** The same command is a desktop menu item or a mobile disclosure button. */
+/** Toolbar actions use native button semantics on every viewport. */
 export function libraryTool(page: Page, name: "New collection" | "Select") {
   return page
-    .getByRole("button", { name, exact: true })
-    .or(page.getByRole(name === "Select" ? "menuitemcheckbox" : "menuitem", { name, exact: true }));
+    .getByRole("group", { name: "Library tools", exact: true })
+    .getByRole("button", { name, exact: true });
 }
 
 // The backend dedupes files by content hash, so the bytes must be unique per
@@ -246,7 +237,9 @@ export async function uploadModel(page: Page, name: string, opts: UploadOpts = {
     await dialog
       .getByRole("textbox", { name: "Find destination", exact: true })
       .fill(collection.slice(collection.lastIndexOf("/") + 1));
-    await dialog.getByRole("option", { name: new RegExp(collection) }).click();
+    // Anchor the path before its count so a parent's nested folders cannot
+    // match while the debounced search still shows the previous results.
+    await dialog.getByRole("option", { name: new RegExp(collection + " \\(\\d+\\)$") }).click();
   }
   if (tag) {
     const tagInput = page.getByPlaceholder("Search or create — press Enter");

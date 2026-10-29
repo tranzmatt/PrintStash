@@ -19,8 +19,10 @@ itself, it is wrong.
 
 ## Tokens
 
-All tokens are CSS custom properties in `frontend/src/globals.css`, mapped into
-Tailwind in `frontend/tailwind.config.cjs`. **Use the Tailwind class, not the raw
+Theme and motion tokens are CSS custom properties in `frontend/src/globals.css`,
+mapped into Tailwind in `frontend/tailwind.config.cjs`. Cursor tokens and their
+named utilities share `frontend/packages/ui/src/cursors.css` (see Cursors below).
+**Use the Tailwind class, not the raw
 variable** — `bg-primary`, not `bg-[var(--primary)]`.
 
 ### Color
@@ -124,8 +126,10 @@ information; when several technical views need separation, use the existing
 for a small set of related status values instead of a row of decorative badges.
 For current storage, lead with the provider and one active safety state. Keep
 paths readable but secondary; explain migration in its workflow, not in the
-status card. Similar candidates belong in each Model's Similar tab; do not
-duplicate that entry in the library toolbar or global header. Keep Model detail
+status card. Similar candidates belong in each Model's Similar tab. The library-wide Similar
+models page, New collection and Select actions stay visible beside Filters in
+the library toolbar. On narrow panes, the actions wrap within the same toolbar.
+Keep these actions out of the sidebar and global header. Keep Model detail
 tabs in one row, with horizontal scrolling only when their labels cannot fit.
 Async settings cards keep their header and reserve the shape of their content
 with skeletons until initial reads settle. Do not expose a partial form whose
@@ -172,6 +176,22 @@ not for primary titles or prose. Keep primary blue for actions that start work;
 status and selection use their semantic tokens. On narrow screens, rows stack
 into a readable content band and a separate action band. Text gets `min-w-0`
 and may wrap; actions must remain reachable without horizontal scrolling.
+
+## Cursors
+
+Ordinary web actions and unavailable controls use the arrow cursor.
+The shared policy in `frontend/packages/ui/src/cursors.css` owns
+`--cursor-action` and `--cursor-disabled`, and is imported by both the app and
+the UI package's stylesheet. Native buttons, links, disclosure controls and ARIA
+widgets receive it automatically, including their icon and label content.
+
+Use `cursor-action` for clickable labels or cards that need an explicit
+affordance and `cursor-disabled` for unavailable custom surfaces. Never add
+`cursor-pointer`, `cursor-default`, `cursor-not-allowed`, or inline equivalents
+in a component. Disabled labels follow their contained control. Keep text
+editing, drag (`cursor-grab`/`cursor-grabbing`) and resize cursors where those
+operations actually apply. The source guard and browser hover suite prevent
+ordinary action cursors from drifting between components.
 
 ## Motion
 

@@ -53,6 +53,7 @@ from app.modules.media.source_cover_processing import (
     SourceCoverProcessingError,
     process_source_cover_upload,
 )
+from app.modules.storage.storage_backend.contracts import StorageTier
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_deletion import (
     PreparedOwnedDeletion,
@@ -61,6 +62,7 @@ from app.modules.storage.storage_deletion import (
     process_storage_delete_intents,
 )
 from app.modules.storage.storage_ownership import (
+    UnsafeStorageDeleteError,
     abandon_publication,
     finish_publication_batch,
     prepare_bytes,
@@ -98,14 +100,25 @@ def _prepare_uploaded_cover_delete(
     key = key or _uploaded_cover_key(aggregate)
     if key is None:
         return None
-    prepared = prepare_owned_key_deletion(
-        session,
-        get_backend(),
-        key,
-        required_proof=True,
-        resource_kind="multipart_model_cover",
-        resource_id=aggregate.id,
-    )
+    backend = get_backend()
+    try:
+        prepared = prepare_owned_key_deletion(
+            session,
+            backend,
+            key,
+            required_proof=True,
+            resource_kind="multipart_model_cover",
+            resource_id=aggregate.id,
+            # A Guarded/NAS root can retire the catalog reference using the
+            # committed content hash. Its outbox intent retains the bytes as
+            # blocked; this never authorizes an unverified physical deletion.
+            allow_unverified=backend.capabilities.tier is not StorageTier.VERIFIED,
+        )
+    except UnsafeStorageDeleteError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="storage_ownership_unverified",
+        ) from exc
     aggregate.cover_filename = None
     aggregate.cover_content_type = None
     aggregate.cover_size_bytes = None
@@ -187,8 +200,23 @@ def create_multipart_model(
     )
     session.add(aggregate)
     try:
-        content_changed(session, "multipart_model", (row.id for row in (aggregate,)))
+        if payload.parts:
+            session.flush()
+            multipart_models.save_in_transaction(
+                session, current_user, aggregate, payload.parts
+            )
+        else:
+            content_changed(
+                session, "multipart_model", (row.id for row in (aggregate,))
+            )
         session.commit()
+    except multipart_models.MultipartModelError as exc:
+        session.rollback()
+        code = exc.code
+        raise HTTPException(
+            status_code=403 if code == "collection_permission_denied" else 400,
+            detail=code,
+        ) from exc
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(

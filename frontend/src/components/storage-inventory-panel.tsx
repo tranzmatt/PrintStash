@@ -629,7 +629,7 @@ export function StorageInventoryPanel() {
             </section>
           </div>
           <details className="border-b">
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <summary className="cursor-action px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {t("Measurement details")}
             </summary>
             <div className="grid border-t lg:grid-cols-2">

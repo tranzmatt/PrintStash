@@ -32,8 +32,12 @@ uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upg
 
 # 5. Test the behaviour the column exists for, and the migration itself if it
 #    rebuilds a table or touches rows.
-./scripts/test.sh coverage
+./scripts/test.sh fast tests/integration/db/migrations tests/repo/test_migration_patterns.py -q
 ```
+
+Run the affected behavior's tests too. Use Deep CI on the final commit for the
+complete backend suite, PostgreSQL contracts and coverage; see
+[running-tests.md](running-tests.md).
 
 What each step is actually protecting:
 
@@ -632,8 +636,11 @@ cd backend
 uv run alembic upgrade head                       # forwards
 uv run alembic downgrade -1 && uv run alembic upgrade head   # and back
 uv run alembic upgrade <prev>:head --sql          # renders without a database
-./scripts/test.sh coverage                        # includes the parity tests below
+./scripts/test.sh fast tests/integration/db/migrations tests/repo/test_migration_patterns.py -q
 ```
+
+Deep CI on the final commit supplies the complete suite and real PostgreSQL
+parity checks; do not also run a local full coverage suite by default.
 
 The `--sql` render is not optional politeness. It is how an operator reviews DDL before
 letting it near their data, and a migration that reaches for the connection — to read a

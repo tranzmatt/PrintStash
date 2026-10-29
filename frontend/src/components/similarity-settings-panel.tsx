@@ -134,7 +134,7 @@ function SettingsForm({ initial, readOnly }: { initial: SimilaritySettings; read
           </div>
         </div>
         <details className="border-t border-border pt-3">
-          <summary className="cursor-pointer text-sm font-medium">
+          <summary className="cursor-action text-sm font-medium">
             {t("similarity.advanced")}
           </summary>
           <div className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">

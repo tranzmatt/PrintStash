@@ -229,7 +229,7 @@ export function StructuredFilters({
             const row = (item: FacetValueRead) => (
               <label
                 key={item.value}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors duration-press hover:bg-muted"
+                className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors duration-press hover:bg-muted"
               >
                 <Checkbox
                   className="h-4 w-4"
@@ -293,7 +293,7 @@ export function StructuredFilters({
                       ) : (
                         <label
                           key={item.value}
-                          className={`flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs ${selected.includes(item.value) ? "bg-accent text-accent-foreground" : "hover:bg-muted"}`}
+                          className={`flex h-8 cursor-action items-center gap-1.5 rounded-md px-2 text-xs ${selected.includes(item.value) ? "bg-accent text-accent-foreground" : "hover:bg-muted"}`}
                         >
                           <Checkbox
                             className="h-4 w-4"
@@ -323,7 +323,7 @@ export function StructuredFilters({
                   {missing.map((value) => (
                     <label
                       key={value}
-                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
+                      className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
                     >
                       <Checkbox
                         ariaLabel={filterValueText(key, value)}

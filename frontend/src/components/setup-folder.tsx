@@ -235,7 +235,7 @@ export function SetupFolder({
         </div>
       </fieldset>
       <details className="text-sm">
-        <summary className="cursor-pointer py-2 text-muted-foreground">
+        <summary className="cursor-action py-2 text-muted-foreground">
           {t("setup.mountHelp")}
         </summary>
         <p className="mt-2 break-words text-sm leading-relaxed text-muted-foreground">

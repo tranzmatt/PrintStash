@@ -1588,6 +1588,11 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     ]);
     return;
   }
+  if (/^\/api\/v1\/slicer-profiles\/(filament|printer)\/\d+$/.test(url.pathname)) {
+    sendJson(res, { items: [], next_before_id: null });
+    return;
+  }
+
   if (url.pathname === "/api/v1/filament-profiles") {
     sendJson(res, filamentProfiles);
     return;

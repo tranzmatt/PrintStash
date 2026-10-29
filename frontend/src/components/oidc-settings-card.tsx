@@ -397,7 +397,7 @@ function OidcEditor({
           )}
 
           <details className="rounded-md border border-border bg-background">
-            <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <summary className="cursor-action px-3 py-2 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {uiText("Advanced mapping")}
             </summary>
             <div className="grid gap-4 border-t border-border p-3 lg:grid-cols-2">

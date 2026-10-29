@@ -171,7 +171,7 @@ function MultipartLeaf({ multipart }: { multipart: OutlinerModelRead }) {
         onKeyDown={(event) => {
           if (event.key === "Enter") router.push(`/multipart-models/${multipart.id}`);
         }}
-        className="flex cursor-default select-none items-center gap-2 rounded pl-7 pr-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted"
+        className="flex cursor-action select-none items-center gap-2 rounded pl-7 pr-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted"
         title={uiText("{value1} · Multipart set", { value1: String(multipart.name) })}
         data-outliner-entry={`/multipart-models/${multipart.id}`}
       >

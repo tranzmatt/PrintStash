@@ -50,6 +50,12 @@ afterEach(() => {
 
 describe("SidebarNav", () => {
   describe("where it can take you", () => {
+    it("keeps Builds out of the main rail", () => {
+      renderNav();
+      expect(screen.queryByRole("link", { name: /Builds/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /Profiles/i })).toHaveAttribute("href", "/profiles");
+    });
+
     it("links to the vault", () => {
       renderNav();
 

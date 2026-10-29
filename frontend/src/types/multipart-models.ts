@@ -62,6 +62,7 @@ export interface MultipartModelRead extends MultipartModelListItem {
 }
 
 export interface MultipartModelCreate {
+  parts?: MultipartPartsWrite["parts"];
   name: string;
   description?: string | null;
   collection_id?: number | null;

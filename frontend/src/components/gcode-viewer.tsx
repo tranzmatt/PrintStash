@@ -464,7 +464,7 @@ export function GcodeViewer({
             max={data.totalLayers - 1}
             value={currentLayer}
             onChange={(e) => setCurrentLayer(Number(e.target.value))}
-            className="w-full h-1.5 accent-primary cursor-pointer"
+            className="w-full h-1.5 accent-primary cursor-action"
           />
         </div>
       </div>

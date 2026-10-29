@@ -115,6 +115,8 @@ test.describe("search clarity", () => {
     ]) {
       await page.setViewportSize(viewport);
       await page.goto("/models/1");
+      // The dev-only query launcher overlaps the last tab on narrow screens.
+      await page.addStyleTag({ content: ".tsqd-parent-container{display:none!important}" });
       const tabs = page.getByTestId("model-detail-sidebar").getByRole("tablist");
       const overview = tabs.getByRole("tab", { name: "Overview", exact: true });
       const similar = tabs.getByRole("tab", { name: "Similar", exact: true });
@@ -165,28 +167,25 @@ test.describe("search clarity", () => {
     await page.screenshot({ path: "/tmp/printstash-similar-desktop.png" });
   });
 
-  test("reveals library organization on demand", async ({ page }) => {
+  test("keeps library organization beside Filters", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("button", { name: "Upload", exact: true })).toBeVisible();
-    const libraryTools = page.getByRole("button", { name: "Library tools", exact: true });
-    await expect(libraryTools).toHaveAttribute("aria-expanded", "false");
-    await libraryTools.click();
-    await expect(page.getByRole("region", { name: "Library tools" })).toBeVisible();
+    const actions = page.getByRole("main").getByRole("group", { name: "Library tools" });
+
+    await expect(
+      actions.getByRole("button", { name: "New collection", exact: true }),
+    ).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Select", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Library tools", exact: true })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "New multipart set", exact: true }),
     ).toBeVisible();
   });
 
-  test("opens Similar models from Library tools", async ({ page }) => {
+  test("opens Similar models from the toolbar", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/");
-    await page.getByRole("button", { name: "Library tools", exact: true }).click();
-    await page
-      .getByRole("region", { name: "Library tools" })
-      .getByRole("link", {
-        name: "Similar models",
-      })
-      .click();
+    await page.getByRole("main").getByRole("link", { name: "Similar models", exact: true }).click();
 
     await expect(page).toHaveURL(/\/library\/similar$/);
     await expect(page.getByRole("heading", { name: "Similar models", level: 1 })).toBeVisible();

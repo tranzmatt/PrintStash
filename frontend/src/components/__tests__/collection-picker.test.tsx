@@ -7,7 +7,7 @@
  */
 
 import "@testing-library/jest-dom/vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -53,7 +53,9 @@ describe("CollectionPicker", () => {
   it("names each destination by its full path", async () => {
     renderPicker();
 
-    expect(await screen.findByRole("option", { name: /Parts\/Brackets/ })).toBeInTheDocument();
+    const option = await screen.findByRole("option", { name: /Parts\/Brackets/ });
+    expect(within(option).getByText("Brackets", { exact: true })).toBeVisible();
+    expect(within(option).getByText("Parts/Brackets", { exact: true })).toBeVisible();
   });
 
   it("leaves out folders the reader cannot write to", async () => {

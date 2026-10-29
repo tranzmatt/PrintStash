@@ -389,10 +389,10 @@ test.describe("multipart models", () => {
 
     await page.goto("/");
     await expect(page.getByText("skadis_kitchen-roll_screw").first()).toBeVisible();
-    await page.getByRole("button", { name: "Library tools", exact: true }).click();
     await page.getByRole("button", { name: "New multipart set" }).first().click();
     await page.getByLabel("Name", { exact: true }).fill("Desk organiser");
     await page.getByLabel("Description").fill("A complete desk organiser");
+    await page.getByRole("button", { name: "Collection", exact: true }).click();
     await page.getByRole("option", { name: /maraio/ }).click();
     await page.getByRole("button", { name: "Create multipart set" }).click();
 
@@ -476,7 +476,14 @@ test.describe("multipart models", () => {
     await page.getByRole("button", { name: "Delete multipart set" }).click();
     await expect(page.getByRole("dialog")).toContainText("Models, files and revisions stay");
     await page.getByRole("button", { name: "Delete set" }).click();
-    await expect(page).toHaveURL(/\?c=maraio&type=all&sort=date-desc$/);
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === "/" &&
+        url.searchParams.get("c") === "maraio" &&
+        url.searchParams.get("cid") === "1" &&
+        url.searchParams.get("type") === "all" &&
+        url.searchParams.get("sort") === "date-desc",
+    );
     await expect(page.getByText("skadis_kitchen-roll_screw").first()).toBeVisible();
   });
 });

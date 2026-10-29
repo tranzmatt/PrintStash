@@ -11,6 +11,12 @@ import { test, expect, authBundleFor, ADMIN } from "./helpers";
 // Resolve the unique name to the server-ID label in one DOM read. Retaining
 // an ordinal locator would follow a different row if the refreshed list sorts.
 async function inputByValue(scope: Locator, labelRe: RegExp, value: string): Promise<Locator> {
+  const row = scope.getByRole("region", { name: `Profile: ${value}`, exact: true });
+  const opener = row.getByRole("button", { name: `View details for ${value}`, exact: true });
+  await expect(row).toBeVisible();
+  if (await opener.count()) await opener.click();
+  const editor = row.getByRole("button", { name: `Edit profile ${value}`, exact: true });
+  if (await editor.count()) await editor.click();
   const inputs = scope.getByLabel(labelRe);
   let label: string | null = null;
   await expect
@@ -31,7 +37,7 @@ async function inputByValue(scope: Locator, labelRe: RegExp, value: string): Pro
 }
 
 function rowOf(input: Locator): Locator {
-  return input.locator('xpath=ancestor::div[contains(@class,"group")][1]');
+  return input.locator("xpath=ancestor::div[@role='region'][1]");
 }
 
 test.describe("profiles", () => {
@@ -104,14 +110,10 @@ test.describe("profiles", () => {
       .getByRole("dialog", { name: "Delete filament preset?" })
       .getByRole("button", { name: "Delete preset" })
       .click();
-    await expect
-      .poll(async () => {
-        const inputs = section.getByLabel(/^Filament preset name/);
-        const n = await inputs.count();
-        for (let i = 0; i < n; i++) if ((await inputs.nth(i).inputValue()) === name) return true;
-        return false;
-      })
-      .toBe(false);
+    // Counting inputs before reading each one races with the row disappearing.
+    await expect(
+      section.getByRole("region", { name: `Profile: ${name}`, exact: true }),
+    ).toHaveCount(0);
   });
 
   test("keeps an invalid local draft while another preset refreshes the catalog", async ({
@@ -189,14 +191,10 @@ test.describe("profiles", () => {
       .getByRole("dialog", { name: "Delete printer preset?" })
       .getByRole("button", { name: "Delete preset" })
       .click();
-    await expect
-      .poll(async () => {
-        const inputs = section.getByLabel(/^Printer preset name/);
-        const n = await inputs.count();
-        for (let i = 0; i < n; i++) if ((await inputs.nth(i).inputValue()) === name) return true;
-        return false;
-      })
-      .toBe(false);
+    // Counting inputs before reading each one races with the row disappearing.
+    await expect(
+      section.getByRole("region", { name: `Profile: ${name}`, exact: true }),
+    ).toHaveCount(0);
   });
   for (const kind of ["filament", "printer"] as const) {
     test(`two ${kind} preset editors recover a competing save`, async ({ page }) => {
@@ -227,6 +225,10 @@ test.describe("profiles", () => {
           await page.getByRole("tab", { name: /Printers/ }).click();
           await second.getByRole("tab", { name: /Printers/ }).click();
         }
+        await page.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
+        await page.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
+        await second.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
+        await second.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
         // An invalid number captures the second editor's base without allowing
         // blur between browser tabs to save it before the competing edit.
         await second.getByRole("textbox", { name: numericLabel, exact: true }).fill("-1");
@@ -266,6 +268,8 @@ test.describe("profiles", () => {
         expect((await revisedSave).status()).toBe(200);
         await second.reload();
         if (kind === "printer") await second.getByRole("tab", { name: /Printers/ }).click();
+        await second.getByRole("button", { name: `View details for ${name}`, exact: true }).click();
+        await second.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
         await expect(second.getByRole("textbox", { name: numericLabel, exact: true })).toHaveValue(
           nextValue,
         );

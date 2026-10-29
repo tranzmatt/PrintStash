@@ -954,6 +954,14 @@ class TestDeriveMesh:
 
 
 class TestDeriveGcode:
+    def test_persists_captured_slicer_settings(self, db_session: Session, stored) -> None:
+        artifact = stored("capture.gcode", (FIXTURES_DIR / "real_orca_ender3_benchy.gcode").read_bytes())
+
+        producers.derive_gcode(artifact.id)
+
+        output = json.loads(_rows(db_session, artifact.id)[DerivativeKind.METADATA].output_json)
+        assert output["slicer_settings"]["filament"]["filament_flow_ratio"] == "0.98"
+
     def test_derives_every_gcode_kind_from_one_read(
         self, db_session: Session, stored
     ) -> None:

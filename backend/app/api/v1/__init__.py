@@ -31,6 +31,7 @@ from app.api.v1 import (
     saved_views,
     setup,
     share,
+    slicer_profiles,
     spoolman,
     storage,
     storage_connections,
@@ -72,6 +73,7 @@ install_search_routes(api_router)
 api_router.include_router(files.router)
 api_router.include_router(filaments.router)
 api_router.include_router(printer_profiles.router)
+api_router.include_router(slicer_profiles.router)
 api_router.include_router(taxonomy.router)
 api_router.include_router(documents.router)
 api_router.include_router(printers.router)
