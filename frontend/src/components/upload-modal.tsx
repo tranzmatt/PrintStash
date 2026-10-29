@@ -608,7 +608,7 @@ export function UploadModal({
                   setMeshFile(f);
                   if (f) autoName(f);
                 }}
-                placeholder={uiText(".stl .3mf .obj .step .dxf")}
+                placeholder={uiText(".stl .3mf .obj .glb .ply .step .dxf")}
                 inputRef={meshRef}
               />
               <FileSlot

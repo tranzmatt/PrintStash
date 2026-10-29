@@ -363,7 +363,7 @@ def ingest_orca(
 @bounded_command
 def ingest_model(
     file: UploadFile = UploadFileParam(
-        ..., description="A .stl, .3mf, .obj, .step, .stp, or .dxf file"
+        ..., description="A .stl, .3mf, .obj, .glb, .ply, .step, .stp, or .dxf file"
     ),
     model_name: Optional[str] = Form(None, description="Display name for the model"),
     collection: Optional[str] = Form(

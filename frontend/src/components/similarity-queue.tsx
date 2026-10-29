@@ -457,7 +457,7 @@ export function SimilarityQueue({ modelId }: { modelId?: number }) {
                   onChange={(event) => setFilters({ file_type: event.target.value || undefined })}
                 >
                   <option value="">{t("similarity.allFormats")}</option>
-                  {["stl", "obj", "3mf", "step"].map((value) => (
+                  {["stl", "obj", "glb", "ply", "3mf", "step"].map((value) => (
                     <option key={value} value={value}>
                       {value.toUpperCase()}
                     </option>

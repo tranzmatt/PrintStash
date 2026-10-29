@@ -94,6 +94,8 @@ export function readLibraryFilters(
       "3mf",
       "gcode",
       "obj",
+      "glb",
+      "ply",
       "step",
       "dxf",
     ] as const),

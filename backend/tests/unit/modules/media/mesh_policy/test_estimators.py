@@ -33,7 +33,9 @@ from app.modules.media import (
     mesh_policy,
 )
 
-from .._meshes import _write_binary_stl, _write_obj
+from .._meshes import _glb_scene, _write_binary_stl, _write_glb_document, _write_obj
+
+_INDEXED = {"attributes": {"POSITION": 1}, "indices": 0}
 
 
 class TestEstimateTriangleCount:
@@ -178,6 +180,135 @@ class TestEstimateTriangleCount:
     def test_obj_without_faces_returns_none(self, tmp_path: Path) -> None:
         p = tmp_path / "points.obj"
         p.write_bytes(b"v 0 0 0\nv 1 0 0\nvn 0 0 1\n")
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_triangle_count_from_index_accessors(self, tmp_path: Path) -> None:
+        p = tmp_path / "part.glb"
+        _write_glb_document(
+            p, _glb_scene(nodes=[{"mesh": 0}], roots=[0], primitives=[_INDEXED])
+        )
+        assert mesh_policy.estimate_triangle_count(p) == 30
+
+    def test_glb_without_indices_counts_positions(self, tmp_path: Path) -> None:
+        p = tmp_path / "soup.glb"
+        primitive = {"attributes": {"POSITION": 1}}
+        _write_glb_document(
+            p, _glb_scene(nodes=[{"mesh": 0}], roots=[0], primitives=[primitive])
+        )
+        assert mesh_policy.estimate_triangle_count(p) == 4
+
+    def test_glb_strips_count_one_triangle_per_index_after_two(
+        self, tmp_path: Path
+    ) -> None:
+        p = tmp_path / "strip.glb"
+        strip = {**_INDEXED, "mode": 5}
+        _write_glb_document(
+            p, _glb_scene(nodes=[{"mesh": 0}], roots=[0], primitives=[strip])
+        )
+        assert mesh_policy.estimate_triangle_count(p) == 88
+
+    def test_glb_point_primitives_own_no_faces(self, tmp_path: Path) -> None:
+        p = tmp_path / "points.glb"
+        points = {**_INDEXED, "mode": 0}
+        _write_glb_document(
+            p, _glb_scene(nodes=[{"mesh": 0}], roots=[0], primitives=[points, _INDEXED])
+        )
+        assert mesh_policy.estimate_triangle_count(p) == 30
+
+    def test_glb_counts_every_placement_of_a_mesh(self, tmp_path: Path) -> None:
+        p = tmp_path / "instances.glb"
+        nodes = [{"mesh": 0}, {"mesh": 0}, {"mesh": 0}]
+        _write_glb_document(
+            p, _glb_scene(nodes=nodes, roots=[0, 1, 2], primitives=[_INDEXED])
+        )
+        assert mesh_policy.estimate_triangle_count(p) == 90
+
+    def test_glb_counts_a_shared_subtree_once_per_parent(self, tmp_path: Path) -> None:
+        # Ten levels of two references to the same child place the part 1,024
+        # times; the estimate must see all of them without walking each one.
+        nodes = [{"children": [index + 1, index + 1]} for index in range(10)]
+        nodes.append({"mesh": 0})
+        p = tmp_path / "lattice.glb"
+        _write_glb_document(
+            p, _glb_scene(nodes=nodes, roots=[0], primitives=[_INDEXED])
+        )
+        assert mesh_policy.estimate_triangle_count(p) == 30 * 1024
+
+    def test_glb_ignores_nodes_outside_the_default_scene(self, tmp_path: Path) -> None:
+        p = tmp_path / "hidden.glb"
+        nodes = [{"mesh": 0}, {"mesh": 0}]
+        _write_glb_document(
+            p, _glb_scene(nodes=nodes, roots=[0], primitives=[_INDEXED])
+        )
+        assert mesh_policy.estimate_triangle_count(p) == 30
+
+    def test_glb_with_a_cyclic_node_graph_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "cycle.glb"
+        nodes = [{"mesh": 0, "children": [1]}, {"children": [0]}]
+        _write_glb_document(
+            p, _glb_scene(nodes=nodes, roots=[0], primitives=[_INDEXED])
+        )
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_with_gpu_instancing_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "gpu-instanced.glb"
+        node = {"mesh": 0, "extensions": {"EXT_mesh_gpu_instancing": {}}}
+        _write_glb_document(
+            p, _glb_scene(nodes=[node], roots=[0], primitives=[_INDEXED])
+        )
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_without_a_scene_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "no-scene.glb"
+        document = _glb_scene(nodes=[{"mesh": 0}], roots=[0], primitives=[_INDEXED])
+        del document["scenes"]
+        _write_glb_document(p, document)
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_referencing_a_missing_accessor_returns_none(
+        self, tmp_path: Path
+    ) -> None:
+        p = tmp_path / "dangling.glb"
+        primitive = {"attributes": {"POSITION": 1}, "indices": 7}
+        _write_glb_document(
+            p, _glb_scene(nodes=[{"mesh": 0}], roots=[0], primitives=[primitive])
+        )
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_version_one_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "legacy.glb"
+        _write_glb_document(
+            p,
+            _glb_scene(nodes=[{"mesh": 0}], roots=[0], primitives=[_INDEXED]),
+            version=1,
+        )
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_without_the_container_magic_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "renamed.glb"
+        p.write_bytes(b'{"asset": {"version": "2.0"}}' + b" " * 16)
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_with_an_oversized_json_chunk_returns_none(
+        self, tmp_path: Path
+    ) -> None:
+        p = tmp_path / "huge-json.glb"
+        p.write_bytes(
+            b"glTF"
+            + struct.pack("<II", 2, 0)
+            + struct.pack("<II", mesh_policy._GLB_MAX_JSON_BYTES + 4, 0x4E4F534A)
+        )
+        assert mesh_policy.estimate_triangle_count(p) is None
+
+    def test_glb_with_unparseable_json_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "garbled.glb"
+        raw = b"{not json}  "
+        p.write_bytes(
+            b"glTF"
+            + struct.pack("<II", 2, 20 + len(raw))
+            + struct.pack("<II", len(raw), 0x4E4F534A)
+            + raw
+        )
         assert mesh_policy.estimate_triangle_count(p) is None
 
     def test_estimator_returns_none_for_unrecognised_suffix(

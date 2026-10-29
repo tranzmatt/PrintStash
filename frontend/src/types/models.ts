@@ -84,7 +84,7 @@ export interface FileRead {
   id: number;
   model_id: number;
   original_filename: string;
-  file_type: "stl" | "3mf" | "gcode" | "obj" | "step" | "dxf";
+  file_type: "stl" | "3mf" | "gcode" | "obj" | "glb" | "ply" | "step" | "dxf";
   version: number;
   gcode_revision_number?: number | null;
   size_bytes: number;
@@ -895,7 +895,7 @@ export interface SavedViewFilters {
   print_duration_max_s?: number | null;
 }
 
-export type ArtifactFileType = "stl" | "3mf" | "gcode" | "obj" | "step" | "dxf";
+export type ArtifactFileType = "stl" | "3mf" | "gcode" | "obj" | "glb" | "ply" | "step" | "dxf";
 
 export interface FacetValueRead {
   value: string;

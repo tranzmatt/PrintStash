@@ -577,6 +577,8 @@ function ModelDetailPresentation({
       f.file_type === "stl" ||
       f.file_type === "3mf" ||
       f.file_type === "obj" ||
+      f.file_type === "glb" ||
+      f.file_type === "ply" ||
       f.file_type === "step",
   );
   const hasGcode = gcodeFiles.length > 0;

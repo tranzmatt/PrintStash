@@ -365,7 +365,9 @@ class TestMetadata:
         assert len(benchies) == 1, f"dedup failed, got {benchies}"
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("file_type", ["stl", "obj"], ids=["stl", "obj"])
+    @pytest.mark.parametrize(
+        "file_type", ["stl", "obj", "glb", "ply"], ids=["stl", "obj", "glb", "ply"]
+    )
     async def test_retains_full_geometry_with_smaller_previews(
         self, api, tmp_path, e2e_db, monkeypatch, file_type
     ):
@@ -376,6 +378,8 @@ class TestMetadata:
         source = {
             "stl": mesh.export(file_type="stl"),
             "obj": mesh.export(file_type="obj").encode(),
+            "glb": mesh.export(file_type="glb"),
+            "ply": mesh.export(file_type="ply"),
         }[file_type]
         headers = await _setup_and_login(api, tmp_path)
         uploaded = await api.post(

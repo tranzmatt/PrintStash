@@ -7,6 +7,8 @@ const FILE_TYPE_TEXT = {
   stl: "STL",
   "3mf": "3MF",
   obj: "OBJ",
+  glb: "GLB",
+  ply: "PLY",
   step: "STEP",
   dxf: "DXF",
   gcode: "G-code",

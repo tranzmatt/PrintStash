@@ -200,7 +200,15 @@ def _list_related_queries():
         select(File.model_id, File.id)
         .where(
             File.model_id.in_(bindparam("model_ids", expanding=True)),  # type: ignore[union-attr]
-            File.file_type.in_([FileType.STL, FileType.THREE_MF, FileType.OBJ]),  # type: ignore[attr-defined]
+            File.file_type.in_(  # type: ignore[attr-defined]
+                [
+                    FileType.STL,
+                    FileType.THREE_MF,
+                    FileType.OBJ,
+                    FileType.GLB,
+                    FileType.PLY,
+                ]
+            ),
             live(File),
         )
         .order_by(File.model_id.asc(), File.version.desc()),

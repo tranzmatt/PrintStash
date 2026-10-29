@@ -259,6 +259,87 @@ class TestLoadMesh:
         assert calls == [((str(path),), {"process": False})]
 
 
+class TestLoadExchangeMeshes:
+    def test_reads_a_glb_in_millimetres_with_z_up(self, tmp_path: Path) -> None:
+        # glTF is metres with +Y up: a part 30 mm wide, 10 mm deep and 20 mm
+        # tall is stored as 0.03 x 0.02 (height on Y) x 0.01.
+        part = trimesh.creation.box(extents=[0.03, 0.02, 0.01])
+        part.apply_translation([0.0, 0.01, 0.0])
+        path = tmp_path / "part.glb"
+        path.write_bytes(part.export(file_type="glb"))
+
+        mesh = mesh_loading.load_mesh(path)
+
+        assert mesh is not None
+        np.testing.assert_allclose(mesh.extents, [30.0, 10.0, 20.0], atol=1e-4)
+        np.testing.assert_allclose(mesh.bounds[:, 2], [0.0, 20.0], atol=1e-4)
+
+    def test_keeps_glb_winding_outward(self, tmp_path: Path) -> None:
+        part = trimesh.creation.box(extents=[0.01, 0.01, 0.01])
+        path = tmp_path / "cube.glb"
+        path.write_bytes(part.export(file_type="glb"))
+
+        mesh = mesh_loading.load_mesh(path)
+
+        assert mesh is not None
+        assert mesh.volume == pytest.approx(1000.0, rel=1e-4)
+
+    def test_bakes_every_glb_placement(self, tmp_path: Path) -> None:
+        scene = trimesh.Scene()
+        part = trimesh.creation.box(extents=[0.01, 0.01, 0.01])
+        scene.add_geometry(part, geom_name="part", node_name="first")
+        offset = np.eye(4)
+        offset[0, 3] = 0.1
+        scene.graph.update(frame_to="second", matrix=offset, geometry="part")
+        path = tmp_path / "pair.glb"
+        path.write_bytes(scene.export(file_type="glb"))
+
+        mesh = mesh_loading.load_mesh(path)
+
+        assert mesh is not None
+        assert len(mesh.faces) == 24
+        np.testing.assert_allclose(mesh.bounds[:, 0], [-5.0, 105.0], atol=1e-4)
+
+    def test_reads_a_catalogued_glb_through_a_suffixless_alias(
+        self, tmp_path: Path
+    ) -> None:
+        part = trimesh.creation.box(extents=[0.01, 0.02, 0.03])
+        path = tmp_path / "blob"
+        path.write_bytes(part.export(file_type="glb"))
+
+        mesh = mesh_loading.load_mesh(path, file_type="glb")
+
+        assert mesh is not None
+        np.testing.assert_allclose(mesh.extents, [10.0, 30.0, 20.0], atol=1e-4)
+
+    def test_declines_an_unreadable_glb(self, tmp_path: Path) -> None:
+        path = tmp_path / "broken.glb"
+        path.write_bytes(b"glTF\x02\x00\x00\x00garbage")
+
+        assert mesh_loading.load_mesh(path) is None
+
+    def test_reads_a_ply_in_its_own_units(self, tmp_path: Path) -> None:
+        part = trimesh.creation.box(extents=[30, 20, 10])
+        path = tmp_path / "part.ply"
+        path.write_bytes(part.export(file_type="ply"))
+
+        mesh = mesh_loading.load_mesh(path)
+
+        assert mesh is not None
+        assert len(mesh.faces) == 12
+        np.testing.assert_allclose(mesh.extents, [30.0, 20.0, 10.0])
+
+    def test_declines_a_ply_point_cloud(self, tmp_path: Path) -> None:
+        path = tmp_path / "scan.ply"
+        path.write_bytes(
+            trimesh.PointCloud(np.random.default_rng(1).random((20, 3))).export(
+                file_type="ply"
+            )
+        )
+
+        assert mesh_loading.load_mesh(path) is None
+
+
 class TestLoadStepMeshIsolated:
     def test_reports_a_supervisor_memory_refusal_as_a_resource_limit(
         self, tmp_path: Path, monkeypatch

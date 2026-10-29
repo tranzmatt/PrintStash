@@ -48,9 +48,22 @@ GCODE_METADATA_RECIPE = 6
 GCODE_THUMBNAIL_RECIPE = 3
 TOOLPATH_RECIPE = 1
 VIEWER_STL_RECIPE = 3
-VIEWER_TYPES = (FileType.THREE_MF, FileType.OBJ, FileType.STEP)
+VIEWER_TYPES = (
+    FileType.THREE_MF,
+    FileType.OBJ,
+    FileType.GLB,
+    FileType.PLY,
+    FileType.STEP,
+)
 
-MESH_TYPES = (FileType.STL, FileType.THREE_MF, FileType.OBJ, FileType.STEP)
+MESH_TYPES = (
+    FileType.STL,
+    FileType.THREE_MF,
+    FileType.OBJ,
+    FileType.GLB,
+    FileType.PLY,
+    FileType.STEP,
+)
 BINARY_GCODE_SUFFIXES = (".bgcode", ".bgc")
 
 

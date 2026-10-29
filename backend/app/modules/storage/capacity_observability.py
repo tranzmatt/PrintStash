@@ -50,6 +50,8 @@ _CATEGORIES = frozenset(
         "stl",
         "3mf",
         "obj",
+        "glb",
+        "ply",
         "step",
         "gcode",
         "other",

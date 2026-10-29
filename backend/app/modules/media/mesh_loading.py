@@ -231,8 +231,6 @@ def _load_stl_mesh(path: Path) -> Trimesh:
 
 def load_mesh(path: Path, *, file_type: str | None = None) -> Trimesh | None:
     """Load a placed mesh; STL/3MF source refusals remain typed `GeometryError`."""
-    import trimesh
-
     suffix = mesh_policy.canonical_suffix(path, file_type)
     if suffix in (".step", ".stp"):
         return load_step_mesh(path)
@@ -240,6 +238,38 @@ def load_mesh(path: Path, *, file_type: str | None = None) -> Trimesh | None:
         return _load_3mf_mesh(path)
     if suffix == ".stl":
         return _load_stl_mesh(path)
+    if suffix == ".glb":
+        return _load_glb_mesh(path, file_type=file_type)
+    return _load_scene_mesh(path, suffix, file_type=file_type)
+
+
+# glTF 2.0 stores metres with +Y up; every other source and the print bed are
+# millimetres with +Z up. Rotate +90 degrees about X (y -> z, z -> -y) and scale,
+# so a GLB of a part measures, renders and fingerprints like its STL.
+_GLTF_TO_PRINT_FRAME = (
+    (1000.0, 0.0, 0.0, 0.0),
+    (0.0, 0.0, -1000.0, 0.0),
+    (0.0, 1000.0, 0.0, 0.0),
+    (0.0, 0.0, 0.0, 1.0),
+)
+
+
+def _load_glb_mesh(path: Path, *, file_type: str | None) -> Trimesh | None:
+    """A flattened GLB scene in the print frame shared with STL, 3MF and OBJ."""
+    import numpy as np
+
+    mesh = _load_scene_mesh(path, ".glb", file_type=file_type)
+    if mesh is None:
+        return None
+    mesh.apply_transform(np.asarray(_GLTF_TO_PRINT_FRAME))
+    return mesh
+
+
+def _load_scene_mesh(
+    path: Path, suffix: str, *, file_type: str | None
+) -> Trimesh | None:
+    """Load a scene-capable source through trimesh and bake its placements."""
+    import trimesh
 
     try:
         # Load the scene rather than asking trimesh for a mesh directly. 3MF

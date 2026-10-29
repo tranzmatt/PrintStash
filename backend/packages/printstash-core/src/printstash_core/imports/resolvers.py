@@ -20,6 +20,8 @@ MODEL_EXTENSIONS = (
     ".3mf",
     ".stl",
     ".obj",
+    ".glb",
+    ".ply",
     ".step",
     ".stp",
     ".gcode",

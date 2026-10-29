@@ -18,8 +18,10 @@ describe("filterValueText", () => {
   });
   it("writes file formats the way they name themselves", () => {
     expect(
-      ["stl", "3mf", "obj", "step", "dxf", "gcode"].map((v) => filterValueText("file_type", v)),
-    ).toEqual(["STL", "3MF", "OBJ", "STEP", "DXF", "G-code"]);
+      ["stl", "3mf", "obj", "glb", "ply", "step", "dxf", "gcode"].map((v) =>
+        filterValueText("file_type", v),
+      ),
+    ).toEqual(["STL", "3MF", "OBJ", "GLB", "PLY", "STEP", "DXF", "G-code"]);
   });
   it("keeps format names in every locale", () => {
     setLocale("es");

@@ -194,6 +194,12 @@ This page describes version 0.15.0, the latest published release (22 October
   came from. Restore does not silently retarget those objects to a different remote
   namespace. Valid pre-ledger local backups require explicit superuser adoption
   before they appear in the normal backup list.
+- GLB files are read as glTF 2.0 defines them, in metres with +Y up, and are
+  converted to millimetres with +Z up like every other source. A GLB exported
+  with millimetre values in metre units therefore measures 1,000 times too
+  large. Draco- or meshopt-compressed GLB, separate `.gltf` files, textures and
+  materials are not read. PLY has no unit, so its values are taken as
+  millimetres, and a PLY holding only a point cloud has no preview.
 - The G-code toolpath viewer is a browser-side visualization aid. It is not a
   slicer-grade simulator and does not validate firmware-specific macros,
   acceleration, pressure advance, or printer safety.

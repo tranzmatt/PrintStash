@@ -28,7 +28,16 @@ from app.modules.storage.storage_publication import (
     VerifiedPublication,
 )
 
-MESH_TYPES = frozenset({FileType.STL, FileType.THREE_MF, FileType.OBJ, FileType.STEP})
+MESH_TYPES = frozenset(
+    {
+        FileType.STL,
+        FileType.THREE_MF,
+        FileType.OBJ,
+        FileType.GLB,
+        FileType.PLY,
+        FileType.STEP,
+    }
+)
 
 
 class ThumbnailPublicationError(RuntimeError):

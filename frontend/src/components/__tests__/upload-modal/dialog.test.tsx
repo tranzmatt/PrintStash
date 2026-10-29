@@ -162,7 +162,7 @@ describe("UploadModal", () => {
     it("opens on the files tab", async () => {
       renderUpload();
 
-      expect(await screen.findByText(".stl .3mf .obj .step .dxf")).toBeInTheDocument();
+      expect(await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf")).toBeInTheDocument();
     });
 
     it("names every accepted G-code format", async () => {
@@ -174,7 +174,7 @@ describe("UploadModal", () => {
     it("offers a bulk drop", async () => {
       const user = userEvent.setup();
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.click(mode("Bulk"));
 
@@ -184,7 +184,7 @@ describe("UploadModal", () => {
     it("explains that URL destination values remain editable during review", async () => {
       const user = userEvent.setup();
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.click(mode("From URL"));
 
@@ -198,7 +198,7 @@ describe("UploadModal", () => {
     it("offers an archive import", async () => {
       const user = userEvent.setup();
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.click(mode("From ZIP"));
 
@@ -210,14 +210,14 @@ describe("UploadModal", () => {
     it("refuses an empty files upload", async () => {
       renderUpload();
 
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
       expect(screen.getByRole("button", { name: "Upload to vault" })).toBeDisabled();
     });
 
     it("refuses an empty URL import", async () => {
       const user = userEvent.setup();
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.click(mode("From URL"));
 
@@ -227,7 +227,7 @@ describe("UploadModal", () => {
     it("refuses an empty archive import", async () => {
       const user = userEvent.setup();
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.click(mode("From ZIP"));
 
@@ -237,7 +237,7 @@ describe("UploadModal", () => {
     it("accepts a URL once one is typed", async () => {
       const user = userEvent.setup();
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
       await user.click(mode("From URL"));
 
       await user.type(
@@ -256,7 +256,7 @@ describe("UploadModal", () => {
         auth: memberSession(),
         collections: [aCollection({ effective_role: "view" })],
       });
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
       await user.click(mode("From URL"));
       await user.type(
         screen.getByPlaceholderText(/Model page, collection/),
@@ -269,7 +269,7 @@ describe("UploadModal", () => {
 
   describe("importing from a URL", () => {
     async function pasteAndReview(user: ReturnType<typeof userEvent.setup>) {
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
       await user.click(mode("From URL"));
       await user.type(
         screen.getByPlaceholderText(/Model page, collection/),
@@ -356,7 +356,7 @@ describe("UploadModal", () => {
     it("accepts a mesh once one is chosen", async () => {
       const user = userEvent.setup();
       const { container } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.upload(fileInputs(container)[0], new File(["x"], "cube.stl"));
 
@@ -368,7 +368,7 @@ describe("UploadModal", () => {
       // one name the user already recognises.
       const user = userEvent.setup();
       const { container } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.upload(fileInputs(container)[0], new File(["x"], "cube.stl"));
 
@@ -378,7 +378,7 @@ describe("UploadModal", () => {
     it("accepts a G-code on its own", async () => {
       const user = userEvent.setup();
       const { container } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.upload(fileInputs(container)[1], new File(["x"], "part.gcode"));
 
@@ -388,7 +388,7 @@ describe("UploadModal", () => {
     it("accepts binary G-code on its own", async () => {
       const user = userEvent.setup();
       const { container } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.upload(fileInputs(container)[1], new File(["GCDE"], "part.bgcode"));
 
@@ -398,7 +398,7 @@ describe("UploadModal", () => {
     it("lets the user take a chosen file back out", async () => {
       const user = userEvent.setup();
       const { container } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
       await user.upload(fileInputs(container)[0], new File(["x"], "cube.stl"));
 
       await user.click(screen.getByRole("button", { name: /Remove/ }));
@@ -411,7 +411,7 @@ describe("UploadModal", () => {
       // block the user behind work they can already watch elsewhere.
       const user = userEvent.setup();
       const { container, onClose } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
       await user.upload(fileInputs(container)[0], new File(["x"], "cube.stl"));
 
       await user.click(screen.getByRole("button", { name: "Upload to vault" }));
@@ -526,7 +526,7 @@ describe("UploadModal", () => {
     it("tells the caller when the user dismisses it", async () => {
       const user = userEvent.setup();
       const { onClose } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.click(screen.getByRole("button", { name: "Close" }));
 
@@ -545,7 +545,7 @@ describe("UploadModal", () => {
       // Dragging out of a file manager is how most uploads start; requiring the
       // picker turns one gesture into three.
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       fireEvent.drop(meshSlot(), {
         dataTransfer: { files: [new File(["x"], "cube.stl")], types: ["Files"] },
@@ -558,7 +558,7 @@ describe("UploadModal", () => {
       // Accepting a G-code into the mesh slot uploads it to the wrong ingester,
       // which loses every slicer setting the file carries.
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       fireEvent.drop(meshSlot(), {
         dataTransfer: { files: [new File(["x"], "part.gcode")], types: ["Files"] },
@@ -569,7 +569,7 @@ describe("UploadModal", () => {
 
     it("says what the slot does take", async () => {
       renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       fireEvent.drop(meshSlot(), {
         dataTransfer: { files: [new File(["x"], "part.gcode")], types: ["Files"] },
@@ -583,7 +583,7 @@ describe("UploadModal", () => {
       // list, and treating it as a file would clear whatever was chosen.
       const user = userEvent.setup();
       const { container } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
       await user.upload(fileInputs(container)[0], new File(["x"], "cube.stl"));
 
       fireEvent.drop(meshSlot(), { dataTransfer: { files: [], types: [] } });
@@ -600,7 +600,7 @@ describe("UploadModal", () => {
       const { requestsWithMethod } = renderUpload({
         routes: { "POST /api/v1/tags": json({ id: 9, name: "spares", slug: "spares" }) },
       });
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.type(await screen.findByPlaceholderText(/Search or create/), "spares{Enter}");
 
@@ -616,7 +616,7 @@ describe("UploadModal", () => {
       // the filter list.
       const user = userEvent.setup();
       const { requestsWithMethod } = renderUpload();
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.type(await screen.findByPlaceholderText(/Search or create/), "Functional{Enter}");
 
@@ -628,7 +628,7 @@ describe("UploadModal", () => {
       renderUpload({
         routes: { "POST /api/v1/tags": json({ detail: "tag_exists" }, 409) },
       });
-      await screen.findByText(".stl .3mf .obj .step .dxf");
+      await screen.findByText(".stl .3mf .obj .glb .ply .step .dxf");
 
       await user.type(await screen.findByPlaceholderText(/Search or create/), "spares{Enter}");
 
