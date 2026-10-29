@@ -3,7 +3,12 @@ import "@testing-library/jest-dom/vitest";
 import { act, screen, waitFor } from "@testing-library/react";
 import { useQuery } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { multipartDetailOptions, useMultipartPublication } from "../multipart";
+import {
+  deleteLibraryMultipart,
+  multipartDetailOptions,
+  useMultipartPublication,
+} from "../multipart";
+import { getSessionVersion } from "@/lib/session-transport";
 import { clearLogin } from "@/lib/auth-store";
 import { queryKeys } from "@/lib/query-client";
 import { aMultipartModel } from "@/test-support/factories";
@@ -148,5 +153,58 @@ describe("Multipart detail owner", () => {
     await screen.findByText("Current");
     expect(await publish({ ...detail, name: "Older", edit_version: 2 })).toBe(false);
     expect(view.client.getQueryData(queryKeys.multipartModel(7))).toEqual(detail);
+  });
+});
+
+describe("deleteLibraryMultipart", () => {
+  it("ignores a deletion receipt after the session changes", async () => {
+    const pending = Promise.withResolvers<Response>();
+    const app = renderApp(<p>Library</p>, {
+      routes: { "DELETE /api/v1/multipart-models/7": () => pending.promise },
+    });
+    const command = deleteLibraryMultipart(app.client, 7, getSessionVersion());
+    const outcome = command.then(
+      () => null,
+      (error: Error) => error.message,
+    );
+    await waitFor(() => expect(app.requestsWithMethod("DELETE")).toHaveLength(1));
+    act(() => clearLogin());
+    app.client.setQueryData(queryKeys.multipartModel(7), { ...detail, name: "New session" });
+    pending.resolve(json(null, 204));
+    expect(await outcome).toBe("request_session_changed");
+    expect(app.client.getQueryData(queryKeys.multipartModel(7))).toMatchObject({
+      name: "New session",
+    });
+  });
+
+  it("retires a confirmed deleted grouping from the cache", async () => {
+    const app = renderApp(<p>Library</p>, {
+      seed: [[queryKeys.multipartModel(7), detail]],
+      routes: { "DELETE /api/v1/multipart-models/7": json(null, 204) },
+    });
+    await deleteLibraryMultipart(app.client, 7, getSessionVersion());
+    expect(app.client.getQueryData(queryKeys.multipartModel(7))).toBeUndefined();
+    expect(app.requestsWithMethod("DELETE").map((r) => r.url)).toEqual([
+      "/api/v1/multipart-models/7",
+    ]);
+  });
+  it("preserves a grouping after a rejected deletion", async () => {
+    const app = renderApp(<p>Library</p>, {
+      seed: [[queryKeys.multipartModel(7), detail]],
+      routes: { "DELETE /api/v1/multipart-models/7": json({ detail: "permission_denied" }, 403) },
+    });
+    await expect(deleteLibraryMultipart(app.client, 7, getSessionVersion())).rejects.toThrow(
+      "permission_denied",
+    );
+    expect(app.client.getQueryData(queryKeys.multipartModel(7))).toEqual(detail);
+  });
+  it("refuses deletion under a retired session", async () => {
+    const app = renderApp(<p>Library</p>);
+    const previous = getSessionVersion();
+    act(() => clearLogin());
+    await expect(deleteLibraryMultipart(app.client, 7, previous)).rejects.toThrow(
+      "request_session_changed",
+    );
+    expect(app.requestsWithMethod("DELETE")).toHaveLength(0);
   });
 });

@@ -80,6 +80,63 @@ const collection: CollectionRead = {
 };
 
 describe("MultipartModelDetailPage", () => {
+  it("deletes a multipart set directly from its detail header", async () => {
+    const user = userEvent.setup();
+    const app = renderApp(<MultipartModelDetailPage />, {
+      at: "/multipart-models/7?return=%2F%3Ftype%3Dmultipart",
+      routePath: "/multipart-models/:id",
+      routes: {
+        "GET /api/v1/multipart-models/7": json(aMultipart()),
+        "DELETE /api/v1/multipart-models/7": json(null, 204),
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "Delete set" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete set",
+      }),
+    );
+    await waitFor(() =>
+      expect(app.requestsWithMethod("DELETE").map((r) => r.url)).toEqual([
+        "/api/v1/multipart-models/7",
+      ]),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Desk organiser" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the detail available after deletion fails", async () => {
+    const user = userEvent.setup();
+    renderApp(<MultipartModelDetailPage />, {
+      at: "/multipart-models/7",
+      routePath: "/multipart-models/:id",
+      routes: {
+        "GET /api/v1/multipart-models/7": json(aMultipart()),
+        "DELETE /api/v1/multipart-models/7": json({ detail: "permission_denied" }, 403),
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "Delete set" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete set",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Desk organiser" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete set" })).toBeEnabled();
+  });
+
+  it("hides direct deletion for viewers", async () => {
+    renderApp(<MultipartModelDetailPage />, {
+      at: "/multipart-models/7",
+      routePath: "/multipart-models/:id",
+      routes: { "GET /api/v1/multipart-models/7": json(aMultipart({ effective_role: "view" })) },
+    });
+    await screen.findByRole("heading", { name: "Desk organiser" });
+    expect(screen.queryByRole("button", { name: "Delete set" })).not.toBeInTheDocument();
+  });
+
   it.each(["admin", "view"] as const)(
     "offers contextual build history with %s access",
     async (effective_role) => {

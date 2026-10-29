@@ -1,10 +1,10 @@
 import { refreshLibraryMetadata } from "./metadata";
 import { acceptsEditingSnapshot } from "./editing";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { queryOptions, useQueryClient } from "@tanstack/react-query";
-import { getMultipartModel } from "@/lib/api/multipart-models";
+import { type QueryClient, queryOptions, useQueryClient } from "@tanstack/react-query";
+import { deleteMultipartModel, getMultipartModel } from "@/lib/api/multipart-models";
 import { onAuthChange } from "@/lib/auth-store";
-import { getSessionVersion } from "@/lib/session-transport";
+import { getSessionVersion, requireSessionVersion } from "@/lib/session-transport";
 import { queryKeys } from "@/lib/query-client";
 import type { MultipartModelRead } from "@/types";
 
@@ -72,4 +72,17 @@ export function useMultipartPublication(id: number) {
     [client, id, isCurrent, observedEpoch, session],
   );
   return { publish, active: session === current, isCurrent };
+}
+
+/** Only a confirmed grouping deletion retires its detail and derived metadata. */
+export async function deleteLibraryMultipart(client: QueryClient, id: number, session: number) {
+  requireSessionVersion(session);
+  await client.cancelQueries({ queryKey: queryKeys.multipartModel(id), exact: true });
+  requireSessionVersion(session);
+  await deleteMultipartModel(id);
+  requireSessionVersion(session);
+  await client.cancelQueries({ queryKey: queryKeys.multipartModel(id), exact: true });
+  requireSessionVersion(session);
+  client.removeQueries({ queryKey: queryKeys.multipartModel(id), exact: true });
+  refreshLibraryMetadata(client, session);
 }

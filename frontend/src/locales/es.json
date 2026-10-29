@@ -1532,7 +1532,7 @@
   "build.snapshotHelp": "Se guarda una copia de las piezas y cantidades. Los cambios posteriores en la composición no alteran esta fabricación.",
   "build.showArchived": "Mostrar fabricaciones archivadas",
   "build.refresh": "Actualizar",
-  "build.empty": "Todavía no hay fabricaciones aquí. Abre un modelo multipieza para crear una.",
+  "build.empty": "Todavía no hay fabricaciones.",
   "build.complete": "Todas las piezas necesarias están confirmadas",
   "build.inProgress": "Quedan piezas pendientes",
   "build.previous": "Anterior",
@@ -4592,5 +4592,14 @@
   "modelHashes.geometryHelp": "Huella de la malla completa a escala física. Una huella coincidente por sí sola no demuestra que la geometría sea idéntica.",
   "modelHashes.copy": "Copiar {kind} de {filename}",
   "modelHashes.copied": "SHA-256 copiado",
-  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256."
+  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256.",
+  "multipart.deleteSelectedHelp": "Los conjuntos multiparte seleccionados se eliminan definitivamente. Sus modelos, archivos, revisiones y guías permanecen en tu biblioteca.",
+  "multipart.mixedDeleteHelp": "Los conjuntos multiparte y las carpetas seleccionados no se pueden restaurar. Solo se envían a la papelera los modelos seleccionados directamente o incluidos en las carpetas seleccionadas. Los demás modelos de los conjuntos permanecen en tu biblioteca.",
+  "library.selectAllMatching": "Seleccionar todos los elementos coincidentes",
+  "library.matchingSelected": "{count} elementos coincidentes seleccionados",
+  "build.backToSet": "Volver al conjunto multiparte",
+  "build.plan": "Detalles de la fabricación",
+  "build.planHelp": "Asigna un nombre y elige cuántos objetos completos fabricar.",
+  "build.sourceSet": "Conjunto multiparte de origen",
+  "build.archivedEmptyHelp": "Las fabricaciones archivadas aparecerán aquí."
 }

@@ -7,6 +7,7 @@ import {
   folderMove,
   type FolderMove,
 } from "@/lib/folder-transition";
+import { deleteLibraryMultipart } from "@/features/library/multipart";
 import { useLibraryNavigationReads } from "@/features/library/navigation-reads";
 import {
   collectionIdentity,
@@ -763,6 +764,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     // An already empty selection must not render the departing grid urgently
     // before Router can commit the destination and start its critical reads.
     setSelectedIds((current) => (current.size === 0 ? current : new Set()));
+    setSelectedMultipartRows((current) => (current.size === 0 ? current : new Map()));
     const params = new URLSearchParams(searchParams.toString());
     params.delete("cid");
     if (id !== null) params.set("cid", String(id));
@@ -775,6 +777,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   function handleLibraryViewChange(view: LibraryViewMode) {
     localStorage.setItem(LIBRARY_VIEW_KEY, view);
     setSelectedIds(new Set());
+    setSelectedMultipartRows(new Map());
     const params = new URLSearchParams(searchParams.toString());
     params.set("v", "models");
     params.set("type", view);
@@ -833,6 +836,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     setFiltersExpanded(null);
     setActiveSavedViewId(view.id);
     setSelectedIds(new Set());
+    setSelectedMultipartRows(new Map());
     writeFilterUrl(view.filters);
   }
 
@@ -1132,13 +1136,30 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   const hasMore = snapshot?.hasMore ?? false;
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedMultipartRows, setSelectedMultipartRows] = useState<
+    Map<number, MultipartModelListItem>
+  >(new Map());
+  const selectionEntry = useRef<LibraryEntry | null>(entry);
+  useLayoutEffect(() => {
+    selectionEntry.current = entry;
+    return () => {
+      selectionEntry.current = null;
+    };
+  }, [entry]);
+  useLayoutEffect(() => {
+    setSelectedMultipartRows((current) => (current.size === 0 ? current : new Map()));
+  }, [libraryView, selectedCollection, selectedCollectionId, docView]);
   // Selected folders are kept as the rows they were picked from: they may leave
   // the view (another folder opened) and still need their names and paths.
   const [selectedCollectionRows, setSelectedCollectionRows] = useState<
     Map<number, CollectionNodeRead>
   >(new Map());
   const [keyboardSelection, setKeyboardSelection] = useState(false);
-  const selectMode = keyboardSelection || selectedIds.size > 0 || selectedCollectionRows.size > 0;
+  const selectMode =
+    keyboardSelection ||
+    selectedIds.size > 0 ||
+    selectedCollectionRows.size > 0 ||
+    selectedMultipartRows.size > 0;
 
   // What turned up since this view was last read eases in once; everything
   // already on screen keeps its place. A different folder starts a new reading.
@@ -1398,6 +1419,25 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     });
   }, []);
 
+  const lastSelectedMultipartId = useRef<number | null>(null);
+  function toggleMultipartSelect(id: number, range = false) {
+    const anchor = lastSelectedMultipartId.current;
+    const from =
+      anchor === null ? -1 : visibleMultipartModels.findIndex((item) => item.id === anchor);
+    const to = visibleMultipartModels.findIndex((item) => item.id === id);
+    const rows =
+      range && from >= 0 && to >= 0
+        ? visibleMultipartModels.slice(Math.min(from, to), Math.max(from, to) + 1)
+        : visibleMultipartModels.filter((item) => item.id === id);
+    lastSelectedMultipartId.current = id;
+    setSelectedMultipartRows((current) => {
+      const next = new Map(current);
+      if (!range && next.has(id)) next.delete(id);
+      else for (const row of rows) next.set(row.id, row);
+      return next;
+    });
+  }
+
   function toggleCollectionSelect(id: number) {
     const row = visibleCollections.find((collection) => collection.id === id);
     setSelectedCollectionRows((prev) => {
@@ -1410,11 +1450,15 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
 
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
+    setSelectedMultipartRows(new Map());
     setSelectedCollectionRows(new Map());
     setKeyboardSelection(false);
+    lastSelectedMultipartId.current = null;
+    lastSelectedModelId.current = null;
   }, []);
 
   function selectAllVisible() {
+    setSelectedMultipartRows(new Map(visibleMultipartModels.map((item) => [item.id, item])));
     setSelectedIds(new Set(sortedModels.map((m) => m.id)));
     selectedModelSnapshot.current = new Map(sortedModels.map((model) => [model.id, model]));
     setSelectedCollectionRows(
@@ -1423,22 +1467,31 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   }
 
   async function selectAllMatching() {
+    const selectionOrigin = entry;
+    const isCurrent = () =>
+      selectionEntry.current === selectionOrigin && selectionOrigin.session === getSessionVersion();
     setSelectingAll(true);
     try {
       const all: ModelListItem[] = [];
+      const multipart: MultipartModelListItem[] = [];
       let cursor: string | undefined;
       do {
         const page = await listLibraryPage({ ...browseParams, cursor });
+        if (!isCurrent()) return;
+        multipart.push(
+          ...page.items.flatMap((item) => (item.kind === "multipart" ? [item.multipart] : [])),
+        );
         all.push(...page.items.flatMap((item) => (item.kind === "model" ? [item.model] : [])));
         cursor = page.next_cursor ?? undefined;
       } while (cursor !== undefined);
       setSelectedIds(new Set(all.map((model) => model.id)));
+      setSelectedMultipartRows(new Map(multipart.map((item) => [item.id, item])));
       selectedModelSnapshot.current = new Map(all.map((model) => [model.id, model]));
-      toast.info(uiText("{value1} matching models selected", { value1: String(all.length) }));
+      toast.info(uiText("library.matchingSelected", { count: all.length + multipart.length }));
     } catch (error) {
-      toast.error(error);
+      if (isCurrent()) toast.error(error);
     } finally {
-      setSelectingAll(false);
+      if (isCurrent()) setSelectingAll(false);
     }
   }
 
@@ -1466,7 +1519,8 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
     () => [...selectedCollectionRows.values()],
     [selectedCollectionRows],
   );
-  const selectionCount = selectedIds.size + selectedCollectionRows.size;
+  const selectionCount =
+    selectedIds.size + selectedCollectionRows.size + selectedMultipartRows.size;
 
   useEffect(() => {
     function onShortcut(event: KeyboardEvent) {
@@ -1617,14 +1671,35 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
   }
 
   async function deleteSelection() {
+    if (batchBusy) return;
+    const selectionOrigin = entry;
+    const session = getSessionVersion();
+    const isCurrent = () =>
+      selectionEntry.current === selectionOrigin && session === getSessionVersion();
+    const remainingMultipart = new Map(selectedMultipartRows);
     setBatchBusy(true);
     let succeeded = 0;
     let failed = 0;
     const deletedModelIds: number[] = [];
     const failureDetails: string[] = [];
     try {
+      for (const item of selectedMultipartRows.values()) {
+        if (!isCurrent()) return;
+        try {
+          await deleteLibraryMultipart(queryClient, item.id, session);
+          if (!isCurrent()) return;
+          remainingMultipart.delete(item.id);
+          succeeded += 1;
+        } catch (error) {
+          if (!isCurrent()) return;
+          failed += 1;
+          failureDetails.push(`${item.name}: ${userMessage(error)}`);
+        }
+      }
+      setSelectedMultipartRows(remainingMultipart);
       if (selectedIdList.length) {
         const result = await batchInChunks(batchDeleteModels);
+        if (!isCurrent()) return;
         succeeded += result.succeeded_count;
         failed += result.failed_count;
         deletedModelIds.push(...result.succeeded_ids);
@@ -1639,7 +1714,9 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
       }
       for (const collection of selectedCollections) {
         try {
+          if (!isCurrent()) return;
           await deleteCollection(collection.id, true);
+          if (!isCurrent()) return;
           succeeded += 1;
         } catch {
           failed += 1;
@@ -1668,12 +1745,15 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
           uiText("{value1} skipped", { value1: String(failed) }),
           failureDetails.join(" · "),
         );
-      refresh();
       clearSelection();
+      setSelectedMultipartRows(remainingMultipart);
     } catch (error) {
-      toast.error(error);
+      if (isCurrent()) toast.error(error);
     } finally {
-      setBatchBusy(false);
+      if (isCurrent()) {
+        if (succeeded > 0) void refresh();
+        setBatchBusy(false);
+      }
     }
   }
 
@@ -1925,6 +2005,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
 
   function clearAllFilters() {
     setSelectedIds(new Set());
+    setSelectedMultipartRows(new Map());
     const params = new URLSearchParams(searchParams.toString());
     params.delete("q");
     params.delete("c");
@@ -2833,7 +2914,10 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                     className="font-medium text-primary hover:underline"
                   >
                     {uiText("Select all on screen (")}
-                    {sortedModels.length + visibleCollections.length})
+                    {sortedModels.length +
+                      visibleMultipartModels.length +
+                      visibleCollections.length}
+                    )
                   </button>
                   <button
                     type="button"
@@ -2841,7 +2925,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                     disabled={selectingAll}
                     className="font-medium text-primary hover:underline disabled:opacity-50"
                   >
-                    {selectingAll ? uiText("Selecting…") : uiText("Select all matching models")}
+                    {selectingAll ? uiText("Selecting…") : uiText("library.selectAllMatching")}
                   </button>
                 </>
               )}
@@ -3054,6 +3138,9 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                           origin={snapshot?.entry}
                           availableTags={tags}
                           onDataChange={refresh}
+                          selectable={selectMode}
+                          selected={selectedMultipartRows.has(item.value.id)}
+                          onToggleSelect={auth.isAuthenticated ? toggleMultipartSelect : undefined}
                         />
                       ) : (
                         <ModelCard
@@ -3131,7 +3218,9 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
                       item.kind === "multipart" ? (
                         <MultipartModelListRow
                           key={`multipart-${item.value.id}`}
-                          selectionSpace={auth.isAuthenticated}
+                          selectable={selectMode}
+                          selected={selectedMultipartRows.has(item.value.id)}
+                          onToggleSelect={auth.isAuthenticated ? toggleMultipartSelect : undefined}
                           item={item.value}
                           collectionLabel={item.value.collection_label}
                           returnTo={currentLibraryHref}
@@ -3179,6 +3268,7 @@ export function ModelBrowser({ initial }: { initial?: BrowserInitialData }) {
         {docView === "models" && (
           <BatchToolbar
             modelCount={selectedIds.size}
+            multipartCount={selectedMultipartRows.size}
             selectedCollections={selectedCollections}
             tags={tags}
             busy={batchBusy || currentBatchRecovery !== null}
@@ -3407,13 +3497,17 @@ function CollectionListRow({
 }
 
 function MultipartModelListRow({
-  selectionSpace,
+  selectable,
+  selected,
+  onToggleSelect,
   item,
   collectionLabel,
   returnTo,
   origin,
 }: {
-  selectionSpace: boolean;
+  selectable: boolean;
+  selected: boolean;
+  onToggleSelect?: (id: number, range?: boolean) => void;
   item: MultipartModelListItem;
   collectionLabel: string | null;
   returnTo: string;
@@ -3426,9 +3520,25 @@ function MultipartModelListRow({
       origin={origin}
       href={`/multipart-models/${item.id}?${new URLSearchParams({ return: returnTo }).toString()}`}
       aria-label={item.name}
-      className="group flex items-center gap-2 border-b border-border px-4 py-3 transition-colors hover:bg-muted active:bg-muted md:gap-3"
+      onClick={(event) => {
+        if (selectable) {
+          event.preventDefault();
+          onToggleSelect?.(item.id, event.shiftKey);
+        }
+      }}
+      className={cn(
+        "group flex items-center gap-2 border-b border-border px-4 py-3 transition-colors active:bg-muted md:gap-3",
+        selected ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+      )}
     >
-      {selectionSpace && <span className="w-5 shrink-0" aria-hidden />}
+      {onToggleSelect && (
+        <Checkbox
+          className="shrink-0"
+          checked={selected}
+          onChange={() => onToggleSelect(item.id)}
+          ariaLabel={uiText("Select {value1}", { value1: item.name })}
+        />
+      )}
       <ProtectedThumbnail
         path={item.cover_thumbnail_url}
         alt=""

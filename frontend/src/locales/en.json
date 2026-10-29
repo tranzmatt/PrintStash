@@ -1532,7 +1532,7 @@
   "build.snapshotHelp": "This saves a copy of the pieces and quantities. Later composition changes do not alter this build.",
   "build.showArchived": "Show archived builds",
   "build.refresh": "Refresh",
-  "build.empty": "No builds here yet. Open a multipart model to create one.",
+  "build.empty": "No builds here yet.",
   "build.complete": "All required pieces confirmed",
   "build.inProgress": "Pieces still needed",
   "build.previous": "Previous",
@@ -4592,5 +4592,14 @@
   "modelHashes.geometryHelp": "Whole-mesh fingerprint at physical scale. A matching fingerprint alone does not prove identical geometry.",
   "modelHashes.copy": "Copy {kind} for {filename}",
   "modelHashes.copied": "SHA-256 copied",
-  "modelHashes.copyFailed": "Could not copy SHA-256."
+  "modelHashes.copyFailed": "Could not copy SHA-256.",
+  "multipart.deleteSelectedHelp": "Selected multipart sets are permanently removed. Their models, files, revisions and guides stay in your library.",
+  "multipart.mixedDeleteHelp": "Selected multipart sets and folders cannot be restored. Only models selected directly or inside selected folders move to Trash. Other models referenced by the sets stay in your library.",
+  "library.selectAllMatching": "Select all matching items",
+  "library.matchingSelected": "{count} matching items selected",
+  "build.backToSet": "Back to multipart set",
+  "build.plan": "Build details",
+  "build.planHelp": "Name this build and choose how many complete objects to make.",
+  "build.sourceSet": "Source multipart set",
+  "build.archivedEmptyHelp": "Archived builds will appear here when you archive a run."
 }

@@ -1,11 +1,9 @@
 "use client";
 
-import { refreshLibraryMetadata } from "@/features/library/metadata";
-
 import type { EditingBase } from "@/types/editing";
 
 import { LibraryBackLink } from "@/features/library/navigation";
-import { useMultipartPublication } from "@/features/library/multipart";
+import { deleteLibraryMultipart, useMultipartPublication } from "@/features/library/multipart";
 import { getSessionVersion, requireSessionVersion } from "@/lib/session-transport";
 import { ApiError } from "@/lib/errors";
 import { uiText } from "@/lib/locale";
@@ -14,6 +12,8 @@ import { useUiLocale } from "@/lib/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  History,
+  Boxes,
   ChevronRight,
   Folder,
   CheckSquare,
@@ -31,7 +31,7 @@ import {
 
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CollectionPicker } from "@/components/collection-picker";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
@@ -44,7 +44,6 @@ import { useCollectionChildren, useCollectionLookup, useTags } from "@/lib/queri
 import {
   getMultipartModel,
   deleteDocument,
-  deleteMultipartModel,
   deleteMultipartModelCover,
   replaceMultipartModelTags,
   saveMultipartModel,
@@ -1158,11 +1157,11 @@ function MultipartDetail({ id }: { id: number }) {
   async function remove() {
     if (!model || !canEdit || busy || !isCurrent()) return;
     setBusy(true);
+    setSaveError(null);
     try {
       const session = getSessionVersion();
-      await deleteMultipartModel(model.id);
+      await deleteLibraryMultipart(queryClient, model.id, session);
       if (!isCurrent()) return;
-      refreshLibraryMetadata(queryClient, session);
       toast.success(t("multipart.deleted"));
       router.push(backHref);
     } catch (cause) {
@@ -1299,11 +1298,14 @@ function MultipartDetail({ id }: { id: number }) {
           <LibraryBackLink
             href={model.collection ? `/?c=${encodeURIComponent(model.collection)}` : "/"}
             aria-label={t("multipart.title")}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded text-on-surface-variant transition-colors duration-press hover:bg-surface-container-high"
+            className={buttonVariants({ variant: "outline", size: "icon", className: "shrink-0" })}
           >
             <ArrowLeft className="h-5 w-5" />
           </LibraryBackLink>
           <div className="min-w-0">
+            <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Boxes className="h-3.5 w-3.5" aria-hidden /> {t("multipart.badge")}
+            </p>
             <h1 className="break-words text-xl font-semibold leading-tight text-on-surface">
               {model.name}
             </h1>
@@ -1353,20 +1355,39 @@ function MultipartDetail({ id }: { id: number }) {
             </Button>
           </div>
         ) : (
-          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
-            <Link className="text-sm text-primary underline" href="/builds">
-              {t("build.history")}
-            </Link>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <Button asChild variant="outline" size="sm" className="h-11 sm:h-9">
+              <Link href="/builds">
+                <History className="h-4 w-4" />
+                {t("build.history")}
+              </Link>
+            </Button>
             {canEdit && (
               <>
-                <Link
-                  className="text-sm text-primary underline"
-                  href={`/builds?multipart=${model.id}`}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={beginEditing}
+                  className="h-11 sm:h-9"
                 >
-                  {t("build.create")}
-                </Link>
-                <Button type="button" size="sm" onClick={beginEditing}>
                   <Pencil className="h-4 w-4" /> {t("multipart.edit")}
+                </Button>
+                <Button asChild size="sm" className="h-11 sm:h-9">
+                  <Link href={`/builds?multipart=${model.id}`}>
+                    <Plus className="h-4 w-4" />
+                    {t("build.create")}
+                  </Link>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-9"
+                  disabled={busy}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4" /> {t("multipart.deleteConfirm")}
                 </Button>
               </>
             )}
