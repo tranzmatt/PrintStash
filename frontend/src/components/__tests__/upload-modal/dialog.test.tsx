@@ -2,7 +2,7 @@
  * Four ways to get something into the library, behind one dialog.
  *
  * Each mode posts a different request and, more importantly, *stops in a
- * different place*. Files, Bulk, and From ZIP queue work and close; the ZIP
+ * different place*. Files, Bulk, and From archive queue work and close; the ZIP
  * selection is available from Tasks when preparation completes. From URL
  * opens Pending Imports for review.
  *
@@ -78,7 +78,7 @@ function renderUpload(
 }
 
 /** Choose one of the four ways in. */
-function mode(name: "Files" | "Bulk" | "From URL" | "From ZIP") {
+function mode(name: "Files" | "Bulk" | "From URL" | "From archive") {
   return screen.getByRole("button", { name: new RegExp(`\\s*${name}\\s*`) });
 }
 
@@ -202,9 +202,9 @@ describe("UploadModal", () => {
       renderUpload();
       await screen.findByText(".stl .3mf .obj .glb .gltf .ply .3dm .fbx .step .dxf");
 
-      await user.click(mode("From ZIP"));
+      await user.click(mode("From archive"));
 
-      expect(screen.getByText(".zip")).toBeInTheDocument();
+      expect(screen.getByText(".zip .7z .rar .tar .tgz")).toBeInTheDocument();
     });
   });
 
@@ -231,9 +231,9 @@ describe("UploadModal", () => {
       renderUpload();
       await screen.findByText(".stl .3mf .obj .glb .gltf .ply .3dm .fbx .step .dxf");
 
-      await user.click(mode("From ZIP"));
+      await user.click(mode("From archive"));
 
-      expect(screen.getByRole("button", { name: "Prepare ZIP" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Prepare archive" })).toBeDisabled();
     });
 
     it("accepts a URL once one is typed", async () => {

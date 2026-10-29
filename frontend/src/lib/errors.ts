@@ -197,7 +197,7 @@ const ERROR_MESSAGES = {
   login_failed: "MakerWorld login failed. Try again later.",
   network_error: "Couldn't reach MakerWorld. Check your connection and try again.",
   // Portable archive / ZIP import
-  archive_invalid: "That file isn't a valid .zip archive.",
+  archive_invalid: "That file isn't a valid archive.",
   archive_not_found: "This archive is no longer available — re-upload it.",
   archive_too_many_entries: "The archive has too many files.",
   archive_entry_too_large: "A file inside the archive is too large.",
@@ -205,6 +205,7 @@ const ERROR_MESSAGES = {
   archive_blob_hash_mismatch:
     "An Artifact changed or failed its integrity check. Run a Vault audit, then try again.",
   archive_unsafe_entry: "The archive contains an unsafe file path.",
+  archive_format_unavailable: "This archive is compressed in a way this server can't extract.",
   // Collection import
   collection_import_failed:
     "None of the collection's models could be imported. Check that the source is reachable, and for MakerWorld that the account is connected under Settings → Imports.",

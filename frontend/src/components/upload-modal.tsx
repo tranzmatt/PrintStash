@@ -42,6 +42,7 @@ import {
   isMeshFile,
   mergeBulkItems,
   walkEntries,
+  ARCHIVE_ACCEPT,
   MESH_ACCEPT,
   type BulkItem,
 } from "@/lib/bulk-upload";
@@ -657,11 +658,11 @@ export function UploadModal({
             </div>
           ) : (
             <FileSlot
-              label={uiText("ZIP archive")}
-              accept=".zip"
+              label={uiText("Archive")}
+              accept={ARCHIVE_ACCEPT}
               file={zipFile}
               setFile={setZipFile}
-              placeholder={uiText(".zip")}
+              placeholder={uiText(".zip .7z .rar .tar .tgz")}
               inputRef={zipRef}
             />
           )}
@@ -911,7 +912,7 @@ export function UploadModal({
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  {mode === "zip" ? uiText("Preparing ZIP…") : uiText("Working…")}
+                  {mode === "zip" ? uiText("Preparing archive…") : uiText("Working…")}
                 </>
               ) : mode === "bulk" ? (
                 bulkFiles.length > 0 ? (
@@ -922,7 +923,7 @@ export function UploadModal({
               ) : mode === "url" ? (
                 uiText("Review URL")
               ) : mode === "zip" ? (
-                uiText("Prepare ZIP")
+                uiText("Prepare archive")
               ) : onboarding ? (
                 t("setup.addModel")
               ) : (

@@ -57,7 +57,7 @@ read the [upgrade notes](#project-status--roadmap) first.
 - **Library:** Collections, tags, filters, favorites, saved views, and multipart
   models. Optional [AI search](https://www.printstash.org/en/docs/guides/ai-search/)
   supports local models and compatible inference servers.
-- **Imports:** Upload files and ZIPs, index folders or NAS in place, and review
+- **Imports:** Upload files and archives (ZIP, 7z, RAR, TAR), index folders or NAS in place, and review
   [browser captures](https://www.printstash.org/en/docs/guides/browser-capture/).
   Remote sources are read-only; mounted folders can accept new files without
   overwriting originals.

@@ -10,12 +10,11 @@ Job id as its token, so any process can serve it and a restart loses nothing.
 from __future__ import annotations
 
 import json
-import zipfile
 from collections.abc import Callable
 from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from printstash_core.files import ArchiveEntry
 from starlette.concurrency import run_in_threadpool
@@ -246,6 +245,26 @@ def _consume_archive(
             )
 
 
+def _consume_downloaded_archive(
+    batch: BatchSession,
+    staged: Path,
+    archive: importer.ArchiveFormat,
+    **consume: Any,
+) -> None:
+    """Consume every model in a downloaded archive through its ZIP view."""
+    with importer.zip_view(
+        staged,
+        archive,
+        owner=scratch_windows.JobWindowOwner(
+            batch.context.job_id, batch.context.execution_epoch
+        ),
+        session_factory=batch.factory,
+    ) as view:
+        entries = importer.inspect_archive(view)
+        names = [entry.name for entry in entries if entry.file_type]
+        _consume_archive(batch, view, names, **consume)
+
+
 async def _consume_download(
     batch: BatchSession,
     download_url: str,
@@ -277,17 +296,13 @@ async def _consume_download(
         try:
             checkpoint(force=True)
             suffix = Path(filename).suffix.lower()
-            if suffix == ".zip" or (
-                suffix not in MESH_SUFFIXES | GCODE_SUFFIXES
-                and zipfile.is_zipfile(staged)
-            ):
-                entries = await run_in_threadpool(importer.inspect_archive, staged)
-                names = [entry.name for entry in entries if entry.file_type]
+            archive = importer.archive_format(staged, filename)
+            if archive is not None:
                 await run_in_threadpool(
-                    _consume_archive,
+                    _consume_downloaded_archive,
                     batch,
                     staged,
-                    names,
+                    archive,
                     source_id=spec.descriptor.source_id,
                     source_url=source_url,
                     member_title=member_title,
@@ -588,16 +603,21 @@ async def import_from_url(
             # extensions on direct download links). A .3mf is itself a zip container but
             # is a single model, so route it (and other known mesh/g-code suffixes) to
             # direct ingestion rather than the archive-manifest flow.
-            if suffix == ".zip" or (
-                zipfile.is_zipfile(staged)
-                and suffix not in MESH_SUFFIXES
-                and suffix not in GCODE_SUFFIXES
-            ):
+            archive = importer.archive_format(staged, original_filename)
+            if archive is not None:
                 try:
                     job_context.update(
                         stage="inspecting", current_item=original_filename
                     )
-                    entries = await run_in_threadpool(importer.inspect_archive, staged)
+                    entries = await run_in_threadpool(
+                        importer.inspect_archive_as_zip,
+                        staged,
+                        archive,
+                        owner=scratch_windows.JobWindowOwner(
+                            job_id, job_context.execution_epoch
+                        ),
+                        session_factory=session_factory,
+                    )
                 except importer.ImportError_ as exc:
                     importer.discard_staged_files(
                         (staged,), strict=True, session_factory=session_factory
@@ -670,9 +690,19 @@ def inspect_uploaded_archive(
                 checkpoint(force=True)
                 job_context.update(stage="extracting", processed=processed, total=total)
 
-            entries = importer.prepare_archive_for_review(
-                staged, on_chunk=checkpoint, on_entry=report_entry
-            )
+            archive = importer.archive_format(staged, original_filename)
+            if archive is None:
+                raise importer.ImportError_("archive_invalid")
+            with importer.zip_view(
+                staged,
+                archive,
+                owner=scratch_windows.JobWindowOwner(
+                    job_id, job_context.execution_epoch
+                ),
+            ) as view:
+                entries = importer.prepare_archive_for_review(
+                    view, on_chunk=checkpoint, on_entry=report_entry
+                )
             checkpoint(force=True)
             importable_count = sum(entry.file_type is not None for entry in entries)
             if importable_count == 0:
@@ -722,14 +752,25 @@ def run_archive_selection(
     source_id = f"archive:{job_context.job_id}"
     try:
         if not _confirmed_source(batch, source_id):
-            _consume_archive(
-                batch,
+            kind = importer.archive_format(archive, archive_name)
+            if kind is None:
+                raise importer.ImportError_("archive_invalid")
+            with importer.zip_view(
                 archive,
-                names,
-                source_id=source_id,
-                source_url=source_url,
-                only_source=True,
-            )
+                kind,
+                owner=scratch_windows.JobWindowOwner(
+                    job_context.job_id, job_context.execution_epoch
+                ),
+                session_factory=session_factory,
+            ) as view:
+                _consume_archive(
+                    batch,
+                    view,
+                    names,
+                    source_id=source_id,
+                    source_url=source_url,
+                    only_source=True,
+                )
         batch.discovery_complete()
         batch.finish()
     except importer.WindowReleaseError, scratch_windows.WindowCleanupError:

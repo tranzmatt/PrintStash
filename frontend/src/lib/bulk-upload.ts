@@ -18,6 +18,16 @@ const MESH_EXTENSIONS = new Set([
 export const MESH_ACCEPT = ".stl,.3mf,.obj,.glb,.gltf,.ply,.3dm,.fbx,.step,.stp,.dxf";
 const GCODE_EXTENSIONS = new Set([".gcode", ".g", ".gco", ".bgcode"]);
 export const GCODE_ACCEPT = ".gcode,.g,.gco,.bgcode";
+// Archives the server rewrites for review; compound suffixes come first so a
+// ".tar.gz" is never read by its last extension alone.
+const ARCHIVE_SUFFIXES = [".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tar", ".zip", ".7z", ".rar"];
+export const ARCHIVE_ACCEPT = ARCHIVE_SUFFIXES.join(",");
+
+/** Whether *filename* names an archive the archive import accepts. */
+export function isArchiveFile(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return ARCHIVE_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
 
 // A queued mesh tagged with the folder path it came from (relative to the
 // drop/pick root, no filename) so we can mirror folders into nested

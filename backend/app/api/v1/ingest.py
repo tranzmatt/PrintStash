@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-import zipfile
 from pathlib import Path
 from typing import Optional
 
@@ -50,8 +49,14 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.modules.identity import rbac
+from app.modules.ingestion import (
+    archive_formats,
+    importer,
+    orca,
+    requests,
+    staging_leases,
+)
 from app.modules.ingestion import background as ingest_background
-from app.modules.ingestion import importer, orca, requests, staging_leases
 from app.modules.storage import storage
 from app.modules.work import service as work_service
 from app.schemas.ingest import (
@@ -455,7 +460,7 @@ def ingest_url(
     "/archive/inspect",
     response_model=JobAccepted,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Stage a ZIP archive and list its importable entries in the background",
+    summary="Stage an archive and list its importable entries in the background",
     description=(
         "The archive is staged under a lease owned by the returned Job, which "
         "inspects it (zip-slip/zip-bomb guarded) and ends with an archive manifest. "
@@ -465,17 +470,22 @@ def ingest_url(
 )
 @bounded_command
 def inspect_archive_background(
-    file: UploadFile = UploadFileParam(..., description="The .zip archive"),
+    file: UploadFile = UploadFileParam(
+        ..., description="A .zip, .7z, .rar, .tar, .tar.gz or .tgz archive"
+    ),
     actor: CommandActor = Depends(require_command_writer),
 ) -> JobAccepted:
     with command_session(actor) as (session, current_user):
         if not file.filename:
             raise HTTPException(status_code=400, detail="filename_required")
         original_filename = Path(file.filename).name
-        if Path(original_filename).suffix.lower() != ".zip":
+        named = archive_formats.named_format(original_filename)
+        suffix = archive_formats.archive_suffix(original_filename)
+        if named is None or suffix is None:
             raise HTTPException(status_code=400, detail="unsupported_file_type")
-        staged, staged_size, staged_hash = _stage_upload(file, ".zip")
-        if not zipfile.is_zipfile(staged):
+        staged, staged_size, staged_hash = _stage_upload(file, suffix)
+        # Only the leading bytes are read here; the Job reads the whole archive.
+        if archive_formats.sniff_format(staged) is not named:
             staged.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail="archive_invalid")
         accepted = _accept_staged(

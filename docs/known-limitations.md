@@ -206,6 +206,14 @@ This page describes version 0.15.0, the latest published release (22 October
   read; a file saved without render meshes has no preview. FBX files are
   converted using the unit and axes in their global settings; animation,
   skinning and materials are ignored.
+- Archive uploads and URL imports accept ZIP, 7z, RAR and TAR (plain, gzip,
+  bzip2 or xz). A non-ZIP archive is rewritten as an uncompressed ZIP of its
+  models and preview images for review, and again when the selection is
+  imported, so staging briefly needs room for those files uncompressed.
+  Encrypted archives, links inside archives and multi-volume archives are not
+  read. Compressed RAR members need `bsdtar`, which the container image
+  includes; uncompressed members are read without it. Browser captures and
+  Pending Imports accept ZIP only.
 - The G-code toolpath viewer is a browser-side visualization aid. It is not a
   slicer-grade simulator and does not validate firmware-specific macros,
   acceleration, pressure advance, or printer safety.

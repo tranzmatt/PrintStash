@@ -5,6 +5,7 @@
 ### Added
 
 - **GLB, glTF, PLY, Rhino 3DM and FBX models.** Upload, import or scan `.glb`, `.gltf`, `.ply`, `.3dm` and `.fbx` files like STL and OBJ: they get a thumbnail, measurements, the 3D viewer and similar-model analysis. Each format's own unit and axes are converted to millimetres with Z up, so a part reads at the same size and orientation as its STL. A `.gltf` must embed its buffers.
+- **7z, RAR and TAR archives.** Upload or link a `.7z`, `.rar`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2` or `.tar.xz` archive and review its models exactly like a ZIP, with the same size, entry and path limits.
 - Filament and printer profiles use compact summaries and collapsible details with inline notes, an explicit editor and searchable slicer settings from G-code. Equal configurations are grouped with their source files, different presets and values remain separate variants, and print settings stay with each source file. Existing files are refreshed in the background. These are observed print settings, not restorable slicer preset backups.
 - Builds is now reached from Multipart Models through Create build and Build history, keeping manufacturing out of general navigation while preserving existing runs and viewer access.
 

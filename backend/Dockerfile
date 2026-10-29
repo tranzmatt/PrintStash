@@ -58,6 +58,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     curl \
     libstdc++6 zlib1g \
+    # bsdtar decompresses RAR members for rarfile; stored members need no tool.
+    libarchive-tools \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=bgcode-builder /opt/libbgcode/bin/bgcode /usr/local/bin/bgcode

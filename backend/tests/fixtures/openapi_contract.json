@@ -1678,7 +1678,7 @@
         "properties": {
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "The .zip archive",
+            "description": "A .zip, .7z, .rar, .tar, .tar.gz or .tgz archive",
             "title": "File",
             "type": "string"
           }
@@ -30866,7 +30866,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Stage a ZIP archive and list its importable entries in the background",
+        "summary": "Stage an archive and list its importable entries in the background",
         "tags": [
           "ingest"
         ]
