@@ -48,25 +48,14 @@ separate from unsupported capabilities. Failed outputs retain their terminal
 reason for unchanged bytes and recipe; repeated viewer requests do not restart
 conversion. Explicit retry or a new recipe can make work eligible again.
 
-The 3MF capability policy introduced interpretation cache version
-`geometry-v5-sh5f4577c4`; shared STL validation introduced
-`geometry-v6-sh5f4577c4`, followed by the retained-scene eligibility policy.
-[Current recipe identities](derivatives.md#retained-3mf-measurements-and-previews)
-are recorded with the derivative contracts. Previous fingerprints, candidate
-observations and human review decisions remain historical evidence. Candidates interpreted under an earlier version
-are stale and cannot
-be confirmed or used to create a multipart Model; current-result filters exclude
-them. The mathematical fingerprint descriptors and SH basis are unchanged.
+Previously calculated similarity results can become stale when interpretation
+changes. Re-run analysis before confirming a match or creating a multipart
+Model from stale evidence.
 
 ## Reader and limits
 
 ZIP entries, decoded bytes, XML documents, reference traversal and expanded faces
 remain bounded. Loading and STL conversion run under supervised worker memory and
 time limits. A small archive with too many placements can still be refused.
-This implementation keeps the existing bounded float64 XML geometry source; it
-does not add Lib3MF or silently try an alternative parser.
 
-The [reader decision and frozen pilot](adr/0009-3mf-loader-capabilities.md) explain
-why the evaluated Lib3MF distributions were not adopted. Those measurements
-describe the historical pilot, not the current reader's performance. See
-[derivative behavior](derivatives.md) for demand, publication and retry contracts.
+See [compute settings](compute.md#settings) for the XML and memory budgets.

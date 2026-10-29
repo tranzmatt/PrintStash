@@ -7,10 +7,9 @@ file only routes and adds the checklist.
 ## State and integration ownership
 
 Before changing queries, mutations, navigation, sessions, events or protected assets,
-read [the frontend architecture](../../../../docs/architecture/frontend.md). Use its
-named owner and public interface; the dependency gate enforces package, transport
-and feature directions. The milestone records linked there explain exceptional
-contracts such as stable Library snapshots, conditional editing and Job recovery.
+inspect the owning feature under `frontend/src` and use its public interface.
+The dependency gate enforces package, transport and feature directions. Preserve
+stable Library snapshots, conditional editing and Job recovery.
 
 A new read declares its response-shaping key and cancellation. A write declares
 its captured authority, confirmed receipt and affected reads at the feature owner.

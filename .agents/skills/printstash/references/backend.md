@@ -1,7 +1,8 @@
 # Backend
 
 FastAPI + SQLModel + Alembic under `backend/app/`. Capability owners and allowed
-dependencies are documented in `docs/architecture/backend.md`.
+dependencies are summarized in the architecture map below and enforced by
+`backend/tests/repo/test_forbidden_imports.py`.
 Domain language in `CONTEXT.md` is binding — read it before touching
 library/trash/storage code.
 

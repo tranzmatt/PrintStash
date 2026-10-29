@@ -86,31 +86,3 @@ owner releases it only after completing or safely cleaning its surviving bytes.
 Older upload, PostgreSQL restore and Vault migration claims are conservatively
 retained too. Process-scoped scratch work still reconciles after a proven exit.
 Reservations remain budget evidence and never authorize storage deletion.
-
-## Allocation census
-
-Every application workflow that can create a substantial local or Vault allocation
-uses `CapacityManager` directly or enters through the guarded Artifact materializer.
-Helpers listed as inherited must not add an independent reservation because their
-owning workflow already reserves the combined peak.
-
-| Workflow | Admission owner | Recheck / release boundary |
-|---|---|---|
-| Browser/API upload and capture | upload/inbox owner | Before body staging; released after publication or receipt-safe cleanup |
-| URL/library import and Artifact publication | importer/ingestion owner | Before download and immediately before the final Vault allocation |
-| Archive export/import | library-transfer owner | Before archive creation/extraction; export rechecks its measured census |
-| Backup creation | backup creation owner | Before snapshot/archive work and again after the snapshot census; publication helpers inherit the claim |
-| Backup upload/download/adoption | backup transfer owner | Before local staging or consuming a remote body; immutable-identity validation remains unchanged |
-| Backup restore | restore owner | Remote download is admitted first, then restore is admitted again after the archive member census; rollback and publication are included |
-| Vault migration | migration owner | Durable destination plus transfer staging claim; released only after terminal reconciliation |
-| Thumbnail/render/conversion work | thumbnail owner | Before source materialization and derivative publication; renderer subprocess helpers inherit the claim |
-| Printer-side external capture | printer hub | Before bounded printer download and Vault publication |
-| Other external/remote Artifact materialization | `ArtifactHandle` | Before creating the verified local copy; the claim follows stream/path lifetime |
-| Expired staging cleanup | staging receipt owner | No admission needed: it only removes exact expired receipt identities after confirmation |
-
-Provider streaming reads, direct local-path reads, inventory SQL aggregation, quick
-Vault audit enumeration, backup catalogue listing, health and metrics are read-only and
-make no application-sized local allocation. Small configuration probes use fixed-size
-temporary files and are not storage workflows. Remote-adapter temporary publication
-buffers, backup snapshot/publication helpers and mesh worker files execute inside the
-owning workflow's peak claim.

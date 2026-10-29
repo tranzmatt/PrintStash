@@ -1,7 +1,7 @@
 """What ``/health``, ``/health/details`` and ``/health/releases/latest`` promise.
 
 The detailed probe is the operator's diagnosis: the Docker healthcheck and the release
-verification in ``docs/release-validation.md`` both read it, and the UI disables printer
+verification described in ``UPGRADE.md`` both read it, and the UI disables printer
 controls from the capability summary it returns. So its shape is a contract — every
 component key, the provider support levels, and above all *when* the service calls
 itself degraded. A broken dependency (database, storage, backup) must degrade it; an

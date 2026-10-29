@@ -195,10 +195,9 @@ upload path (`upload_cc2`, PUT with `Content-Range`) has no real-hardware report
 
 Automated tests cover protocol logic against mocked transports; they don't
 prove a given printer model/firmware combination actually behaves this way.
-Entries below are added only after someone runs the relevant smoke test (see
-per-provider sections above, and the Printers section of
-[`manual-testing.md`](./manual-testing.md)) against real hardware — this is
-not a checklist to pre-fill.
+Entries below are added only after someone verifies status, upload/start,
+pause/resume/cancel and any supported file or history operations on real
+hardware. Use the per-provider sections above to identify supported actions.
 
 | Provider | Model | Firmware | Date | Tester | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- |

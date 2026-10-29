@@ -35,7 +35,7 @@ Include only task-owned changes; preserve unrelated work from other tasks.
 Report the PR URL, final commit and verified CI result when handing off.
 
 ## Layout
-- `backend/` FastAPI + SQLModel + Alembic. Capability owners in `backend/app/modules/`, composition in `bootstrap/`, process coordination in `runtime/`; HTTP in `api/`, tables in `db/models/`. Boundaries: `docs/architecture/backend.md`. Tests in `backend/tests` mirror these owners.
+- `backend/` FastAPI + SQLModel + Alembic. Capability owners in `backend/app/modules/`, composition in `bootstrap/`, process coordination in `runtime/`; HTTP in `api/`, tables in `db/models/`. Boundaries: `.agents/skills/printstash/references/backend.md`. Tests in `backend/tests` mirror these owners.
 - Background work: the engine-agnostic model in `backend/app/modules/work/` (Jobs, definitions, sources, reconciler, fences, events), Artifact derivatives in `modules/derivatives/`, engines in `runtime/engine/` (DBOS; inline for tests), composition in `bootstrap/work.py`, the worker process in `app/worker.py`.
 - `frontend/` Vite + React + TS.
 - Domain language: read `CONTEXT.md` before touching library/trash/storage code — terms there are binding (Model, Artifact, Revision, live/trashed, storage key…).
@@ -43,8 +43,7 @@ Report the PR URL, final commit and verified CI result when handing off.
 - Public roadmap: `docs/roadmap.md`. Private work records (gitignored): `reports/` — start with `reports/14-implementation-plan-to-1.0.0.md` (OSS plan) and `reports/15-cloud-implementation-plan.md` (cloud). Never commit or quote `reports/` content publicly.
   Audits, performance measurements, benchmark outputs, implementation plans,
   review ledgers and validation reports belong in `reports/`, including when
-  they contain no credentials. Public `docs/` holds maintained user guides and
-  architecture contracts; its reviewed files are explicitly listed in
+  they contain no credentials. Public `docs/` holds maintained user and operator guides; its reviewed files are explicitly listed in
   `.gitignore`. Keep test matrices in the response and PR, as required below.
   Never force-add private records or copy their contents into public docs.
 
@@ -81,7 +80,7 @@ extension and two real-browser smoke flows. `Deep CI` runs coverage, external
 contracts, compatibility matrices and the remaining browser suites nightly and
 on demand. Run it on the release commit before tagging; image publication
 requires its successful result for the exact SHA.
-CI topology, branch protection and timing targets: `docs/ci.md`.
+CI definitions: `.github/workflows/`. Branch protection requires `PR gate`.
 Any test-related work — writing, changing, deleting, or auditing tests, or
 deciding what a change needs — starts by loading
 `.agents/skills/printstash/references/testing.md`. Its
@@ -109,7 +108,7 @@ executed rather than what was asserted. Playwright is invisible to all of it.
 3. Use one short-lived branch per requested task or audit, branched from `main` and named for its purpose (`feat/<issue>-<slug>`, `fix/<issue>-<slug>`, `docs/<slug>`, etc.). Never prefix a branch with `codex/`. Group the related fixes for that task in the same PR; version only after the planned release set is on `main`, then tag and publish. Semver: 0.x.y patch = fixes only.
 4. Group all changes for one requested task or audit in a single PR unless the user explicitly asks to split them. **Tests are mandatory for any change to production code** — no "too small to test" exception; the test-design coverage matrix is the proof. Tests first on data-integrity/security fixes.
 5. Keep cloud seams clean: StorageBackend, SessionFactory and JobEngine retain explicit contracts; event publication is separate from WebSocket delivery. Background work is intent in the application database, found by a Work Source and executed through `JobEngine`; a nudge is a latency hint, never the record of the work. Only `app/runtime/engine/` imports DBOS. Shared business in printstash-core has no framework, ORM, engine or external-service hard dependencies.
-7. Background work goes through a Job Definition (`<module>/jobs.py`, see `docs/architecture/background-work.md`). No `BackgroundTasks`, `asyncio.create_task` or `to_thread` loops for work in production code, and a request never runs enrichment inline: a new derived output is a Derivative kind (`docs/derivatives.md`). Bump a recipe version when a producer's output changes.
+7. Background work goes through a Job Definition (`<module>/jobs.py`, see `.agents/skills/printstash/references/background-work.md`). No `BackgroundTasks`, `asyncio.create_task` or `to_thread` loops for work in production code, and a request never runs enrichment inline: a new derived output is a Derivative kind (`backend/app/modules/derivatives/kinds.py`). Bump a recipe version when a producer's output changes.
 8. Make invalid states unrepresentable: closed sets are enums (TEXT + CHECK in the database, never a native enum), always-present fields are required, exclusive cases are distinct types, and an impossible or invalid situation raises instead of falling back to a sentinel or default. See `.agents/skills/printstash/references/code-principles.md`.
 6. Frontend UI follows `DESIGN.md`. The zero-counts are load-bearing: no `transition-all`, no `ease-in`, no raw durations/cubic-beziers, no arbitrary `[var(--…)]` colors. Nothing animates over 300ms; route navigation never animates.
 

@@ -22,6 +22,26 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.15.1",
+    date: "Oct 2026",
+    changes: [
+      "Back up before upgrading, stop all API and worker processes, and restart them on the same image. Updated recipes refresh existing metadata and previews in the background; Similar Models recomputes fingerprints on its next analysis. Keep the pre-upgrade backup for rollback. See UPGRADE.md",
+      "Multi-plate 3MF projects show each plate's number, name, object count and saved preview; choosing a plate limits the 3D view to its parts",
+      "GLB, embedded-buffer glTF, PLY, Rhino 3DM and FBX models support imports, thumbnails, measurements, 3D viewing and similar-model analysis with normalized units and axes",
+      "7z, RAR and TAR archives join ZIP uploads and URL imports, with the same bounded review and selection workflow",
+      "Model Overview shows copyable file and geometric hashes; filament and printer profiles group matching slicer configurations while preserving distinct variants and source-specific settings",
+      "Library filters, folder browsing, selection, renaming and saved views offer clearer controls, stable navigation and better keyboard and mobile behavior",
+      "Multipart Models support library selection, Trash and restoration without deleting their underlying Models; cover cleanup works on Guarded storage, including Unraid and FUSE",
+      "Multipart creation shares the archive explorer's collection browsing, search and retained selection, while build actions and history stay connected to their source set",
+      "Previews, metadata and 3D views work again on older NAS kernels without pidfd; processing and remote-storage failures explain the cause and recovery steps",
+      "Similar Models offers clearer review tabs, comparisons, match evidence and actions, with preserved filters and layouts that fit narrow screens",
+      "Similar-model analysis rejects clearly different surface clouds early, reuses prior outcomes and verifies pairs in parallel within CPU and memory budgets",
+      "Uploads provide persistent completion links; backup, printer, notification and member settings improve recovery guidance, permissions, accessibility and small-screen layouts",
+      "Task Center batches updates, imports and search avoid repeated database work, and native mesh workers reduce startup, memory-monitoring and cancellation overhead",
+      "The Imports settings link to the published Chrome extension, and documentation links open the PrintStash documentation site",
+    ],
+  },
+  {
     version: "0.15.0",
     date: "Oct 2026",
     changes: [

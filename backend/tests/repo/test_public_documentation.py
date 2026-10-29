@@ -18,11 +18,11 @@ class TestPublicDocumentation:
         "path",
         [
             "docs/deployment.md",
-            "docs/release-validation.md",
-            "docs/architecture/backend.md",
-            "docs/adr/0008-job-engine.md",
+            "docs/README.md",
+            "docs/disaster-recovery.md",
+            "docs/provider-support.md",
         ],
-        ids=["operator-guide", "release-checklist", "architecture", "decision"],
+        ids=["operator-guide", "guide-index", "recovery-guide", "compatibility-guide"],
     )
     def test_public_guides_are_trackable(self, path: str) -> None:
         result = subprocess.run(
@@ -49,6 +49,11 @@ class TestPublicDocumentation:
             "docs/testing/new-feature.md",
             "docs/new-document.md",
             "docs/architecture/new-document.md",
+            "docs/architecture/backend.md",
+            "docs/adr/0008-job-engine.md",
+            "docs/release-validation.md",
+            "docs/mesh-pipeline-benchmarks.md",
+            "docs/artifact-cache-design.md",
         ],
         ids=[
             "private-notes",
@@ -62,6 +67,11 @@ class TestPublicDocumentation:
             "validation",
             "new-document",
             "nested-document",
+            "removed-architecture",
+            "removed-decision",
+            "removed-release-process",
+            "removed-benchmark",
+            "removed-design",
         ],
     )
     def test_private_documents_are_ignored(self, path: str) -> None:

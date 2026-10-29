@@ -7,7 +7,7 @@ a worker waits until the database is migrated to the version it was built
 for, so workers can start before or alongside the API.
 
 Split topologies need PostgreSQL and storage every process can reach; see
-``docs/architecture/background-work.md``.
+``docs/deployment.md``.
 """
 
 from __future__ import annotations

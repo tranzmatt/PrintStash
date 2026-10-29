@@ -96,7 +96,7 @@ rank.
 
 The repository Benchy and Spatula use complete geometry at the default limits.
 An existing explicit lower cap remains unchanged; increase it before a manual
-retry. See [the mesh pipeline](mesh-pipeline.md) for resource limits.
+retry. See [compute settings](compute.md#settings) for resource limits.
 
 STL, OBJ, and 3MF geometry works in the lite profile. Oversized STL inputs can
 produce partial descriptors, which cannot prove exact equivalence. STEP requires
