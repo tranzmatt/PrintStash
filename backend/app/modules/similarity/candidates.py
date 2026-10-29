@@ -29,6 +29,7 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.modules.media.fingerprints import ALGORITHM_VERSION
+from app.modules.similarity import pairs
 from app.modules.similarity.configuration import read_settings
 from app.modules.similarity.fingerprints import (
     current_source,
@@ -36,6 +37,7 @@ from app.modules.similarity.fingerprints import (
     live_source_predicates,
 )
 from app.modules.similarity.retrieval import editable_models
+from app.modules.similarity.runs import TERMINAL
 
 
 @dataclass(frozen=True)
@@ -412,11 +414,17 @@ def publish(
     evidence: Verification,
     *,
     run: SimilarityRun | None = None,
-    run_token: str | None = None,
+    pair_lease: tuple[int, str] | None = None,
     kind: str = "whole",
     contained_side: str | None = None,
 ) -> SimilarityCandidate | None:
-    """Verified inputs only. Preserve human state while adding distinct lineage."""
+    """Verified inputs only. Preserve human state while adding distinct lineage.
+
+    A run's evidence comes from one of its queued pairs: ``pair_lease`` is that
+    pair and the verifier's lease on it, and fences the write.
+    """
+    if (run is None) != (pair_lease is None):
+        raise ValueError("run_evidence_requires_its_pair_lease")
     if evidence.evidence_class is None:
         return None
     fa, fb = session.get(File, first.file_id), session.get(File, second.file_id)
@@ -498,15 +506,16 @@ def publish(
             .exists()
         )
     run_fence = true()
-    if run is not None:
-        run_fence = (
+    if run is not None and pair_lease is not None:
+        run_fence = and_(
             select(SimilarityRun.id)
             .where(
                 SimilarityRun.id == run.id,
-                SimilarityRun.writer == run_token,
+                col(SimilarityRun.state).not_in(TERMINAL),
                 col(SimilarityRun.cancel_requested).is_(False),
             )
-            .exists()
+            .exists(),
+            pairs.held(*pair_lease),
         )
     values = {"updated_at": utcnow(), "freshness": "current", "stale_reason": None}
     if kind != "component_match" and (

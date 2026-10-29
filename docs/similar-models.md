@@ -78,6 +78,12 @@ is verified exactly as before, so the cloud never creates or changes evidence.
 Fingerprints made by an earlier version gain their cloud the next time an
 analysis reaches them, which recomputes them once.
 
+Several pairs are verified at once: the similarity lane's concurrency
+(`VAULT_JOBS_SIMILARITY_CONCURRENCY`, 4 by default, or Settings → Background
+work) sets how many, one slot shortlisting while the others verify. Each
+verification is still admitted against the native memory pool, so a small
+machine verifies fewer at a time. At 1, pairs are verified one by one.
+
 The clouds also choose which candidates fill the shortlist. Of the closest
 candidates by shape descriptor, five times the shortlist size are ordered by a
 quick cloud alignment, the best are aligned exactly, and the ones that align

@@ -10,6 +10,7 @@ from app.db.models import (
     GeometryFingerprint,
     Metadata,
     SimilarityReviewDecision,
+    SimilarityRunPair,
 )
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.work.reconciler import tick
@@ -150,3 +151,54 @@ class TestSimilarity:
                 hashlib.sha256(get_backend().read_bytes(file.path)).hexdigest()
                 == expected
             )
+
+    @pytest.mark.asyncio
+    async def test_verifies_each_pair_of_a_library_scan_once(
+        self, api, superuser_headers, e2e_db
+    ):
+        headers = superuser_headers
+        configured = await api.patch(
+            "/api/v1/similarity/settings",
+            headers=headers,
+            json={"enabled": True, "sample_points": 256},
+        )
+        assert configured.status_code == 200, configured.text
+        for index in range(3):
+            mesh = tetrahedron()
+            mesh.apply_translation([index * 30, 0, 0])
+            response = await api.post(
+                "/api/v1/ingest/model",
+                headers=headers,
+                files={
+                    "file": (
+                        f"copy-{index}.stl",
+                        mesh.export(file_type="stl"),
+                        "application/octet-stream",
+                    )
+                },
+                data={"model_name": f"Copy {index}"},
+            )
+            await completed_job(api, response, headers)
+        # Ingest runs each compare one new Model; settle them before the scan.
+        tick()
+        settle()
+
+        started = await api.post(
+            "/api/v1/similarity/runs", headers=headers, json={"scope": "library"}
+        )
+        assert started.status_code == 202, started.text
+        tick()
+        settle()
+
+        finished = await api.get(
+            f"/api/v1/similarity/runs/{started.json()['id']}", headers=headers
+        )
+        run = finished.json()
+        assert run["state"] == "completed", run
+        # Three sources shortlist each other: six proposals, three pairs.
+        counters = run["counters"]
+        assert (
+            counters["shortlisted"],
+            counters.get("verified", 0) + counters.get("verification_cached", 0),
+        ) == (6, 3)
+        assert e2e_db.exec(select(SimilarityRunPair)).all() == []

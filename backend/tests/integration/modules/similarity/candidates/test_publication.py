@@ -7,8 +7,12 @@ from printstash_core.mesh.similarity.verification import verify_meshes
 from sqlmodel import select
 
 from app.core.time import utcnow
-from app.db.models import SimilarityCandidate, SimilarityCandidateObservation
-from app.modules.similarity import candidates, review
+from app.db.models import (
+    SimilarityCandidate,
+    SimilarityCandidateObservation,
+    SimilarityPairOutcome,
+)
+from app.modules.similarity import candidates, pairs, review
 from tests.factories.geometry import tetrahedron
 
 
@@ -219,7 +223,7 @@ class TestPublication:
         ):
             candidates.publish(db_session, *reversed(fingerprints), exact_proof)
 
-    @pytest.mark.parametrize("fence", ["cancelled", "superseded"])
+    @pytest.mark.parametrize("fence", ["cancelled", "lease_lost", "settled"])
     def test_fences_worker_publication(
         self,
         db_session,
@@ -230,22 +234,41 @@ class TestPublication:
         fence,
     ):
         row, _, fingerprints = published_pair
-        run = make_similarity_run(make_user(superuser=True), writer="owner")
+        run = make_similarity_run(make_user(superuser=True))
+        pairs.enqueue(db_session, run.id, [(fingerprints[0].id, fingerprints[1].id)])
+        db_session.commit()
+        pair, token = pairs.claim(db_session, run.id)
         if fence == "cancelled":
             run.cancel_requested = True
+            db_session.add(run)
+        elif fence == "lease_lost":
+            # The lease expired and another verifier holds the pair now.
+            pair.lease_token = "successor"
+            db_session.add(pair)
         else:
-            # The engine started a later attempt, which took the fence.
-            run.writer = "successor"
-        db_session.add(run)
+            pairs.settle(db_session, pair.id, token, SimilarityPairOutcome.VERIFIED)
         db_session.commit()
         assert (
             candidates.publish(
-                db_session, *fingerprints, exact_proof, run=run, run_token="owner"
+                db_session,
+                *fingerprints,
+                exact_proof,
+                run=run,
+                pair_lease=(pair.id, token),
             )
             is None
         )
         assert len(db_session.exec(select(SimilarityCandidate)).all()) == 1
         assert len(db_session.exec(select(SimilarityCandidateObservation)).all()) == 1
+
+    def test_refuses_run_evidence_without_its_pair_lease(
+        self, db_session, published_pair, exact_proof, make_similarity_run, make_user
+    ):
+        _, _, fingerprints = published_pair
+        run = make_similarity_run(make_user(superuser=True))
+
+        with pytest.raises(ValueError, match="run_evidence_requires_its_pair_lease"):
+            candidates.publish(db_session, *fingerprints, exact_proof, run=run)
 
     def test_unclassified_evidence_does_not_publish(
         self, db_session, published_pair, exact_proof

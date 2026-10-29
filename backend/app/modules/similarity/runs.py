@@ -29,6 +29,7 @@ from app.db.models import (
 )
 from app.db.scopes import live
 from app.modules.media.fingerprints import ALGORITHM_VERSION
+from app.modules.similarity import pairs
 from app.modules.similarity.configuration import read_settings
 from app.modules.similarity.fingerprints import encode_json, live_source_predicates
 from app.modules.similarity.retrieval import editable_models
@@ -231,6 +232,10 @@ def checkpoint(
         )
         .values(**values)
     )
+    if changed.rowcount == 1 and state in TERMINAL:
+        assert run.id is not None
+        # Outcomes were counted into ``counters`` by the caller already.
+        pairs.discard(session, run.id)
     session.commit()
     return changed.rowcount == 1
 

@@ -15,7 +15,9 @@ from app.db.models import (
     GeometryFingerprint,
     SimilarityCandidate,
     SimilarityEmptyVerification,
+    SimilarityPairOutcome,
     SimilarityRun,
+    SimilarityRunPair,
 )
 from app.db.session import get_session_factory
 from app.modules.media import mesh_isolation, verification_isolation
@@ -23,6 +25,7 @@ from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_facts import FingerprintFailureCode
 from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.similarity import configuration, runs
+from app.modules.similarity import pairs as run_pairs
 from app.modules.similarity.processing import SimilarityProcessor
 from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import content
@@ -58,6 +61,42 @@ def moved_tetrahedron(offset):
     mesh = tetrahedron()
     mesh.apply_translation(offset)
     return mesh
+
+
+def queue(db_session, run, pairs, *, cleared=()):
+    """Queue *pairs* on a run whose every source is already shortlisted."""
+    db_session.refresh(run)
+    run.phase = "candidates"
+    run.checkpoint_json = json.dumps({"fingerprint_id": 2**62})
+    db_session.add(run)
+    db_session.commit()
+    run_pairs.enqueue(
+        db_session,
+        run.id,
+        [tuple(pair) for pair in pairs],
+        cloud_cleared=frozenset(cleared),
+    )
+    db_session.commit()
+
+
+def shortlisting(db_session, run):
+    """Move a fingerprinted run on to shortlisting from its first source."""
+    db_session.refresh(run)
+    run.phase = "candidates"
+    run.checkpoint_json = "{}"
+    db_session.add(run)
+    db_session.commit()
+
+
+def outcomes(db_session, run):
+    return [
+        row.outcome
+        for row in db_session.exec(
+            select(SimilarityRunPair)
+            .where(SimilarityRunPair.run_id == run.id)
+            .order_by(SimilarityRunPair.id)
+        )
+    ]
 
 
 @pytest.fixture
@@ -263,7 +302,7 @@ class TestProcessingFailures:
             if json.loads(run.counters_json).get("verified", 0):
                 break
         assert json.loads(run.counters_json)["verified"] > 0
-        assert json.loads(run.checkpoint_json)["pending_pairs"]
+        assert run_pairs.pending(db_session, run.id)
         before = [
             (row.id, row.version)
             for row in db_session.exec(select(SimilarityCandidate))
@@ -289,7 +328,7 @@ class TestPairRecovery:
         ],
         ids=["time-limit", "worker-memory", "worker-timeout", "worker-died"],
     )
-    def test_records_a_failed_pair_then_advances_checkpoint(
+    def test_records_a_failed_pair_as_settled(
         self, db_session, local_pair, monkeypatch, failure
     ):
         actor, _ = local_pair
@@ -302,13 +341,7 @@ class TestPairRecovery:
             .where(GeometryFingerprint.component_index == 0)
             .order_by(GeometryFingerprint.id)
         ).all()
-        db_session.refresh(run)
-        run.phase = "candidates"
-        run.checkpoint_json = json.dumps(
-            {"pending_pairs": [[row.id for row in fingerprints]]}
-        )
-        db_session.add(run)
-        db_session.commit()
+        queue(db_session, run, [[row.id for row in fingerprints]])
 
         def failed(*args, **kwargs):
             raise failure
@@ -318,7 +351,7 @@ class TestPairRecovery:
         assert advance_oldest_run(worker)
         db_session.refresh(run)
         assert run.state == "running"
-        assert json.loads(run.checkpoint_json)["pending_pairs"] == []
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.VERIFICATION_FAILED]
         assert json.loads(run.counters_json)["verification_failed"] == 1
         assert db_session.exec(select(SimilarityCandidate)).all() == []
 
@@ -329,7 +362,6 @@ class TestPairRecovery:
             "source_bytes",
             "missing_content",
             "missing_component",
-            "missing_fingerprint",
             "same_model",
         ],
     )
@@ -363,19 +395,20 @@ class TestPairRecovery:
         elif failure == "missing_component":
             fingerprints[1].component_index = 999
             db_session.add(fingerprints[1])
-        elif failure == "missing_fingerprint":
-            pair[1] = 999999
         else:
-            pair[1] = pair[0]
-        db_session.refresh(run)
-        run.phase = "candidates"
-        run.checkpoint_json = json.dumps({"pending_pairs": [pair]})
-        db_session.add(run)
+            # The single body's own component row: both sides are one Model.
+            pair[1] = db_session.exec(
+                select(GeometryFingerprint.id).where(
+                    GeometryFingerprint.file_id == fingerprints[0].file_id,
+                    GeometryFingerprint.component_index == 1,
+                )
+            ).one()
         db_session.commit()
+        queue(db_session, run, [pair])
         assert advance_oldest_run(worker)
         db_session.refresh(run)
         assert run.state == "running"
-        assert json.loads(run.checkpoint_json)["pending_pairs"] == []
+        assert run_pairs.pending(db_session, run.id) == 0
         counts = json.loads(run.counters_json)
         if failure in ("source_hash", "source_bytes"):
             assert counts["stale"] == 1
@@ -405,14 +438,6 @@ def fingerprinted(db_session, actor, worker):
         )
     ).all()
     return run, rows
-
-
-def queue(db_session, run, pairs):
-    db_session.refresh(run)
-    run.phase = "candidates"
-    run.checkpoint_json = json.dumps({"pending_pairs": pairs})
-    db_session.add(run)
-    db_session.commit()
 
 
 class TestPairFanOut:
@@ -458,7 +483,7 @@ class TestPairFanOut:
         db_session.refresh(run)
         assert json.loads(run.counters_json)["verified"] == 1
 
-    def test_reuses_an_empty_outcome_for_the_reversed_pair(
+    def test_reuses_an_empty_outcome_in_a_later_run(
         self, db_session, make_user, stored_mesh
     ):
         import trimesh
@@ -475,14 +500,30 @@ class TestPairFanOut:
         worker = SimilarityProcessor(get_session_factory(), get_backend())
         run, rows = fingerprinted(db_session, actor, worker)
         first, second = (row.id for row in rows if row.component_index == 0)
+        queue(db_session, run, [[first, second]])
+        assert advance_oldest_run(worker)
+        runs.cancel(db_session, actor, run.id)
+        assert advance_oldest_run(worker)
+        later, _ = fingerprinted(db_session, actor, worker)
+        queue(db_session, later, [[second, first]])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(later)
+        counters = json.loads(later.counters_json)
+        assert (counters.get("verified", 0), counters["verification_cached"]) == (0, 1)
+
+    def test_queues_a_pair_shortlisted_from_both_sides_once(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+
         queue(db_session, run, [[first, second], [second, first]])
 
-        assert advance_oldest_run(worker)
-        assert advance_oldest_run(worker)
-
-        db_session.refresh(run)
-        counters = json.loads(run.counters_json)
-        assert (counters["verified"], counters["verification_cached"]) == (1, 1)
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.PENDING]
 
     def test_rejects_a_clearly_different_pair_without_verifying(
         self, db_session, make_user, stored_mesh
@@ -553,7 +594,7 @@ class TestPairFanOut:
             row.normalized_area = whole[0].normalized_area
             db_session.add(row)
         db_session.commit()
-        queue(db_session, run, [])
+        shortlisting(db_session, run)
 
         assert advance_oldest_run(worker)
 
@@ -576,17 +617,16 @@ class TestPairFanOut:
         )
         worker = SimilarityProcessor(get_session_factory(), get_backend())
         run, rows = fingerprinted(db_session, actor, worker)
-        queue(db_session, run, [])
+        shortlisting(db_session, run)
 
         assert advance_oldest_run(worker)
 
-        db_session.refresh(run)
         first, second = (row.id for row in rows if row.component_index == 0)
-        progress = json.loads(run.checkpoint_json)
-        assert (progress["pending_pairs"], progress["cloud_cleared"]) == (
-            [[first, second]],
-            [second],
-        )
+        queued = db_session.exec(select(SimilarityRunPair)).all()
+        assert [
+            (row.fingerprint_a_id, row.fingerprint_b_id, row.cloud_cleared)
+            for row in queued
+        ] == [(first, second, True)]
 
     def test_verifies_a_cleared_pair_without_measuring_its_clouds_again(
         self, db_session, make_user, stored_mesh
@@ -602,14 +642,8 @@ class TestPairFanOut:
         worker = SimilarityProcessor(get_session_factory(), get_backend())
         run, rows = fingerprinted(db_session, actor, worker)
         first, second = (row.id for row in rows if row.component_index == 0)
-        db_session.refresh(run)
-        run.phase = "candidates"
         # These clouds would reject the pair; retrieval vouched for it already.
-        run.checkpoint_json = json.dumps(
-            {"pending_pairs": [[first, second]], "cloud_cleared": [second]}
-        )
-        db_session.add(run)
-        db_session.commit()
+        queue(db_session, run, [[first, second]], cleared=[second])
 
         assert advance_oldest_run(worker)
 
@@ -766,12 +800,7 @@ class TestPreparedSourceAdmission:
 
         monkeypatch.setattr(verification_isolation, "verify_paths", unexpected)
         run = runs.start(db_session, actor)
-        run.phase = "candidates"
-        run.checkpoint_json = json.dumps(
-            {"pending_pairs": [[row.id for row in fingerprints]]}
-        )
-        db_session.add(run)
-        db_session.commit()
+        queue(db_session, run, [[row.id for row in fingerprints]])
         assert advance_oldest_run(
             SimilarityProcessor(get_session_factory(), get_backend())
         )
@@ -780,7 +809,7 @@ class TestPreparedSourceAdmission:
         assert run.state == "running"
         assert json.loads(run.counters_json)["verification_failed"] == 1
         assert json.loads(run.counters_json).get("verified", 0) == 0
-        assert json.loads(run.checkpoint_json)["pending_pairs"] == []
+        assert run_pairs.pending(db_session, run.id) == 0
         assert db_session.exec(select(SimilarityCandidate)).all() == []
         for file, fingerprint, source in zip(files, fingerprints, sources, strict=True):
             db_session.refresh(fingerprint)
@@ -888,3 +917,167 @@ class TestIncompleteReanalysis:
         assert fingerprint.state == state
         assert fingerprint.attempts == 1
         assert json.loads(run.counters_json)["cached"] == 1
+
+
+@pytest.fixture
+def queued_pair(db_session, local_pair):
+    """A run whose two copies are fingerprinted and whose one pair is queued."""
+    actor, _ = local_pair
+    worker = SimilarityProcessor(get_session_factory(), get_backend())
+    run, rows = fingerprinted(db_session, actor, worker)
+    queue(db_session, run, [[row.id for row in rows if row.component_index == 0]])
+    return actor, run, worker
+
+
+class TestParallelVerification:
+    def test_a_verifier_settles_a_queued_pair(self, db_session, queued_pair):
+        _, run, worker = queued_pair
+
+        assert worker.verify_one(run.id)
+
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.OBSERVED]
+
+    def test_a_verifier_publishes_its_evidence(self, db_session, queued_pair):
+        _, run, worker = queued_pair
+
+        worker.verify_one(run.id)
+
+        assert db_session.exec(select(SimilarityCandidate)).one().run_id == run.id
+
+    def test_a_verifier_finds_nothing_once_every_pair_is_settled(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        worker.verify_one(run.id)
+
+        assert not worker.verify_one(run.id)
+
+    @pytest.mark.parametrize(
+        "change", ["disabled", "cancelled", "fingerprinting", "inactive", "unscoped"]
+    )
+    def test_a_verifier_leaves_the_pairs_of_an_unusable_run(
+        self, db_session, queued_pair, change
+    ):
+        actor, run, worker = queued_pair
+        db_session.refresh(run)
+        if change == "disabled":
+            configuration.update_settings(db_session, actor, {"enabled": False})
+        elif change == "cancelled":
+            run.cancel_requested = True
+        elif change == "fingerprinting":
+            run.phase = "fingerprint"
+        elif change == "inactive":
+            actor.is_active = False
+        else:
+            run.scope, run.scope_ids_json = "models", "[999999]"
+        db_session.add_all([actor, run])
+        db_session.commit()
+
+        assert not worker.verify_one(run.id)
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.PENDING]
+
+    def test_analysis_waits_for_a_pair_another_verifier_holds(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        run_pairs.claim(db_session, run.id)
+
+        assert not advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert run.state == "running"
+
+    def test_the_run_completes_once_every_pair_is_settled(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        worker.verify_one(run.id)
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert run.state == "completed"
+
+    def test_a_completed_run_counts_what_its_verifiers_measured(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        worker.verify_one(run.id)
+
+        advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["verified"], counters["observations"]) == (1, 1)
+
+    def test_a_busy_verification_hands_its_pair_back(
+        self, db_session, queued_pair, monkeypatch
+    ):
+        from app.core.errors import ErrorKind, OperationError
+
+        _, run, worker = queued_pair
+
+        def busy(*_args, **_kwargs):
+            raise OperationError("native_capacity_busy", kind=ErrorKind.BUSY)
+
+        monkeypatch.setattr(verification_isolation, "verify_paths", busy)
+
+        assert not advance_oldest_run(worker)
+
+        (row,) = db_session.exec(select(SimilarityRunPair)).all()
+        db_session.refresh(row)
+        assert (row.outcome, row.lease_token) == (SimilarityPairOutcome.PENDING, None)
+
+    def test_moves_a_checkpointed_pair_list_into_the_queue(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+        db_session.refresh(run)
+        run.phase = "candidates"
+        # As a run checkpointed by the previous release left it.
+        run.checkpoint_json = json.dumps(
+            {
+                "fingerprint_id": 2**62,
+                "pending_pairs": [[first, second]],
+                "cloud_cleared": [second],
+            }
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        assert advance_oldest_run(worker)
+
+        queued = db_session.exec(select(SimilarityRunPair)).one()
+        assert (
+            queued.fingerprint_a_id,
+            queued.fingerprint_b_id,
+            queued.cloud_cleared,
+        ) == (
+            first,
+            second,
+            True,
+        )
+
+    def test_keeps_the_counts_of_a_checkpointed_run(self, db_session, local_pair):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        db_session.refresh(run)
+        run.phase = "candidates"
+        run.counters_json = json.dumps({"verified": 2})
+        run.checkpoint_json = json.dumps(
+            {
+                "fingerprint_id": 2**62,
+                "pending_pairs": [[row.id for row in rows if row.component_index == 0]],
+            }
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert json.loads(run.counters_json)["verified"] == 3

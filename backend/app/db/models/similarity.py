@@ -1,6 +1,7 @@
 """Disposable geometry evidence and durable human review."""
 
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
@@ -14,6 +15,7 @@ from sqlalchemy import (
 from sqlmodel import Field
 
 from app.core.time import utcnow
+from app.db.enum_columns import EnumText, enum_check
 
 from .base import SQLModel
 
@@ -301,4 +303,62 @@ class SimilarityEmptyVerification(SQLModel, table=True):
     verification_version: str = Field(max_length=64)
     sample_points: int
     triangle_cap: int
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class SimilarityPairOutcome(StrEnum):
+    """What verifying one shortlisted pair of a run came to."""
+
+    PENDING = "pending"
+    # Measured without an Evidence Class.
+    VERIFIED = "verified"
+    # Measured, and the evidence refined a Candidate.
+    OBSERVED = "observed"
+    VERIFICATION_CACHED = "verification_cached"
+    REJECTED_BY_CLOUD = "rejected_by_cloud"
+    IMPLIED_BY_WHOLE = "implied_by_whole"
+    STALE = "stale"
+    VERIFICATION_FAILED = "verification_failed"
+    # A fingerprint is gone, or both sides now belong to one Model.
+    SKIPPED = "skipped"
+
+
+class SimilarityRunPair(SQLModel, table=True):
+    """One shortlisted pair a run still owes, or has, a verification.
+
+    Shortlisting and verification are separate units so several verifiers can
+    work through one run's pairs at once. A verifier holds a pair by its lease;
+    an expired lease (a crashed verifier) makes the pair claimable again. The
+    run's terminal checkpoint deletes its pairs once their outcomes are counted.
+    """
+
+    __tablename__ = "similarity_run_pairs"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "fingerprint_a_id",
+            "fingerprint_b_id",
+            name="uq_similarity_run_pair",
+        ),
+        CheckConstraint("fingerprint_a_id < fingerprint_b_id", name="ordered_pair"),
+        enum_check("outcome", SimilarityPairOutcome),
+        Index("ix_similarity_run_pair_outcome", "run_id", "outcome"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="similarity_runs.id", ondelete="CASCADE")
+    fingerprint_a_id: int = Field(
+        foreign_key="geometry_fingerprints.id", ondelete="CASCADE"
+    )
+    fingerprint_b_id: int = Field(
+        foreign_key="geometry_fingerprints.id", ondelete="CASCADE", index=True
+    )
+    # Retrieval already aligned these surface clouds within the rejection score.
+    cloud_cleared: bool
+    outcome: SimilarityPairOutcome = Field(
+        default=SimilarityPairOutcome.PENDING,
+        sa_column=Column(EnumText(SimilarityPairOutcome), nullable=False),
+    )
+    lease_token: str | None = Field(default=None, max_length=128)
+    lease_expires_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)

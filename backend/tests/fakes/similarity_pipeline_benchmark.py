@@ -1,4 +1,4 @@
-"""Time a cold similarity run on a small mixed corpus, pair by pair.
+"""Time a cold similarity run on a small mixed corpus, unit by unit.
 
 Run from backend: uv run python -m tests.fakes.similarity_pipeline_benchmark --root /tmp/new-dir
 The corpus mixes byte-distinct copies, a mirror, a rescale and multi-body STL
@@ -6,8 +6,8 @@ parts of repository designs, so the expected Candidate set is known and checked.
 ``--corpus wide`` adds benchy variants and a remeshed, rotated and copied Thingi10K
 part; its Candidate set is recorded, not asserted. ``--corpus synthetic`` and
 ``--corpus crowded`` plant transformed copies in ``--count`` procedural designs
-and report how many of them were found. Every verification unit is
-logged with the two fingerprints it compared, so pair fan-out is visible.
+and report how many of them were found. Every unit of the run is
+timed, and ``--verifiers`` runs that many verifiers beside the run.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import io
 import json
 import os
 import platform
+import threading
 import time
 from pathlib import Path
 
@@ -181,6 +182,12 @@ def main() -> None:
         "--corpus", choices=("small", "wide", "synthetic", "crowded"), default="small"
     )
     parser.add_argument("--count", type=int, default=200)
+    parser.add_argument(
+        "--verifiers",
+        type=int,
+        default=0,
+        help="threads verifying pairs beside the run, as similarity.verify Jobs do",
+    )
     args = parser.parse_args()
     if args.root.exists():
         parser.error("root must be a new directory; existing results are preserved")
@@ -191,7 +198,6 @@ def main() -> None:
     from app.bootstrap.native_resources import configure as configure_native_resources
     from app.core.config import _overlay
     from app.db.models import (
-        File,
         FileType,
         GeometryFingerprint,
         Model,
@@ -248,8 +254,22 @@ def main() -> None:
     del corpus
 
     worker = processing.SimilarityProcessor(get_session_factory(), get_backend())
+    finished = threading.Event()
+
+    def verify() -> None:
+        # What one ``similarity.verify`` Job does, without the engine around it.
+        verifier = processing.SimilarityProcessor(get_session_factory(), get_backend())
+        while not finished.is_set():
+            if not verifier.verify_one(run_id):
+                time.sleep(0.2)
+
+    verifiers = [
+        threading.Thread(target=verify, daemon=True) for _ in range(args.verifiers)
+    ]
     units = []
     started = time.perf_counter()
+    for thread in verifiers:
+        thread.start()
     while True:
         with Session(engine) as session:
             run = session.get(SimilarityRun, run_id)
@@ -257,50 +277,27 @@ def main() -> None:
             if run.state in runs.TERMINAL:
                 break
             phase = run.phase
-            pending = json.loads(run.checkpoint_json).get("pending_pairs", [])
         tick = time.perf_counter()
-        assert worker.work_one(run_id, "benchmark"), "run made no progress"
-        units.append(
-            {
-                "phase": phase,
-                "pair": pending[0] if pending else None,
-                "seconds": time.perf_counter() - tick,
-            }
-        )
+        if not worker.work_one(run_id, "benchmark"):
+            # Verifiers hold the pairs left; the run waits for them.
+            assert args.verifiers, "run made no progress"
+            time.sleep(0.2)
+        units.append({"phase": phase, "seconds": time.perf_counter() - tick})
     total = time.perf_counter() - started
+    finished.set()
+    for thread in verifiers:
+        thread.join()
 
     with Session(engine) as session:
         run = session.get(SimilarityRun, run_id)
         assert run is not None and run.state == "completed", run
-        rows = session.exec(
-            select(
-                GeometryFingerprint.id, Model.name, GeometryFingerprint.component_index
-            )
-            .join(File, File.id == GeometryFingerprint.file_id)
-            .join(Model, Model.id == File.model_id)
-        ).all()
+        rows = session.exec(select(GeometryFingerprint.id)).all()
         names = {model.id: model.name for model in session.exec(select(Model))}
         found = {
             (names[row.model_a_id], names[row.model_b_id], row.evidence_class)
             for row in session.exec(select(SimilarityCandidate))
         }
         counters = json.loads(run.counters_json)
-    fingerprint = {row[0]: (row[1], row[2]) for row in rows}
-    by_pair: dict[str, list[float]] = collections.defaultdict(lambda: [0, 0.0])
-    for unit in units:
-        if unit["pair"] is None:
-            continue
-        a, b = (fingerprint[value] for value in unit["pair"])
-        kind = (
-            "whole"
-            if not a[1] and not b[1]
-            else "component"
-            if a[1] and b[1]
-            else "mixed"
-        )
-        key = f"{' <-> '.join(sorted((a[0], b[0])))} [{kind}]"
-        by_pair[key][0] += 1
-        by_pair[key][1] += unit["seconds"]
     phases: dict[str, float] = collections.defaultdict(float)
     for unit in units:
         phases[unit["phase"]] += unit["seconds"]
@@ -311,13 +308,9 @@ def main() -> None:
         "load_average": os.getloadavg(),
         "total_seconds": round(total, 2),
         "phase_seconds": {key: round(value, 2) for key, value in phases.items()},
-        "pair_units": sum(1 for unit in units if unit["pair"] is not None),
+        "verifiers": args.verifiers,
         "fingerprint_rows": len(rows),
         "counters": counters,
-        "by_pair": {
-            key: {"units": value[0], "seconds": round(value[1], 2)}
-            for key, value in sorted(by_pair.items(), key=lambda item: -item[1][1])
-        },
         "candidates": sorted(found),
     }
     (args.root / "report.json").write_text(json.dumps(report, indent=2) + "\n")

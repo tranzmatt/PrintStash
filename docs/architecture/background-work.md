@@ -340,7 +340,7 @@ both Compose files run the first with no setting.
 | `ENGINE_HISTORY_RETENTION_DAYS` | 7 | Settled engine executions |
 | `DERIVATIVE_MAX_ATTEMPTS` / `DERIVATIVE_BACKOFF_SECONDS` | 5 / 30 | Derivative retries, doubling, capped at a day |
 | `FENCE_HEARTBEAT_SECONDS` / `FENCE_TTL_SECONDS` | 15 / 60 | Fence liveness |
-| `JOBS_<LANE>_CONCURRENCY` | ingest 2, derive.light 4, network 4, similarity 1, notify 1, printing 1, maintenance 1, search 1, captions 1, expansion 1 | Per-lane concurrency; `derive.native` defaults to `MAX_RENDER_JOBS` |
+| `JOBS_<LANE>_CONCURRENCY` | ingest 2, derive.light 4, network 4, similarity 4, notify 1, printing 1, maintenance 1, search 1, captions 1, expansion 1 | Per-lane concurrency; `derive.native` defaults to `MAX_RENDER_JOBS` |
 | `JOBS_NOTIFY_RATE_PER_MINUTE` | 30 | Deliveries per channel |
 
 Administrators override lane concurrency at runtime on Settings → Background
@@ -432,7 +432,10 @@ are only ever recognised by their heartbeat going stale.
   one Job's subject. The engine alone decides what runs: the run keeps no lease,
   only a write fence naming the execution allowed to publish (a similarity
   run's `writer`), and the next attempt of an interrupted Job settles what the
-  previous attempt left open.
+  previous attempt left open. A similarity run's shortlisted pairs are rows of
+  their own (`similarity_run_pairs`): the run's analysis Job and its
+  `similarity.verify` Jobs (one per further lane slot) each lease a pair at a
+  time, and a pair whose verifier died is claimed again once its lease expires.
 - **A nudge is lost.** Nothing happens until the next tick or completion nudge;
   the intent is still in the database.
 - **A notice is dropped.** Clients also refresh on a slow interval and on

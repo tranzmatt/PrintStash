@@ -9,6 +9,9 @@ completion nudges the source, so a long analysis is a chain of short Jobs. A
 slice that could move nothing parks the source instead of spinning.
 Cancelling the Job withdraws the run; a Job that fails settles its run as
 failed and frees its scope for a new run.
+
+Beside it, ``similarity.verify`` Jobs verify a shortlisting run's queued pairs:
+one per lane slot beyond the analysis execution's, while a pair is claimable.
 """
 
 from __future__ import annotations
@@ -23,15 +26,21 @@ from sqlmodel import Session
 from app.core.time import utcnow
 from app.db.models import Job, JobKind, JobState, SimilarityRun, WorkPriority
 from app.modules.similarity import jobs as similarity_jobs
+from app.modules.similarity import pairs
 from app.modules.similarity.configuration import update_settings
-from app.modules.similarity.jobs import AnalysisSource, subject_key
+from app.modules.similarity.jobs import (
+    AnalysisSource,
+    VerificationSource,
+    subject_key,
+    verifier_key,
+)
 from app.modules.similarity.processing import SimilarityProcessor
 from app.modules.work.contracts import JobOutcome
 from app.modules.work.sources import idle_window, mark_idle
 from app.modules.work.submission import execution_id, submit
 
 SOURCE = AnalysisSource()
-(ANALYZE,) = similarity_jobs.definitions()
+ANALYZE, VERIFY = similarity_jobs.definitions()
 
 
 @pytest.fixture
@@ -336,3 +345,188 @@ class TestHooks:
 
     def test_a_retry_resumes_the_run(self, db_session: Session) -> None:
         assert ANALYZE.retry(db_session, subject_key(1)) is True
+
+
+VERIFIERS = VerificationSource()
+
+
+@pytest.fixture
+def queued_run(
+    db_session: Session,
+    admin,
+    make_similarity_run,
+    make_model,
+    make_file,
+    make_geometry_fingerprint,
+    enabled,
+):
+    """A shortlisting run with one claimable pair."""
+
+    def make(**overrides):
+        run = make_similarity_run(
+            admin, **({"state": "running", "phase": "candidates"} | overrides)
+        )
+        first, second = (
+            make_geometry_fingerprint(make_file(make_model()), state="ready").id
+            for _ in range(2)
+        )
+        pairs.enqueue(db_session, run.id, [(first, second)])
+        db_session.commit()
+        return run
+
+    return make
+
+
+@pytest.fixture
+def lane(admin):
+    """Override the similarity lane's concurrency; the default comes back after."""
+    from app.db.models import LaneName
+    from app.modules.work.service import set_lane_concurrency
+
+    yield lambda concurrency: set_lane_concurrency(
+        LaneName.SIMILARITY, concurrency, actor=admin
+    )
+    set_lane_concurrency(LaneName.SIMILARITY, None, actor=admin)
+
+
+class TestVerificationSource:
+    def test_offers_a_verifier_per_extra_lane_slot(
+        self, db_session: Session, queued_run, lane
+    ) -> None:
+        run = queued_run()
+        lane(3)
+
+        items = VERIFIERS.pending(db_session, now=utcnow(), limit=10)
+
+        assert [item.subject_key for item in items] == [
+            verifier_key(run.id, 0),
+            verifier_key(run.id, 1),
+        ]
+
+    def test_offers_no_verifier_at_lane_concurrency_one(
+        self, db_session: Session, queued_run, lane
+    ) -> None:
+        queued_run()
+        lane(1)
+
+        assert VERIFIERS.pending(db_session, now=utcnow(), limit=10) == []
+
+    def test_offers_nothing_once_every_pair_is_held(
+        self, db_session: Session, queued_run
+    ) -> None:
+        run = queued_run()
+        pairs.claim(db_session, run.id)
+
+        assert VERIFIERS.pending(db_session, now=utcnow(), limit=10) == []
+
+    @pytest.mark.parametrize("change", ["cancelled", "finished", "fingerprinting"])
+    def test_offers_nothing_for_a_run_that_cannot_verify(
+        self, db_session: Session, queued_run, change: str
+    ) -> None:
+        overrides = {
+            "cancelled": {"cancel_requested": True},
+            "finished": {"state": "completed", "active_scope_key": None},
+            "fingerprinting": {"phase": "fingerprint"},
+        }[change]
+        queued_run(**overrides)
+
+        assert VERIFIERS.pending(db_session, now=utcnow(), limit=10) == []
+
+    def test_offers_nothing_while_disabled(
+        self, db_session: Session, admin, queued_run
+    ) -> None:
+        queued_run()
+        update_settings(db_session, admin, {"enabled": False})
+        db_session.commit()
+
+        assert VERIFIERS.pending(db_session, now=utcnow(), limit=10) == []
+
+    @pytest.mark.parametrize(
+        "trigger,priority",
+        [("manual", WorkPriority.INTERACTIVE), ("schedule", WorkPriority.BACKFILL)],
+    )
+    def test_verifiers_take_their_run_priority(
+        self, db_session: Session, queued_run, trigger, priority
+    ) -> None:
+        queued_run(trigger=trigger)
+
+        items = VERIFIERS.pending(db_session, now=utcnow(), limit=10)
+
+        assert {item.priority for item in items} == {priority}
+
+    def test_never_offers_more_verifiers_than_asked(
+        self, db_session: Session, queued_run
+    ) -> None:
+        queued_run()
+
+        assert len(VERIFIERS.pending(db_session, now=utcnow(), limit=1)) == 1
+
+    def test_a_parked_source_offers_no_verifier(
+        self, db_session: Session, queued_run
+    ) -> None:
+        queued_run()
+        mark_idle(JobKind.SIMILARITY_VERIFY, seconds=30)
+
+        assert VERIFIERS.pending(db_session, now=utcnow(), limit=10) == []
+
+
+def _verify(session: Session, work_engine, make_job, run: SimilarityRun) -> dict:
+    job = make_job(kind=JobKind.SIMILARITY_VERIFY, subject=verifier_key(run.id, 0))
+    submit(job.id)
+    work_engine.run_one()
+    session.expire_all()
+    row = session.get(Job, job.id)
+    assert row is not None and row.state == JobState.COMPLETED
+    return json.loads(row.status_json)["result"]
+
+
+class TestVerify:
+    def test_verifies_its_run_until_no_pair_is_left(
+        self,
+        db_session: Session,
+        work_engine,
+        make_job,
+        admin,
+        make_similarity_run,
+        monkeypatch,
+    ) -> None:
+        run = make_similarity_run(admin)
+        verified: list[int] = []
+
+        def verify_one(_self, run_id: int) -> bool:
+            if len(verified) >= 3:
+                return False
+            verified.append(run_id)
+            return True
+
+        monkeypatch.setattr(SimilarityProcessor, "verify_one", verify_one)
+
+        result = _verify(db_session, work_engine, make_job, run)
+
+        assert (verified, result["units"]) == ([run.id] * 3, 3)
+
+    def test_a_verifier_that_found_nothing_parks_its_source(
+        self,
+        db_session: Session,
+        work_engine,
+        make_job,
+        admin,
+        make_similarity_run,
+        monkeypatch,
+    ) -> None:
+        monkeypatch.setattr(SimilarityProcessor, "verify_one", lambda *_: False)
+
+        _verify(db_session, work_engine, make_job, make_similarity_run(admin))
+
+        assert idle_window(db_session, JobKind.SIMILARITY_VERIFY) is not None
+
+    def test_cancelling_a_verifier_withdraws_its_run(
+        self, db_session: Session, admin, make_similarity_run
+    ) -> None:
+        run = make_similarity_run(admin)
+
+        VERIFY.cancel(db_session, verifier_key(run.id, 1))
+        db_session.commit()
+
+        withdrawn = _reread(db_session, run.id)
+        assert (withdrawn.cancel_requested, withdrawn.state) == (True, "cancelling")
