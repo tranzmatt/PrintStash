@@ -6,11 +6,20 @@ import json
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 
-from printstash_core.mesh.similarity import GeometryError
-from sqlmodel import Session, col, select
+from printstash_core.mesh.similarity import GeometryError, cloud
+from sqlmodel import Session, col, func, select
 
 from app.core.errors import OperationError
-from app.db.models import File, GeometryFingerprint, SimilarityRun, User
+from app.db.models import (
+    File,
+    GeometryFingerprint,
+    JobKind,
+    SimilarityCandidate,
+    SimilarityPairOutcome,
+    SimilarityRun,
+    SimilarityRunPair,
+    User,
+)
 from app.db.session import SessionFactory
 from app.modules.media import mesh_isolation, verification_isolation
 from app.modules.media.fingerprints import FingerprintResult, FingerprintResultState
@@ -20,6 +29,7 @@ from app.modules.media.source_preparation import prepare_sources
 from app.modules.similarity import (
     candidates,
     fingerprints,
+    pairs,
     retrieval,
     runs,
     verification_cache,
@@ -27,6 +37,7 @@ from app.modules.similarity import (
 from app.modules.similarity.configuration import SimilaritySettings, read_settings
 from app.modules.storage import artifact_content
 from app.modules.storage.storage_backend.contracts import StorageBackend
+from app.modules.work.submission import nudge_after_commit
 from app.runtime.native_admission import AdmissionTooLarge
 
 
@@ -106,10 +117,10 @@ class SimilarityProcessor:
                             progress,
                             counters,
                         )
-                    else:
-                        self._candidates(
-                            session, run, token, actor, config, progress, counters
-                        )
+                    elif not self._candidates(
+                        session, run, token, actor, config, progress, counters
+                    ):
+                        return False
             except OperationError as exc:
                 if exc.kind.value in ("busy", "capacity", "unavailable"):
                     runs.checkpoint(session, run, token)
@@ -256,18 +267,29 @@ class SimilarityProcessor:
         config: SimilaritySettings,
         progress: dict,
         counters: dict,
-    ) -> None:
-        pairs = progress.get("pending_pairs", [])
-        if pairs:
-            try:
-                self._verify_pair(
-                    session, run, token, actor, config, pairs[0], counters
-                )
-            finally:
-                session.commit()
-            progress["pending_pairs"] = pairs[1:]
-            runs.checkpoint(session, run, token, progress=progress, counters=counters)
-            return
+    ) -> bool:
+        """Shortlist one fingerprint, else verify one queued pair; ``False`` waits.
+
+        Shortlists queue their pairs for any verifier. Once every source is
+        shortlisted this execution verifies too, and the run completes when no
+        pair is left. Pairs other verifiers still hold make it wait for them.
+        """
+        assert run.id is not None
+        legacy = progress.pop("pending_pairs", None)
+        if legacy is not None:
+            # Checkpointed before pairs were rows: queue what the run still owed,
+            # keeping the counts its earlier units made.
+            cleared = frozenset(progress.pop("cloud_cleared", ()))
+            progress["legacy_counters"] = {
+                name: counters.get(name, 0) for name in pairs.COUNTERS
+            }
+            pairs.enqueue(
+                session,
+                run.id,
+                [(source, target) for source, target in legacy],
+                cloud_cleared=cleared,
+            )
+            session.commit()
         sources = (
             runs.source_query(session, run, actor)
             .with_only_columns(col(File.id))
@@ -280,6 +302,7 @@ class SimilarityProcessor:
                 GeometryFingerprint.id > progress.get("fingerprint_id", 0),
                 GeometryFingerprint.algorithm_version == run.algorithm_version,
                 col(GeometryFingerprint.state).in_(("ready", "partial")),
+                fingerprints.distinct_shape(),
                 # A source edit during fingerprinting cannot contribute old rows.
                 col(GeometryFingerprint.source_sha256).in_(
                     select(File.sha256).where(File.id == GeometryFingerprint.file_id)
@@ -288,9 +311,35 @@ class SimilarityProcessor:
             .order_by(col(GeometryFingerprint.id))
             .limit(1)
         ).first()
-        if row is None:
+        if row is not None:
+            self._shortlist(session, run, actor, config, row, progress, counters)
+            runs.checkpoint(session, run, token, progress=progress, counters=counters)
+            return True
+        moved = self._verify_next(session, run, actor, config)
+        if not moved and not pairs.pending(session, run.id):
+            # Many observations can refine one Candidate; report the Candidates.
+            counters["candidates"] = session.exec(
+                select(func.count())
+                .select_from(SimilarityCandidate)
+                .where(SimilarityCandidate.run_id == run.id)
+            ).one()
+            _count_pairs(session, run, progress, counters)
             runs.checkpoint(session, run, token, state="completed", counters=counters)
-            return
+            return True
+        _count_pairs(session, run, progress, counters)
+        runs.checkpoint(session, run, token, progress=progress, counters=counters)
+        return moved
+
+    def _shortlist(
+        self,
+        session: Session,
+        run: SimilarityRun,
+        actor: User,
+        config: SimilaritySettings,
+        row: GeometryFingerprint,
+        progress: dict,
+        counters: dict,
+    ) -> None:
         shortlist = retrieval.find_candidates(
             session, row, actor, limit=config.max_candidates
         )
@@ -300,9 +349,17 @@ class SimilarityProcessor:
             shortlist = extend(
                 session, self.sessions, actor, row, shortlist, config.max_candidates
             )
-        progress.update(
-            fingerprint_id=row.id,
-            pending_pairs=[[row.id, target] for target in shortlist.fingerprint_ids],
+        assert run.id is not None and row.id is not None
+        if pairs.enqueue(
+            session,
+            run.id,
+            [(row.id, target) for target in shortlist.fingerprint_ids],
+            cloud_cleared=shortlist.cloud_cleared,
+        ):
+            nudge_after_commit(session, JobKind.SIMILARITY_VERIFY)
+        progress["fingerprint_id"] = row.id
+        progress["shortlist_rejected_by_cloud"] = (
+            progress.get("shortlist_rejected_by_cloud", 0) + shortlist.rejected_by_cloud
         )
         counters["shortlisted"] = counters.get("shortlisted", 0) + len(
             shortlist.fingerprint_ids
@@ -310,31 +367,117 @@ class SimilarityProcessor:
         counters["skipped_by_budget"] = (
             counters.get("skipped_by_budget", 0) + shortlist.skipped_by_budget
         )
-        runs.checkpoint(session, run, token, progress=progress, counters=counters)
+        _count_pairs(session, run, progress, counters)
+
+    def verify_one(self, run_id: int) -> bool:
+        """Verify one queued pair of the run; ``False`` when none can be.
+
+        A ``similarity.verify`` Job calls this beside the run's own analysis
+        execution. It never fails the run: an actor or permission that changed
+        stops it here, and the analysis execution settles the run.
+        """
+        with self.sessions.scoped_session() as session:
+            run = session.get(SimilarityRun, run_id)
+            if (
+                not read_settings(session).enabled
+                or run is None
+                or run.state in runs.TERMINAL
+                or run.cancel_requested
+                or run.phase != "candidates"
+            ):
+                return False
+            actor = session.get(User, run.actor_id) if run.actor_id else None
+            if actor is None or not actor.is_active:
+                return False
+            config = SimilaritySettings.model_validate_json(run.settings_json)
+            try:
+                runs.normalize_scope(
+                    session, actor, run.scope, json.loads(run.scope_ids_json)
+                )
+                with self._retain_storage():
+                    return self._verify_next(session, run, actor, config)
+            except OperationError:
+                return False
+
+    def _verify_next(
+        self,
+        session: Session,
+        run: SimilarityRun,
+        actor: User,
+        config: SimilaritySettings,
+    ) -> bool:
+        """Lease one pending pair, verify it and settle its outcome."""
+        assert run.id is not None
+        claimed = pairs.claim(session, run.id)
+        if claimed is None:
+            return False
+        pair, token = claimed
+        assert pair.id is not None
+        try:
+            outcome = self._verify_pair(session, run, actor, config, pair, token)
+        except OperationError:
+            # Capacity or permission: hand the pair back for a later attempt.
+            session.rollback()
+            pairs.release(session, pair.id, token)
+            session.commit()
+            raise
+        except Exception:
+            # The lease expires and the pair is verified again.
+            session.rollback()
+            raise
+        pairs.settle(session, pair.id, token, outcome)
+        session.commit()
+        return True
 
     def _verify_pair(
         self,
         session: Session,
         run: SimilarityRun,
-        token: str,
         actor: User,
         config: SimilaritySettings,
-        pair: list[int],
-        counters: dict,
-    ) -> None:
-        first, second = (session.get(GeometryFingerprint, value) for value in pair)
+        pair: SimilarityRunPair,
+        token: str,
+    ) -> SimilarityPairOutcome:
+        Outcome = SimilarityPairOutcome
+        first, second = (
+            session.get(GeometryFingerprint, value)
+            for value in (pair.fingerprint_a_id, pair.fingerprint_b_id)
+        )
         if first is None or second is None:
-            return
+            return Outcome.SKIPPED
         fa, fb = session.get(File, first.file_id), session.get(File, second.file_id)
         if fa is None or fb is None or fa.model_id == fb.model_id:
-            return
+            return Outcome.SKIPPED
         if fa.model_id > fb.model_id:
             first, second, fa, fb = second, first, fb, fa
         for file, fp in ((fa, first), (fb, second)):
             if not fingerprints.current_source(session, fp.file_id, fp.source_sha256):
-                counters["stale"] = counters.get("stale", 0) + 1
-                return
+                return Outcome.STALE
             runs.normalize_scope(session, actor, "models", [file.model_id])
+        # Neither shortcut publishes evidence, so neither needs source bytes.
+        if (first.component_index or second.component_index) and (
+            verification_cache.proven_exact_files(session, fa, fb)
+        ):
+            return Outcome.IMPLIED_BY_WHOLE
+        if verification_cache.known_empty(
+            session,
+            first,
+            second,
+            sample_points=config.sample_points,
+            triangle_cap=config.triangle_cap,
+        ):
+            return Outcome.VERIFICATION_CACHED
+        # Retrieval already measured a cleared pair; learned proposals were not.
+        if (
+            not pair.cloud_cleared
+            and first.cloud_blob is not None
+            and second.cloud_blob is not None
+            and cloud.rejects(
+                cloud.SurfaceCloud.decode(first.cloud_blob),
+                cloud.SurfaceCloud.decode(second.cloud_blob),
+            )
+        ):
+            return Outcome.REJECTED_BY_CLOUD
         try:
             with prepare_sources(
                 tuple(
@@ -346,15 +489,11 @@ class SimilarityProcessor:
                     fingerprints.source_digest(path_a) != first.source_sha256
                     or fingerprints.source_digest(path_b) != second.source_sha256
                 ):
-                    counters["stale"] = counters.get("stale", 0) + 1
-                    return
+                    return Outcome.STALE
                 if verification_cache.reusable_pair(
                     session, first, second, sample_points=config.sample_points
                 ):
-                    counters["verification_cached"] = (
-                        counters.get("verification_cached", 0) + 1
-                    )
-                    return
+                    return Outcome.VERIFICATION_CACHED
                 evidence = verification_isolation.verify_paths(
                     path_a,
                     path_b,
@@ -372,19 +511,44 @@ class SimilarityProcessor:
             artifact_content.ArtifactContentError,
         ):
             # A worker killed for this pair's bytes fails the pair, not the run.
-            counters["verification_failed"] = counters.get("verification_failed", 0) + 1
-            return
-        counters["verified"] = counters.get("verified", 0) + 1
+            return Outcome.VERIFICATION_FAILED
+        if evidence.evidence_class is None:
+            verification_cache.record_empty(
+                session, first, second, evidence, triangle_cap=config.triangle_cap
+            )
+            return Outcome.VERIFIED
         # Persist measured evidence independently of review thresholds. Changing
         # a slider selects durable candidates without repeating geometry work.
-        if evidence.evidence_class is not None:
-            kind = (
-                "component_match"
-                if first.component_index or second.component_index
-                else "whole"
-            )
-            candidate = candidates.publish(
-                session, first, second, evidence, run=run, run_token=token, kind=kind
-            )
-            if candidate is not None and candidate.confidence > 0:
-                counters["candidates"] = counters.get("candidates", 0) + 1
+        kind = (
+            "component_match"
+            if first.component_index or second.component_index
+            else "whole"
+        )
+        assert pair.id is not None
+        candidate = candidates.publish(
+            session,
+            first,
+            second,
+            evidence,
+            run=run,
+            pair_lease=(pair.id, token),
+            kind=kind,
+        )
+        if candidate is not None and candidate.confidence > 0:
+            return Outcome.OBSERVED
+        return Outcome.VERIFIED
+
+
+def _count_pairs(
+    session: Session, run: SimilarityRun, progress: dict, counters: dict
+) -> None:
+    """Refresh the counters that the run's pair outcomes own."""
+    assert run.id is not None
+    measured = pairs.counters(session, run.id)
+    measured["rejected_by_cloud"] += progress.get("shortlist_rejected_by_cloud", 0)
+    for name, value in measured.items():
+        total = value + progress.get("legacy_counters", {}).get(name, 0)
+        if total:
+            counters[name] = total
+        else:
+            counters.pop(name, None)

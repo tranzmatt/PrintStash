@@ -175,7 +175,7 @@ def extract(prepared: PreparedMesh) -> FingerprintResult:
         return FingerprintResult(
             FingerprintResultState.FAILED, failure_code=FingerprintFailureCode(exc.code)
         )
-    except (ValueError, OverflowError, MemoryError):
+    except ValueError, OverflowError, MemoryError:
         return FingerprintResult(
             FingerprintResultState.FAILED,
             failure_code=FingerprintFailureCode.ANALYSIS_FAILED,
@@ -184,6 +184,7 @@ def extract(prepared: PreparedMesh) -> FingerprintResult:
 
 def _describe(vertices: Any, faces: Any, *, partial: bool) -> dict[str, Any]:
     import numpy as np
+    from printstash_core.mesh.similarity.cloud import CLOUD_RECIPE, surface_cloud
     from printstash_core.mesh.similarity.descriptors import (
         SH_RECIPE,
         VIEW_RECIPE,
@@ -246,4 +247,6 @@ def _describe(vertices: Any, faces: Any, *, partial: bool) -> dict[str, Any]:
         np.array(shape.sh, dtype="<f4").tobytes() if shape.sh is not None else None
     )
     values["view_blob"] = shape.view_hashes
+    values["cloud_blob"] = surface_cloud(surface).encode()
+    values["recipe"]["cloud"] = CLOUD_RECIPE
     return values

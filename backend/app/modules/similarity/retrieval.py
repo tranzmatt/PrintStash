@@ -10,9 +10,14 @@ from sqlmodel import Session, col, select
 
 from app.db.models import CollectionRole, File, GeometryFingerprint, Model, User
 from app.modules.identity.rbac import accessible_collection_ids_stmt
-from app.modules.similarity.fingerprints import live_source_predicates
+from app.modules.similarity.fingerprints import distinct_shape, live_source_predicates
 
 PREFILTER_LIMIT = 512
+# Measured on a 400-design library of look-alike families: a planted variant's
+# descriptor rank reached 85, while a cloud ordering of the descriptor top 100
+# put it in the top 20 in 73 of 74 directions (the descriptor alone: 49).
+CLOUD_POOL_FACTOR = 5
+CLOUD_CONFIRM_FACTOR = 1.5
 
 
 @dataclass(frozen=True)
@@ -21,6 +26,9 @@ class Shortlist:
     examined: int
     skipped_by_budget: int
     hash_hits: tuple[int, ...] = ()
+    # Targets whose surface clouds already passed ``cloud.rejects``.
+    cloud_cleared: frozenset[int] = frozenset()
+    rejected_by_cloud: int = 0
 
 
 def editable_models(session: Session, user: User, model=Model):
@@ -69,6 +77,7 @@ def find_candidates(
         col(GeometryFingerprint.state).in_(("ready", "partial")),
         GeometryFingerprint.source_sha256 == File.sha256,
         Model.id != file.model_id,
+        distinct_shape(),
         *live_source_predicates(),
         editable_models(session, actor),
     )
@@ -136,9 +145,11 @@ def find_candidates(
                 GeometryFingerprint.d2_blob,
                 GeometryFingerprint.sh_blob,
                 GeometryFingerprint.view_blob,
+                GeometryFingerprint.cloud_blob,
             )
         )
     ).all()
+    clouds = {row.id: row.cloud_blob for row in rows}
     scored = []
     for row in rows:
         score = descriptor_distance(source, row)
@@ -151,12 +162,67 @@ def find_candidates(
                 )
             )
     scored.sort()
-    skipped += max(len(scored) - limit, 0)
+    hits = [row[2] for row in scored if row[0] == 0]
+    ranked = [row[2] for row in scored if row[0] == 1]
+    rejected = 0
+    cleared: frozenset[int] = frozenset()
+    if source.cloud_blob is not None:
+        ranked, cleared, rejected = _cloud_order(
+            source.cloud_blob, ranked, clouds, limit
+        )
+    ordered = [*hits, *ranked]
+    skipped += max(len(ordered) - limit, 0)
+    kept = ordered[:limit]
     return Shortlist(
-        tuple(row[2] for row in scored[:limit]),
+        tuple(kept),
         len(rows),
         skipped,
-        tuple(row[2] for row in scored[:limit] if row[2] in hash_hits),
+        tuple(target for target in kept if target in hash_hits),
+        cleared & frozenset(kept),
+        rejected,
+    )
+
+
+def _cloud_order(
+    source_blob: bytes,
+    ranked: list[int],
+    clouds: dict[int | None, bytes | None],
+    limit: int,
+) -> tuple[list[int], frozenset[int], int]:
+    """Reorder the descriptor shortlist by surface-cloud alignment.
+
+    The descriptor top ``CLOUD_POOL_FACTOR × limit`` are ordered by the cheap
+    ``rank_score``; the best ``CLOUD_CONFIRM_FACTOR × limit`` are measured
+    exactly and clearly different ones dropped. Survivors lead, then every
+    other candidate in descriptor order, so a missing cloud only falls back.
+    Exact-key hits never enter this ordering.
+    """
+    from printstash_core.mesh.similarity import cloud
+
+    source = cloud.SurfaceCloud.decode(source_blob)
+    decoded = {}
+    for target in ranked[: limit * CLOUD_POOL_FACTOR]:
+        blob = clouds[target]
+        if blob is not None:
+            decoded[target] = cloud.SurfaceCloud.decode(blob)
+    by_rank = sorted(
+        decoded, key=lambda target: cloud.rank_score(source, decoded[target])
+    )
+    confirmed = []
+    rejected = set()
+    for target in by_rank[: int(limit * CLOUD_CONFIRM_FACTOR)]:
+        score = cloud.alignment_score(source, decoded[target])
+        if score > cloud.REJECT_SCORE:
+            rejected.add(target)
+        else:
+            confirmed.append((score, target))
+    confirmed.sort()
+    survivors = [target for _, target in confirmed]
+    placed = set(survivors) | rejected
+    return (
+        [*survivors, *(target for target in ranked if target not in placed)],
+        frozenset(survivors),
+        len(rejected),
     )
 
 

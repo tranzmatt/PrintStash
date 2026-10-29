@@ -66,7 +66,33 @@ search. Starting a manual analysis retries previously failed, unsupported or
 partial geometry, which is useful after increasing a limit or enabling format
 support. Scheduled analysis keeps those cached results to avoid retry loops.
 Complete fingerprints are reused. Exact comparisons can also reuse their stored
-proof after both source digests and the verification recipe are checked.
+proof after both source digests and the verification recipe are checked. A pair
+that was compared without any match is not compared again for the same files and
+settings, whichever side shortlisted it. When two whole files are already proven
+identical, rescaled or mirrored, their individual parts are not compared.
+
+Each complete fingerprint also keeps a compact cloud of surface samples. Before a
+pair is verified, the two clouds are aligned; a pair whose clouds stay clearly
+apart is skipped, because it could not produce any evidence. A pair that passes
+is verified exactly as before, so the cloud never creates or changes evidence.
+Fingerprints made by an earlier version gain their cloud the next time an
+analysis reaches them, which recomputes them once.
+
+Several pairs are verified at once: the similarity lane's concurrency sets how
+many, one slot shortlisting while the others verify. By default it follows
+*Models processed at once* (`VAULT_MAX_RENDER_JOBS`, derived from the usable
+CPUs and the native memory pool), so a larger machine verifies more pairs at a
+time and a small one fewer; `VAULT_JOBS_SIMILARITY_CONCURRENCY` or Settings →
+Background work sets it explicitly. Each verification is still admitted against
+the native memory pool. At 1, pairs are verified one by one.
+
+The clouds also choose which candidates fill the shortlist. Of the closest
+candidates by shape descriptor, five times the shortlist size are ordered by a
+quick cloud alignment, the best are aligned exactly, and the ones that align
+closely are verified first. In a library of many look-alike designs this
+finds copies that the descriptors alone rank past the shortlist. Exact-key
+matches always come first, and a candidate without a cloud keeps its descriptor
+rank.
 
 The repository Benchy and Spatula use complete geometry at the default limits.
 An existing explicit lower cap remains unchanged; increase it before a manual

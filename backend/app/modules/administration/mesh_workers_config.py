@@ -114,4 +114,5 @@ def update_settings(
         from app.modules.work import service as work_service
 
         work_service.reapply_lane_default(LaneName.DERIVE_NATIVE)
+        work_service.reapply_lane_default(LaneName.SIMILARITY)
         return read_settings(session)

@@ -75,6 +75,10 @@ PRELOAD = (
     "app.modules.media.three_mf_native",
     "app.modules.media.fingerprints",
     "app.runtime.compute.client",
+    # Pair verification runs once per shortlisted pair; a similarity run
+    # starts hundreds of them.
+    "app.modules.media.verification_worker",
+    "printstash_core.mesh.similarity.verification",
 )
 
 

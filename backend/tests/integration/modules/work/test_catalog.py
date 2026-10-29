@@ -15,7 +15,11 @@ from sqlmodel import Session
 from app.core.config import _overlay
 from app.db.models import JobKind, LaneName, WorkLaneOverride
 from app.modules.work import catalog as catalog_module
-from app.modules.work.catalog import WorkCatalog, default_lanes
+from app.modules.work.catalog import (
+    MAX_SIMILARITY_CONCURRENCY,
+    WorkCatalog,
+    default_lanes,
+)
 from app.modules.work.contracts import JobDefinition, Step
 
 PROBE = JobKind.SOURCES_SCAN
@@ -56,6 +60,32 @@ class TestDefaultLanes:
         _overlay["jobs_derive_native_concurrency"] = 5
 
         assert default_lanes()[LaneName.DERIVE_NATIVE].concurrency == 5
+
+    def test_similarity_follows_the_render_budget(self) -> None:
+        _overlay["jobs_similarity_concurrency"] = None
+        _overlay["max_render_jobs"] = 3
+
+        assert default_lanes()[LaneName.SIMILARITY].concurrency == 3
+
+    def test_a_serial_render_budget_leaves_similarity_one_slot(self) -> None:
+        _overlay["jobs_similarity_concurrency"] = None
+        _overlay["max_render_jobs"] = 0
+
+        assert default_lanes()[LaneName.SIMILARITY].concurrency == 1
+
+    def test_similarity_stays_within_its_ceiling(self) -> None:
+        _overlay["jobs_similarity_concurrency"] = None
+        _overlay["max_render_jobs"] = 40
+
+        assert (
+            default_lanes()[LaneName.SIMILARITY].concurrency
+            == MAX_SIMILARITY_CONCURRENCY
+        )
+
+    def test_an_explicit_similarity_concurrency_wins(self) -> None:
+        _overlay["jobs_similarity_concurrency"] = 5
+
+        assert default_lanes()[LaneName.SIMILARITY].concurrency == 5
 
 
 class TestWorkCatalog:

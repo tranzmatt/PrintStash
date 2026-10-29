@@ -8,7 +8,7 @@ from sqlmodel import select
 
 from app.db.models import CollectionRole, File, GeometryFingerprint
 from app.modules.similarity import retrieval
-from tests.factories import build_geometry_fingerprint
+from tests.factories import build_geometry_fingerprint, surface_cloud_blob
 
 
 @pytest.fixture
@@ -236,3 +236,254 @@ class TestRetrieval:
         assert retrieval.find_candidates(
             db_session, source, make_user(superuser=True)
         ).fingerprint_ids == (matching.id,)
+
+
+class TestSingleBodyComponents:
+    """A single-body file's Component 1 repeats its whole row."""
+
+    def test_offers_only_the_whole_row_of_a_single_body_target(
+        self,
+        db_session,
+        source,
+        make_model,
+        make_file,
+        make_user,
+        make_geometry_fingerprint,
+    ):
+        file = make_file(make_model())
+        whole = make_geometry_fingerprint(
+            file,
+            state="ready",
+            normalized_area=1,
+            component_count=1,
+            d2_blob=source.d2_blob,
+        )
+        make_geometry_fingerprint(
+            file,
+            state="ready",
+            component_index=1,
+            normalized_area=1,
+            component_count=1,
+            d2_blob=source.d2_blob,
+        )
+
+        result = retrieval.find_candidates(
+            db_session, source, make_user(superuser=True)
+        )
+
+        assert result.fingerprint_ids == (whole.id,)
+
+    @pytest.mark.parametrize(
+        "component_count", [2, None], ids=["multi-body", "partial-whole"]
+    )
+    def test_offers_components_unless_the_whole_is_one_body(
+        self,
+        db_session,
+        source,
+        make_model,
+        make_file,
+        make_user,
+        make_geometry_fingerprint,
+        component_count,
+    ):
+        file = make_file(make_model())
+        rows = [
+            make_geometry_fingerprint(
+                file,
+                state="ready",
+                component_index=index,
+                normalized_area=1,
+                component_count=component_count if index == 0 else 1,
+                d2_blob=source.d2_blob,
+            )
+            for index in range(2)
+        ]
+
+        result = retrieval.find_candidates(
+            db_session, source, make_user(superuser=True)
+        )
+
+        assert set(result.fingerprint_ids) == {row.id for row in rows}
+
+    def test_offers_a_component_whose_whole_row_is_from_another_source(
+        self,
+        db_session,
+        source,
+        make_model,
+        make_file,
+        make_user,
+        make_geometry_fingerprint,
+    ):
+        file = make_file(make_model())
+        make_geometry_fingerprint(
+            file,
+            state="ready",
+            normalized_area=1,
+            component_count=1,
+            source_sha256="e" * 64,
+            d2_blob=source.d2_blob,
+        )
+        component = make_geometry_fingerprint(
+            file,
+            state="ready",
+            component_index=1,
+            normalized_area=1,
+            component_count=1,
+            d2_blob=source.d2_blob,
+        )
+
+        result = retrieval.find_candidates(
+            db_session, source, make_user(superuser=True)
+        )
+
+        assert result.fingerprint_ids == (component.id,)
+
+
+def near_d2(distance):
+    """A D2 histogram whose distance from the uniform source grows with *distance*."""
+    values = [1 / 64] * 64
+    values[0] += distance
+    values[1] = max(values[1] - distance, 0)
+    return struct.pack("<64f", *values)
+
+
+@pytest.fixture
+def shapes():
+    import trimesh
+
+    cylinder = trimesh.creation.cylinder(radius=5, height=12, sections=48)
+    turned = cylinder.copy()
+    turned.apply_transform(trimesh.transformations.rotation_matrix(0.8, [1, 1, 0]))
+    turned.apply_scale(25.4)
+    return {
+        "source": surface_cloud_blob(cylinder),
+        "copy": surface_cloud_blob(turned),
+        "slab": surface_cloud_blob(trimesh.creation.box((10, 20, 2))),
+    }
+
+
+@pytest.fixture
+def cloud_target(db_session, make_model, make_file, make_geometry_fingerprint):
+    def make(cloud_blob, distance, **overrides):
+        return make_geometry_fingerprint(
+            make_file(make_model()),
+            state="ready",
+            normalized_area=1,
+            d2_blob=near_d2(distance),
+            cloud_blob=cloud_blob,
+            **overrides,
+        )
+
+    return make
+
+
+@pytest.fixture
+def cloud_source(db_session, source, shapes):
+    source.cloud_blob = shapes["source"]
+    db_session.add(source)
+    db_session.commit()
+    return source
+
+
+class TestCloudOrdering:
+    def test_shortlists_a_cloud_match_ranked_past_the_budget(
+        self, db_session, make_user, cloud_source, cloud_target, shapes
+    ):
+        cloud_target(shapes["slab"], 0.0)
+        match = cloud_target(shapes["copy"], 0.004)
+
+        result = retrieval.find_candidates(
+            db_session, cloud_source, make_user(superuser=True), limit=1
+        )
+
+        assert result.fingerprint_ids == (match.id,)
+
+    def test_drops_a_clearly_different_candidate(
+        self, db_session, make_user, cloud_source, cloud_target, shapes
+    ):
+        cloud_target(shapes["slab"], 0.0)
+        match = cloud_target(shapes["copy"], 0.004)
+
+        result = retrieval.find_candidates(
+            db_session, cloud_source, make_user(superuser=True)
+        )
+
+        assert (result.fingerprint_ids, result.rejected_by_cloud) == ((match.id,), 1)
+
+    def test_marks_a_confirmed_candidate_cleared(
+        self, db_session, make_user, cloud_source, cloud_target, shapes
+    ):
+        match = cloud_target(shapes["copy"], 0.004)
+
+        result = retrieval.find_candidates(
+            db_session, cloud_source, make_user(superuser=True)
+        )
+
+        assert result.cloud_cleared == frozenset({match.id})
+
+    def test_keeps_a_candidate_without_a_cloud_after_confirmed_ones(
+        self, db_session, make_user, cloud_source, cloud_target, shapes
+    ):
+        legacy = cloud_target(None, 0.0)
+        match = cloud_target(shapes["copy"], 0.004)
+
+        result = retrieval.find_candidates(
+            db_session, cloud_source, make_user(superuser=True)
+        )
+
+        assert (result.fingerprint_ids, result.cloud_cleared) == (
+            (match.id, legacy.id),
+            frozenset({match.id}),
+        )
+
+    def test_keeps_descriptor_order_for_a_source_without_a_cloud(
+        self, db_session, make_user, source, cloud_target, shapes
+    ):
+        source.cloud_blob = None
+        db_session.add(source)
+        db_session.commit()
+        slab = cloud_target(shapes["slab"], 0.0)
+        match = cloud_target(shapes["copy"], 0.004)
+
+        result = retrieval.find_candidates(
+            db_session, source, make_user(superuser=True)
+        )
+
+        assert (result.fingerprint_ids, result.cloud_cleared) == (
+            (slab.id, match.id),
+            frozenset(),
+        )
+
+    def test_keeps_an_exact_key_hit_first_whatever_its_cloud(
+        self, db_session, make_user, cloud_source, cloud_target, shapes
+    ):
+        cloud_source.physical_hash_0 = "a" * 64
+        db_session.add(cloud_source)
+        db_session.commit()
+        match = cloud_target(shapes["copy"], 0.0)
+        keyed = cloud_target(shapes["slab"], 0.004, physical_hash_0="a" * 64)
+
+        result = retrieval.find_candidates(
+            db_session, cloud_source, make_user(superuser=True)
+        )
+
+        assert result.fingerprint_ids == (keyed.id, match.id)
+
+    def test_measures_only_five_times_the_budget(
+        self, db_session, make_user, cloud_source, cloud_target, shapes
+    ):
+        decoys = [
+            cloud_target(shapes["slab"], index * 0.001)
+            for index in range(retrieval.CLOUD_POOL_FACTOR)
+        ]
+        cloud_target(shapes["copy"], 0.02)
+
+        result = retrieval.find_candidates(
+            db_session, cloud_source, make_user(superuser=True), limit=1
+        )
+
+        # One decoy is measured and dropped; the match is outside the pool.
+        assert (result.fingerprint_ids, result.rejected_by_cloud) == (
+            (decoys[1].id,),
+            1,
+        )

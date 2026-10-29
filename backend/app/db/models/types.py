@@ -211,6 +211,7 @@ class JobKind(StrEnum):
     SEARCH_PROJECT = "search.project"
     SEARCH_REPAIR = "search.repair"
     SIMILARITY_ANALYZE = "similarity.analyze"
+    SIMILARITY_VERIFY = "similarity.verify"
     SOURCES_SCAN = "sources.scan"
     STORAGE_INVENTORY = "storage.inventory"
     STORAGE_MIGRATE = "storage.migrate"

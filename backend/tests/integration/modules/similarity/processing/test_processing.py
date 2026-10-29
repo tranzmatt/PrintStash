@@ -14,7 +14,10 @@ from app.db.models import (
     FileType,
     GeometryFingerprint,
     SimilarityCandidate,
+    SimilarityEmptyVerification,
+    SimilarityPairOutcome,
     SimilarityRun,
+    SimilarityRunPair,
 )
 from app.db.session import get_session_factory
 from app.modules.media import mesh_isolation, verification_isolation
@@ -22,6 +25,7 @@ from app.modules.media.mesh_contracts import ThumbnailFailureReason
 from app.modules.media.mesh_facts import FingerprintFailureCode
 from app.modules.media.mesh_isolation import MeshWorkerError
 from app.modules.similarity import configuration, runs
+from app.modules.similarity import pairs as run_pairs
 from app.modules.similarity.processing import SimilarityProcessor
 from app.modules.storage.storage_backend.runtime import get_backend
 from tests.factories import content
@@ -30,20 +34,14 @@ from tests.factories.similarity import advance_oldest_run
 
 
 @pytest.fixture
-def local_pair(db_session, make_model, make_file, make_user, local_storage):
-    actor = make_user(superuser=True)
-    configuration.update_settings(
-        db_session, actor, {"enabled": True, "sample_points": 256}
-    )
+def stored_mesh(db_session, make_model, make_file, local_storage):
+    """An STL Artifact holding *mesh*, in *model* or a new Model."""
     backend = get_backend()
-    files = []
-    for index in range(2):
-        mesh = tetrahedron()
-        if index:
-            mesh.apply_translation([35, -8, 2])
+
+    def store(mesh, model=None):
         content = mesh.export(file_type="stl")
         file = make_file(
-            make_model(),
+            model if model is not None else make_model(),
             file_type=FileType.STL,
             size_bytes=len(content),
             sha256=hashlib.sha256(content).hexdigest(),
@@ -54,8 +52,63 @@ def local_pair(db_session, make_model, make_file, make_user, local_storage):
         db_session.add(file)
         db_session.commit()
         backend.write_stream(io.BytesIO(content), file.path)
-        files.append(file)
-    return actor, files
+        return file
+
+    return store
+
+
+def moved_tetrahedron(offset):
+    mesh = tetrahedron()
+    mesh.apply_translation(offset)
+    return mesh
+
+
+def queue(db_session, run, pairs, *, cleared=()):
+    """Queue *pairs* on a run whose every source is already shortlisted."""
+    db_session.refresh(run)
+    run.phase = "candidates"
+    run.checkpoint_json = json.dumps({"fingerprint_id": 2**62})
+    db_session.add(run)
+    db_session.commit()
+    run_pairs.enqueue(
+        db_session,
+        run.id,
+        [tuple(pair) for pair in pairs],
+        cloud_cleared=frozenset(cleared),
+    )
+    db_session.commit()
+
+
+def shortlisting(db_session, run):
+    """Move a fingerprinted run on to shortlisting from its first source."""
+    db_session.refresh(run)
+    run.phase = "candidates"
+    run.checkpoint_json = "{}"
+    db_session.add(run)
+    db_session.commit()
+
+
+def outcomes(db_session, run):
+    return [
+        row.outcome
+        for row in db_session.exec(
+            select(SimilarityRunPair)
+            .where(SimilarityRunPair.run_id == run.id)
+            .order_by(SimilarityRunPair.id)
+        )
+    ]
+
+
+@pytest.fixture
+def local_pair(db_session, make_user, stored_mesh):
+    actor = make_user(superuser=True)
+    configuration.update_settings(
+        db_session, actor, {"enabled": True, "sample_points": 256}
+    )
+    return actor, [
+        stored_mesh(tetrahedron()),
+        stored_mesh(moved_tetrahedron((35, -8, 2))),
+    ]
 
 
 class TestProcessing:
@@ -235,8 +288,12 @@ class TestProcessingFailures:
         fp = db_session.exec(select(GeometryFingerprint)).one()
         assert fp.failure_code == "source_changed"
 
-    def test_cancels_between_committed_verification_pairs(self, db_session, local_pair):
+    def test_cancels_between_committed_verification_pairs(
+        self, db_session, local_pair, stored_mesh
+    ):
         actor, _ = local_pair
+        # A third copy gives every shortlist a second pair to cancel before.
+        stored_mesh(moved_tetrahedron((-20, 14, 5)))
         run = runs.start(db_session, actor)
         processor = SimilarityProcessor(get_session_factory(), get_backend())
         for _ in range(35):
@@ -245,7 +302,7 @@ class TestProcessingFailures:
             if json.loads(run.counters_json).get("verified", 0):
                 break
         assert json.loads(run.counters_json)["verified"] > 0
-        assert json.loads(run.checkpoint_json)["pending_pairs"]
+        assert run_pairs.pending(db_session, run.id)
         before = [
             (row.id, row.version)
             for row in db_session.exec(select(SimilarityCandidate))
@@ -271,7 +328,7 @@ class TestPairRecovery:
         ],
         ids=["time-limit", "worker-memory", "worker-timeout", "worker-died"],
     )
-    def test_records_a_failed_pair_then_advances_checkpoint(
+    def test_records_a_failed_pair_as_settled(
         self, db_session, local_pair, monkeypatch, failure
     ):
         actor, _ = local_pair
@@ -284,13 +341,7 @@ class TestPairRecovery:
             .where(GeometryFingerprint.component_index == 0)
             .order_by(GeometryFingerprint.id)
         ).all()
-        db_session.refresh(run)
-        run.phase = "candidates"
-        run.checkpoint_json = json.dumps(
-            {"pending_pairs": [[row.id for row in fingerprints]]}
-        )
-        db_session.add(run)
-        db_session.commit()
+        queue(db_session, run, [[row.id for row in fingerprints]])
 
         def failed(*args, **kwargs):
             raise failure
@@ -300,7 +351,7 @@ class TestPairRecovery:
         assert advance_oldest_run(worker)
         db_session.refresh(run)
         assert run.state == "running"
-        assert json.loads(run.checkpoint_json)["pending_pairs"] == []
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.VERIFICATION_FAILED]
         assert json.loads(run.counters_json)["verification_failed"] == 1
         assert db_session.exec(select(SimilarityCandidate)).all() == []
 
@@ -311,7 +362,6 @@ class TestPairRecovery:
             "source_bytes",
             "missing_content",
             "missing_component",
-            "missing_fingerprint",
             "same_model",
         ],
     )
@@ -345,19 +395,20 @@ class TestPairRecovery:
         elif failure == "missing_component":
             fingerprints[1].component_index = 999
             db_session.add(fingerprints[1])
-        elif failure == "missing_fingerprint":
-            pair[1] = 999999
         else:
-            pair[1] = pair[0]
-        db_session.refresh(run)
-        run.phase = "candidates"
-        run.checkpoint_json = json.dumps({"pending_pairs": [pair]})
-        db_session.add(run)
+            # The single body's own component row: both sides are one Model.
+            pair[1] = db_session.exec(
+                select(GeometryFingerprint.id).where(
+                    GeometryFingerprint.file_id == fingerprints[0].file_id,
+                    GeometryFingerprint.component_index == 1,
+                )
+            ).one()
         db_session.commit()
+        queue(db_session, run, [pair])
         assert advance_oldest_run(worker)
         db_session.refresh(run)
         assert run.state == "running"
-        assert json.loads(run.checkpoint_json)["pending_pairs"] == []
+        assert run_pairs.pending(db_session, run.id) == 0
         counts = json.loads(run.counters_json)
         if failure in ("source_hash", "source_bytes"):
             assert counts["stale"] == 1
@@ -365,6 +416,285 @@ class TestPairRecovery:
             assert counts["verification_failed"] == 1
         assert counts.get("verified", 0) == 0
         assert db_session.exec(select(SimilarityCandidate)).all() == []
+
+
+def finish(db_session, run, worker):
+    for _ in range(40):
+        assert advance_oldest_run(worker)
+        db_session.refresh(run)
+        if run.state in runs.TERMINAL:
+            return
+    raise AssertionError("run did not finish")
+
+
+def fingerprinted(db_session, actor, worker):
+    """A run whose two Artifacts are fingerprinted, with no pair queued yet."""
+    run = runs.start(db_session, actor)
+    advance_oldest_run(worker)
+    advance_oldest_run(worker)
+    rows = db_session.exec(
+        select(GeometryFingerprint).order_by(
+            GeometryFingerprint.component_index, GeometryFingerprint.id
+        )
+    ).all()
+    return run, rows
+
+
+class TestPairFanOut:
+    def test_shortlists_one_pair_per_side_for_single_body_models(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        run = runs.start(db_session, actor)
+
+        finish(
+            db_session, run, SimilarityProcessor(get_session_factory(), get_backend())
+        )
+
+        assert json.loads(run.counters_json)["shortlisted"] == 2
+
+    def test_skips_component_pairs_between_exactly_equal_files(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        finish(db_session, runs.start(db_session, actor), worker)
+        run, rows = fingerprinted(db_session, actor, worker)
+        components = [row.id for row in rows if row.component_index == 1]
+        queue(db_session, run, [components])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["implied_by_whole"], counters.get("verified", 0)) == (1, 0)
+
+    def test_verifies_component_pairs_without_exact_whole_evidence(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        components = [row.id for row in rows if row.component_index == 1]
+        queue(db_session, run, [components])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert json.loads(run.counters_json)["verified"] == 1
+
+    def test_reuses_an_empty_outcome_in_a_later_run(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        # Close enough for the surface clouds, too far for any Evidence Class.
+        stored_mesh(trimesh.creation.annulus(r_min=8, r_max=12, height=3, sections=96))
+        stored_mesh(
+            trimesh.creation.annulus(r_min=8.6, r_max=12, height=3, sections=96)
+        )
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+        queue(db_session, run, [[first, second]])
+        assert advance_oldest_run(worker)
+        runs.cancel(db_session, actor, run.id)
+        assert advance_oldest_run(worker)
+        later, _ = fingerprinted(db_session, actor, worker)
+        queue(db_session, later, [[second, first]])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(later)
+        counters = json.loads(later.counters_json)
+        assert (counters.get("verified", 0), counters["verification_cached"]) == (0, 1)
+
+    def test_queues_a_pair_shortlisted_from_both_sides_once(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+
+        queue(db_session, run, [[first, second], [second, first]])
+
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.PENDING]
+
+    def test_rejects_a_clearly_different_pair_without_verifying(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(tetrahedron())
+        stored_mesh(trimesh.creation.box((10, 20, 2)))
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        queue(db_session, run, [[row.id for row in rows if row.component_index == 0]])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["rejected_by_cloud"], counters.get("verified", 0)) == (1, 0)
+
+    def test_verifies_a_pair_fingerprinted_without_clouds(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(tetrahedron())
+        stored_mesh(trimesh.creation.box((10, 20, 2)))
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        for row in rows:
+            row.cloud_blob = None
+            db_session.add(row)
+        db_session.commit()
+        queue(db_session, run, [[row.id for row in rows if row.component_index == 0]])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert json.loads(run.counters_json)["verified"] == 1
+
+    def test_counts_candidates_the_shortlist_rejects_by_cloud(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(tetrahedron())
+        stored_mesh(trimesh.creation.box((10, 20, 2)))
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        # Indistinguishable descriptors: only the clouds tell the shapes apart.
+        whole = [row for row in rows if row.component_index == 0]
+        for row in whole:
+            row.d2_blob, row.sh_blob, row.view_blob = (
+                whole[0].d2_blob,
+                whole[0].sh_blob,
+                whole[0].view_blob,
+            )
+            row.normalized_area = whole[0].normalized_area
+            db_session.add(row)
+        db_session.commit()
+        shortlisting(db_session, run)
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["rejected_by_cloud"], counters["shortlisted"]) == (1, 0)
+
+    def test_queues_cloud_confirmed_targets_as_cleared(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(trimesh.creation.annulus(r_min=8, r_max=12, height=3, sections=96))
+        stored_mesh(
+            trimesh.creation.annulus(r_min=8.6, r_max=12, height=3, sections=96)
+        )
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        shortlisting(db_session, run)
+
+        assert advance_oldest_run(worker)
+
+        first, second = (row.id for row in rows if row.component_index == 0)
+        queued = db_session.exec(select(SimilarityRunPair)).all()
+        assert [
+            (row.fingerprint_a_id, row.fingerprint_b_id, row.cloud_cleared)
+            for row in queued
+        ] == [(first, second, True)]
+
+    def test_verifies_a_cleared_pair_without_measuring_its_clouds_again(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(tetrahedron())
+        stored_mesh(trimesh.creation.box((10, 20, 2)))
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+        # These clouds would reject the pair; retrieval vouched for it already.
+        queue(db_session, run, [[first, second]], cleared=[second])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters.get("rejected_by_cloud", 0), counters["verified"]) == (0, 1)
+
+    def test_records_no_empty_outcome_for_published_evidence(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+
+        finish(
+            db_session,
+            runs.start(db_session, actor),
+            SimilarityProcessor(get_session_factory(), get_backend()),
+        )
+
+        assert db_session.exec(select(SimilarityCandidate)).one().exact_equivalence
+        assert db_session.exec(select(SimilarityEmptyVerification)).all() == []
+
+    def test_counts_a_candidate_refined_by_two_observations_once(
+        self, db_session, local_pair, stored_mesh
+    ):
+        actor, files = local_pair
+        # A second Artifact of the first Model matches the same other Model.
+        stored_mesh(moved_tetrahedron((-20, 14, 5)), model=files[0].model)
+        run = runs.start(db_session, actor)
+
+        finish(
+            db_session, run, SimilarityProcessor(get_session_factory(), get_backend())
+        )
+
+        counters = json.loads(run.counters_json)
+        assert (counters["observations"], counters["candidates"]) == (2, 1)
+
+    def test_records_no_outcome_for_a_failed_pair(
+        self, db_session, local_pair, monkeypatch
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        queue(db_session, run, [[row.id for row in rows if row.component_index == 0]])
+
+        def failed(*args, **kwargs):
+            raise MeshWorkerError(ThumbnailFailureReason.WORKER_FAILED)
+
+        monkeypatch.setattr(verification_isolation, "verify_paths", failed)
+
+        assert advance_oldest_run(worker)
+        assert db_session.exec(select(SimilarityEmptyVerification)).all() == []
 
 
 class TestIsolatedAnalysis:
@@ -470,12 +800,7 @@ class TestPreparedSourceAdmission:
 
         monkeypatch.setattr(verification_isolation, "verify_paths", unexpected)
         run = runs.start(db_session, actor)
-        run.phase = "candidates"
-        run.checkpoint_json = json.dumps(
-            {"pending_pairs": [[row.id for row in fingerprints]]}
-        )
-        db_session.add(run)
-        db_session.commit()
+        queue(db_session, run, [[row.id for row in fingerprints]])
         assert advance_oldest_run(
             SimilarityProcessor(get_session_factory(), get_backend())
         )
@@ -484,7 +809,7 @@ class TestPreparedSourceAdmission:
         assert run.state == "running"
         assert json.loads(run.counters_json)["verification_failed"] == 1
         assert json.loads(run.counters_json).get("verified", 0) == 0
-        assert json.loads(run.checkpoint_json)["pending_pairs"] == []
+        assert run_pairs.pending(db_session, run.id) == 0
         assert db_session.exec(select(SimilarityCandidate)).all() == []
         for file, fingerprint, source in zip(files, fingerprints, sources, strict=True):
             db_session.refresh(fingerprint)
@@ -592,3 +917,167 @@ class TestIncompleteReanalysis:
         assert fingerprint.state == state
         assert fingerprint.attempts == 1
         assert json.loads(run.counters_json)["cached"] == 1
+
+
+@pytest.fixture
+def queued_pair(db_session, local_pair):
+    """A run whose two copies are fingerprinted and whose one pair is queued."""
+    actor, _ = local_pair
+    worker = SimilarityProcessor(get_session_factory(), get_backend())
+    run, rows = fingerprinted(db_session, actor, worker)
+    queue(db_session, run, [[row.id for row in rows if row.component_index == 0]])
+    return actor, run, worker
+
+
+class TestParallelVerification:
+    def test_a_verifier_settles_a_queued_pair(self, db_session, queued_pair):
+        _, run, worker = queued_pair
+
+        assert worker.verify_one(run.id)
+
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.OBSERVED]
+
+    def test_a_verifier_publishes_its_evidence(self, db_session, queued_pair):
+        _, run, worker = queued_pair
+
+        worker.verify_one(run.id)
+
+        assert db_session.exec(select(SimilarityCandidate)).one().run_id == run.id
+
+    def test_a_verifier_finds_nothing_once_every_pair_is_settled(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        worker.verify_one(run.id)
+
+        assert not worker.verify_one(run.id)
+
+    @pytest.mark.parametrize(
+        "change", ["disabled", "cancelled", "fingerprinting", "inactive", "unscoped"]
+    )
+    def test_a_verifier_leaves_the_pairs_of_an_unusable_run(
+        self, db_session, queued_pair, change
+    ):
+        actor, run, worker = queued_pair
+        db_session.refresh(run)
+        if change == "disabled":
+            configuration.update_settings(db_session, actor, {"enabled": False})
+        elif change == "cancelled":
+            run.cancel_requested = True
+        elif change == "fingerprinting":
+            run.phase = "fingerprint"
+        elif change == "inactive":
+            actor.is_active = False
+        else:
+            run.scope, run.scope_ids_json = "models", "[999999]"
+        db_session.add_all([actor, run])
+        db_session.commit()
+
+        assert not worker.verify_one(run.id)
+        assert outcomes(db_session, run) == [SimilarityPairOutcome.PENDING]
+
+    def test_analysis_waits_for_a_pair_another_verifier_holds(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        run_pairs.claim(db_session, run.id)
+
+        assert not advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert run.state == "running"
+
+    def test_the_run_completes_once_every_pair_is_settled(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        worker.verify_one(run.id)
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert run.state == "completed"
+
+    def test_a_completed_run_counts_what_its_verifiers_measured(
+        self, db_session, queued_pair
+    ):
+        _, run, worker = queued_pair
+        worker.verify_one(run.id)
+
+        advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["verified"], counters["observations"]) == (1, 1)
+
+    def test_a_busy_verification_hands_its_pair_back(
+        self, db_session, queued_pair, monkeypatch
+    ):
+        from app.core.errors import ErrorKind, OperationError
+
+        _, run, worker = queued_pair
+
+        def busy(*_args, **_kwargs):
+            raise OperationError("native_capacity_busy", kind=ErrorKind.BUSY)
+
+        monkeypatch.setattr(verification_isolation, "verify_paths", busy)
+
+        assert not advance_oldest_run(worker)
+
+        (row,) = db_session.exec(select(SimilarityRunPair)).all()
+        db_session.refresh(row)
+        assert (row.outcome, row.lease_token) == (SimilarityPairOutcome.PENDING, None)
+
+    def test_moves_a_checkpointed_pair_list_into_the_queue(
+        self, db_session, local_pair
+    ):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+        db_session.refresh(run)
+        run.phase = "candidates"
+        # As a run checkpointed by the previous release left it.
+        run.checkpoint_json = json.dumps(
+            {
+                "fingerprint_id": 2**62,
+                "pending_pairs": [[first, second]],
+                "cloud_cleared": [second],
+            }
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        assert advance_oldest_run(worker)
+
+        queued = db_session.exec(select(SimilarityRunPair)).one()
+        assert (
+            queued.fingerprint_a_id,
+            queued.fingerprint_b_id,
+            queued.cloud_cleared,
+        ) == (
+            first,
+            second,
+            True,
+        )
+
+    def test_keeps_the_counts_of_a_checkpointed_run(self, db_session, local_pair):
+        actor, _ = local_pair
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        db_session.refresh(run)
+        run.phase = "candidates"
+        run.counters_json = json.dumps({"verified": 2})
+        run.checkpoint_json = json.dumps(
+            {
+                "fingerprint_id": 2**62,
+                "pending_pairs": [[row.id for row in rows if row.component_index == 0]],
+            }
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        assert json.loads(run.counters_json)["verified"] == 3

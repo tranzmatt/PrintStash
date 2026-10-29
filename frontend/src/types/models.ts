@@ -489,6 +489,7 @@ export type JobKind =
   | "search.project"
   | "search.repair"
   | "similarity.analyze"
+  | "similarity.verify"
   | "sources.scan"
   | "storage.inventory"
   | "storage.migrate"
