@@ -170,7 +170,11 @@ def _collection(session: Session, subject_id: int) -> SubjectProjection | None:
 
 
 def _multipart(session: Session, subject_id: int) -> SubjectProjection | None:
-    multipart = session.get(MultipartModel, subject_id)
+    multipart = session.exec(
+        select(MultipartModel).where(
+            MultipartModel.id == subject_id, live(MultipartModel)
+        )
+    ).first()
     if multipart is None:
         return None
     parts = session.exec(

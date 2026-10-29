@@ -128,7 +128,11 @@ def viewer() -> None:
         # READY basics may precede the fingerprint continuation and context
         # release. Wait for this Artifact's whole mesh Job before interception.
         settled = _settle(file_id)
-        assert set(settled["states"].values()) == {"ready"}, settled
+        assert settled["states"] == {
+            "metadata": "ready",
+            "thumbnail": "ready",
+            "plates": "skipped",
+        }, settled
         settled_jobs(JobKind.DERIVATIVES_MESH, 1)
         stopped = threading.Event()
         observed: dict = {}

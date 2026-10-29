@@ -16,6 +16,8 @@
 
 ### Fixed
 
+- Multipart sets can be selected in Library grid and list views, including select-all, and moved to Trash with confirmation while keeping their Models, files, revisions and guides. Trash restores the complete grouping with its parts and cover, supports selection alongside Models without ID collisions, and offers permanent grouping-only deletion through the normal guarded cleanup lifecycle. The detail header exposes deletion alongside consistent edit, build and history buttons. Build history and creation share the app’s framed work surface, with source-set context, responsive actions and clear loading and empty states.
+
 - Library actions for Similar models and New collection are visible beside Filters in the library toolbar, wrapping within the same area on narrow screens. Models and folders offer direct selection checkboxes in grid and list views. On devices with a mouse, card checkboxes appear on hover or keyboard focus and remain visible during selection. Touch devices retain visible controls. Batch actions appear after the first selection and close when the last item is deselected.
 
 - Buttons, links and clickable controls consistently show the arrow cursor, using shared action and disabled cursor tokens. Text editing, dragging and resizing retain their appropriate cursors.

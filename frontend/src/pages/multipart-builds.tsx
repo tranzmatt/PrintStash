@@ -1,3 +1,17 @@
+import {
+  ArrowLeft,
+  ArrowRight,
+  Boxes,
+  CheckCircle2,
+  Clock3,
+  History,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Cover, Count } from "@/components/multipart-model-presentation";
 import { uiText } from "@/lib/locale";
 import { useUiLocale } from "@/lib/i18n";
 import { useState, useSyncExternalStore } from "react";
@@ -84,7 +98,7 @@ function BuildList() {
   return (
     <PageContainer>
       <PageHeader
-        title={t("build.title")}
+        title={t(compositionId > 0 ? "build.create" : "build.history")}
         description={
           <>
             {t("build.help")}
@@ -92,133 +106,287 @@ function BuildList() {
           </>
         }
         actions={
-          compositionId <= 0 ? (
-            <Button asChild>
-              <Link to="/?type=multipart">{t("build.chooseMultipart")}</Link>
+          compositionId > 0 ? (
+            <Button asChild variant="outline">
+              <Link to={`/multipart-models/${compositionId}`}>
+                <ArrowLeft className="h-4 w-4" />
+                {t("build.backToSet")}
+              </Link>
             </Button>
-          ) : undefined
+          ) : (
+            <Button asChild>
+              <Link to="/?type=multipart">
+                <Plus className="h-4 w-4" />
+                {t("build.chooseMultipart")}
+              </Link>
+            </Button>
+          )
         }
       />
       {displayedError && (
-        <p role="alert" className="text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
           {t(displayedError)}
         </p>
       )}
-      {compositionId > 0 && !denied(composition.error) && (
-        <form
-          className="max-w-xl space-y-4 rounded-lg border border-border p-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!commands.isCurrent()) return;
-            setBusy(true);
-            setError(null);
-            void commands
-              .run(() =>
-                createMultipartBuild({
-                  name,
-                  object_quantity: quantity,
-                  multipart_model_id: compositionId,
-                }),
-              )
-              .then(
-                (build) => {
-                  if (build && commands.isCurrent()) setCreated(build.id);
-                },
-                (reason) => {
-                  if (commands.isCurrent())
-                    setError(errorKey(reason instanceof Error ? reason.message : ""));
-                },
-              )
-              .finally(() => {
-                if (commands.isCurrent()) setBusy(false);
-              });
-          }}
-        >
-          <h2 className="font-semibold">{t("build.create")}</h2>
-          <label className="block space-y-2">
-            {t("build.name")}
-            <Input
-              required
-              maxLength={255}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label className="block space-y-2">
-            {t("build.objects")}
-            <Input
-              type="number"
-              required
-              min={1}
-              max={10000}
-              value={quantity}
-              onChange={(event) => setQuantity(Number(event.target.value))}
-            />
-          </label>
-          <p className="text-sm text-muted-foreground">{t("build.snapshotHelp")}</p>
-          <Button type="submit" loading={busy}>
-            {t("build.create")}
-          </Button>
-        </form>
-      )}
-      <div className="flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2">
-          <Checkbox
-            checked={archived}
-            onChange={(value) => {
-              setArchived(value === true);
-              setOffset(0);
+      <Card className="overflow-hidden">
+        {compositionId > 0 && !denied(composition.error) && (
+          <form
+            className="border-b border-border"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!commands.isCurrent()) return;
+              setBusy(true);
+              setError(null);
+              void commands
+                .run(() =>
+                  createMultipartBuild({
+                    name,
+                    object_quantity: quantity,
+                    multipart_model_id: compositionId,
+                  }),
+                )
+                .then(
+                  (build) => {
+                    if (build && commands.isCurrent()) setCreated(build.id);
+                  },
+                  (reason) => {
+                    if (commands.isCurrent())
+                      setError(errorKey(reason instanceof Error ? reason.message : ""));
+                  },
+                )
+                .finally(() => {
+                  if (commands.isCurrent()) setBusy(false);
+                });
             }}
-          />
-          {t("build.showArchived")}
-        </label>
-        <Button
-          variant="outline"
-          onClick={() => {
-            void history.refetch();
-            if (compositionId > 0) void composition.refetch();
-          }}
-        >
-          {t("build.refresh")}
-        </Button>
-      </div>
-      {history.isPending ? (
-        <p role="status">{t("build.loading")}</p>
-      ) : rows.length === 0 ? (
-        history.isSuccess ? (
-          <p className="text-muted-foreground">{t("build.empty")}</p>
-        ) : null
-      ) : (
-        <ul className="divide-y divide-border rounded-lg border border-border">
-          {rows.map((build) => (
-            <li key={build.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-              <Link className="font-medium text-primary underline" to={`/builds/${build.id}`}>
-                {build.name}
-              </Link>
-              <span className="text-sm text-muted-foreground">
-                {build.composition_name} ·{" "}
-                {t(build.completed ? "build.complete" : "build.inProgress")}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex gap-3">
-        <Button
-          variant="outline"
-          disabled={offset === 0}
-          onClick={() => setOffset(Math.max(0, offset - 50))}
-        >
-          {t("build.previous")}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={rows.length < 50}
-          onClick={() => setOffset(offset + 50)}
-        >
-          {t("build.next")}
-        </Button>
-      </div>
+          >
+            <div className="flex items-center gap-3 border-b px-4 py-4 sm:px-5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                <Boxes className="h-4 w-4" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold">{t("build.plan")}</h2>
+                <p className="text-xs text-muted-foreground">{t("build.planHelp")}</p>
+              </div>
+            </div>
+            <div className="grid lg:grid-cols-2">
+              <div className="space-y-5 p-4 sm:p-5">
+                <label className="block space-y-2 text-sm font-medium">
+                  {t("build.name")}
+                  <Input
+                    required
+                    maxLength={255}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                </label>
+                <label className="block space-y-2 text-sm font-medium">
+                  {t("build.objects")}
+                  <Input
+                    type="number"
+                    required
+                    min={1}
+                    max={10000}
+                    value={quantity}
+                    onChange={(event) => setQuantity(Number(event.target.value))}
+                    className="max-w-40"
+                  />
+                </label>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {t("build.snapshotHelp")}
+                </p>
+              </div>
+              <section
+                aria-label={t("build.sourceSet")}
+                className="border-t bg-muted/30 p-4 sm:p-5 lg:border-l lg:border-t-0"
+              >
+                <h3 className="mb-3 text-xs font-semibold text-muted-foreground">
+                  {t("build.sourceSet")}
+                </h3>
+                {composition.data ? (
+                  <>
+                    <div className="flex min-w-0 items-center gap-4">
+                      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
+                        <Cover src={composition.data.cover_thumbnail_url} alt="" />
+                      </div>
+                      <div className="min-w-0">
+                        <Link
+                          to={`/multipart-models/${compositionId}`}
+                          className="break-words text-sm font-semibold hover:underline"
+                        >
+                          {composition.data.name}
+                        </Link>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          <Count
+                            count={composition.data.part_count}
+                            one={t("multipart.part")}
+                            many={t("multipart.parts")}
+                          />
+                          {" · "}
+                          <Count
+                            count={composition.data.model_count}
+                            one={t("multipart.model")}
+                            many={t("multipart.models")}
+                          />
+                        </p>
+                      </div>
+                    </div>
+                    {composition.data.parts.length > 0 && (
+                      <ul className="mt-4 max-h-48 divide-y divide-border overflow-y-auto">
+                        {composition.data.parts.map((part) => (
+                          <li
+                            key={part.id}
+                            className="flex items-center justify-between gap-3 py-2 text-sm"
+                          >
+                            <span className="min-w-0 break-words">{part.name}</span>
+                            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                              × {part.quantity}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <div role="status" aria-label={t("build.loading")} className="space-y-3">
+                    <Skeleton className="h-20 w-20" />
+                    <Skeleton className="h-4 w-48" />
+                  </div>
+                )}
+              </section>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-muted/30 p-3">
+              <Button asChild variant="outline">
+                <Link to={`/multipart-models/${compositionId}`}>{uiText("Cancel")}</Link>
+              </Button>
+              <Button
+                type="submit"
+                loading={busy}
+                disabled={
+                  !composition.data ||
+                  composition.isError ||
+                  (composition.data.effective_role !== "edit" &&
+                    composition.data.effective_role !== "admin")
+                }
+              >
+                <Plus className="h-4 w-4" />
+                {t("build.create")}
+              </Button>
+            </div>
+          </form>
+        )}
+        <section aria-label={t("build.history")}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/30 p-3">
+            <div className="flex items-center gap-2 px-1">
+              <History className="h-4 w-4 text-muted-foreground" aria-hidden />
+              <h2 className="text-sm font-semibold">{t("build.history")}</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={archived}
+                  onChange={(value) => {
+                    setArchived(value === true);
+                    setOffset(0);
+                  }}
+                />
+                {t("build.showArchived")}
+              </label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void history.refetch();
+                  if (compositionId > 0) void composition.refetch();
+                }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                {t("build.refresh")}
+              </Button>
+            </div>
+          </div>
+          {history.isPending ? (
+            <div role="status" aria-label={t("build.loading")} className="space-y-4 p-5">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : rows.length === 0 ? (
+            history.isSuccess ? (
+              <EmptyState
+                icon={History}
+                title={t("build.empty")}
+                description={archived ? t("build.archivedEmptyHelp") : undefined}
+                className="py-14"
+              />
+            ) : null
+          ) : (
+            <ul className="divide-y divide-border">
+              {rows.map((build) => (
+                <li key={build.id}>
+                  <Link
+                    to={`/builds/${build.id}`}
+                    aria-label={build.name}
+                    className="flex flex-wrap items-center gap-3 px-4 py-4 transition-colors duration-press hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                      <Boxes className="h-4 w-4 text-muted-foreground" aria-hidden />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-semibold">{build.name}</p>
+                      <p className="mt-1 break-words text-xs text-muted-foreground">
+                        {build.composition_name}
+                        {" · "}
+                        {t("build.objectCount", { count: String(build.object_quantity) })}
+                      </p>
+                    </div>
+                    <span className="flex w-full items-center gap-1.5 pl-12 text-xs text-muted-foreground sm:w-auto sm:pl-0">
+                      {build.completed ? (
+                        <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+                      ) : (
+                        <Clock3 className="h-4 w-4" aria-hidden />
+                      )}
+                      {t(
+                        build.archived_at
+                          ? "build.archived"
+                          : build.completed
+                            ? "build.complete"
+                            : "build.inProgress",
+                      )}
+                    </span>
+                    <ArrowRight
+                      className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block"
+                      aria-hidden
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(offset > 0 || rows.length >= 50) && (
+            <div className="flex justify-end gap-2 border-t bg-muted/30 p-3">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - 50))}
+              >
+                {t("build.previous")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={rows.length < 50}
+                onClick={() => setOffset(offset + 50)}
+              >
+                {t("build.next")}
+              </Button>
+            </div>
+          )}
+        </section>
+      </Card>
     </PageContainer>
   );
 }

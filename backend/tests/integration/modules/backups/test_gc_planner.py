@@ -1493,6 +1493,69 @@ class TestPrinterGcPlan:
         assert db_session.get(type(printer), printer.id) is not None
 
 
+class TestMultipartGcPlan:
+    def test_expired_multipart_model_enters_preview(
+        self, db_session, make_multipart_model
+    ):
+        from sqlmodel import select
+
+        from app.db.models import GcItem, MultipartModel
+
+        multipart_model = make_multipart_model(trashed=utcnow() - timedelta(days=60))
+        result = gc_planner.run_scheduled_gc(retention_days=30)
+        assert result["gc_candidates"] == 1
+        assert db_session.exec(select(GcItem)).one().resource_kind == "multipart_model"
+        assert db_session.get(MultipartModel, multipart_model.id) is not None
+
+    @pytest.mark.parametrize("age", [None, 1], ids=["live", "within-retention"])
+    def test_ineligible_multipart_model_stays_out_of_preview(
+        self, db_session, make_multipart_model, age
+    ):
+        multipart_model = make_multipart_model(
+            trashed=False if age is None else utcnow() - timedelta(days=age)
+        )
+        result = gc_planner.run_scheduled_gc(retention_days=30)
+        assert result["gc_candidates"] == 0
+        assert db_session.get(type(multipart_model), multipart_model.id) is not None
+
+    def test_finalizes_approved_multipart_model_after_quarantine(
+        self, db_session, make_multipart_model, make_user, monkeypatch
+    ):
+        from app.db.models import MultipartModel
+
+        multipart_model = make_multipart_model(trashed=utcnow() - timedelta(days=60))
+        multipart_model_id = multipart_model.id
+        admin = make_user(superuser=True)
+        run = gc_planner.create_plan(
+            db_session, retention_days=30, requested_by=admin.id
+        )
+        monkeypatch.setattr(gc_planner, "find_backup_witness", _witness)
+        gc_planner.approve_plan(db_session, run.id, run.digest, admin.id)
+        run.quarantine_until = utcnow() - timedelta(seconds=1)
+        db_session.add(run)
+        db_session.commit()
+        monkeypatch.setattr(gc_planner, "_reverify_backup", lambda _run: None)
+        finalized = gc_planner.finalize_plan(db_session, run.id)
+        assert finalized.state is GcRunState.COMPLETED
+        assert db_session.get(MultipartModel, multipart_model_id) is None
+
+    def test_restored_multipart_model_invalidates_preview(
+        self, db_session, make_multipart_model, make_user, monkeypatch
+    ):
+        multipart_model = make_multipart_model(trashed=utcnow() - timedelta(days=60))
+        admin = make_user(superuser=True)
+        run = gc_planner.create_plan(
+            db_session, retention_days=30, requested_by=admin.id
+        )
+        multipart_model.deleted_at = None
+        db_session.add(multipart_model)
+        db_session.commit()
+        monkeypatch.setattr(gc_planner, "find_backup_witness", _witness)
+        with pytest.raises(gc_planner.GcSafetyError, match="gc_candidate_changed"):
+            gc_planner.approve_plan(db_session, run.id, run.digest, admin.id)
+        assert db_session.get(type(multipart_model), multipart_model.id) is not None
+
+
 class TestScheduledGcPublicationRecovery:
     @pytest.mark.parametrize(
         "retention_days", [30, -1], ids=["expiry-enabled", "expiry-disabled"]

@@ -56,6 +56,7 @@ BUDGET_SECONDS = {
     "/api/v1/models/facets": 0.5,
     "/api/v1/models/stats": 0.5,
     "/api/v1/multipart-models": 0.5,
+    "/api/v1/multipart-models/trash": 0.5,
     "/api/v1/documents": 0.5,
     "/api/v1/documents/trash": 0.5,
     "/api/v1/multipart-builds": 0.5,

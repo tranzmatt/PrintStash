@@ -19,6 +19,7 @@ import { DURATION, useMountTransition } from "@/lib/overlay";
  */
 export function BatchToolbar({
   modelCount,
+  multipartCount = 0,
   selectedCollections,
   tags,
   busy,
@@ -30,6 +31,7 @@ export function BatchToolbar({
   onClear,
 }: {
   modelCount: number;
+  multipartCount?: number;
   /** The selected folders, as the grid loaded them. */
   selectedCollections: CollectionNodeRead[];
   tags: TagRead[];
@@ -48,14 +50,14 @@ export function BatchToolbar({
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   // Must match the pill's `duration-fast` transition below.
-  const count = modelCount + selectedCollections.length;
+  const count = modelCount + multipartCount + selectedCollections.length;
   const { mounted, state } = useMountTransition(count > 0, DURATION.fast);
 
   if (!mounted) return null;
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 pointer-events-none">
+      <div className="fixed inset-x-0 bottom-20 z-50 md:bottom-4 flex justify-center px-4 pointer-events-none">
         <div
           data-state={state}
           className="pointer-events-auto flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur transition-[opacity,transform] duration-fast ease-out data-[state=closed]:translate-y-2 data-[state=closed]:opacity-0 motion-reduce:data-[state=closed]:translate-y-0"
@@ -64,16 +66,18 @@ export function BatchToolbar({
             {uiText("{value1} selected", { value1: String(count ?? "") })}
           </span>
           <div className="h-5 w-px bg-border" />
-          <button
-            type="button"
-            onClick={() => setMoveOpen(true)}
-            disabled={busy}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <FolderInput className="h-4 w-4 text-muted-foreground" />
-            {uiText("Move")}
-          </button>
-          {modelCount > 0 && selectedCollections.length === 0 && (
+          {multipartCount === 0 && (
+            <button
+              type="button"
+              onClick={() => setMoveOpen(true)}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              <FolderInput className="h-4 w-4 text-muted-foreground" />
+              {uiText("Move")}
+            </button>
+          )}
+          {multipartCount === 0 && modelCount > 0 && selectedCollections.length === 0 && (
             <button
               type="button"
               onClick={() => setTagOpen(true)}
@@ -84,7 +88,7 @@ export function BatchToolbar({
               {uiText("Tag")}
             </button>
           )}
-          {selectedCollections.length > 0 && (
+          {multipartCount === 0 && selectedCollections.length > 0 && (
             <button
               type="button"
               onClick={() => setRenameOpen(true)}
@@ -130,7 +134,7 @@ export function BatchToolbar({
         }}
       />
 
-      {modelCount > 0 && selectedCollections.length === 0 && (
+      {multipartCount === 0 && modelCount > 0 && selectedCollections.length === 0 && (
         <TagDialog
           open={tagOpen}
           count={count}
@@ -164,11 +168,17 @@ export function BatchToolbar({
         }}
         title={uiText("items.deleteSelected", { value1: String(count), count: Number(count) })}
         description={
-          selectedCollections.length
+          multipartCount > 0
             ? uiText(
-                "Folders cannot be restored. Their models can be restored from Trash to All Models.",
+                modelCount > 0 || selectedCollections.length > 0
+                  ? "multipart.mixedDeleteHelp"
+                  : "multipart.deleteSelectedHelp",
               )
-            : uiText("They move to trash and can be restored until purged.")
+            : selectedCollections.length
+              ? uiText(
+                  "Folders cannot be restored. Their models can be restored from Trash to All Models.",
+                )
+              : uiText("They move to trash and can be restored until purged.")
         }
         confirmLabel={uiText("Delete")}
         busy={busy}

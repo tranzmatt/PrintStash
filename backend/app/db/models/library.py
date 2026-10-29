@@ -619,6 +619,10 @@ class MultipartModel(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow, index=True)
 
+    deleted_at: Optional[datetime] = Field(default=None, index=True)
+    deleted_by: Optional[int] = Field(default=None, foreign_key="users.id")
+    purge_token: Optional[str] = Field(default=None, max_length=64, index=True)
+
 
 class MultipartModelStar(SQLModel, table=True):
     """Per-user favorite marker for a multipart set."""

@@ -367,10 +367,13 @@ def require(
     user: User,
     aggregate_id: int,
     minimum: CollectionRole,
+    *,
+    include_trashed: bool = False,
 ) -> MultipartModel:
-    aggregate = session.exec(
-        select(MultipartModel).where(MultipartModel.id == aggregate_id)
-    ).first()
+    statement = select(MultipartModel).where(MultipartModel.id == aggregate_id)
+    if not include_trashed:
+        statement = statement.where(live(MultipartModel))
+    aggregate = session.exec(statement).first()
     if aggregate is None:
         raise OperationError("multipart_model_not_found", kind=ErrorKind.NOT_FOUND)
     rbac.require_collection_role(session, user, aggregate.collection_id, minimum)
@@ -389,7 +392,7 @@ def list_visible(
     limit: int = 100,
     offset: int = 0,
 ) -> list[MultipartModelListItem]:
-    stmt = select(MultipartModel)
+    stmt = select(MultipartModel).where(live(MultipartModel))
     if collection:
         path = collection.strip().strip("/").lower()
         if direct:
@@ -458,7 +461,9 @@ def read_items_by_ids(
     )
     rows = list(
         session.exec(
-            select(MultipartModel).where(col(MultipartModel.id).in_(ids), allowed)
+            select(MultipartModel).where(
+                col(MultipartModel.id).in_(ids), allowed, live(MultipartModel)
+            )
         )
     )
     paths = dict(
@@ -785,7 +790,7 @@ def append_composition_in_transaction(
     """
     session.exec(
         select(MultipartModel)
-        .where(MultipartModel.id == aggregate.id)
+        .where(MultipartModel.id == aggregate.id, live(MultipartModel))
         .with_for_update()
     ).one()
     parts = session.exec(
@@ -921,21 +926,6 @@ def replace_parts(
     requested: list[MultipartPartWrite],
 ) -> MultipartModelRead:
     return save(session, user, aggregate, requested)
-
-
-def delete_aggregate(
-    session: Session,
-    aggregate: MultipartModel,
-    *,
-    cover_retirement: PreparedOwnedDeletion | None = None,
-) -> None:
-    """Delete only grouping rows; Models and their files remain untouched."""
-    session.delete(aggregate)
-    content_changed(session, "multipart_model", [aggregate.id])
-    session.flush()
-    if cover_retirement is not None:
-        enqueue_prepared_owned_deletion(session, cover_retirement, required_proof=True)
-    session.commit()
 
 
 def candidates(

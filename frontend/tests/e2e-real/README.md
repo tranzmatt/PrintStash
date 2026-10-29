@@ -34,6 +34,8 @@ caption conflict handling remains covered by the caption API and component suite
 
 `batch.spec.ts` reveals a Model checkbox on hover before starting selection and applying real tags, deletes and moves, including undo and viewer permission checks.
 
+`multipart-models.spec.ts` selects and deletes sets in desktop grid and mobile list views, checks the detail and build planning screens, and verifies that member Models and G-code revisions remain available.
+
 `library-filters.spec.ts` filters a real uploaded Model through file-type, printed-status and calendar dropdowns, restores the range after reload, and clears a print-history date to recover the result.
 
 Library navigation covers desktop grid and phone list reading positions through

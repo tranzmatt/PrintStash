@@ -474,8 +474,10 @@ test.describe("multipart models", () => {
     await page.goto("/multipart-models/90");
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await expect(page.getByRole("dialog")).toContainText("Models, files and revisions stay");
-    await page.getByRole("button", { name: "Delete set" }).click();
+    await expect(page.getByRole("dialog")).toContainText(
+      "models, files, revisions and guides stay",
+    );
+    await page.getByRole("button", { name: "Move to Trash" }).click();
     await expect(page).toHaveURL(
       (url) =>
         url.pathname === "/" &&

@@ -44,6 +44,9 @@ import {
 } from "@/lib/queries/settings-system";
 import {
   settingsTrashOptions,
+  trashRowKey,
+  type TrashRow,
+  type TrashRowKey,
   settingsGcOptions,
   useSettingsTrashCommand,
   type TrashReceipt,
@@ -190,7 +193,6 @@ import type {
   StorageHealthRead,
   HealthResponse,
   TrashPurgeRead,
-  TrashedModelRead,
   VaultConfigRead,
   UserUpdate,
 } from "@/types";
@@ -285,13 +287,13 @@ const MODEL_THUMBNAIL_WIDTHS = [320, 640, 1280] as const;
 type ModelThumbnailWidth = (typeof MODEL_THUMBNAIL_WIDTHS)[number];
 
 /**
- * What the trash panel is busy with: the id of the single model being purged, or a
+ * What the trash panel is busy with: the typed identity of the single entry being purged, or a
  * label for one of the bulk retention actions.
  */
-type TrashOperation = number | "expired" | "gc" | "selection";
+type TrashOperation = TrashRowKey | "expired" | "gc" | "selection";
 
-/** Only a per-model purge carries an id; the bulk actions carry their label instead. */
-function isModelPurge(operation: TrashOperation | null): operation is number {
+/** Only a per-entry purge carries an identity; the bulk actions carry their label instead. */
+function isModelPurge(operation: TrashOperation | null): operation is TrashRowKey {
   return (
     operation !== null && operation !== "expired" && operation !== "gc" && operation !== "selection"
   );
@@ -681,8 +683,8 @@ export function SettingsPanel() {
       ? preferenceIntent.value
       : (remoteConfigData?.model_thumbnail_width ?? 640);
   const [previewBusy, setPreviewBusy] = useState<"rebuild" | null>(null);
-  const [purgeTarget, setPurgeTarget] = useState<TrashedModelRead | null>(null);
-  const [trashSelection, setTrashSelection] = useState<ReadonlySet<number>>(() => new Set());
+  const [purgeTarget, setPurgeTarget] = useState<TrashRow | null>(null);
+  const [trashSelection, setTrashSelection] = useState<ReadonlySet<TrashRowKey>>(() => new Set());
   const [purgeSelectionOpen, setPurgeSelectionOpen] = useState(false);
   const [purgeExpiredOpen, setPurgeExpiredOpen] = useState(false);
   const trashRetentionText =
@@ -1617,14 +1619,17 @@ export function SettingsPanel() {
     }
   }
 
-  async function restoreTrashItem(id: number) {
-    const target = trashItems.find((item) => item.id === id);
+  async function restoreTrashItem(id: TrashRowKey) {
+    const target = trashItems.find((item) => trashRowKey(item) === id);
     if (!target || trashRead.isError || trashBusy !== null) return;
     const session = getSessionVersion();
     setTrashBusy(id);
     try {
       await trashCommand.run({ kind: "restore", target, session });
-      if (accountCurrent(session)) toast.success(uiText("Model restored."));
+      if (accountCurrent(session))
+        toast.success(
+          uiText(target.kind === "multipart" ? "multipart.restored" : "Model restored."),
+        );
     } catch (error) {
       if (accountCurrent(session)) toast.error(error);
     } finally {
@@ -1632,8 +1637,8 @@ export function SettingsPanel() {
     }
   }
 
-  function purgeTrashItem(id: number) {
-    const target = trashItems.find((item) => item.id === id);
+  function purgeTrashItem(id: TrashRowKey) {
+    const target = trashItems.find((item) => trashRowKey(item) === id);
     if (target && !trashRead.isError) setPurgeTarget(target);
   }
 
@@ -1642,7 +1647,7 @@ export function SettingsPanel() {
     const target = purgeTarget;
     const session = getSessionVersion();
     setPurgeTarget(null);
-    setTrashBusy(target.id);
+    setTrashBusy(trashRowKey(target));
     try {
       const receipt = await trashCommand.run({
         kind: "purge",
@@ -1664,9 +1669,9 @@ export function SettingsPanel() {
     }
   }
 
-  const selectedTrash = trashItems.filter((item) => trashSelection.has(item.id));
+  const selectedTrash = trashItems.filter((item) => trashSelection.has(trashRowKey(item)));
 
-  function toggleTrashItem(id: number) {
+  function toggleTrashItem(id: TrashRowKey) {
     setTrashSelection((current) => {
       const next = new Set(current);
       if (!next.delete(id)) next.add(id);
@@ -1676,27 +1681,25 @@ export function SettingsPanel() {
 
   function toggleAllTrash() {
     setTrashSelection(
-      selectedTrash.length === trashItems.length
-        ? new Set()
-        : new Set(trashItems.map((item) => item.id)),
+      selectedTrash.length === trashItems.length ? new Set() : new Set(trashItems.map(trashRowKey)),
     );
   }
 
-  /** Runs one trash command per selected model, in order, and keeps what failed selected. */
+  /** Runs one trash command per selected entry, in order, and keeps what failed selected. */
   async function runOnSelectedTrash(
-    command: (target: TrashedModelRead, session: number) => Promise<TrashReceipt>,
+    command: (target: TrashRow, session: number) => Promise<TrashReceipt>,
     done: (count: number) => string,
   ) {
     if (selectedTrash.length === 0 || trashRead.isError || trashBusy !== null) return;
     const session = getSessionVersion();
     setTrashBusy("selection");
-    const finished = new Set<number>();
+    const finished = new Set<TrashRowKey>();
     let failure: unknown;
     try {
       for (const target of selectedTrash) {
         try {
           await command(target, session);
-          finished.add(target.id);
+          finished.add(trashRowKey(target));
         } catch (error) {
           failure = error;
           break;
@@ -1955,7 +1958,9 @@ export function SettingsPanel() {
           description={
             (trashOperations?.physical_delete.allowed ?? trashStorageTier === "verified")
               ? uiText(
-                  "This will delete the model and all its files immediately. This cannot be undone.",
+                  purgeTarget?.kind === "multipart"
+                    ? "multipart.purgeHelp"
+                    : "This will delete the model and all its files immediately. This cannot be undone.",
                 )
               : t("storage.catalogOnly")
           }
@@ -1981,7 +1986,9 @@ export function SettingsPanel() {
           description={
             (trashOperations?.physical_delete.allowed ?? trashStorageTier === "verified")
               ? uiText(
-                  "This will delete the selected models and all their files immediately. This cannot be undone.",
+                  selectedTrash.some((row) => row.kind === "multipart")
+                    ? "multipart.purgeMixedHelp"
+                    : "This will delete the selected models and all their files immediately. This cannot be undone.",
                 )
               : t("storage.catalogOnly")
           }
@@ -4903,8 +4910,8 @@ export function SettingsPanel() {
 
                 <SettingsCard
                   icon={Boxes}
-                  title={uiText("Deleted models")}
-                  description={uiText("Restore models or remove them permanently from storage.")}
+                  title={uiText("trash.itemsTitle")}
+                  description={uiText("multipart.trashHelp")}
                 >
                   {trashItems.length > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground sm:px-5">
@@ -4913,14 +4920,14 @@ export function SettingsPanel() {
                           checked={selectedTrash.length === trashItems.length}
                           onChange={toggleAllTrash}
                           disabled={trashBusy !== null}
-                          ariaLabel={uiText("Select all deleted models")}
+                          ariaLabel={uiText("trash.selectAll")}
                         />
                         {selectedTrash.length > 0
                           ? uiText("trash.selectedCount", {
                               value1: String(selectedTrash.length),
                               count: selectedTrash.length,
                             })
-                          : uiText("models.deletedCount", {
+                          : uiText("trash.itemsCount", {
                               value1: String(trashItems.length),
                               count: Number(trashItems.length),
                             })}
@@ -4951,7 +4958,11 @@ export function SettingsPanel() {
                         {uiText("{value1} reclaimable", {
                           value1: String(
                             formatBytes(
-                              trashItems.reduce((total, item) => total + item.size_bytes, 0),
+                              trashItems.reduce(
+                                (total, item) =>
+                                  total + (item.kind === "model" ? item.size_bytes : 0),
+                                0,
+                              ),
                             ) ?? "",
                           ),
                         })}
@@ -4978,16 +4989,21 @@ export function SettingsPanel() {
                     ) : (
                       trashItems.map((item) => (
                         <div
-                          key={item.id}
+                          key={trashRowKey(item)}
                           className="grid gap-3 p-4 sm:p-5 lg:grid-cols-[auto_1fr_auto] lg:items-center"
                         >
                           <Checkbox
-                            checked={trashSelection.has(item.id)}
-                            onChange={() => toggleTrashItem(item.id)}
+                            checked={trashSelection.has(trashRowKey(item))}
+                            onChange={() => toggleTrashItem(trashRowKey(item))}
                             disabled={trashBusy !== null}
-                            ariaLabel={uiText("Select deleted model {value1}", {
-                              value1: String(item.name),
-                            })}
+                            ariaLabel={uiText(
+                              item.kind === "multipart"
+                                ? "multipart.selectTrashed"
+                                : "Select deleted model {value1}",
+                              {
+                                value1: String(item.name),
+                              },
+                            )}
                           />
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
@@ -4995,12 +5011,14 @@ export function SettingsPanel() {
                                 {item.name}
                               </p>
                               <span className="font-mono text-3xs uppercase tracking-wider px-2 py-0.5 rounded border border-border text-muted-foreground">
-                                {uiText("{value1} files", {
-                                  value1: String(item.file_count ?? ""),
-                                })}
+                                {item.kind === "multipart"
+                                  ? uiText("multipart.trashLabel")
+                                  : uiText("{value1} files", { value1: String(item.file_count) })}
                               </span>
                               <span className="font-mono text-3xs uppercase tracking-wider px-2 py-0.5 rounded border border-border text-muted-foreground">
-                                {formatBytes(item.size_bytes)}
+                                {item.kind === "multipart"
+                                  ? uiText("multipart.partsCount", { count: item.part_count })
+                                  : formatBytes(item.size_bytes)}
                               </span>
                             </div>
                             <p className="mt-1 text-xs text-muted-foreground">
@@ -5013,7 +5031,7 @@ export function SettingsPanel() {
                           <div className="flex flex-wrap gap-2 lg:justify-end">
                             <button
                               type="button"
-                              onClick={() => restoreTrashItem(item.id)}
+                              onClick={() => restoreTrashItem(trashRowKey(item))}
                               disabled={trashBusy !== null}
                               className={BTN_SECONDARY}
                             >
@@ -5022,7 +5040,7 @@ export function SettingsPanel() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => purgeTrashItem(item.id)}
+                              onClick={() => purgeTrashItem(trashRowKey(item))}
                               disabled={trashBusy !== null}
                               className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-xs font-medium uppercase tracking-wider disabled:opacity-50 disabled:cursor-disabled"
                             >

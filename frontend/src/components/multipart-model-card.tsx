@@ -7,6 +7,7 @@ import { useMultipartPublication } from "@/features/library/multipart";
 import { useLibraryStar } from "@/features/library/mutations";
 import { uiText } from "@/lib/locale";
 import { useUiLocale, useI18n } from "@/lib/i18n";
+import { LibraryCardSelection } from "@/components/library-card-selection";
 import { Star } from "lucide-react";
 import type { TagsReview } from "@/components/entity-tags-editor";
 import { EntityTagsDialog } from "@/components/entity-tags-dialog";
@@ -25,6 +26,9 @@ export function MultipartModelCard({
   returnTo,
   availableTags = [],
   onDataChange,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: {
   item: MultipartModelListItem;
   origin?: LibraryEntry;
@@ -33,6 +37,9 @@ export function MultipartModelCard({
   returnTo?: string;
   availableTags?: TagRead[];
   onDataChange?: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: number, range?: boolean) => void;
 }) {
   useUiLocale();
   const { t } = useI18n();
@@ -80,8 +87,19 @@ export function MultipartModelCard({
 
   return (
     <article
-      className={`${origin ? "" : "animate-card-in"} ${arriving ? "animate-card-arrive" : ""} group relative flex aspect-square h-full min-w-0 max-w-full flex-col overflow-hidden rounded border border-border bg-card text-card-foreground transition-[border-color,box-shadow,transform] duration-fast hover:-translate-y-0.5 hover:border-primary active:scale-[0.99]`}
+      className={cn(
+        `${origin ? "" : "animate-card-in"} ${arriving ? "animate-card-arrive" : ""} group group/selection-card relative flex aspect-square h-full min-w-0 max-w-full flex-col overflow-hidden rounded border border-border bg-card text-card-foreground transition-[border-color,box-shadow,transform] duration-fast hover:-translate-y-0.5 hover:border-primary active:scale-[0.99] `,
+        selected && "bg-accent text-accent-foreground",
+      )}
     >
+      {onToggleSelect && (
+        <LibraryCardSelection
+          selecting={selectable}
+          checked={selected}
+          label={uiText("Select {value1}", { value1: item.name })}
+          onChange={() => onToggleSelect(item.id)}
+        />
+      )}
       <button
         type="button"
         onClick={() => void toggleStar()}
@@ -114,11 +132,17 @@ export function MultipartModelCard({
         origin={origin}
         href={detailHref(item.id, returnTo)}
         aria-label={item.name}
+        onClick={(event) => {
+          if (selectable) {
+            event.preventDefault();
+            onToggleSelect?.(item.id, event.shiftKey);
+          }
+        }}
         className="flex h-full min-w-0 flex-col overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <div className="relative h-3/5 shrink-0 overflow-hidden border-b border-border bg-muted/40">
           <Cover src={item.cover_thumbnail_url} alt="" />
-          <span className="absolute left-2 top-2 max-w-[calc(100%-6rem)] truncate rounded border border-primary/30 bg-card/90 px-2 py-1 font-mono text-3xs font-semibold uppercase tracking-wider text-primary shadow-sm">
+          <span className="absolute left-2 bottom-2 max-w-[calc(100%-6rem)] truncate rounded border border-primary/30 bg-card/90 px-2 py-1 font-mono text-3xs font-semibold uppercase tracking-wider text-primary shadow-sm">
             {t("multipart.badge")}
           </span>
         </div>

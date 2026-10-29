@@ -13,6 +13,8 @@ import {
 import type { SessionRequest } from "@/lib/session-transport";
 import type {
   MultipartModelCandidate,
+  TrashedMultipartModelRead,
+  MultipartTrashPurgeRead,
   MultipartModelCreate,
   MultipartModelListItem,
   MultipartModelRead,
@@ -178,4 +180,32 @@ export function listMultipartModelCandidates(
     `/api/v1/multipart-models/${id}/candidates${query ? `?${query}` : ""}`,
     {},
   );
+}
+
+export function listMultipartTrash(
+  options: GetJsonOptions = {},
+): Promise<TrashedMultipartModelRead[]> {
+  return getJson<TrashedMultipartModelRead[]>("/api/v1/multipart-models/trash", options);
+}
+
+export function restoreMultipartModel(
+  id: number,
+  options: Pick<GetJsonOptions, "signal"> = {},
+): Promise<MultipartModelRead> {
+  return requestApi<MultipartModelRead>(`/api/v1/multipart-models/${id}/restore`, {
+    method: "POST",
+    signal: options.signal,
+  });
+}
+
+export function purgeMultipartModel(
+  id: number,
+  confirmStorageRisk: boolean,
+  options: Pick<GetJsonOptions, "signal"> = {},
+): Promise<MultipartTrashPurgeRead> {
+  const query = confirmStorageRisk ? "?confirm_storage_risk=true" : "";
+  return requestApi<MultipartTrashPurgeRead>(`/api/v1/multipart-models/${id}/purge${query}`, {
+    method: "DELETE",
+    signal: options.signal,
+  });
 }

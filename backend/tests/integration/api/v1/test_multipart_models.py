@@ -1823,7 +1823,7 @@ class TestMultipartModels:
             for item in client.get("/api/v1/models", headers=auth_headers).json()
         }
 
-    def test_delete_preserves_guides_as_detached_documents(
+    def test_trash_preserves_guide_links(
         self, client, auth_headers, db_session
     ) -> None:
         aggregate_id = client.post(
@@ -1846,7 +1846,7 @@ class TestMultipartModels:
         db_session.expire_all()
         preserved = db_session.get(Document, guide["id"])
         assert preserved is not None
-        assert preserved.multipart_model_id is None
+        assert preserved.multipart_model_id == aggregate_id
         assert (
             client.get(
                 f"/api/v1/documents/{guide['id']}", headers=auth_headers
@@ -2149,16 +2149,21 @@ class TestUploadedCoverRetirement:
         key = backend.multipart_model_cover_key(aggregate.id, aggregate.cover_filename)
         return aggregate.id, key
 
-    @pytest.fixture(params=["delete", "remove", "replace", "patch", "save"])
+    @pytest.fixture(params=["purge", "remove", "replace", "patch", "save"])
     def change(
         self, request, client, auth_headers, cover
     ) -> Callable[[], httpx.Response]:
         model_id, _key = cover
         path = f"/api/v1/multipart-models/{model_id}"
 
+        if request.param == "purge":
+            assert client.delete(path, headers=auth_headers).status_code == 204
+
         def execute():
-            if request.param == "delete":
-                return client.delete(path, headers=auth_headers)
+            if request.param == "purge":
+                return client.delete(
+                    path + "/purge?confirm_storage_risk=true", headers=auth_headers
+                )
             if request.param == "remove":
                 return client.delete(path + "/cover", headers=auth_headers)
             if request.param == "replace":
@@ -2298,11 +2303,10 @@ class TestUploadedCoverRetirement:
 
         assert response.status_code == 409, response.text
         assert response.json()["detail"] == "storage_ownership_unverified"
-        current = client.get(
-            f"/api/v1/multipart-models/{model_id}", headers=auth_headers
-        )
-        assert current.status_code == 200
-        assert current.json()["cover_image_uploaded"] is True
+        db_session.expire_all()
+        current = db_session.get(MultipartModel, model_id)
+        assert current is not None
+        assert current.cover_filename is not None
         assert get_backend().exists(key) is (problem != "missing")
         db_session.expire_all()
         assert (
@@ -2342,3 +2346,238 @@ class TestUploadedCoverRetirement:
         assert response.status_code == 409, response.text
         assert response.json()["detail"] == "storage_ownership_unverified"
         assert path.exists()
+
+    def test_trash_retains_owned_cover(self, cover, client, auth_headers, db_session):
+        identifier, key = cover
+        response = client.delete(
+            f"/api/v1/multipart-models/{identifier}", headers=auth_headers
+        )
+        assert response.status_code == 204, response.text
+        assert get_backend().exists(key)
+        assert (
+            db_session.exec(
+                select(StorageDeleteIntent).where(StorageDeleteIntent.key == key)
+            ).first()
+            is None
+        )
+
+    def test_restored_cover_is_readable(self, cover, client, auth_headers):
+        identifier, _key = cover
+        path = f"/api/v1/multipart-models/{identifier}"
+        assert client.delete(path, headers=auth_headers).status_code == 204
+        assert client.post(path + "/restore", headers=auth_headers).status_code == 200
+        response = client.get(path + "/cover/content", headers=auth_headers)
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"].startswith("image/")
+
+    def test_purge_removes_owned_cover(self, cover, client, auth_headers):
+        identifier, key = cover
+        path = f"/api/v1/multipart-models/{identifier}"
+        assert client.delete(path, headers=auth_headers).status_code == 204
+        response = client.delete(path + "/purge", headers=auth_headers)
+        assert response.status_code == 200, response.text
+        assert not get_backend().exists(key)
+
+    @pytest.mark.parametrize("fs_kind", ["unknown", "network"])
+    def test_purge_requires_guarded_storage_confirmation(
+        self, cover, client, auth_headers
+    ):
+        identifier, key = cover
+        path = f"/api/v1/multipart-models/{identifier}"
+        assert client.delete(path, headers=auth_headers).status_code == 204
+        response = client.delete(path + "/purge", headers=auth_headers)
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "storage_risk_confirmation_required"
+        assert get_backend().exists(key)
+
+    @pytest.mark.parametrize("fs_kind", ["unknown", "network"])
+    def test_confirmed_purge_keeps_guarded_cover_bytes(
+        self, cover, client, auth_headers
+    ):
+        identifier, key = cover
+        path = f"/api/v1/multipart-models/{identifier}"
+        assert client.delete(path, headers=auth_headers).status_code == 204
+        response = client.delete(
+            path + "/purge?confirm_storage_risk=true", headers=auth_headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["storage_cleanup_status"] == "blocked"
+        assert get_backend().exists(key)
+
+
+class TestMultipartTrash:
+    def test_deleted_set_appears_in_trash(
+        self, client, auth_headers, make_multipart_model
+    ):
+        aggregate = make_multipart_model("Recoverable set")
+        response = client.delete(
+            f"/api/v1/multipart-models/{aggregate.id}", headers=auth_headers
+        )
+        assert response.status_code == 204, response.text
+
+        response = client.get("/api/v1/multipart-models/trash", headers=auth_headers)
+
+        assert response.status_code == 200, response.text
+        assert [row["id"] for row in response.json()] == [aggregate.id]
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/api/v1/multipart-models", "/api/v1/models/browse"],
+        ids=["sets", "library"],
+    )
+    def test_hides_trashed_sets_from_browse(
+        self, path, client, auth_headers, make_multipart_model
+    ):
+        aggregate = make_multipart_model("Hidden grouping", trashed=True)
+        response = client.get(path, headers=auth_headers)
+        assert response.status_code == 200, response.text
+        assert aggregate.name not in response.text
+
+    def test_trashed_detail_is_unavailable(
+        self, client, auth_headers, make_multipart_model
+    ):
+        aggregate = make_multipart_model(trashed=True)
+        response = client.get(
+            f"/api/v1/multipart-models/{aggregate.id}", headers=auth_headers
+        )
+        assert response.status_code == 404, response.text
+
+    def test_restore_recovers_part_choices(self, client, auth_headers, make_model):
+        member = make_model()
+        created = client.post(
+            "/api/v1/multipart-models",
+            headers=auth_headers,
+            json={
+                "name": "Restore composition",
+                "parts": [
+                    {
+                        "name": "Base",
+                        "quantity": 2,
+                        "choices": [{"model_id": member.id}],
+                    }
+                ],
+            },
+        ).json()
+        path = f"/api/v1/multipart-models/{created['id']}"
+        assert client.delete(path, headers=auth_headers).status_code == 204
+        response = client.post(path + "/restore", headers=auth_headers)
+        assert response.status_code == 200, response.text
+        assert response.json()["parts"] == created["parts"]
+
+    def test_restore_removes_set_from_trash(
+        self, client, auth_headers, make_multipart_model
+    ):
+        aggregate = make_multipart_model(trashed=True)
+        response = client.post(
+            f"/api/v1/multipart-models/{aggregate.id}/restore", headers=auth_headers
+        )
+        assert response.status_code == 200, response.text
+        assert (
+            client.get("/api/v1/multipart-models/trash", headers=auth_headers).json()
+            == []
+        )
+
+    def test_purge_preserves_member_files(
+        self, client, auth_headers, make_model, make_file, db_session
+    ):
+        member = make_model()
+        artifact = make_file(member, file_type=FileType.STL)
+        data = client.post(
+            "/api/v1/multipart-models",
+            headers=auth_headers,
+            json={
+                "name": "Purge grouping",
+                "parts": [{"name": "Base", "choices": [{"model_id": member.id}]}],
+            },
+        ).json()
+        path = f"/api/v1/multipart-models/{data['id']}"
+        assert client.delete(path, headers=auth_headers).status_code == 204
+        response = client.delete(path + "/purge", headers=auth_headers)
+        assert response.status_code == 200, response.text
+        db_session.expire_all()
+        assert db_session.get(File, artifact.id) is not None
+        assert (
+            client.get(f"/api/v1/models/{member.id}", headers=auth_headers).status_code
+            == 200
+        )
+
+    def test_purge_detaches_guides(
+        self, client, auth_headers, make_multipart_model, db_session
+    ):
+        aggregate = make_multipart_model()
+        guide = client.post(
+            "/api/v1/documents/upload",
+            data={"multipart_model_id": str(aggregate.id)},
+            files={"file": ("guide.md", b"# Guide", "text/markdown")},
+            headers=auth_headers,
+        ).json()
+        path = f"/api/v1/multipart-models/{aggregate.id}"
+        assert client.delete(path, headers=auth_headers).status_code == 204
+        response = client.delete(path + "/purge", headers=auth_headers)
+        assert response.status_code == 200, response.text
+        db_session.expire_all()
+        assert db_session.get(Document, guide["id"]).multipart_model_id is None
+        assert (
+            client.get(
+                f"/api/v1/documents/{guide['id']}", headers=auth_headers
+            ).status_code
+            == 200
+        )
+
+    def test_purge_rejects_live_set(self, client, auth_headers, make_multipart_model):
+        aggregate = make_multipart_model()
+        response = client.delete(
+            f"/api/v1/multipart-models/{aggregate.id}/purge", headers=auth_headers
+        )
+        assert response.status_code == 400, response.text
+
+    def test_restore_rejects_claimed_purge(
+        self, client, auth_headers, make_multipart_model
+    ):
+        aggregate = make_multipart_model(trashed=True, purge_token="claimed")
+        response = client.post(
+            f"/api/v1/multipart-models/{aggregate.id}/restore", headers=auth_headers
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "storage_cleanup_blocked"
+
+    @pytest.mark.parametrize("action", ["restore", "purge"], ids=["restore", "purge"])
+    def test_trash_command_requires_edit_permission(
+        self,
+        action,
+        client,
+        make_multipart_model,
+        make_collection,
+        make_user,
+        grant_role,
+        headers_for,
+    ):
+        folder = make_collection()
+        viewer = make_user()
+        grant_role(viewer, folder, CollectionRole.VIEW)
+        aggregate = make_multipart_model(collection=folder, trashed=True)
+        response = client.request(
+            "POST" if action == "restore" else "DELETE",
+            f"/api/v1/multipart-models/{aggregate.id}/{action}",
+            headers=headers_for(viewer),
+        )
+        assert response.status_code == 403, response.text
+
+    def test_trash_listing_hides_inaccessible_sets(
+        self, client, make_multipart_model, make_collection, make_user, headers_for
+    ):
+        make_multipart_model(collection=make_collection(), trashed=True)
+        response = client.get(
+            "/api/v1/multipart-models/trash", headers=headers_for(make_user())
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+
+    @pytest.mark.parametrize(
+        "method,path",
+        [("GET", "/trash"), ("POST", "/1/restore"), ("DELETE", "/1/purge")],
+        ids=["list", "restore", "purge"],
+    )
+    def test_trash_requires_authentication(self, client, method, path):
+        response = client.request(method, "/api/v1/multipart-models" + path)
+        assert response.status_code == 401, response.text

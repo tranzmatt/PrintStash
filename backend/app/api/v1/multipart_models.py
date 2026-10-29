@@ -27,6 +27,7 @@ from sqlmodel import Session, delete, select
 from app.api.command_actor import CommandActor, command_session, require_command_writer
 from app.api.command_execution import bounded_command
 from app.api.edit_preconditions import edit_precondition
+from app.core.config import settings
 from app.core.security import require_auth, require_user
 from app.core.time import utcnow
 from app.db.models import (
@@ -41,13 +42,14 @@ from app.db.projections import content_changed
 from app.db.scopes import live
 from app.db.session import get_session
 from app.modules.identity import rbac
-from app.modules.library import multipart_models, taxonomy
+from app.modules.library import multipart_models, taxonomy, trash
 from app.modules.library.edit_preconditions import (
     EditKind,
     etag,
     expected_base,
 )
 from app.modules.library.edit_preconditions import claim as claim_edit
+from app.modules.library.model_views.trash import list_trashed_multipart
 from app.modules.media.source_cover_processing import (
     MAX_SOURCE_COVER_BYTES,
     SourceCoverProcessingError,
@@ -57,6 +59,7 @@ from app.modules.storage.storage_backend.contracts import StorageTier
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.modules.storage.storage_deletion import (
     PreparedOwnedDeletion,
+    cleanup_status,
     enqueue_prepared_owned_deletion,
     prepare_owned_key_deletion,
     process_storage_delete_intents,
@@ -78,6 +81,8 @@ from app.schemas.multipart_models import (
     MultipartModelStarRead,
     MultipartModelUpdate,
     MultipartPartsReplace,
+    MultipartTrashPurgeRead,
+    TrashedMultipartModelRead,
 )
 
 router = APIRouter(prefix="/multipart-models", tags=["multipart-models"])
@@ -145,6 +150,99 @@ def _unique_slug(session: Session, name: str, *, exclude_id: int | None = None) 
     if existing is not None and existing.id != exclude_id:
         raise HTTPException(status_code=409, detail="multipart_model_slug_exists")
     return slug
+
+
+@router.get(
+    "/trash",
+    response_model=list[TrashedMultipartModelRead],
+    dependencies=[Depends(require_auth)],
+    summary="List multipart sets in Trash",
+)
+def list_multipart_trash(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> list[TrashedMultipartModelRead]:
+    return list_trashed_multipart(
+        session,
+        current_user,
+        limit=limit,
+        offset=offset,
+        retention_days=int(settings.trash_retention_days),
+    )
+
+
+@router.post(
+    "/{multipart_model_id}/restore",
+    response_model=MultipartModelRead,
+    dependencies=[Depends(require_auth)],
+    summary="Restore a multipart set from Trash",
+)
+def restore_multipart_model(
+    multipart_model_id: int,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> MultipartModelRead:
+    aggregate = multipart_models.require(
+        session,
+        current_user,
+        multipart_model_id,
+        CollectionRole.EDIT,
+        include_trashed=True,
+    )
+    try:
+        trash.restore_resource(session, aggregate)
+    except trash.PurgeConflictError as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="storage_cleanup_blocked") from exc
+    return multipart_models.read(session, current_user, aggregate)
+
+
+@router.delete(
+    "/{multipart_model_id}/purge",
+    response_model=MultipartTrashPurgeRead,
+    dependencies=[Depends(require_auth)],
+    summary="Permanently delete a multipart set from Trash",
+)
+def purge_multipart_model(
+    multipart_model_id: int,
+    confirm_storage_risk: bool = Query(False),
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> MultipartTrashPurgeRead:
+    aggregate = multipart_models.require(
+        session,
+        current_user,
+        multipart_model_id,
+        CollectionRole.EDIT,
+        include_trashed=True,
+    )
+    if aggregate.deleted_at is None:
+        raise HTTPException(status_code=400, detail="multipart_model_not_in_trash")
+    try:
+        trash.hard_delete_multipart(
+            session, aggregate, confirm_storage_risk=confirm_storage_risk
+        )
+        session.commit()
+    except trash.StorageRiskConfirmationRequired as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except UnsafeStorageDeleteError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=409, detail="storage_ownership_unverified"
+        ) from exc
+    result = process_storage_delete_intents()
+    return MultipartTrashPurgeRead(
+        purged_model_ids=[],
+        purged_multipart_model_ids=[multipart_model_id],
+        purged_count=1,
+        storage_completed=result.completed,
+        storage_pending=result.pending,
+        storage_blocked=result.blocked,
+        storage_cleanup_status=cleanup_status(result),
+    )
 
 
 @router.get(
@@ -695,7 +793,7 @@ def unstar_multipart_model(
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
     dependencies=[Depends(require_auth)],
-    summary="Delete a multipart model grouping",
+    summary="Move a multipart set to Trash",
 )
 def delete_multipart_model(
     multipart_model_id: int,
@@ -705,10 +803,5 @@ def delete_multipart_model(
     aggregate = multipart_models.require(
         session, current_user, multipart_model_id, CollectionRole.EDIT
     )
-    removed_uploaded_cover = _prepare_uploaded_cover_delete(session, aggregate)
-    multipart_models.delete_aggregate(
-        session, aggregate, cover_retirement=removed_uploaded_cover
-    )
-    if removed_uploaded_cover:
-        process_storage_delete_intents()
+    trash.soft_delete_multipart(session, aggregate, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

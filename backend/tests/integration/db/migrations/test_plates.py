@@ -13,10 +13,14 @@ from sqlalchemy import create_engine, text
 from alembic import command
 from app.db.url import normalize_database_url
 from tests.containers import fresh_postgres_database
-from tests.factories.migration_rows import seed_schema_row
+from tests.factories.migration_rows import (
+    RELEASED_V0121_REVISION,
+    create_released_v0121_postgres_schema,
+    seed_schema_row,
+)
 from tests.paths import ALEMBIC_DIR, ALEMBIC_INI
 
-BEFORE = "b2be6484da3f"
+BEFORE = "462588d49de9"
 PLATES = "105991549e18"
 
 
@@ -34,6 +38,12 @@ class TestPlatesMigration:
         )
         config.set_main_option("sqlalchemy.url", url)
         engine = create_engine(url)
+        if dialect == "postgresql":
+            # PostgreSQL installations start from create_all, not the legacy
+            # SQLite-only baseline. Exercise upgrades from the released schema.
+            with engine.begin() as connection:
+                create_released_v0121_postgres_schema(connection)
+            command.stamp(config, RELEASED_V0121_REVISION)
         command.upgrade(config, BEFORE)
         with engine.begin() as connection:
             seed_schema_row(

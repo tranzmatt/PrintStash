@@ -96,3 +96,21 @@ class TestPassageInScope:
             if shape == "distinct"
             else [second.id]
         )
+
+
+class TestMultipartTrashVisibility:
+    def test_trashed_set_is_not_a_visible_search_subject(
+        self, db_session, make_multipart_model, make_user
+    ):
+        from sqlalchemy import select
+
+        from app.modules.search.access import visible_subjects
+
+        aggregate = make_multipart_model(trashed=True)
+        subjects = visible_subjects(db_session, make_user(superuser=True))
+        rows = db_session.execute(
+            select(subjects.c.id).where(
+                subjects.c.kind == "multipart_model", subjects.c.id == aggregate.id
+            )
+        ).all()
+        assert rows == []

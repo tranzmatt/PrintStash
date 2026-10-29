@@ -168,12 +168,13 @@ def _entries(
     if visible is None:
         visible = _visible(session, user)
     allowed_multipart = select(col(MultipartModel.id)).where(
+        live(MultipartModel),
         or_(
             col(MultipartModel.collection_id).is_(None)
             if user.is_superuser
             else literal(False),
             col(MultipartModel.collection_id).in_(visible),
-        )
+        ),
     )
     membership = (
         select(col(MultipartModelChoice.id))
@@ -301,7 +302,7 @@ def _all_direct_counts(visible, *, include_unfiled: bool):
             func.count().label("count"),
             literal(0).label("models"),
         )
-        .where(allowed(col(MultipartModel.collection_id)))
+        .where(live(MultipartModel), allowed(col(MultipartModel.collection_id)))
         .group_by(col(MultipartModel.collection_id))
     )
     combined = union_all(models, multipart).subquery()

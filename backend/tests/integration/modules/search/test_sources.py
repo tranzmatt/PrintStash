@@ -278,8 +278,9 @@ class TestProjectSubject:
                 {"deleted_at": datetime(2026, 1, 1)},
             ),
             (SubjectType.DOCUMENT, "make_document", {"trashed": True}),
+            (SubjectType.MULTIPART_MODEL, "make_multipart_model", {"trashed": True}),
         ],
-        ids=["model", "collection", "document"],
+        ids=["model", "collection", "document", "multipart"],
     )
     def test_excludes_trashed_subjects(
         self, db_session, request, kind, fixture, overrides
