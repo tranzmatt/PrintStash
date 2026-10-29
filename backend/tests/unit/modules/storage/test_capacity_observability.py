@@ -30,6 +30,26 @@ class TestCapacityObservability:
 
         assert registry.get_sample_value(metric) == before + 1
 
+    @pytest.mark.parametrize("category", ["glb", "ply"])
+    def test_labels_exchange_mesh_bytes_by_their_format(self, category: str) -> None:
+        observe_inventory(
+            SimpleNamespace(
+                buckets=[
+                    SimpleNamespace(category=category, lifecycle="live", logical_bytes=7)
+                ],
+                provider_capacity=SimpleNamespace(available_bytes=None),
+            ),
+            provider="local",
+        )
+
+        assert (
+            registry.get_sample_value(
+                "printstash_storage_inventory_bytes",
+                {"category": category, "lifecycle": "live"},
+            )
+            == 7
+        )
+
     def test_ignores_negative_prediction_error(self) -> None:
         metric = "printstash_storage_forecast_prediction_error_ratio_count"
         before = registry.get_sample_value(metric) or 0
