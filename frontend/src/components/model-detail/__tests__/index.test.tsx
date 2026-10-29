@@ -27,7 +27,7 @@ import { ModelDetail } from "@/components/model-detail";
 import { LibraryItemLink } from "@/features/library/navigation";
 import { knownOrigin, useLibraryEntry } from "@/features/library/navigation-state";
 import { queryKeys } from "@/lib/query-client";
-import { aCollection, aMetadata } from "@/test-support/factories";
+import { aCollection, aFilePlate, aMetadata } from "@/test-support/factories";
 import { similarityStatus } from "@/test-support/similarity";
 import { collectionTreeRoutes } from "@/test-support/collection-tree";
 import { json, memberSession, renderApp, type RenderAppOptions } from "@/test-support/render";
@@ -628,6 +628,63 @@ describe("ModelDetail", () => {
 
       expect(screen.queryByRole("button", { name: "Load 3D preview" })).not.toBeInTheDocument();
       expect(screen.queryByText(/Large 3D preview/)).not.toBeInTheDocument();
+    });
+
+    it("offers each plate of a multi-plate 3MF", async () => {
+      renderDetail({
+        model: aModel({ files: [aFile({ file_type: "3mf", original_filename: "rack.3mf" })] }),
+        routes: {
+          "GET /api/v1/files/10/stl": json({ state: "queued" }, 202),
+          "GET /api/v1/files/10/plates": json({
+            state: "ready",
+            plates: [aFilePlate(), aFilePlate({ number: 2, name: "Wall mount" })],
+          }),
+        },
+      });
+
+      const plates = await screen.findByRole("group", { name: "Plates" });
+
+      expect(within(plates).getByRole("button", { name: /Plate 02.*Wall mount/ })).toBeVisible();
+    });
+
+    it("names the plate it shows beside the file", async () => {
+      const user = userEvent.setup();
+      renderDetail({
+        model: aModel({ files: [aFile({ file_type: "3mf", original_filename: "rack.3mf" })] }),
+        routes: {
+          "GET /api/v1/files/10/stl": json({ state: "queued" }, 202),
+          "GET /api/v1/files/10/plates": json({
+            state: "ready",
+            plates: [aFilePlate(), aFilePlate({ number: 2, name: "Wall mount" })],
+          }),
+        },
+      });
+
+      await user.click(await screen.findByRole("button", { name: /Plate 02/ }));
+
+      expect(screen.getByText(/Viewing: rack\.3mf · Plate 02/)).toBeVisible();
+    });
+
+    it("offers no plate choice for a single-plate 3MF", async () => {
+      const view = renderDetail({
+        model: aModel({ files: [aFile({ file_type: "3mf", original_filename: "part.3mf" })] }),
+        routes: {
+          "GET /api/v1/files/10/stl": json({ state: "queued" }, 202),
+          "GET /api/v1/files/10/plates": json({ state: "ready", plates: [aFilePlate()] }),
+        },
+      });
+      await waitFor(() =>
+        expect(view.requests().some(({ url }) => url.endsWith("/files/10/plates"))).toBe(true),
+      );
+
+      expect(screen.queryByRole("group", { name: "Plates" })).not.toBeInTheDocument();
+    });
+
+    it("asks for no plates of a model without a 3MF", async () => {
+      const view = renderDetail();
+      await screen.findByText("Benchy");
+
+      expect(view.requests().some(({ url }) => url.includes("/plates"))).toBe(false);
     });
 
     it("opens on the overview", async () => {

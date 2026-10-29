@@ -18,7 +18,8 @@ import {
 } from "@/lib/comparison-camera";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
-import { useParsedStl } from "@/lib/use-parsed-stl";
+import { trianglesOnPlate } from "@/lib/plate-geometry";
+import { useParsedStl, type ParsedStl } from "@/lib/use-parsed-stl";
 import { createMeshRenderer, type MeshRenderer, type RendererFallback } from "@/lib/mesh-renderer";
 import type { CameraPose } from "@/lib/comparison-camera";
 import type { MeshRendererPreference } from "@/lib/preview-preferences";
@@ -30,6 +31,7 @@ import {
 import { fitCameraToBounds, heroCameraDirection } from "@/lib/thumbnail-camera";
 import { useViewerReadiness } from "@/lib/use-viewer-readiness";
 import { useStlPreview, stlPreviewMessage, type StlPreviewFailure } from "@/lib/use-stl-preview";
+import type { PlateRegion } from "@/types";
 
 export type ViewerDisplayMode = "solid" | "xray" | "wireframe";
 
@@ -61,6 +63,8 @@ export interface STLViewerProps {
   comparison?: MeshComparison;
   comparisonCamera?: ComparisonCamera;
   overlay?: { url: string; comparison: MeshComparison };
+  /** Show only the geometry over this plate of a multi-plate 3MF. */
+  plate?: PlateRegion;
 }
 
 // The camera needs both shapes: R3F takes the tuple as a JSX prop, the orbit
@@ -177,6 +181,7 @@ function Scene({
     | "comparison"
     | "comparisonCamera"
     | "overlay"
+    | "plate"
   >
 > &
   Pick<STLViewerProps, "comparison" | "comparisonCamera" | "overlay"> & {
@@ -563,6 +568,24 @@ function MeshCanvas(
   );
 }
 
+/** The parsed mesh, or only its triangles over ``region`` when one is chosen. */
+function usePlateGeometry(
+  parsed: ParsedStl,
+  region: PlateRegion | undefined,
+): THREE.BufferGeometry | null {
+  const plate = useMemo(() => {
+    if (parsed.state !== "ready" || region === undefined) return null;
+    const kept = trianglesOnPlate(parsed.triangles, region);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(kept.positions, 3));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(kept.normals, 3));
+    return geometry;
+  }, [parsed, region]);
+  useEffect(() => () => plate?.dispose(), [plate]);
+  if (parsed.state !== "ready") return null;
+  return plate ?? parsed.geometry;
+}
+
 export function STLViewer({
   url,
   modelId,
@@ -577,6 +600,7 @@ export function STLViewer({
   comparison,
   comparisonCamera,
   overlay,
+  plate,
 }: STLViewerProps) {
   useUiLocale();
   // Tracking *which* url has loaded, rather than a bare boolean, makes the url
@@ -589,6 +613,7 @@ export function STLViewer({
   const overlayPreview = useStlPreview(overlay?.url ?? null, undefined, previewFetcher);
   const parsed = useParsedStl(preview.state === "ready" ? preview.url : null);
   const parsedOverlay = useParsedStl(overlayPreview.state === "ready" ? overlayPreview.url : null);
+  const shownGeometry = usePlateGeometry(parsed, plate);
 
   useEffect(() => {
     onReadyChange?.(meshLoaded && preview.state === "ready");
@@ -636,6 +661,7 @@ export function STLViewer({
   if (
     preview.state !== "ready" ||
     parsed.state !== "ready" ||
+    shownGeometry === null ||
     (overlay !== undefined && (overlayPreview.state !== "ready" || parsedOverlay.state !== "ready"))
   )
     return (
@@ -649,12 +675,22 @@ export function STLViewer({
       </div>
     );
 
+  if (shownGeometry.getAttribute("position").count === 0)
+    return (
+      <div
+        role="status"
+        className="flex h-full items-center justify-center text-sm text-on-surface-variant"
+      >
+        {uiText("Nothing is placed on this plate")}
+      </div>
+    );
+
   return (
     <div className="relative h-full w-full touch-none overscroll-contain">
       <MeshCanvas
         key={`${preview.url}:${previewPreferences.meshRenderer}`}
         url={preview.url}
-        geometry={parsed.geometry}
+        geometry={shownGeometry}
         overlayGeometry={parsedOverlay.state === "ready" ? parsedOverlay.geometry : null}
         preference={previewPreferences.meshRenderer}
         onControlsReady={onControlsReady}

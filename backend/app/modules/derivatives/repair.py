@@ -26,6 +26,7 @@ from .kinds import MESH_TYPES, groups_for, recipes_for
 _PRODUCERS = {
     JobKind.DERIVATIVES_MESH: producers.derive_mesh,
     JobKind.DERIVATIVES_GCODE: producers.derive_gcode,
+    JobKind.DERIVATIVES_PLATES: producers.derive_plates,
     JobKind.DERIVATIVES_TOOLPATH: producers.derive_toolpath,
 }
 

@@ -66,6 +66,7 @@ library at backfill priority while uploads keep interactive priority.
 | `derivatives.mesh` | `derive.native` | `metadata` (geometry), `thumbnail` | One bounded source preparation; 3MF resources and placements remain retained until topology or fingerprints need materialization |
 | `derivatives.gcode` | `derive.light` | `metadata` (slicer facts, material requirements), `thumbnail` | One header read; no embedded image means `skipped` |
 | `derivatives.toolpath` | `derive.native` | `toolpath` | The binary G-code converter, under resource limits |
+| `derivatives.plates` | `derive.light` | `plates` | A 3MF's slicer metadata: `Metadata/model_settings.config` and the bed in `Metadata/project_settings.config`, never its meshes |
 
 A producer derives only the kinds still owed, records every outcome on the
 kind's row, and tells viewers of the Model on `model:<id>` so an open page
@@ -365,6 +366,30 @@ thumbnail recipe 9 and viewer STL recipe 2 refresh outputs under this policy;
 the fingerprint mathematical algorithm is unchanged. Its interpretation cache
 version advances to `geometry-v5-sh5f4577c4`, so earlier candidate evidence remains
 historical rather than actionable as a current interpretation.
+
+## 3MF plates
+
+`plates` recipe 1 is produced by `derivatives.plates` in `derive.light` for every
+3MF Artifact. Bambu Studio and the slicers built on it (OrcaSlicer, Creality
+Print) save a project's plates in `Metadata/model_settings.config` and lay plate
+*i* of *n* out on a grid of `ceil(sqrt(n))` columns, each cell the bed plus a fifth
+of it, rows growing towards -Y. The producer reads the plates' numbers, names,
+object counts and saved previews, computes each plate's rectangle of the build
+from the bed in `Metadata/project_settings.config`, and stores them in
+`file_plates`. It reads no mesh.
+
+A package without plate metadata is `skipped`. One whose plate metadata cannot be
+read, whose bed is unknown, or whose build places an object outside the cell of
+the plate that lists it fails deterministically (`plate_layout_malformed`,
+`plate_bed_unknown`, `plate_layout_mismatch`, `plate_layout_limits`): a layout is
+published only when every rectangle is the slicer's own.
+
+`GET /api/v1/files/{id}/plates` returns the layout once it is `ready`, and
+`GET /api/v1/files/{id}/plates/{number}/image` serves the preview the slicer saved
+for a plate from the original archive. The model page offers a multi-plate
+project's plates and shows one by keeping the viewer STL's triangles whose
+centroid lies over that plate's rectangle; the viewer STL keeps the build's
+coordinates, so no per-plate conversion exists.
 
 ## On-demand 3D viewer STL
 

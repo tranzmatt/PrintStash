@@ -259,8 +259,9 @@ queue, concurrent SQL writers or parallel downloads.
 
 ## Derivatives
 
-See [derivatives.md](../derivatives.md). In short: three producer groups
-(`derivatives.mesh`, `derivatives.gcode`, `derivatives.toolpath`) pull Artifacts missing a kind
+See [derivatives.md](../derivatives.md). In short: the producer groups
+(`derivatives.mesh`, `derivatives.gcode`, `derivatives.toolpath`, `derivatives.viewer_stl`,
+`derivatives.plates`) pull Artifacts missing a kind
 at its recipe version through a bounded anti-join, one mesh load produces
 geometry and the thumbnail together, and each kind's row records ready,
 skipped, failed (with backoff) or cancelled.

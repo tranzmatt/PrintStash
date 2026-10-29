@@ -179,11 +179,23 @@ export async function createCollectionViaVault(
   parent?: string,
 ): Promise<void> {
   await page.goto(parent ? `/?c=${encodeURIComponent(parent)}` : "/");
+  // The creation controls appear before the selected parent has resolved.
+  // Its heading is published with the loaded collection snapshot.
+  if (parent) {
+    await settleLibraryRead(
+      page,
+      page.getByRole("main").getByRole("heading", {
+        name: parent.slice(parent.lastIndexOf("/") + 1),
+        exact: true,
+      }),
+    );
+  }
   await openLibraryTools(page);
   await libraryTool(page, "New collection").click();
   const input = page.getByPlaceholder(parent ? /New subcollection in/ : "Collection name...");
   await input.fill(name);
   await input.press("Enter");
+  await expect(input).toBeHidden();
   if (parent) {
     await expect(page.locator(`[data-collection-path="${parent}/${name}"]`)).toBeVisible();
   } else {

@@ -48,6 +48,7 @@ import type {
   CollectionRead,
   DerivativeRead,
   ExternalLibrary,
+  FilePlate,
   JobStatus,
   ModelListItem,
   OutlinerModelRead,
@@ -670,6 +671,18 @@ export function aDerivative(override?: Partial<DerivativeRead>): DerivativeRead 
     failure_reason: null,
     updated_at: FROZEN_NOW,
     retryable: false,
+    ...override,
+  };
+}
+
+/** Plate 1 of a Bambu Studio project on a 256 mm bed. */
+export function aFilePlate(override?: Partial<FilePlate>): FilePlate {
+  return {
+    number: 1,
+    name: "Main parts",
+    object_count: 1,
+    image_url: null,
+    region: { min_x: 0, min_y: 0, max_x: 256, max_y: 256 },
     ...override,
   };
 }

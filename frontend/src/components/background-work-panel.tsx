@@ -65,6 +65,8 @@ function derivativeLabel(kind: DerivativeKind): string {
       return uiText("Model images");
     case "viewer_stl":
       return uiText("3D preview");
+    case "plates":
+      return uiText("3MF plates");
     case "toolpath":
       return uiText("Toolpath previews");
   }
@@ -73,6 +75,7 @@ function derivativeLabel(kind: DerivativeKind): string {
 const POLICY_SETTINGS = {
   "derivatives.mesh": "derivatives_mesh_enabled",
   "derivatives.viewer_stl": "derivatives_mesh_enabled",
+  "derivatives.plates": "derivatives_mesh_enabled",
   "derivatives.gcode": "derivatives_gcode_enabled",
   "derivatives.toolpath": "derivatives_toolpath_enabled",
 } as const;
@@ -83,6 +86,8 @@ function policyPurpose(name: string): string {
       return uiText("3D preview");
     case "derivatives.mesh":
       return uiText("Mesh metadata and preview images");
+    case "derivatives.plates":
+      return uiText("Plates of slicer project 3MFs");
     case "derivatives.gcode":
       return uiText("G-code metadata and embedded thumbnails");
     case "derivatives.toolpath":

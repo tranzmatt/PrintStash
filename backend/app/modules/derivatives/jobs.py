@@ -150,6 +150,9 @@ def definitions() -> list[JobDefinition]:
             JobKind.DERIVATIVES_GCODE, LaneName.DERIVE_LIGHT, producers.derive_gcode
         ),
         _definition(
+            JobKind.DERIVATIVES_PLATES, LaneName.DERIVE_LIGHT, producers.derive_plates
+        ),
+        _definition(
             JobKind.DERIVATIVES_TOOLPATH,
             LaneName.DERIVE_NATIVE,
             producers.derive_toolpath,

@@ -48,6 +48,7 @@ GCODE_METADATA_RECIPE = 6
 GCODE_THUMBNAIL_RECIPE = 3
 TOOLPATH_RECIPE = 1
 VIEWER_STL_RECIPE = 3
+PLATES_RECIPE = 1
 VIEWER_TYPES = (
     FileType.THREE_MF,
     FileType.OBJ,
@@ -187,6 +188,15 @@ GROUPS: tuple[DerivativeGroup, ...] = (
             file.sha256 != SENTINEL_FILE_HASH
             and file.file_type in VIEWER_TYPES
             and file.viewer_requested_at is not None
+        ),
+    ),
+    DerivativeGroup(
+        definition=JobKind.DERIVATIVES_PLATES,
+        recipes={DerivativeKind.PLATES: PLATES_RECIPE},
+        label="3MF plates",
+        applies=lambda: and_(_real(), col(File.file_type) == FileType.THREE_MF),
+        applies_to=lambda file: (
+            file.sha256 != SENTINEL_FILE_HASH and file.file_type == FileType.THREE_MF
         ),
     ),
     DerivativeGroup(

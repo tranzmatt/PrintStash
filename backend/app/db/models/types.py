@@ -193,6 +193,7 @@ class JobKind(StrEnum):
     BACKUPS_TRASH_GC = "backups.trash_gc"
     DERIVATIVES_GCODE = "derivatives.gcode"
     DERIVATIVES_MESH = "derivatives.mesh"
+    DERIVATIVES_PLATES = "derivatives.plates"
     DERIVATIVES_TOOLPATH = "derivatives.toolpath"
     DERIVATIVES_VIEWER_STL = "derivatives.viewer_stl"
     IDENTITY_RETENTION = "identity.retention"
@@ -249,6 +250,7 @@ class DerivativeKind(StrEnum):
     """An output derived from an Artifact's bytes, each at its own recipe."""
 
     METADATA = "metadata"
+    PLATES = "plates"
     THUMBNAIL = "thumbnail"
     TOOLPATH = "toolpath"
     VIEWER_STL = "viewer_stl"

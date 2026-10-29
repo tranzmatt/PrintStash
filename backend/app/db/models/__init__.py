@@ -142,6 +142,9 @@ from .library import (
     File as File,
 )
 from .library import (
+    FilePlate as FilePlate,
+)
+from .library import (
     FileTagLink as FileTagLink,
 )
 from .library import LibraryRevision as LibraryRevision

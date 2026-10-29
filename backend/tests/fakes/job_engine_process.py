@@ -253,7 +253,7 @@ def _settle(file_id: int) -> dict:
                 "thumbnail": file.thumbnail_path,
             }
         settled = set(states) == set(current) and all(
-            state in {"ready", "failed"} for state in states.values()
+            state in {"ready", "failed", "skipped"} for state in states.values()
         )
         if settled:
             return outcome
@@ -420,7 +420,7 @@ def split_api() -> None:
                     ).all()
                 }
             settled = states and all(
-                state in {"ready", "failed"} for state in states.values()
+                state in {"ready", "failed", "skipped"} for state in states.values()
             )
             if settled or time.monotonic() > deadline:
                 break

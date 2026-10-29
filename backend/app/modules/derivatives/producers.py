@@ -24,7 +24,7 @@ from printstash_core.mesh.measurements import (
     VolumeNotCalculatedCause,
 )
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, col, delete, select
 
 from app.core.cancellation import checkpoint
 from app.core.config import settings
@@ -36,6 +36,7 @@ from app.db.models import (
     DerivativeKind,
     DerivativeState,
     File,
+    FilePlate,
     JobKind,
     Metadata,
 )
@@ -784,7 +785,62 @@ def derive_mesh(file_id: int, *, execution: JobExecution | None = None) -> Outco
         return Outcome({})
 
 
+def _derive_plates(file_id: int, *, execution: JobExecution | None = None) -> Outcome:
+    """The plates a slicer project 3MF lays out, or ``skipped`` without any."""
+    from app.modules.media import three_mf_plates
+
+    begun = _begin(file_id, JobKind.DERIVATIVES_PLATES, execution=execution)
+    if begun is None:
+        return Outcome({})
+    file_row, attempts = begun
+    attempt = attempts.get(DerivativeKind.PLATES)
+    if attempt is None:
+        return Outcome({})
+    started = time.monotonic()
+    try:
+        with resolve(file_row).materialize() as source:
+            layout = three_mf_plates.read_layout(source)
+    except ArtifactContentError:
+        _fail(attempt, "invalid_source", deterministic=False)
+        return Outcome({DerivativeKind.PLATES: DerivativeState.FAILED})
+    except three_mf_plates.PlateLayoutError as exc:
+        _fail(attempt, exc.failure.value, deterministic=True)
+        return Outcome({DerivativeKind.PLATES: DerivativeState.FAILED})
+    with get_session_factory().scoped_session() as session:
+        if layout is None:
+            records.mark_skipped(session, attempt, "no_plate_layout", now=utcnow())
+            state = DerivativeState.SKIPPED
+        else:
+            records.mark_ready(
+                session,
+                attempt,
+                now=utcnow(),
+                output={"plates": len(layout.plates)},
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            state = DerivativeState.READY
+        # Rows from an earlier recipe or bytes never outlive the current outcome.
+        session.exec(delete(FilePlate).where(col(FilePlate.file_id) == file_id))
+        for plate in layout.plates if layout is not None else ():
+            session.add(
+                FilePlate(
+                    file_id=file_id,
+                    number=plate.number,
+                    name=plate.name,
+                    object_count=plate.object_count,
+                    image_member=plate.image_member,
+                    min_x=plate.region.min_x,
+                    min_y=plate.region.min_y,
+                    max_x=plate.region.max_x,
+                    max_y=plate.region.max_y,
+                )
+            )
+        session.commit()
+    return Outcome({DerivativeKind.PLATES: state})
+
+
 derive_gcode = _announced(_derive_gcode)
+derive_plates = _announced(_derive_plates)
 derive_toolpath = _announced(_derive_toolpath)
 
 

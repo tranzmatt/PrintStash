@@ -3,7 +3,7 @@ import { uiText, knownUiText } from "@/lib/locale";
  * Presentation maps and derived-row builders shared by the model-detail tabs.
  */
 
-import { FileRead, FileRevisionStatus, MetadataRead, PrintJobState } from "@/types";
+import { FilePlate, FileRead, FileRevisionStatus, MetadataRead, PrintJobState } from "@/types";
 import {
   formatCost,
   formatDuration,
@@ -331,4 +331,9 @@ export function buildPrintSettingRows(
   }
 
   return rows;
+}
+
+/** Plate numbers as the slicer labels its plates: 01, 02, … */
+export function plateLabel(plate: FilePlate): string {
+  return String(plate.number).padStart(2, "0");
 }
