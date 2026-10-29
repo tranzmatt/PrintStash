@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { BufferGeometry, BufferAttribute } from "three";
+import type { TriangleArrays } from "./plate-geometry";
 import { parseStl, type StlWorkerFactory } from "./stl-parser";
 
-type ParsedStl =
+export type ParsedStl =
   | { state: "loading" }
-  | { state: "ready"; url: string; geometry: BufferGeometry }
+  | { state: "ready"; url: string; geometry: BufferGeometry; triangles: TriangleArrays }
   | { state: "failed"; url: string; error: Error };
 
 export function useParsedStl(url: string | null, createWorker?: StlWorkerFactory): ParsedStl {
@@ -19,7 +20,12 @@ export function useParsedStl(url: string | null, createWorker?: StlWorkerFactory
         geometry = new BufferGeometry();
         geometry.setAttribute("position", new BufferAttribute(parsed.positions, 3));
         geometry.setAttribute("normal", new BufferAttribute(parsed.normals, 3));
-        setResult({ state: "ready", url, geometry });
+        setResult({
+          state: "ready",
+          url,
+          geometry,
+          triangles: { positions: parsed.positions, normals: parsed.normals },
+        });
       })
       .catch((error: Error) => {
         if (!controller.signal.aborted) setResult({ state: "failed", url, error });

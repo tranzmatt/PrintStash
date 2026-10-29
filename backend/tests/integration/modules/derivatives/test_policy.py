@@ -38,6 +38,7 @@ def artifact(producer_group, make_model, make_file):
         JobKind.DERIVATIVES_GCODE: "part.gcode",
         JobKind.DERIVATIVES_TOOLPATH: "part.bgcode",
         JobKind.DERIVATIVES_VIEWER_STL: "part.3mf",
+        JobKind.DERIVATIVES_PLATES: "part.3mf",
     }[producer_group.definition]
     return make_file(
         make_model(),
@@ -244,6 +245,7 @@ class TestAdmission:
             JobKind.DERIVATIVES_GCODE: producers.derive_gcode,
             JobKind.DERIVATIVES_TOOLPATH: producers.derive_toolpath,
             JobKind.DERIVATIVES_VIEWER_STL: producers.derive_viewer_stl,
+            JobKind.DERIVATIVES_PLATES: producers.derive_plates,
         }[producer_group.definition]
         with pytest.raises(OperationError, match="derivative_group_disabled"):
             producer(artifact.id)

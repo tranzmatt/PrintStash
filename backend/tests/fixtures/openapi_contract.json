@@ -4787,6 +4787,7 @@
         "description": "An output derived from an Artifact's bytes, each at its own recipe.",
         "enum": [
           "metadata",
+          "plates",
           "thumbnail",
           "toolpath",
           "viewer_stl"
@@ -5921,6 +5922,73 @@
           }
         },
         "title": "FilamentStatRead",
+        "type": "object"
+      },
+      "FilePlateRead": {
+        "properties": {
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "object_count": {
+            "title": "Object Count",
+            "type": "integer"
+          },
+          "region": {
+            "$ref": "#/components/schemas/PlateRegionRead"
+          }
+        },
+        "required": [
+          "number",
+          "name",
+          "object_count",
+          "image_url",
+          "region"
+        ],
+        "title": "FilePlateRead",
+        "type": "object"
+      },
+      "FilePlatesRead": {
+        "description": "The plates derivative of one 3MF Artifact.\n\n``plates`` is the layout once the derivative is ``ready``; in every other\nstate the layout is unknown (``pending``, ``failed``…) or absent\n(``skipped``: the package is not a slicer project) and the list is empty.",
+        "properties": {
+          "plates": {
+            "items": {
+              "$ref": "#/components/schemas/FilePlateRead"
+            },
+            "title": "Plates",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DerivativeStatus"
+          }
+        },
+        "required": [
+          "state",
+          "plates"
+        ],
+        "title": "FilePlatesRead",
         "type": "object"
       },
       "FileRead": {
@@ -7631,6 +7699,7 @@
           "backups.trash_gc",
           "derivatives.gcode",
           "derivatives.mesh",
+          "derivatives.plates",
           "derivatives.toolpath",
           "derivatives.viewer_stl",
           "identity.retention",
@@ -14172,6 +14241,35 @@
           "plan_digest"
         ],
         "title": "PlanRequest",
+        "type": "object"
+      },
+      "PlateRegionRead": {
+        "description": "A plate's rectangle of the build, in the package's millimetres.",
+        "properties": {
+          "max_x": {
+            "title": "Max X",
+            "type": "number"
+          },
+          "max_y": {
+            "title": "Max Y",
+            "type": "number"
+          },
+          "min_x": {
+            "title": "Min X",
+            "type": "number"
+          },
+          "min_y": {
+            "title": "Min Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "min_x",
+          "min_y",
+          "max_x",
+          "max_y"
+        ],
+        "title": "PlateRegionRead",
         "type": "object"
       },
       "PreflightRequest": {
@@ -28624,6 +28722,115 @@
           }
         ],
         "summary": "Serve a Bambu 3MF's embedded G-code preview",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{file_id}/plates": {
+      "get": {
+        "description": "Each plate's number, name, object count, preview and rectangle of the build, as Bambu Studio and its forks lay a project's plates out. The list is empty until the `plates` derivative is `ready`; `skipped` means the package is not a slicer project.",
+        "operationId": "file_plates_api_v1_files__file_id__plates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilePlatesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Artifact is inaccessible or not a 3MF"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "The plates of a slicer project 3MF",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{file_id}/plates/{number}/image": {
+      "get": {
+        "operationId": "file_plate_image_api_v1_files__file_id__plates__number__image_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {}
+            },
+            "description": "The plate's preview"
+          },
+          "404": {
+            "description": "Artifact is inaccessible or the plate has no preview"
+          },
+          "410": {
+            "description": "Artifact blob is missing from storage"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "The preview a slicer saved for one plate of a 3MF",
         "tags": [
           "files"
         ]

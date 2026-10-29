@@ -29,7 +29,7 @@ from printstash_core.mesh.measurements import (
     VolumeUnavailable,
     VolumeUnavailableCause,
 )
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.core.config import _overlay, settings
 from app.core.errors import ErrorKind, OperationError
@@ -38,6 +38,7 @@ from app.db.models import (
     DerivativeKind,
     DerivativeState,
     File,
+    FilePlate,
     FileType,
     GeometryFingerprint,
     JobKind,
@@ -46,7 +47,7 @@ from app.db.models import (
     Model,
 )
 from app.db.session import get_session_factory
-from app.modules.derivatives import kinds, producers
+from app.modules.derivatives import kinds, producers, records
 from app.modules.ingestion import extensions
 from app.modules.library.volume_metadata import apply_volume, read_volume
 from app.modules.media import mesh_isolation, toolpath
@@ -73,6 +74,10 @@ from app.modules.work.jobs import jobs
 from app.modules.work.submission import submit
 from tests.factories import content
 from tests.factories.geometry import three_mf
+from tests.fixtures.three_mf_projects import (
+    build_3d_builder_component_project,
+    build_multi_plate_project,
+)
 from tests.paths import FIXTURES_DIR
 
 
@@ -201,6 +206,17 @@ class FingerprintSink:
             raise RuntimeError("similarity store unavailable")
         self.received.append(file_id)
         return "stored"
+
+
+def _plates(session: Session, file_id: int) -> list[FilePlate]:
+    session.expire_all()
+    return list(
+        session.exec(
+            select(FilePlate)
+            .where(FilePlate.file_id == file_id)
+            .order_by(col(FilePlate.number))
+        ).all()
+    )
 
 
 def _rows(session: Session, file_id: int) -> dict[str, ArtifactDerivative]:
@@ -954,12 +970,19 @@ class TestDeriveMesh:
 
 
 class TestDeriveGcode:
-    def test_persists_captured_slicer_settings(self, db_session: Session, stored) -> None:
-        artifact = stored("capture.gcode", (FIXTURES_DIR / "real_orca_ender3_benchy.gcode").read_bytes())
+    def test_persists_captured_slicer_settings(
+        self, db_session: Session, stored
+    ) -> None:
+        artifact = stored(
+            "capture.gcode",
+            (FIXTURES_DIR / "real_orca_ender3_benchy.gcode").read_bytes(),
+        )
 
         producers.derive_gcode(artifact.id)
 
-        output = json.loads(_rows(db_session, artifact.id)[DerivativeKind.METADATA].output_json)
+        output = json.loads(
+            _rows(db_session, artifact.id)[DerivativeKind.METADATA].output_json
+        )
         assert output["slicer_settings"]["filament"]["filament_flow_ratio"] == "0.98"
 
     def test_derives_every_gcode_kind_from_one_read(
@@ -1256,6 +1279,110 @@ class TestDeriveToolpath:
         make_derivative(bgcode, DerivativeKind.TOOLPATH)
 
         assert producers.derive_toolpath(bgcode.id).kinds == {}
+
+
+class TestDerivePlates:
+    def test_stores_each_plate_of_a_slicer_project(
+        self, db_session: Session, stored
+    ) -> None:
+        artifact = stored(
+            "rack.3mf", build_multi_plate_project(), file_type=FileType.THREE_MF
+        )
+
+        outcome = producers.derive_plates(artifact.id)
+
+        assert outcome.kinds == {DerivativeKind.PLATES: "ready"}
+        assert [
+            (plate.number, plate.name, plate.image_member, plate.min_x, plate.max_x)
+            for plate in _plates(db_session, artifact.id)
+        ] == [
+            (1, "Main parts", "Metadata/plate_1.png", 0.0, 256.0),
+            (2, "Wall mount", "Metadata/plate_2.png", 307.2, 563.2),
+        ]
+
+    def test_skips_a_3mf_that_is_not_a_slicer_project(
+        self, db_session: Session, stored
+    ) -> None:
+        artifact = stored(
+            "part.3mf",
+            build_3d_builder_component_project(),
+            file_type=FileType.THREE_MF,
+        )
+
+        outcome = producers.derive_plates(artifact.id)
+
+        assert outcome.kinds == {DerivativeKind.PLATES: "skipped"}
+        assert _plates(db_session, artifact.id) == []
+
+    def test_replaces_the_plates_of_an_earlier_derivation(
+        self, db_session: Session, stored
+    ) -> None:
+        artifact = stored(
+            "rack.3mf", build_multi_plate_project(), file_type=FileType.THREE_MF
+        )
+        producers.derive_plates(artifact.id)
+        records.invalidate(
+            db_session, db_session.get(File, artifact.id), [DerivativeKind.PLATES]
+        )
+        db_session.commit()
+
+        producers.derive_plates(artifact.id)
+
+        assert [plate.number for plate in _plates(db_session, artifact.id)] == [1, 2]
+
+    def test_a_layout_that_cannot_be_placed_is_terminal(
+        self, db_session: Session, stored
+    ) -> None:
+        artifact = stored(
+            "rack.3mf",
+            build_multi_plate_project(printable_area=None),
+            file_type=FileType.THREE_MF,
+        )
+
+        outcome = producers.derive_plates(artifact.id)
+
+        assert outcome.kinds == {DerivativeKind.PLATES: "failed"}
+        row = _rows(db_session, artifact.id)[DerivativeKind.PLATES]
+        assert (row.failure_reason, row.next_attempt_at) == ("plate_bed_unknown", None)
+
+    def test_a_vanished_source_is_transient(
+        self, db_session: Session, stored, remove_blob_key
+    ) -> None:
+        artifact = stored(
+            "rack.3mf", build_multi_plate_project(), file_type=FileType.THREE_MF
+        )
+        remove_blob_key(artifact.path)
+
+        outcome = producers.derive_plates(artifact.id)
+
+        assert outcome.kinds == {DerivativeKind.PLATES: "failed"}
+        row = _rows(db_session, artifact.id)[DerivativeKind.PLATES]
+        assert row.next_attempt_at is not None
+
+    def test_a_trashed_artifact_is_not_derived(self, stored) -> None:
+        from app.core.time import utcnow
+
+        artifact = stored(
+            "gone.3mf",
+            build_multi_plate_project(),
+            file_type=FileType.THREE_MF,
+            deleted_at=utcnow(),
+        )
+
+        assert producers.derive_plates(artifact.id).kinds == {}
+
+    def test_tells_the_models_viewers_the_plates_are_ready(
+        self, stored, announced
+    ) -> None:
+        artifact = stored(
+            "rack.3mf", build_multi_plate_project(), file_type=FileType.THREE_MF
+        )
+
+        producers.derive_plates(artifact.id)
+
+        assert [(notice["kind"], notice["state"]) for notice in announced] == [
+            ("plates", "ready")
+        ]
 
 
 class TestOutcome:

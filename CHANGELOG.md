@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Multi-plate 3MF projects show their plates.** A Bambu Studio, OrcaSlicer or Creality Print project lists each plate on the model page with the slicer's number, name, object count and saved preview. Choosing a plate shows only that plate's parts in the 3D viewer; All plates shows the whole build. Existing 3MF files are read in the background.
+
 - Model Overview shows each file’s SHA-256 in place of the AI caption panel, with its geometric SHA-256 when a current whole-mesh fingerprint is available. Compact seven-character hashes reveal the full value on hover and copy the complete SHA with one click.
 
 - Library filters use compact dropdowns for upload dates, print history, file types and printed status. Date fields offer calendar pickers, file formats support multiple selections, and printed status offers All, Printed and Not printed using the same checkbox rows and count badges as the other facets. Printer location and Tags share these rows, including single-choice location selection and searchable tag multiselect. Neutral picker buttons show selection counts, while blue chips below show the active values.

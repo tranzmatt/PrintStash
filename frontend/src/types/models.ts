@@ -462,6 +462,7 @@ export type JobKind =
   | "backups.trash_gc"
   | "derivatives.gcode"
   | "derivatives.mesh"
+  | "derivatives.plates"
   | "derivatives.toolpath"
   | "derivatives.viewer_stl"
   | "identity.retention"
@@ -512,7 +513,7 @@ export type LaneName =
   | "similarity";
 
 /** An output derived from an Artifact's bytes: the backend's `DerivativeKind`. */
-export type DerivativeKind = "metadata" | "thumbnail" | "toolpath" | "viewer_stl";
+export type DerivativeKind = "metadata" | "plates" | "thumbnail" | "toolpath" | "viewer_stl";
 
 export type WorkPriority = "interactive" | "backfill";
 
@@ -585,6 +586,31 @@ export type DerivativeState =
   | "skipped"
   | "failed"
   | "cancelled";
+
+/** A plate's rectangle of the build, in the 3MF's millimetres. */
+export interface PlateRegion {
+  min_x: number;
+  min_y: number;
+  max_x: number;
+  max_y: number;
+}
+
+/** One plate of a slicer project 3MF: the backend's `FilePlateRead`. */
+export interface FilePlate {
+  number: number;
+  /** The slicer leaves a plate unnamed until the user names it. */
+  name: string | null;
+  object_count: number;
+  /** Only a plate whose slicer saved a preview has one. */
+  image_url: string | null;
+  region: PlateRegion;
+}
+
+/** A 3MF's plates; empty until the `plates` derivative is `ready`. */
+export interface FilePlates {
+  state: DerivativeState;
+  plates: FilePlate[];
+}
 
 export interface DerivativeRead {
   kind: DerivativeKind;

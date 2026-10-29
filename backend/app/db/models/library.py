@@ -167,6 +167,42 @@ class ArtifactMaterialRequirement(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class FilePlate(SQLModel, table=True):
+    """One plate of a slicer project 3MF and its rectangle of the build.
+
+    Derived from the Artifact's bytes by the ``plates`` derivative; an Artifact
+    without plates has no rows.
+    """
+
+    __tablename__ = "file_plates"
+    __table_args__ = (
+        UniqueConstraint("file_id", "number", name="uq_file_plates_file_number"),
+        CheckConstraint("number >= 1", name="number_positive"),
+        CheckConstraint("object_count >= 0", name="object_count_non_negative"),
+        CheckConstraint("min_x < max_x AND min_y < max_y", name="region_ordered"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    file_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("files.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    number: int
+    # The slicer leaves a plate unnamed until the user names it.
+    name: Optional[str] = Field(default=None, max_length=1024)
+    object_count: int
+    # The archive member holding the plate's preview, when the slicer saved one.
+    image_member: Optional[str] = Field(default=None, max_length=256)
+    min_x: float
+    min_y: float
+    max_x: float
+    max_y: float
+
+
 class File(SQLModel, table=True):
     """Physical artifact stored on disk; many-to-one with Model."""
 

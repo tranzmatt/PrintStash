@@ -14,6 +14,7 @@ from fastapi import (
 )
 from fastapi.responses import (
     PlainTextResponse,
+    Response,
 )
 from sqlmodel import Session, select
 
@@ -44,6 +45,7 @@ from app.modules.storage.artifact_delivery import (
 from app.modules.storage.delivery_contracts import content_disposition
 from app.modules.storage.storage_backend.runtime import get_backend
 from app.schemas.jobs import DerivativeRead
+from app.schemas.plates import FilePlatesRead
 
 logger = get_logger(__name__)
 
@@ -202,6 +204,77 @@ def embedded_gcode(
     return PlainTextResponse(
         content=embedded.content if status_code == 200 else "",
         status_code=status_code,
+        headers=headers,
+    )
+
+
+@router.get(
+    "/{file_id}/plates",
+    response_model=FilePlatesRead,
+    responses={404: {"description": "Artifact is inaccessible or not a 3MF"}},
+    summary="The plates of a slicer project 3MF",
+    description=(
+        "Each plate's number, name, object count, preview and rectangle of the "
+        "build, as Bambu Studio and its forks lay a project's plates out. The "
+        "list is empty until the `plates` derivative is `ready`; `skipped` means "
+        "the package is not a slicer project."
+    ),
+)
+def file_plates(
+    file_id: int,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> FilePlatesRead:
+    from app.modules.derivatives import plates
+
+    artifact = _accessible_file(session, file_id, current_user)
+    try:
+        return plates.layout(session, artifact)
+    except plates.NoPlates as exc:
+        raise HTTPException(status_code=404, detail="plates_not_supported") from exc
+
+
+@router.get(
+    "/{file_id}/plates/{number}/image",
+    response_class=Response,
+    responses={
+        200: {"description": "The plate's preview", "content": {"image/png": {}}},
+        404: {"description": "Artifact is inaccessible or the plate has no preview"},
+        410: {"description": "Artifact blob is missing from storage"},
+    },
+    summary="The preview a slicer saved for one plate of a 3MF",
+)
+def file_plate_image(
+    file_id: int,
+    number: int,
+    request: Request,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    from app.modules.derivatives import plates
+    from app.modules.media import three_mf_plates
+
+    artifact = _accessible_file(session, file_id, current_user)
+    try:
+        member = plates.image_member(session, artifact, number)
+    except plates.NoPlates as exc:
+        raise HTTPException(status_code=404, detail="plate_image_not_found") from exc
+    try:
+        with resolve(artifact).materialize() as path:
+            image = three_mf_plates.read_image(path, member)
+    except three_mf_plates.PlateLayoutError as exc:
+        raise HTTPException(status_code=404, detail="plate_image_not_found") from exc
+    except (ArtifactContentError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=410, detail="file_blob_missing") from exc
+    filename = f"{file_id}-plate-{number}.png"
+    status_code, headers = bytes_response_headers(
+        image,
+        delivery_request(request, filename, "image/png", DeliveryPurpose.THUMBNAIL),
+    )
+    return Response(
+        content=image if status_code == 200 else b"",
+        status_code=status_code,
+        media_type="image/png",
         headers=headers,
     )
 

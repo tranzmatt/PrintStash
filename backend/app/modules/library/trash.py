@@ -28,6 +28,7 @@ from app.db.models import (
     ExternalLibrary,
     ExternalLibraryTombstone,
     File,
+    FilePlate,
     FileTagLink,
     FileType,
     InboxItem,
@@ -694,6 +695,7 @@ def hard_delete_file(
             col(ArtifactMaterialRequirement.file_id) == file_id
         )
     )
+    session.exec(delete(FilePlate).where(col(FilePlate.file_id) == file_id))
     session.delete(file_row)
     content_changed(session, "model", [file_row.model_id])
 

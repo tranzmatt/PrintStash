@@ -31,7 +31,10 @@ from app.schemas.orca import OrcaNativeContext
 from tests.e2e._jobs import settle
 from tests.factories.geometry import tetrahedron, three_mf
 from tests.factories.three_mf_pilot import load_case, opc_package
-from tests.fixtures.three_mf_projects import build_3d_builder_component_project
+from tests.fixtures.three_mf_projects import (
+    build_3d_builder_component_project,
+    build_multi_plate_project,
+)
 from tests.paths import FIXTURES_DIR
 
 FIXTURE = FIXTURES_DIR / "real_orca_ender3_benchy.gcode"
@@ -820,6 +823,7 @@ class TestThreeMFReader:
             for row in derivatives.json()
         } == {
             "metadata": ("ready", kinds.THREE_MF_GEOMETRY_RECIPE),
+            "plates": ("skipped", kinds.PLATES_RECIPE),
             "thumbnail": ("ready", kinds.THREE_MF_THUMBNAIL_RECIPE),
         }
 
@@ -844,6 +848,59 @@ class TestThreeMFReader:
         assert artifact["metadata"]["bbox_x_mm"] == float(np.float32(10.1)) - float(
             np.float32(0.1)
         )
+
+
+class TestThreeMFPlates:
+    @pytest.mark.asyncio
+    async def test_a_multi_plate_project_is_shown_one_plate_at_a_time(
+        self, api, tmp_path, e2e_db
+    ):
+        """Upload to plates to the viewer mesh, through the real app.
+
+        The model page lists the plates the slicer saved and shows one by
+        keeping the viewer mesh's triangles over that plate's rectangle. The
+        rectangles come from the plates derivative and the triangles from the
+        viewer conversion, so only this tier proves they agree: each plate's
+        rectangle holds exactly the cube the slicer put on it.
+        """
+        headers = await _setup_and_login(api, tmp_path)
+        uploaded = await api.post(
+            "/api/v1/ingest/model",
+            files={"file": ("rack.3mf", build_multi_plate_project(), "model/3mf")},
+            data={"model_name": "Shoe rack"},
+            headers=headers,
+        )
+        assert uploaded.status_code == 202, uploaded.text
+        job = await _await_job(api, headers, uploaded.json()["job_id"])
+        assert job["state"] == "completed", job
+        accepted = await api.get(f"/api/v1/files/{job['file_id']}/stl", headers=headers)
+        assert accepted.status_code == 202, accepted.text
+        settle()
+
+        plates = await api.get(
+            f"/api/v1/files/{job['file_id']}/plates", headers=headers
+        )
+        viewer = await api.get(f"/api/v1/files/{job['file_id']}/stl", headers=headers)
+
+        assert plates.status_code == 200, plates.text
+        assert [
+            (plate["number"], plate["name"]) for plate in plates.json()["plates"]
+        ] == [(1, "Main parts"), (2, "Wall mount")]
+        mesh = trimesh.load_mesh(io.BytesIO(viewer.content), file_type="stl")
+        centroids = mesh.triangles_center
+        assert [
+            int(
+                np.count_nonzero(
+                    (centroids[:, 0] >= plate["region"]["min_x"])
+                    & (centroids[:, 0] <= plate["region"]["max_x"])
+                    & (centroids[:, 1] >= plate["region"]["min_y"])
+                    & (centroids[:, 1] <= plate["region"]["max_y"])
+                )
+            )
+            for plate in plates.json()["plates"]
+        ] == [12, 12]
+        image = await api.get(plates.json()["plates"][1]["image_url"], headers=headers)
+        assert (image.status_code, image.headers["content-type"]) == (200, "image/png")
 
 
 class TestHardlinklessStaging:

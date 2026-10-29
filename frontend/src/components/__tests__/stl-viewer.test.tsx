@@ -7,6 +7,11 @@ import type { getDerivedBlob } from "@/lib/api/request";
 import { STLViewer, type STLPreviewFeedback } from "../stl-viewer";
 
 describe("STLViewer", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("reports unreadable geometry to the owning source", async () => {
     const feedback = vi.fn<(value: STLPreviewFeedback) => void>();
     class FailedParser implements StlParserWorker {
@@ -128,5 +133,46 @@ describe("STLViewer", () => {
     render(<STLViewer url="/api/v1/files/1/stl" />);
 
     expect(await screen.findByText("3D preview omitted due to memory limits")).toBeVisible();
+  });
+
+  it("says when the chosen plate has nothing on it", async () => {
+    class ParsedOffPlate implements StlParserWorker {
+      onmessage: ((event: MessageEvent<StlParseReply>) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      postMessage() {
+        // One triangle over plate 2 (x 307.2–563.2); plate 1 is empty.
+        const positions = new Float32Array([400, 10, 0, 410, 10, 0, 400, 20, 0]);
+        this.onmessage?.(
+          new MessageEvent("message", {
+            data: {
+              state: "parsed",
+              positions,
+              normals: new Float32Array(9),
+            } satisfies StlParseReply,
+          }),
+        );
+      }
+      terminate() {}
+    }
+    vi.stubGlobal("Worker", ParsedOffPlate);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async () => new Response(new Uint8Array([1]))),
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:plates");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const fetcher = vi
+      .fn<typeof getDerivedBlob>()
+      .mockResolvedValue({ ready: true, blob: new Blob(["stl"]) });
+
+    render(
+      <STLViewer
+        url="/api/v1/files/7/stl"
+        previewFetcher={fetcher}
+        plate={{ min_x: 0, min_y: 0, max_x: 256, max_y: 256 }}
+      />,
+    );
+
+    expect(await screen.findByText("Nothing is placed on this plate")).toBeVisible();
   });
 });

@@ -4592,5 +4592,13 @@
   "modelHashes.geometryHelp": "Huella de la malla completa a escala física. Una huella coincidente por sí sola no demuestra que la geometría sea idéntica.",
   "modelHashes.copy": "Copiar {kind} de {filename}",
   "modelHashes.copied": "SHA-256 copiado",
-  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256."
+  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256.",
+  "Plates": "Placas",
+  "All plates": "Todas las placas",
+  "Plate {value1}": "Placa {value1}",
+  "Objects: {value1}": "Objetos: {value1}",
+  " · Plate {value1}": " · Placa {value1}",
+  "Nothing is placed on this plate": "No hay nada en esta placa",
+  "3MF plates": "Placas 3MF",
+  "Plates of slicer project 3MFs": "Placas de los proyectos 3MF del laminador"
 }

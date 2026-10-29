@@ -79,6 +79,7 @@ import {
   buildPrintSettingRows,
   headerStatusLabel,
   normalizeRecommendedGcodeFiles,
+  plateLabel,
   revisionStatusClass,
 } from "./presentation";
 import { PrintHistorySection } from "./print-history-section";
@@ -90,6 +91,8 @@ import { SourceTab } from "./source-tab";
 import { useDerivativeRefresh } from "./use-derivative-refresh";
 import { useRevisionUpdater } from "./use-revision-updater";
 import { ViewerToolbar } from "./viewer-toolbar";
+import { PlatePicker } from "./plate-picker";
+import { useFilePlates } from "@/lib/queries/file-plates";
 import { Localized } from "@/components/ui/localized";
 import { ModelTagsDialog } from "@/components/model-tags-dialog";
 
@@ -251,6 +254,8 @@ function ModelDetailPresentation({
   });
 
   const [showGrid, setShowGrid] = useState(true);
+  // The plate chosen for one 3MF; another mesh file shows its whole build.
+  const [chosenPlate, setChosenPlate] = useState<{ fileId: number; number: number } | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [sendFileId, setSendFileId] = useState<number | undefined>(undefined);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -580,6 +585,16 @@ function ModelDetailPresentation({
       f.file_type === "step",
   );
   const hasGcode = gcodeFiles.length > 0;
+  const filePlates = useFilePlates(model.id, meshFile?.file_type === "3mf" ? meshFile.id : null);
+  // A single plate is the whole build; only a multi-plate project offers a choice.
+  const plates = filePlates !== null && filePlates.plates.length > 1 ? filePlates.plates : [];
+  const pickerShown = viewerMode === "model" && plates.length > 1;
+  // The viewer's corner controls sit above the plate strip when it is shown.
+  const overlayBottom = pickerShown ? "bottom-24" : "bottom-4";
+  const shownPlate =
+    chosenPlate !== null && chosenPlate.fileId === meshFile?.id
+      ? (plates.find((plate) => plate.number === chosenPlate.number) ?? null)
+      : null;
   const thumbUrl = useAuthenticatedAssetUrl(model.thumbnail_url);
   const printerFilesByFileId = useMemo(() => {
     const grouped = new Map<number, ModelPrinterFileRead[]>();
@@ -1055,7 +1070,12 @@ function ModelDetailPresentation({
                     onFailureChange={setPreviewFeedback}
                     displayMode={displayMode}
                     showGrid={showGrid}
-                    screenshotName={model.slug || model.name}
+                    screenshotName={
+                      shownPlate
+                        ? `${model.slug || model.name}-plate-${plateLabel(shownPlate)}`
+                        : model.slug || model.name
+                    }
+                    plate={shownPlate?.region}
                   />
                 </Suspense>
               ) : thumbUrl ? (
@@ -1077,6 +1097,15 @@ function ModelDetailPresentation({
                 </div>
               )}
             </div>
+            {pickerShown && meshFile && (
+              <PlatePicker
+                plates={plates}
+                selected={shownPlate?.number ?? null}
+                onSelect={(number) =>
+                  setChosenPlate(number === null ? null : { fileId: meshFile.id, number })
+                }
+              />
+            )}
             {/* On phones the toolbar owns space above the preview. Desktop
                 keeps the overlay without taking space from the 3D canvas. */}
             {(meshFile || hasGcode) && (
@@ -1112,6 +1141,8 @@ function ModelDetailPresentation({
                           <p className="truncate font-mono text-2xs text-on-surface">
                             {uiText("Viewing: ")}
                             {meshFile?.original_filename}
+                            {shownPlate &&
+                              uiText(" · Plate {value1}", { value1: plateLabel(shownPlate) })}
                           </p>
                           <p className="font-mono text-3xs uppercase tracking-wider text-on-surface-variant">
                             {uiText("Source model")}
@@ -1134,7 +1165,7 @@ function ModelDetailPresentation({
 
             {/* 3D Viewer Controls */}
             {viewerMode === "model" && meshFile && viewerReady && (
-              <div className="absolute bottom-4 right-4 flex flex-col gap-1 z-10">
+              <div className={`absolute ${overlayBottom} right-4 flex flex-col gap-1 z-10`}>
                 <div className="flex bg-surface-container-lowest/90 backdrop-blur border border-outline-variant rounded overflow-hidden shadow-sm">
                   <button
                     onClick={() => viewerControls.current?.zoomIn()}
@@ -1161,13 +1192,15 @@ function ModelDetailPresentation({
               </div>
             )}
 
-            {/* Dimensions overlay (bottom-left) */}
+            {/* Dimensions overlay (bottom-left). They measure the whole build, so a
+                single plate does not claim them. */}
             {viewerMode === "model" &&
               viewerReady &&
+              shownPlate === null &&
               meta?.bbox_x_mm &&
               meta?.bbox_y_mm &&
               meta?.bbox_z_mm && (
-                <div className="absolute bottom-4 left-4 z-10">
+                <div className={`absolute ${overlayBottom} left-4 z-10`}>
                   <div className="bg-surface-container-lowest/90 backdrop-blur border border-outline-variant rounded px-2 py-1 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                     <span className="font-mono text-[13px] text-on-surface">

@@ -4592,5 +4592,13 @@
   "modelHashes.geometryHelp": "Whole-mesh fingerprint at physical scale. A matching fingerprint alone does not prove identical geometry.",
   "modelHashes.copy": "Copy {kind} for {filename}",
   "modelHashes.copied": "SHA-256 copied",
-  "modelHashes.copyFailed": "Could not copy SHA-256."
+  "modelHashes.copyFailed": "Could not copy SHA-256.",
+  "Plates": "Plates",
+  "All plates": "All plates",
+  "Plate {value1}": "Plate {value1}",
+  "Objects: {value1}": "Objects: {value1}",
+  " · Plate {value1}": " · Plate {value1}",
+  "Nothing is placed on this plate": "Nothing is placed on this plate",
+  "3MF plates": "3MF plates",
+  "Plates of slicer project 3MFs": "Plates of slicer project 3MFs"
 }

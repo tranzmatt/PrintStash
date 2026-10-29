@@ -27,6 +27,7 @@ from app.core.time import utcnow
 from app.db.models import (
     Document,
     DocumentKind,
+    FilePlate,
     FileType,
     InboxItem,
     InboxItemState,
@@ -165,6 +166,35 @@ class TestHardDeleteFile:
         db_session.refresh(trashed_revision)
         # Promoting a trashed revision would make it recommended *and* invisible.
         assert trashed_revision.is_recommended is False
+
+    def test_removes_the_plates_derived_from_the_artifact(
+        self, db_session: Session, storage
+    ) -> None:
+        model = build_model(db_session, "plated")
+        artifact = build_stored_file(
+            db_session,
+            storage,
+            model,
+            filename="plated.3mf",
+            file_type=FileType.THREE_MF,
+        )
+        db_session.add(
+            FilePlate(
+                file_id=artifact.id,
+                number=1,
+                object_count=1,
+                min_x=0.0,
+                min_y=0.0,
+                max_x=256.0,
+                max_y=256.0,
+            )
+        )
+        db_session.commit()
+
+        trash.hard_delete_file(db_session, artifact)
+        db_session.commit()
+
+        assert db_session.exec(select(FilePlate)).all() == []
 
     def test_does_nothing_for_an_artifact_that_was_never_persisted(
         self, db_session: Session
