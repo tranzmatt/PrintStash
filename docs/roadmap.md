@@ -8,20 +8,17 @@ Roadmap feedback belongs in
 [the public roadmap discussion](https://github.com/xiao-villamor/PrintStash/discussions/1).
 Issues are better for confirmed bugs or scoped implementation work.
 
-## Current release: 0.15.0
+## Preparing 0.15.1
 
-[Version 0.15.0 is the latest published release](https://github.com/xiao-villamor/PrintStash/releases/tag/v0.15.0),
-published on 22 October 2026. The [0.15.0 changelog](../CHANGELOG.md#0150) records
-its integrated scope: scrolling library pagination, subtree filters, editable
-Library sources, bounded imports with previews during processing, configurable
-worker concurrency, faster 3MF and STEP processing, multi-material G-code fixes,
-and a unified image with optional GPU support. Read the
-[upgrade notes](../UPGRADE.md#0150-notes) for Python 3.14, DBOS 3.3.0,
-coordinated API/worker restarts, and the full-library re-derivation and backup
-requirements.
+The [Unreleased changelog](../CHANGELOG.md#unreleased) records the scope being
+prepared for 0.15.1: multi-plate 3MF browsing, additional model and archive
+formats, library and multipart workflow improvements, and preview recovery on
+older NAS kernels. These changes are on `main` and await release publication.
 
-Download released builds from [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases).
-Changes since 0.15.0 go under [Unreleased](../CHANGELOG.md#unreleased).
+Read the [0.15.1 upgrade notes](../UPGRADE.md#0151-notes) before updating.
+Download published builds from [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases).
+The final release will promote the pending changelog when its image is ready.
+
 SQLite plus local filesystem storage remain the default path; PostgreSQL,
 remote storage, cloud backups, and provider adapters are optional.
 

@@ -418,7 +418,7 @@ path outside a persistent mount loses state on container replacement.
 
 Settings → Background work overrides each kind of work's concurrency at runtime,
 for every process. The other `VAULT_JOBS_*` defaults are in
-[Background work](architecture/background-work.md#configuration).
+[configuration defaults](../backend/app/core/config.py).
 
 For remote storage, see [Storage providers](./storage-providers.md).
 The full image includes the optional storage dependencies. PostgreSQL/S3 services
@@ -540,7 +540,7 @@ Keep exactly one API container per vault.
 The engine keeps its own state beside the vault database (SQLite) or in the
 `dbos` schema (PostgreSQL). It is disposable, not part of a backup, and rebuilt
 after a restore. Tuning settings are listed in
-[Background work](architecture/background-work.md#configuration).
+[configuration defaults](../backend/app/core/config.py).
 
 ## Other Compose files
 

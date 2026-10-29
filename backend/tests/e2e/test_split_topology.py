@@ -1,6 +1,6 @@
 """An API that runs no jobs, and two workers that run them, on one vault.
 
-The third supported topology (``docs/architecture/background-work.md``):
+The third supported topology (``docs/deployment.md``):
 PostgreSQL, one volume every process mounts, an API with
 ``VAULT_API_RUNS_JOBS=false`` and ``python -m app.worker`` replicas. Every
 process here is a real child on real DBOS:

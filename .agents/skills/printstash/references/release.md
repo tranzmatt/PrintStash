@@ -1,8 +1,9 @@
 # Release procedure
 
-Canonical validation detail: `docs/release-validation.md` (clean install,
-upgrade-from-volume, smoke checks) and `docs/manual-testing.md` (full browser
-sweep). This file is the ordered checklist that ties it together.
+This file is the ordered release checklist. Use `UPGRADE.md` for operator
+upgrade and rollback steps, `deploy/manual-testing/README.md` for the local
+validation environment, and [running-tests.md](running-tests.md) for CI gates.
+Keep release evidence and manual validation records private under `reports/`.
 
 ## Readiness gate
 

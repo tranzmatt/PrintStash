@@ -1,5 +1,28 @@
 # PrintStash Upgrade Guide
 
+## 0.15.1 notes
+
+Version 0.15.1 is being prepared. Wait for its image to appear in
+[GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases) before
+changing a running installation to that tag. The
+[pending changelog](CHANGELOG.md#unreleased) records the included changes.
+
+- Create and verify a backup of the database and managed files. Back up
+  Library source originals separately, and retain the previous image.
+- Stop every API and worker process, then upgrade and restart them together
+  on the same image. Never use `docker compose down -v`.
+- Allow background work to refresh metadata and previews whose processing
+  recipes changed, including plate information for existing 3MF projects.
+- Verify sign-in, library browsing, a model upload, previews, any configured
+  Library source, and backup creation and verification after startup.
+- For rollback, stop all processes and restore the pre-upgrade database and
+  managed files before starting the previous image.
+
+Installations coming from before the 0.15 series must also follow the
+[previous upgrade requirements](#0150-notes), including Python 3.14 for source
+installs, DBOS migration and coordinated restarts. Installations on 0.13.x or
+earlier also need the [volume-layout migration](#0140-one-data-volume).
+
 ## 0.15.0 notes
 
 **Back up before upgrading. Every model file is re-derived in the background;

@@ -4,8 +4,9 @@ PrintStash is an early self-hosted release for local 3D printing asset
 management. It is useful today, but it is deliberately not trying to be a full
 manufacturing platform.
 
-This page describes version 0.15.0, the latest published release (22 October
-2026). Anything marked beta here is beta in that release, not future work.
+This page describes the code being prepared for 0.15.1. Publication is pending;
+check [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases) for
+available builds. Anything marked beta here remains beta.
 
 ## Printer Providers
 
@@ -51,8 +52,8 @@ This page describes version 0.15.0, the latest published release (22 October
 ## Deployment
 
 - Connection-pool exhaustion reported in [#495](https://github.com/xiao-villamor/PrintStash/issues/495)
-  has not been reproduced. The 0.15.0 import scheduling and SQLite pool changes
-  mitigate likely contention, but do not establish a confirmed fix. Confirmation
+  has not been reproduced. The import scheduling and SQLite pool changes included
+  in 0.15.1 mitigate likely contention, but do not establish a confirmed fix. Confirmation
   requires the affected user's workload after upgrading; PostgreSQL keeps its
   separate pool defaults.
 

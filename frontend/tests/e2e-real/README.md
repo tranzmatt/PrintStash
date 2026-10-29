@@ -18,7 +18,7 @@ trash, scans and remote storage), run the repository-level lane instead:
 `backup-recovery.spec.ts` leaves a completed ZIP inspection unselected before
 purging a Model and restoring it through Settings, then compares the recovered
 Artifact bytes. Historical release archives are checked separately by the
-[local backup recovery jobs](../../../docs/backup-recovery-testing.md).
+[backup compatibility script](../../../scripts/check-backup-compatibility.sh).
 
 `playwright.real.config.ts` boots the application plus its printer emulator:
 

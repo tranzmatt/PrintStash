@@ -1,7 +1,6 @@
 """Background work: an engine-agnostic model of Jobs, lanes, sources and steps.
 
-See ``docs/architecture/background-work.md`` for the design and
-``.agents/skills/printstash/references/background-work.md`` for how to add or
+See ``.agents/skills/printstash/references/background-work.md`` for how to add or
 change a job. The short version:
 
 - The application database records intent; the engine only executes.

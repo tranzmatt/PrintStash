@@ -3,10 +3,9 @@
 Adding or changing a Job Definition, Work Source, Step, Lane or Derivative
 kind, and how to test it.
 
-Binding background: [ADR 0008](../../../../docs/adr/0008-job-engine.md),
-[docs/architecture/background-work.md](../../../../docs/architecture/background-work.md),
-[docs/derivatives.md](../../../../docs/derivatives.md). Terms (Job, Subject,
-Work Source, Nudge, Lane, Fence, Derivative, Recipe) are in `CONTEXT.md`.
+The contracts live in `backend/app/modules/work/` and
+`backend/app/modules/derivatives/`; composition is in `backend/app/bootstrap/work.py`.
+Terms (Job, Subject, Work Source, Nudge, Lane, Fence, Derivative, Recipe) are in `CONTEXT.md`.
 
 ## Before you add anything
 
@@ -67,7 +66,8 @@ entry in `catalog.default_lanes()`, and docs in `background-work.md`.
 
 ## Derivative kinds and recipes
 
-Follow "Adding a kind" in `docs/derivatives.md`. Bump the kind's recipe
+Register the kind in `backend/app/modules/derivatives/kinds.py` and wire its
+producer through the existing derivative registry. Bump the kind's recipe
 constant in `derivatives/kinds.py` in the same change that alters what its
 producer emits; never for a refactor that cannot change output.
 

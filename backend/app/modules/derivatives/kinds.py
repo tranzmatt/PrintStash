@@ -13,7 +13,7 @@ parser that reads a field it used to miss, a different encoding). Nothing else
 is needed: the derivative source finds every Artifact without a row at the new
 version with an anti-join and re-derives it at backfill priority, and each old
 output stays visible until its replacement is ready. Do not bump for a refactor
-that cannot change any output. See ``docs/derivatives.md``.
+that cannot change any output.
 
 An Artifact belongs to exactly one group (it is a mesh or it is G-code), so a
 kind's recipe version is read relative to the Artifact's group. A group may

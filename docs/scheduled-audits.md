@@ -97,23 +97,6 @@ notification evidence and recorded repair outcomes. There are no resource IDs,
 paths or policy revisions in metric labels. Detailed health also includes
 policy enabled/paused state, last-success age and latest run result.
 
-Implementation verification maps the issue's phases to focused behavior tests:
-
-| Requirement | Implementation | Verification |
-| --- | --- | --- |
-| Existing Quick/Full phases, manual repairs and restart behavior | Shared `vault_audit` executor and capacity callbacks | Existing audit tests; scheduled Full real-backup E2E |
-| Persisted opt-in cadence, DST, jitter and missed slots | Policy calendar and `4b21cbe868b6` / `71bd0ebbf381` migrations | Calendar unit tests; policy integration tests; populated SQLite/PostgreSQL upgrades |
-| Revision compare-and-set, one manual/scheduled admission | Conditional revision update and unique active claim | Concurrent two-session SQLite/PostgreSQL admission and policy-edit tests |
-| Maintenance deferral, retry/backoff and overdue | Local scheduler and durable policy state | Runtime shutdown/gate tests; overdue and launch retry integration tests |
-| Planned/actual owned bytes, rate and deadline | Inventory estimate and shared authoritative read callbacks | Byte estimate, deadline, bandwidth and cancellation tests; Full backup E2E |
-| Comparable successful baseline, regression and ignored state | Immutable finding digests scoped by mode/storage generation | Comparison unit tests; failed/cancelled/incomparable baseline integration tests |
-| Storage events, safe payload, preferences, spacing and retries | Existing transactional notification outbox and dispatcher | Threshold/channel, cooldown, terminal rollback/dedup tests; real notification-fake E2E |
-| Opt-in verified Metadata/thumbnail repairs | Narrow managed-local allowlist with post-verification | Rejected unsafe/hash-mismatch repairs, failed repair evidence, both repair E2Es |
-| Completed result remains cancelable during automatic repair | `auto_repair` phase retains the admission claim without changing baseline eligibility | Lifecycle, API cancellation, restart reconciliation and component polling tests |
-| Settings controls, history and detailed health | Audit schedule card and policy diagnostics | Component controls/save/recovery tests; actual Settings Chromium persistence test |
-| Bounded metrics and retention preserving evidence | Audit observability owner | Retention baseline and persisted metric assertions |
-| Administrative evidence | Policy, skip, run, cancel and repair audit entries | Stale-editor transaction and repair failure log assertions |
-
 An ignored finding stays in the immutable observation at its original severity.
 An unchanged recurrence is quiet; a changed resource identity or worse severity
 is evaluated as a new regression. Display-name changes cannot alter a receipt's

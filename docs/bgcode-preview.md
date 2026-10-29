@@ -20,11 +20,9 @@ The build script verifies the source archive digest and packages license notices
 | `VAULT_TOOLPATH_TIMEOUT_SECONDS` | 30 | Converter wall/CPU time |
 | `VAULT_TOOLPATH_MEMORY_MAX_MB` | 512 | Converter address-space MiB |
 
-Conversion is a derivative, not a request: the `derivatives.toolpath` job converts
-each BGCODE Artifact once per recipe, on the `derive.native` lane, and stores
-the result. Its concurrency is the lane's (see
-[background work](architecture/background-work.md)). ASCII G-code needs no
-conversion and is served straight from the Artifact.
+Conversion runs in the background and stores the result for later viewing.
+Manage concurrency in **Settings → Background work → Worker settings**.
+ASCII G-code needs no conversion and is served directly from the Artifact.
 
 The browser parses in a cancelable Web Worker with a maximum of one million
 segments, including tessellated arcs. G92, absolute/relative coordinates and
@@ -41,12 +39,3 @@ limits; its original remains downloadable where permitted.
 Local/S3 storage and Library sources with the same access checks as the Artifact.
 `GET /api/v1/share/{token}/files/{id}/toolpath` additionally requires the share to
 allow original downloads. Responses are private and not cached.
-
-## Verification
-
-The pinned upstream PrusaSlicer fixture is compared byte-for-byte with its ASCII
-reference. Tests exercise every supported compression/encoding combination,
-checksums and truncation, resource bounds, cancellation cleanup, shared access,
-and a real PrusaLink upload after preview. The Docker matrix converts that fixture
-inside each full/lite amd64/arm64 image. Real-browser coverage opens the uploaded
-BGCODE, changes layers and travel visibility, then checks its original download.

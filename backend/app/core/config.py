@@ -214,7 +214,7 @@ class Settings(BaseSettings):
     staging_import_lease_hours: int = Field(default=24, gt=0)
     fleet_batch_max_quantity: int = Field(default=100, gt=0)
 
-    # Background work (see docs/architecture/background-work.md). The reconciler
+    # Background work (see docs/deployment.md). The reconciler
     # tick is a safety net: hot paths and job completions nudge the one source
     # that has new work, so the interval only bounds how long a lost nudge waits.
     process_role: ProcessRole = ProcessRole.ALL

@@ -52,8 +52,7 @@ layer.
   test: the lifecycle *is* the headline behaviour. Keep sections labelled with
   `// ── Step ──` comments so a failure points at the phase.
 - After adding a spec, add its flow to the coverage list in
-  `tests/e2e-real/README.md` and, if it replaces a manual step, remove that
-  line from `docs/manual-testing.md`.
+  `tests/e2e-real/README.md`. Keep any manual validation records in `reports/`.
 
 Run: `cd frontend && pnpm test:e2e:real` (needs `backend/.venv` or `uv`).
 

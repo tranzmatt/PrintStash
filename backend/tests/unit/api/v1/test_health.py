@@ -1,7 +1,7 @@
 """The health probes' pure logic and their reaction to a broken dependency.
 
 ``/health/details`` is what a self-hoster's Docker healthcheck and the release
-verification in ``docs/release-validation.md`` read to decide the service is up, so a
+verification described in ``UPGRADE.md`` read to decide the service is up, so a
 probe that raises instead of reporting takes the whole endpoint down with it. Every
 probe here must turn a failure into ``{"ok": False, "error": <class name>}`` and keep
 whatever it can still report — the provider probe still lists provider capabilities, the
