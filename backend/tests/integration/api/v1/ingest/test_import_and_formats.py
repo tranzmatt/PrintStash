@@ -15,6 +15,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
 import trimesh
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -22,6 +23,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.db.models import Collection, File, FileType, Model
 from tests._env import use_local_storage
+from tests.factories.content import rar_bytes, seven_zip_bytes, tar_bytes
 from tests.integration.api.v1._ingest_assertions import drain_work
 
 
@@ -194,6 +196,99 @@ class TestIngestArchive:
             select(Model).where(Model.collection_id == collection.id)
         ).all()
         assert len(models) == 2
+
+    @pytest.mark.parametrize(
+        ("filename", "build"),
+        [
+            ("bundle.tar.gz", lambda entries: tar_bytes(entries)),
+            ("bundle.tgz", lambda entries: tar_bytes(entries)),
+            ("bundle.tar", lambda entries: tar_bytes(entries, compression="")),
+            ("bundle.7z", lambda entries: seven_zip_bytes(entries)),
+            ("bundle.rar", lambda entries: rar_bytes(entries)),
+        ],
+        ids=lambda value: value if isinstance(value, str) else "",
+    )
+    def test_imports_models_from_another_archive_format(
+        self,
+        tmp_path: Path,
+        client: TestClient,
+        db_session: Session,
+        auth_headers: dict[str, str],
+        filename: str,
+        build,
+    ) -> None:
+        use_local_storage(tmp_path)
+        part = _mesh_bytes("stl", (10, 10, 10))
+        archive = build({"parts/part_a.stl": part, "readme.txt": b"not a model"})
+
+        inspected = _completed(
+            client,
+            client.post(
+                "/api/v1/ingest/archive/inspect",
+                headers=auth_headers,
+                files={"file": (filename, archive, "application/octet-stream")},
+            ),
+            auth_headers,
+        )
+        assert inspected["state"] == "completed", inspected
+        body = inspected["result"]
+        assert [e["name"] for e in body["entries"] if e["file_type"]] == [
+            "parts/part_a.stl"
+        ]
+        payload = _completed(
+            client,
+            client.post(
+                f"/api/v1/ingest/archive/{body['archive_id']}/select",
+                headers=auth_headers,
+                json={"names": ["parts/part_a.stl"]},
+            ),
+            auth_headers,
+        )
+
+        assert payload["state"] == "completed", payload
+        file_row = db_session.exec(
+            select(File).where(File.original_filename == "part_a.stl")
+        ).one()
+        downloaded = client.get(
+            f"/api/v1/files/{file_row.id}/download", headers=auth_headers
+        )
+        assert downloaded.content == part
+        assert (
+            db_session.exec(
+                select(Collection).where(Collection.path == "bundle/parts")
+            ).first()
+            is not None
+        )
+
+    def test_refuses_an_archive_whose_bytes_are_another_format(
+        self, tmp_path: Path, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        use_local_storage(tmp_path)
+
+        response = client.post(
+            "/api/v1/ingest/archive/inspect",
+            headers=auth_headers,
+            files={
+                "file": ("bundle.7z", tar_bytes({"a.stl": b"x"}), "application/x-7z")
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "archive_invalid"
+
+    def test_refuses_an_upload_that_names_no_archive(
+        self, tmp_path: Path, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        use_local_storage(tmp_path)
+
+        response = client.post(
+            "/api/v1/ingest/archive/inspect",
+            headers=auth_headers,
+            files={"file": ("bundle.cab", b"MSCF", "application/octet-stream")},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "unsupported_file_type"
 
 
 class TestSelectArchiveEntries:

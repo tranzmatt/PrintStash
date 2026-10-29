@@ -1331,6 +1331,10 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     sendJson(res, modelList);
     return;
   }
+  if (url.pathname === "/api/v1/multipart-models/trash") {
+    sendJson(res, []);
+    return;
+  }
   if (url.pathname === "/api/v1/multipart-models") {
     sendJson(res, []);
     return;

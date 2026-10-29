@@ -149,7 +149,7 @@ test.describe("Standalone similarity", () => {
         await page.getByRole("button", { name: "Upload", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Upload model" });
         await dialog
-          .locator('input[accept=".stl,.3mf,.obj,.step,.stp,.dxf"]')
+          .locator('input[accept=".stl,.3mf,.obj,.glb,.gltf,.ply,.3dm,.fbx,.step,.stp,.dxf"]')
           .setInputFiles({ name: `${name}.stl`, mimeType: "model/stl", buffer: mesh });
         await dialog
           .locator('input[accept=".gcode,.g,.gco,.bgcode"]')

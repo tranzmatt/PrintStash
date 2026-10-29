@@ -23,7 +23,17 @@ from app.modules.identity import rbac, share
 from app.modules.storage.artifact_delivery import DeliveryPurpose
 from app.schemas.share import ShareLinkCreate, ShareLinkCreated, ShareLinkRead
 
-_MESH_TYPES = {FileType.STL, FileType.THREE_MF, FileType.OBJ, FileType.STEP}
+_MESH_TYPES = {
+    FileType.STL,
+    FileType.THREE_MF,
+    FileType.OBJ,
+    FileType.GLB,
+    FileType.PLY,
+    FileType.GLTF,
+    FileType.THREE_DM,
+    FileType.FBX,
+    FileType.STEP,
+}
 
 
 # ---------------------------------------------------------------------------

@@ -90,7 +90,8 @@ def estimate_triangle_count(
     OOM-killing the process is to estimate before we load and bail out (#24).
 
     Exact for binary STL (the triangle count is a uint32 in the header) and for
-    PLY (the face count is declared in the ASCII header); a face-directive count
+    PLY (the face count is declared in the ASCII header) and for GLB (accessor
+    counts times the placements in its scene graph); a face-directive count
     for OBJ; a size-based estimate for ASCII STL. 3MF stays unknown because its
     bounded source reader admits reachable and placed geometry separately.
     For an STL that fails the exact binary size check we distinguish ASCII from a
@@ -167,6 +168,8 @@ def estimate_triangle_count(
                     verts = len(line.split()) - 1
                     faces += max(verts - 2, 1)
             return faces or None
+        if suffix == ".glb":
+            return _glb_triangle_count(path)
         if suffix == ".3mf":
             # XML byte counts include unreachable objects and cannot represent
             # placement multiplicity. The bounded source reader owns admission.
@@ -174,6 +177,85 @@ def estimate_triangle_count(
     except OSError, struct.error:
         return None
     return None
+
+
+_GLB_MAGIC = b"glTF"
+_GLB_JSON_CHUNK = 0x4E4F534A
+_GLB_MAX_JSON_BYTES = 16 * 1024 * 1024
+# glTF primitive modes: 4 triangles, 5 strip, 6 fan. Points and lines own no
+# faces; the default mode is triangles.
+_GLB_TRIANGLE_MODES = frozenset({4, 5, 6})
+
+
+def _glb_triangle_count(path: Path) -> Optional[int]:
+    """Placed triangles a GLB declares in its JSON chunk, or None when unknowable.
+
+    The accessor counts are exact, and walking the default scene multiplies each
+    mesh by every node that places it, so a tiny file that instances one part a
+    thousand times is sized as the thousand parts trimesh will allocate.
+    """
+    import json
+
+    with path.open("rb") as fh:
+        header = fh.read(20)
+        if len(header) < 20 or header[:4] != _GLB_MAGIC:
+            return None
+        version, _, chunk_length, chunk_type = struct.unpack("<IIII", header[4:20])
+        if (
+            version != 2
+            or chunk_type != _GLB_JSON_CHUNK
+            or chunk_length > _GLB_MAX_JSON_BYTES
+        ):
+            return None
+        raw = fh.read(chunk_length)
+    try:
+        document = json.loads(raw)
+        # Each default below is glTF 2.0's own: an omitted array is empty, an
+        # omitted mode is triangles, and trimesh loads scene 0 when none is named.
+        accessors = document.get("accessors", [])
+        mesh_faces: list[int] = []
+        for mesh in document.get("meshes", []):
+            faces = 0
+            for primitive in mesh["primitives"]:
+                mode = primitive.get("mode", 4)
+                if mode not in _GLB_TRIANGLE_MODES:
+                    continue
+                source = primitive.get("indices", primitive["attributes"]["POSITION"])
+                count = int(accessors[source]["count"])
+                faces += count // 3 if mode == 4 else max(count - 2, 0)
+            mesh_faces.append(faces)
+        nodes = document.get("nodes", [])
+        scenes = document.get("scenes", [])
+        if not scenes:
+            return None
+        roots = [int(index) for index in scenes[document.get("scene", 0)]["nodes"]]
+        # Faces under each node, memoised: a shared subtree is counted once per
+        # placement without being walked once per placement.
+        placed: dict[int, int] = {}
+        open_nodes: set[int] = set()
+        stack = [(index, False) for index in roots]
+        while stack:
+            index, children_done = stack.pop()
+            if index in placed:
+                continue
+            node = nodes[index]
+            children = [int(child) for child in node.get("children", [])]
+            if not children_done:
+                if index in open_nodes:
+                    return None  # a cyclic node graph is not a valid glTF scene
+                if "EXT_mesh_gpu_instancing" in node.get("extensions", {}):
+                    return None
+                open_nodes.add(index)
+                stack.append((index, True))
+                stack.extend((child, False) for child in children)
+                continue
+            open_nodes.discard(index)
+            own = mesh_faces[node["mesh"]] if "mesh" in node else 0
+            placed[index] = own + sum(placed[child] for child in children)
+        total = sum(placed[index] for index in roots)
+    except ValueError, KeyError, IndexError, TypeError, AttributeError:
+        return None
+    return total
 
 
 def detect_memory_limit_bytes() -> int | None:

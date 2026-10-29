@@ -15,6 +15,8 @@ from .base import SQLModel
 class ScratchWindowKind(StrEnum):
     DOWNLOAD = "download"
     ARCHIVE_ENTRY = "archive_entry"
+    # A stored ZIP rewritten from a TAR, 7z or RAR archive for review.
+    ARCHIVE_TRANSCODE = "archive_transcode"
     LOCAL_COPY = "local_copy"
 
 

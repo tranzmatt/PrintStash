@@ -27,8 +27,8 @@ remote storage, cloud backups, and provider adapters are optional.
 
 Developed features in the current app:
 
-- STL, 3MF, OBJ, STEP/STP, DXF, and G-code ingestion through the web UI and REST API; the OrcaSlicer post-processing hook sends G-code
-- Import from safe URLs or `.zip`, plus reviewed browser transfer for
+- STL, 3MF, OBJ, GLB/glTF, PLY, Rhino 3DM, FBX, STEP/STP, DXF, and G-code ingestion through the web UI and REST API; the OrcaSlicer post-processing hook sends G-code
+- Import from safe URLs or `.zip`, `.7z`, `.rar` and `.tar` archives, plus reviewed browser transfer for
   authenticated Printables/MakerWorld files and extension/manual Thingiverse
   capture; server resolution remains SSRF-guarded and archives remain
   zip-slip/zip-bomb protected

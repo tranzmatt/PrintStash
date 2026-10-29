@@ -1186,7 +1186,7 @@ describe("syncImportJobs", () => {
 
     await tc.syncImportJobs();
 
-    expect(tc.taskTitle(tc.listTasks()[0])).toBe("Prepare ZIP");
+    expect(tc.taskTitle(tc.listTasks()[0])).toBe("Prepare archive");
   });
 
   it("titles a discovered import Job as an import", async () => {
@@ -1355,7 +1355,7 @@ describe("attachTaskToImportJob", () => {
 
   it("repairs a persisted duplicate ZIP task", async () => {
     tc.createTask({
-      title: "Prepare ZIP",
+      title: "Prepare archive",
       jobId: "zip-job",
       status: "completed",
       jobKind: "ingestion.archive_inspect",

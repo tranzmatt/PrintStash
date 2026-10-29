@@ -1,7 +1,7 @@
 """Retain multipart groupings in Trash without deleting member Models.
 
 Revision ID: 462588d49de9
-Revises: 08add6607321
+Revises: b2be6484da3f
 Create Date: 2026-10-29 15:18:03.887910
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "462588d49de9"
-down_revision: Union[str, Sequence[str], None] = "08add6607321"
+down_revision: Union[str, Sequence[str], None] = "b2be6484da3f"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

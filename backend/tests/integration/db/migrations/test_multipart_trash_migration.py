@@ -17,7 +17,7 @@ class TestMultipartTrashMigration:
         config.set_main_option("script_location", str(ALEMBIC_DIR))
         url = f"sqlite:///{tmp_path / 'multipart.sqlite'}"
         config.set_main_option("sqlalchemy.url", url)
-        command.upgrade(config, "08add6607321")
+        command.upgrade(config, "b2be6484da3f")
         engine = create_engine(url)
         with engine.begin() as conn:
             conn.execute(
@@ -38,7 +38,7 @@ class TestMultipartTrashMigration:
             ).all()
         command.upgrade(config, "462588d49de9")
         if round_trip:
-            command.downgrade(config, "08add6607321")
+            command.downgrade(config, "b2be6484da3f")
             command.upgrade(config, "462588d49de9")
         with engine.connect() as conn:
             assert conn.execute(

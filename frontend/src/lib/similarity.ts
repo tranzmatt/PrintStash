@@ -64,7 +64,10 @@ export function readSimilarityFilters(params: URLSearchParams): SimilarityFilter
         : undefined,
     collection_id: Number.isSafeInteger(collection) && collection > 0 ? collection : undefined,
     file_type:
-      format !== null && ["stl", "obj", "3mf", "step"].includes(format) ? format : undefined,
+      format !== null &&
+      ["stl", "obj", "glb", "gltf", "ply", "3dm", "fbx", "3mf", "step"].includes(format)
+        ? format
+        : undefined,
     source: source === "vault" || source === "external" ? source : undefined,
     known_good: params.get("known_good") === "1" ? true : undefined,
   };

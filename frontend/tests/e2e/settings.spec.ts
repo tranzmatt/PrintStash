@@ -161,7 +161,7 @@ test.describe("settings route", () => {
     await page.goto("/settings?section=trash");
     await expect(page.getByRole("heading", { name: "Trash retention" })).toBeVisible();
     await expect(page.getByLabel("Trash size")).toHaveText("1.5 MB reclaimable");
-    await expect(page.getByText("1 deleted model")).toBeVisible();
+    await expect(page.getByText("1 deleted item")).toBeVisible();
     await page.getByRole("button", { name: "About" }).click();
     await expect(page).toHaveURL(/\/settings\?section=about$/);
     await expect(page.getByRole("heading", { name: "Latest changes" })).toBeVisible();

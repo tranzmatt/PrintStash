@@ -33,11 +33,13 @@ test.describe("uploads", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Upload", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Upload model" });
-    await dialog.locator('input[accept=".stl,.3mf,.obj,.step,.stp,.dxf"]').setInputFiles({
-      name: `${name}.stl`,
-      mimeType: "model/stl",
-      buffer: Buffer.from(stlFor(name)),
-    });
+    await dialog
+      .locator('input[accept=".stl,.3mf,.obj,.glb,.gltf,.ply,.3dm,.fbx,.step,.stp,.dxf"]')
+      .setInputFiles({
+        name: `${name}.stl`,
+        mimeType: "model/stl",
+        buffer: Buffer.from(stlFor(name)),
+      });
     await page.getByPlaceholder("e.g. Bracket v2").fill(name);
     const accepted = page.waitForResponse((response) =>
       /\/artifact-uploads\/[^/]+\/finalize$/.test(response.url()),
@@ -132,7 +134,9 @@ test.describe("uploads", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Upload", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Upload model" });
-    await dialog.locator('input[accept=".stl,.3mf,.obj,.step,.stp,.dxf"]').setInputFiles(file);
+    await dialog
+      .locator('input[accept=".stl,.3mf,.obj,.glb,.gltf,.ply,.3dm,.fbx,.step,.stp,.dxf"]')
+      .setInputFiles(file);
     await page.getByPlaceholder("e.g. Bracket v2").fill(name);
     await page.getByRole("button", { name: /upload to vault/i }).click();
     await expect(dialog).toHaveCount(0);
@@ -285,7 +289,9 @@ test.describe("uploads", () => {
     const dialog = page.getByRole("dialog", { name: "Upload model" });
     await dialog.getByRole("button", { name: "Bulk", exact: true }).click();
     await dialog
-      .locator('input[type="file"][accept=".stl,.3mf,.obj,.step,.stp,.dxf"]')
+      .locator(
+        'input[type="file"][accept=".stl,.3mf,.obj,.glb,.gltf,.ply,.3dm,.fbx,.step,.stp,.dxf"]',
+      )
       .setInputFiles(
         names.map((name, index) => ({
           name: `${name}.stl`,
@@ -385,7 +391,9 @@ test.describe("completed upload results", () => {
 
     await page.getByRole("button", { name: "Upload", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Upload model" });
-    await dialog.locator('input[accept=".stl,.3mf,.obj,.step,.stp,.dxf"]').setInputFiles(file);
+    await dialog
+      .locator('input[accept=".stl,.3mf,.obj,.glb,.gltf,.ply,.3dm,.fbx,.step,.stp,.dxf"]')
+      .setInputFiles(file);
     await page.getByPlaceholder("e.g. Bracket v2").fill(requested);
     await page.getByRole("button", { name: /upload to vault/i }).click();
     await expect(dialog).toHaveCount(0);

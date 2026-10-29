@@ -240,3 +240,70 @@ def ascii_stl_facets(triangles: list[tuple[tuple[float, float, float], ...]]) ->
         lines.append("endfacet")
     lines.append("endsolid test")
     return ("\n".join(lines) + "\n").encode("ascii")
+
+
+def tar_bytes(
+    entries: dict[str, bytes],
+    *,
+    compression: str = "gz",
+    links: dict[str, str] | None = None,
+) -> bytes:
+    """A TAR of *entries* (``compression`` "", "gz", "bz2" or "xz"), plus symlinks."""
+    import tarfile
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode=f"w:{compression}") as archive:
+        for name, content in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+        for name, target in (links or {}).items():
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.SYMTYPE
+            info.linkname = target
+            archive.addfile(info)
+    return buffer.getvalue()
+
+
+def seven_zip_bytes(entries: dict[str, bytes], *, password: str | None = None) -> bytes:
+    """A 7z archive of *entries*, optionally encrypted with *password*."""
+    import py7zr
+
+    buffer = io.BytesIO()
+    with py7zr.SevenZipFile(buffer, "w", password=password) as archive:
+        for name, content in entries.items():
+            archive.writestr(content, name)
+    return buffer.getvalue()
+
+
+def rar_bytes(entries: dict[str, bytes]) -> bytes:
+    """A RAR 4 archive storing *entries* uncompressed.
+
+    No free tool can write RAR, so the blocks are laid out by hand. Stored
+    members are read by rarfile itself, without an external extractor.
+    """
+    import struct
+    import zlib
+
+    def block(kind: int, flags: int, body: bytes) -> bytes:
+        header = struct.pack("<BHH", kind, flags, 7 + len(body)) + body
+        return struct.pack("<H", zlib.crc32(header) & 0xFFFF) + header
+
+    out = b"Rar!\x1a\x07\x00" + block(0x73, 0, b"\x00" * 6)
+    for name, content in entries.items():
+        encoded = name.replace("/", "\\").encode("ascii")
+        fields = struct.pack(
+            "<IIBIIBBHI",
+            len(content),
+            len(content),
+            0,  # MS-DOS host
+            zlib.crc32(content),
+            0x21,  # 1980-01-01
+            20,  # RAR 2.0 to extract
+            0x30,  # stored
+            len(encoded),
+            0x20,  # archive attribute
+        )
+        # 0x8000 marks a long block: the stored bytes follow the header.
+        out += block(0x74, 0x8000, fields + encoded) + content
+    return out + block(0x7B, 0x4000, b"")

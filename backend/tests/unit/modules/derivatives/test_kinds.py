@@ -28,7 +28,18 @@ def _file(file_type: FileType, name: str = "part", sha: str = "a" * 64) -> File:
 
 class TestRecipesFor:
     @pytest.mark.parametrize(
-        "file_type", [FileType.STL, FileType.THREE_MF, FileType.OBJ, FileType.STEP]
+        "file_type",
+        [
+            FileType.STL,
+            FileType.THREE_MF,
+            FileType.OBJ,
+            FileType.GLB,
+            FileType.PLY,
+            FileType.GLTF,
+            FileType.THREE_DM,
+            FileType.FBX,
+            FileType.STEP,
+        ],
     )
     def test_a_mesh_gets_every_mesh_kind(self, file_type: FileType) -> None:
         assert set(kinds.recipes_for(_file(file_type))) == {METADATA, THUMBNAIL}
@@ -112,10 +123,23 @@ class TestGroups:
             VIEWER_STL: kinds.STEP_VIEWER_STL_RECIPE
         }
 
-    def test_keeps_the_shared_viewer_preview_recipe_for_other_meshes(self) -> None:
+    @pytest.mark.parametrize(
+        "file_type",
+        [
+            FileType.OBJ,
+            FileType.GLB,
+            FileType.PLY,
+            FileType.GLTF,
+            FileType.THREE_DM,
+            FileType.FBX,
+        ],
+    )
+    def test_keeps_the_shared_viewer_preview_recipe_for_other_meshes(
+        self, file_type: FileType
+    ) -> None:
         viewer = kinds.group(JobKind.DERIVATIVES_VIEWER_STL)
 
-        assert viewer.recipes_for(FileType.OBJ) == {VIEWER_STL: kinds.VIEWER_STL_RECIPE}
+        assert viewer.recipes_for(file_type) == {VIEWER_STL: kinds.VIEWER_STL_RECIPE}
 
     def test_refuses_a_format_recipe_for_a_kind_outside_the_group(self) -> None:
         with pytest.raises(ValueError, match="format recipe"):
