@@ -161,7 +161,7 @@ def _live_folder_scope(entity, visible, user):
 def _multipart_statement(session: Session, user: User, filters: ModelFilters):
     visible = _visible_collections(session, user)
     stmt = select(MultipartModel).where(
-        _live_folder_scope(MultipartModel, visible, user)
+        live(MultipartModel), _live_folder_scope(MultipartModel, visible, user)
     )
     if filters.collection:
         path = filters.collection.strip().strip("/").lower()

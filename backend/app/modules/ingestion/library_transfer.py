@@ -576,7 +576,7 @@ def create_archive(session: Session, user: User, *, version: Literal[1, 2] = 2) 
                 ],
             }
         )
-    aggregate_stmt = select(MultipartModel)
+    aggregate_stmt = select(MultipartModel).where(live(MultipartModel))
     if not user.is_superuser:
         aggregate_stmt = aggregate_stmt.where(
             MultipartModel.collection_id.in_(  # type: ignore[union-attr]
@@ -1617,6 +1617,8 @@ def _restore_legacy_multipart_model(
         session.add(aggregate)
         session.flush()
 
+    if aggregate.deleted_at is not None:
+        return
     assert aggregate.id is not None
     # Import is a replacement for this source composition, not an append.  The
     # reserved slug makes retries idempotent even after a process died mid-import.
@@ -2063,12 +2065,16 @@ def import_archive(
                 existing = session.exec(
                     select(MultipartModel).where(MultipartModel.slug == imported_slug)
                 ).first()
-                if existing is not None and _portable_aggregate_matches(
-                    session,
-                    existing,
-                    aggregate_data,
-                    source_models,
-                    source_files,
+                if (
+                    existing is not None
+                    and existing.deleted_at is None
+                    and _portable_aggregate_matches(
+                        session,
+                        existing,
+                        aggregate_data,
+                        source_models,
+                        source_files,
+                    )
                 ):
                     # This is an idempotent retry of the same archive.  Do not
                     # churn part/choice rows or overwrite user data.

@@ -131,9 +131,14 @@ def build_multipart_model(
     name: str = "Multipart bracket",
     *,
     collection: Collection | None = None,
+    trashed: bool | datetime = False,
     **overrides: Any,
 ) -> MultipartModel:
     """A standalone empty multipart grouping; members are API/service state."""
+    if trashed:
+        overrides.setdefault(
+            "deleted_at", trashed if isinstance(trashed, datetime) else utcnow()
+        )
     overrides.setdefault("edit_version", 1)
     index = nth("multipart_model")
     if collection is not None:

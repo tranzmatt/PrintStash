@@ -8,15 +8,21 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.db.models import (
+    Collection,
+    CollectionRole,
     File,
     Model,
+    MultipartModel,
+    MultipartPart,
     User,
 )
 from app.db.scopes import trashed
+from app.modules.identity import rbac
 from app.modules.library.trash import trash_expires_at
 from app.schemas.models import (
     TrashedModelRead,
 )
+from app.schemas.multipart_models import TrashedMultipartModelRead
 
 from .access import _apply_model_access
 from .projections import collection_name_for, thumb_url
@@ -77,3 +83,43 @@ def list_trashed(
             )
         )
     return out
+
+
+def list_trashed_multipart(
+    session: Session, user: User, *, limit: int, offset: int, retention_days: int
+) -> list[TrashedMultipartModelRead]:
+    counts = (
+        select(
+            MultipartPart.multipart_model_id,
+            func.count(MultipartPart.id).label("count"),
+        )
+        .group_by(MultipartPart.multipart_model_id)
+        .subquery()
+    )
+    stmt = (
+        select(MultipartModel, Collection.path, func.coalesce(counts.c.count, 0))
+        .outerjoin(Collection, Collection.id == MultipartModel.collection_id)
+        .outerjoin(counts, counts.c.multipart_model_id == MultipartModel.id)
+        .where(trashed(MultipartModel))
+        .order_by(MultipartModel.deleted_at.desc(), MultipartModel.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    if not user.is_superuser:
+        stmt = stmt.where(
+            MultipartModel.collection_id.in_(
+                rbac.accessible_collection_ids_stmt(session, user, CollectionRole.EDIT)
+            )
+        )
+    return [
+        TrashedMultipartModelRead(
+            id=row.id,
+            name=row.name,
+            slug=row.slug,
+            collection=path,
+            part_count=count,
+            deleted_at=row.deleted_at,
+            expires_at=trash_expires_at(row.deleted_at, retention_days),
+        )
+        for row, path, count in session.exec(stmt).all()
+    ]

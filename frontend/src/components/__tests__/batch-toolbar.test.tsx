@@ -81,7 +81,7 @@ describe("BatchToolbar", () => {
     expect(screen.queryByRole("button", { name: "Tag" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "Only models selected directly or inside selected folders move to Trash",
+      "Selected models and multipart sets move to Trash",
     );
   });
 

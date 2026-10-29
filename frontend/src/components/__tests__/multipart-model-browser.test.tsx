@@ -90,10 +90,10 @@ describe("MultipartModelDetailPage", () => {
         "DELETE /api/v1/multipart-models/7": json(null, 204),
       },
     });
-    await user.click(await screen.findByRole("button", { name: "Delete set" }));
+    await user.click(await screen.findByRole("button", { name: "Move to Trash" }));
     await user.click(
       within(await screen.findByRole("dialog")).getByRole("button", {
-        name: "Delete set",
+        name: "Move to Trash",
       }),
     );
     await waitFor(() =>
@@ -116,15 +116,15 @@ describe("MultipartModelDetailPage", () => {
         "DELETE /api/v1/multipart-models/7": json({ detail: "permission_denied" }, 403),
       },
     });
-    await user.click(await screen.findByRole("button", { name: "Delete set" }));
+    await user.click(await screen.findByRole("button", { name: "Move to Trash" }));
     await user.click(
       within(await screen.findByRole("dialog")).getByRole("button", {
-        name: "Delete set",
+        name: "Move to Trash",
       }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "Desk organiser" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Delete set" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Move to Trash" })).toBeEnabled();
   });
 
   it("hides direct deletion for viewers", async () => {
@@ -134,7 +134,7 @@ describe("MultipartModelDetailPage", () => {
       routes: { "GET /api/v1/multipart-models/7": json(aMultipart({ effective_role: "view" })) },
     });
     await screen.findByRole("heading", { name: "Desk organiser" });
-    expect(screen.queryByRole("button", { name: "Delete set" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Move to Trash" })).not.toBeInTheDocument();
   });
 
   it.each(["admin", "view"] as const)(
@@ -1010,12 +1010,14 @@ describe("MultipartModelDetailPage", () => {
     await screen.findByRole("heading", { name: "Desk organiser" });
     await user.click(screen.getByRole("button", { name: "Edit multipart set" }));
     await user.click(screen.getByRole("button", { name: "Delete multipart set" }));
-    expect(screen.getByText(/Models, files and revisions stay in your library/)).toBeVisible();
+    expect(
+      screen.getByText(/models, files, revisions and guides stay in your library/),
+    ).toBeVisible();
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => {
       expect(
-        screen.queryByText(/Models, files and revisions stay in your library/),
+        screen.queryByText(/models, files, revisions and guides stay in your library/),
       ).not.toBeInTheDocument();
     });
   });

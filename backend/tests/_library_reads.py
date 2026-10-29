@@ -45,6 +45,7 @@ LIBRARY_READS = [
     pytest.param("/api/v1/multipart-models", {"limit": 10}, id="multipart-models"),
     pytest.param("/api/v1/documents", {"limit": 10}, id="documents"),
     pytest.param("/api/v1/documents/trash", {}, id="document-trash"),
+    pytest.param("/api/v1/multipart-models/trash", {"limit": 10}, id="multipart-trash"),
     pytest.param("/api/v1/multipart-builds", {"limit": 10}, id="multipart-builds"),
 ]
 

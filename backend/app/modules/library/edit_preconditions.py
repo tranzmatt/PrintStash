@@ -81,8 +81,7 @@ def claim(
         raise ValueError("edit_claim_requires_persisted_aggregate")
     expected = expected_base(kind, row.id, precondition)
     statement = update(entity).where(col(entity.id) == row.id)
-    if entity is not MultipartModel:
-        statement = statement.where(live(entity))
+    statement = statement.where(live(entity))
     if expected is not None:
         statement = statement.where(
             col(entity.edit_version) == expected.edit_version,

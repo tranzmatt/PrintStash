@@ -36,8 +36,7 @@ def visible_subjects(session: Session, user: User):
         ("multipart_model", MultipartModel),
     ):
         statement = select(literal(kind).label("kind"), table.id)
-        if table is not MultipartModel:
-            statement = statement.where(live(table))
+        statement = statement.where(live(table))
         if not user.is_active:
             statement = statement.where(false())
         elif not user.is_superuser:
@@ -70,8 +69,7 @@ def indexable_passage_ids(session: Session):
         ("multipart_model", MultipartModel),
     ):
         statement = select(literal(kind).label("kind"), table.id)
-        if table is not MultipartModel:
-            statement = statement.where(live(table))
+        statement = statement.where(live(table))
         if table is Model:
             statement = statement.where(Model.hash != SENTINEL_MODEL_HASH)
         statements.append(statement)

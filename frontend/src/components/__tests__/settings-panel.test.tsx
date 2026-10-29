@@ -37,6 +37,7 @@ import { clearLogin } from "@/lib/auth-store";
 import { BROWSER_EXTENSION_SETUP_STORAGE_KEY } from "@/lib/browser-extension-setup";
 import {
   aCollection,
+  aTrashedMultipartModel,
   aJob,
   aPrinter,
   aStorageConnection,
@@ -128,6 +129,7 @@ function renderSettings(options: RenderAppOptions = {}) {
       "GET /api/v1/spoolman/status": json({ enabled: false, url: null, reachable: false }),
       "GET /api/v1/maintenance/audits": json([]),
       "GET /api/v1/models/trash": json([]),
+      "GET /api/v1/multipart-models/trash": json([]),
       "GET /api/v1/admin/gc": json(null),
       "GET /api/v1/backups": json([]),
       "GET /api/v1/backups/sources": json([]),
@@ -2517,7 +2519,7 @@ describe("SettingsPanel", () => {
         },
       });
 
-      await user.click(await screen.findByRole("checkbox", { name: "Select all deleted models" }));
+      await user.click(await screen.findByRole("checkbox", { name: "Select all deleted items" }));
       await user.click(screen.getByRole("button", { name: "Restore selected" }));
 
       await waitFor(() =>
@@ -2568,7 +2570,7 @@ describe("SettingsPanel", () => {
         },
       });
 
-      await user.click(await screen.findByRole("checkbox", { name: "Select all deleted models" }));
+      await user.click(await screen.findByRole("checkbox", { name: "Select all deleted items" }));
       await user.click(screen.getByRole("button", { name: "Delete selected" }));
       await user.click(await screen.findByRole("button", { name: "Remove from catalog" }));
 
@@ -3887,5 +3889,37 @@ describe("Settings remote read recovery", () => {
     expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Review expired/ })).toBeDisabled();
     expect(await screen.findByText("The cleanup plan could not be loaded.")).toBeVisible();
+  });
+});
+
+describe("Multipart Trash selection", () => {
+  it("restores the selected set while retaining the model with the same ID", async () => {
+    const set = aTrashedMultipartModel({ id: TRASHED_MODEL.id });
+    const app = renderSettings({
+      at: "/settings?section=trash",
+      routes: {
+        "GET /api/v1/models/trash": json([TRASHED_MODEL]),
+        "GET /api/v1/multipart-models/trash": json([set]),
+        [`POST /api/v1/multipart-models/${set.id}/restore`]: json({ id: set.id }),
+      },
+    });
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: `Select deleted multipart set ${set.name}` }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: `Select deleted model ${TRASHED_MODEL.name}` }),
+    ).not.toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Restore selected" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("checkbox", { name: `Select deleted multipart set ${set.name}` }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: `Select deleted model ${TRASHED_MODEL.name}` }),
+    ).toBeVisible();
+    expect(app.requestsWithMethod("POST").map((request) => request.url)).toEqual([
+      `/api/v1/multipart-models/${set.id}/restore`,
+    ]);
   });
 });

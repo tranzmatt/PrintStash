@@ -48,6 +48,7 @@ from app.db.models import (
     FileTagLink,
     FileType,
     Model,
+    MultipartModel,
     MultipartModelStar,
     MultipartModelTagLink,
     PrinterProvider,
@@ -1163,3 +1164,18 @@ class TestPrinterPurgeFactories:
         )
 
         assert delivery.printer_id == printer.id
+
+
+class TestBuildTrashedMultipartModel:
+    def test_trashed_set_is_visible_only_to_the_trash_scope(self, db_session):
+        row = factories.build_multipart_model(db_session, trashed=True)
+        assert (
+            db_session.exec(select(MultipartModel).where(live(MultipartModel))).all()
+            == []
+        )
+        assert (
+            db_session.exec(select(MultipartModel).where(trashed(MultipartModel)))
+            .one()
+            .id
+            == row.id
+        )

@@ -2,6 +2,7 @@ import { refreshLibraryMetadata } from "./metadata";
 import { acceptsEditingSnapshot } from "./editing";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { type QueryClient, queryOptions, useQueryClient } from "@tanstack/react-query";
+import { settingsTrashKeys } from "@/lib/queries/settings-trash";
 import { deleteMultipartModel, getMultipartModel } from "@/lib/api/multipart-models";
 import { onAuthChange } from "@/lib/auth-store";
 import { getSessionVersion, requireSessionVersion } from "@/lib/session-transport";
@@ -84,5 +85,6 @@ export async function deleteLibraryMultipart(client: QueryClient, id: number, se
   await client.cancelQueries({ queryKey: queryKeys.multipartModel(id), exact: true });
   requireSessionVersion(session);
   client.removeQueries({ queryKey: queryKeys.multipartModel(id), exact: true });
+  void client.invalidateQueries({ queryKey: settingsTrashKeys.rows });
   refreshLibraryMetadata(client, session);
 }

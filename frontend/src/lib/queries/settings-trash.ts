@@ -1,6 +1,11 @@
 /** Trash rows and durable GC plans have independent reads and concrete safety commands. */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { queryOptions, useQueryClient } from "@tanstack/react-query";
+import {
+  listMultipartTrash,
+  restoreMultipartModel,
+  purgeMultipartModel,
+} from "@/lib/api/multipart-models";
 import { listTrash, restoreModel, purgeModel } from "@/lib/api/models";
 import {
   getActiveGcPlan,
@@ -15,7 +20,15 @@ import { onAuthChange } from "@/lib/auth-store";
 import { ApiError, parseApiError } from "@/lib/errors";
 import { getSessionVersion, requireSessionVersion } from "@/lib/session-transport";
 import { queryKeys } from "@/lib/query-client";
-import type { TrashedModelRead, TrashPurgeRead } from "@/types";
+import type { TrashedModelRead, TrashedMultipartModelRead, TrashPurgeRead } from "@/types";
+
+export type TrashRow =
+  | ({ kind: "model" } & TrashedModelRead)
+  | ({ kind: "multipart" } & TrashedMultipartModelRead);
+export type TrashRowKey = `${TrashRow["kind"]}:${number}`;
+export function trashRowKey(row: TrashRow): TrashRowKey {
+  return `${row.kind}:${row.id}`;
+}
 
 export const settingsTrashKeys = {
   rows: ["settings-trash", "models"] as const,
@@ -24,7 +37,20 @@ export const settingsTrashKeys = {
 export function settingsTrashOptions() {
   return queryOptions({
     queryKey: settingsTrashKeys.rows,
-    queryFn: ({ signal }) => listTrash({ signal }),
+    queryFn: async ({ signal }): Promise<TrashRow[]> => {
+      const [models, sets] = await Promise.all([
+        listTrash({ signal }),
+        listMultipartTrash({ signal }),
+      ]);
+      const rows: TrashRow[] = [
+        ...models.map((row): TrashRow => ({ ...row, kind: "model" })),
+        ...sets.map((row): TrashRow => ({ ...row, kind: "multipart" })),
+      ];
+      return rows.sort(
+        (a, b) =>
+          b.deleted_at.localeCompare(a.deleted_at) || trashRowKey(a).localeCompare(trashRowKey(b)),
+      );
+    },
     retry: false,
   });
 }
@@ -36,8 +62,8 @@ export function settingsGcOptions() {
   });
 }
 export type TrashCommand = { session: number } & (
-  | { kind: "restore"; target: TrashedModelRead }
-  | { kind: "purge"; target: TrashedModelRead; confirmStorageRisk: boolean }
+  | { kind: "restore"; target: TrashRow }
+  | { kind: "purge"; target: TrashRow; confirmStorageRisk: boolean }
   | { kind: "preview" }
   | { kind: "approve"; plan: GcPlan; digest: string }
   | { kind: "abort" | "finalize"; plan: GcPlan }
@@ -91,8 +117,8 @@ export function useSettingsTrashCommand() {
         throw new ApiError(409, "trash_read_required", "trash_read_required");
       if ("target" in command) {
         const row = client
-          .getQueryData<TrashedModelRead[]>(queryKey)
-          ?.find((item) => item.id === command.target.id);
+          .getQueryData<TrashRow[]>(queryKey)
+          ?.find((item) => trashRowKey(item) === trashRowKey(command.target));
         if (!row || row.deleted_at !== command.target.deleted_at)
           throw new ApiError(409, "trash_target_changed", "trash_target_changed");
       } else if ("plan" in command) {
@@ -116,13 +142,18 @@ export function useSettingsTrashCommand() {
       let receipt: TrashReceipt;
       switch (command.kind) {
         case "restore":
-          await restoreModel(command.target.id, options);
+          if (command.target.kind === "multipart")
+            await restoreMultipartModel(command.target.id, options);
+          else await restoreModel(command.target.id, options);
           receipt = { kind: "restored" };
           break;
         case "purge":
           receipt = {
             kind: "purged",
-            result: await purgeModel(command.target.id, command.confirmStorageRisk, options),
+            result:
+              command.target.kind === "multipart"
+                ? await purgeMultipartModel(command.target.id, command.confirmStorageRisk, options)
+                : await purgeModel(command.target.id, command.confirmStorageRisk, options),
           };
           break;
         case "preview": {
@@ -160,8 +191,8 @@ export function useSettingsTrashCommand() {
       if (observed === before) {
         if (receipt.kind === "plan") client.setQueryData(queryKey, receipt.plan);
         else if ("target" in command)
-          client.setQueryData<TrashedModelRead[]>(queryKey, (rows) =>
-            rows?.filter((row) => row.id !== command.target.id),
+          client.setQueryData<TrashRow[]>(queryKey, (rows) =>
+            rows?.filter((row) => trashRowKey(row) !== trashRowKey(command.target)),
           );
       } else {
         // No edit version exists for these projections. A receipt must not replace

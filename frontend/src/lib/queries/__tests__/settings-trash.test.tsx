@@ -12,14 +12,25 @@ import {
   settingsTrashKeys,
   useSettingsTrashCommand,
   type TrashCommand,
+  type TrashRow,
 } from "@/lib/queries/settings-trash";
-import { aTrashedModel, aGcPlan } from "@/test-support/factories";
+import { aTrashedModel, aTrashedMultipartModel, aGcPlan } from "@/test-support/factories";
 import { json, renderApp, memberSession } from "@/test-support/render";
 
-const row = aTrashedModel();
+const row = { ...aTrashedModel(), kind: "model" as const };
 const plan = aGcPlan();
-const reads = { "GET /api/v1/models/trash": json([row]), "GET /api/v1/admin/gc": json(plan) };
-function Editor({ kind = "restore" }: { kind?: "restore" | "purge" | "abort" | "preview" }) {
+const reads = {
+  "GET /api/v1/multipart-models/trash": json([]),
+  "GET /api/v1/models/trash": json([row]),
+  "GET /api/v1/admin/gc": json(plan),
+};
+function Editor({
+  kind = "restore",
+  target = row,
+}: {
+  kind?: "restore" | "purge" | "abort" | "preview";
+  target?: TrashRow;
+}) {
   const rows = useQuery(settingsTrashOptions());
   const gc = useQuery(settingsGcOptions());
   const command = useSettingsTrashCommand();
@@ -29,9 +40,9 @@ function Editor({ kind = "restore" }: { kind?: "restore" | "purge" | "abort" | "
     const session = getSessionVersion();
     const intent: TrashCommand =
       kind === "restore"
-        ? { kind, target: row, session }
+        ? { kind, target, session }
         : kind === "purge"
-          ? { kind, target: row, session, confirmStorageRisk: true }
+          ? { kind, target, session, confirmStorageRisk: true }
           : kind === "abort"
             ? { kind, plan, session }
             : { kind, session };
@@ -73,7 +84,7 @@ describe("Trash command ownership", () => {
       await userEvent.click(screen.getByRole("button", { name: "Save" }));
       await screen.findByText("Saved");
       expect(app.client.getQueryData(settingsTrashKeys.rows)).toEqual([]);
-      expect(app.requestsWithMethod("GET")).toHaveLength(2);
+      expect(app.requestsWithMethod("GET")).toHaveLength(3);
     },
   );
   it("prevents a held trash read from resurrecting a restored row", async () => {
@@ -118,7 +129,7 @@ describe("Trash command ownership", () => {
     app.route({ "GET /api/v1/models/trash": () => replacement.promise });
     const reading = app.client.fetchQuery({ ...settingsTrashOptions(), staleTime: 0 });
     await act(async () => held.resolve(json({ id: 7 })));
-    const current = aTrashedModel({ name: "Replacement view row" });
+    const current = { ...aTrashedModel({ name: "Replacement view row" }), kind: "model" as const };
     await act(async () => replacement.resolve(json([current])));
     await expect(reading).resolves.toEqual([current]);
     expect(app.client.getQueryData(settingsTrashKeys.rows)).toEqual([current]);
@@ -165,4 +176,42 @@ describe("Trash command ownership", () => {
     await screen.findByText("Failed");
     expect(app.requestsWithMethod("POST")).toHaveLength(0);
   });
+});
+
+describe("Multipart Trash identity", () => {
+  it.each(["restore", "purge"] as const)(
+    "%s preserves a model with the same numeric ID",
+    async (kind) => {
+      const target: TrashRow = { ...aTrashedMultipartModel(), kind: "multipart" };
+      const endpoint =
+        kind === "restore"
+          ? "POST /api/v1/multipart-models/7/restore"
+          : "DELETE /api/v1/multipart-models/7/purge?confirm_storage_risk=true";
+      const app = renderApp(<Editor kind={kind} target={target} />, {
+        routes: {
+          ...reads,
+          "GET /api/v1/multipart-models/trash": json([target]),
+          [endpoint]: json(
+            kind === "restore"
+              ? { id: 7 }
+              : {
+                  purged_model_ids: [],
+                  purged_multipart_model_ids: [7],
+                  purged_count: 1,
+                  storage_cleanup_status: "completed",
+                },
+          ),
+        },
+      });
+      await screen.findByText(/Deleted kit/);
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+      await screen.findByText("Saved");
+      expect(app.client.getQueryData(settingsTrashKeys.rows)).toEqual([row]);
+      expect(
+        app
+          .requestsWithMethod(kind === "restore" ? "POST" : "DELETE")
+          .map((request) => request.url),
+      ).toEqual([endpoint.slice(endpoint.indexOf(" ") + 1)]);
+    },
+  );
 });

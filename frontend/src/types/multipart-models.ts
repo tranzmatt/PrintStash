@@ -1,3 +1,4 @@
+import type { TrashPurgeRead } from "./models";
 import type { CollectionRole } from "./models";
 import type { DocumentListItem } from "./documents";
 
@@ -87,3 +88,17 @@ export interface MultipartPartsWrite {
 }
 
 export type MultipartModelCandidate = MultipartModelReference;
+
+export interface TrashedMultipartModelRead {
+  id: number;
+  name: string;
+  slug: string;
+  collection: string | null;
+  part_count: number;
+  deleted_at: string;
+  expires_at: string | null;
+}
+
+export interface MultipartTrashPurgeRead extends TrashPurgeRead {
+  purged_multipart_model_ids: number[];
+}

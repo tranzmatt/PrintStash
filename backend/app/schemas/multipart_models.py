@@ -10,6 +10,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from app.db.models import CollectionRole
 from app.schemas.documents import DocumentListItem
 from app.schemas.editing import EditingBase
+from app.schemas.models import TrashPurgeRead
 
 
 class MultipartModelListItem(EditingBase):
@@ -119,3 +120,17 @@ class MultipartModelSave(MultipartModelUpdate):
 class MultipartModelStarRead(BaseModel):
     multipart_model_id: int
     starred: bool
+
+
+class TrashedMultipartModelRead(BaseModel):
+    id: int
+    name: str
+    slug: str
+    collection: str | None
+    part_count: int
+    deleted_at: datetime
+    expires_at: datetime | None
+
+
+class MultipartTrashPurgeRead(TrashPurgeRead):
+    purged_multipart_model_ids: list[int]

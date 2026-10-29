@@ -130,7 +130,7 @@ test.describe("multipart models", () => {
     await expect(page.getByText("Uploaded from your computer")).toBeVisible();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
     await expect(page.getByRole("dialog")).toContainText("Models, files and revisions stay");
-    await page.getByRole("button", { name: "Delete set" }).click();
+    await page.getByRole("button", { name: "Move to Trash" }).click();
     await expect(page).toHaveURL(/\?type=all/);
     await expect(modelCard(page, base)).toBeVisible();
     await expect(modelCard(page, short)).toBeVisible();
@@ -203,11 +203,11 @@ test.describe("multipart models", () => {
 
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Delete set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
     await page.getByRole("link", { name: secondGroup, exact: true }).click();
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Delete set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
     await page.goto("/?type=all");
     await expect(modelCard(page, base)).toHaveCount(1);
   });
@@ -242,7 +242,7 @@ test.describe("multipart models", () => {
 
     await page.getByRole("button", { name: "Edit multipart set" }).click();
     await page.getByRole("button", { name: "Delete multipart set" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Delete set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
     await page.goto(`/?c=${folder}`);
     const sidebar = page.locator("aside");
     const label = sidebar.getByRole("button", { name: folder, exact: true });
@@ -399,7 +399,9 @@ test.describe("Multipart selection", () => {
       try {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await page.goto(`/multipart-models/${set.id}`);
-        await expect(page.getByRole("button", { name: "Delete set", exact: true })).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Move to Trash", exact: true }),
+        ).toBeVisible();
         await page.screenshot({
           path: testInfo.outputPath(`multipart-detail-${viewport.view}.png`),
           fullPage: true,
@@ -439,6 +441,22 @@ test.describe("Multipart selection", () => {
         await dialog.getByRole("button", { name: "Delete", exact: true }).click();
         await expect(page.getByRole("link", { name: set.name, exact: true })).toHaveCount(0);
         expect((await page.request.get(`${api}/multipart-models/${set.id}`)).status()).toBe(404);
+        await page.goto("/settings?section=trash");
+        const trashedSet = page.getByRole("checkbox", {
+          name: `Select deleted multipart set ${set.name}`,
+          exact: true,
+        });
+        await expect(trashedSet).toBeVisible();
+        await trashedSet.check();
+        await page.getByRole("button", { name: "Restore selected", exact: true }).click();
+        await expect(trashedSet).toHaveCount(0);
+        await page.goto(`/multipart-models/${set.id}`);
+        await expect(page.getByRole("heading", { name: set.name, exact: true })).toBeVisible();
+        await expect(
+          page
+            .getByRole("region", { name: "Body", exact: true })
+            .getByRole("heading", { name, exact: true }),
+        ).toBeVisible();
         await page.goto(`/models/${modelId}`);
         await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
         await page.getByRole("tab", { name: "Revisions" }).click();
@@ -448,6 +466,7 @@ test.describe("Multipart selection", () => {
         ).toBe(true);
       } finally {
         await page.request.delete(`${api}/multipart-models/${set.id}`);
+        await page.request.delete(`${api}/multipart-models/${set.id}/purge`);
         await page.request.delete(`${api}/models/${modelId}`);
       }
     });
