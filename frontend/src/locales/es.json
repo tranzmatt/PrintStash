@@ -1,4 +1,5 @@
 {
+  "All": "Todos",
   "profiles.description": "Gestiona perfiles de filamento e impresora con los ajustes del slicer observados en tus G-code.",
   "profiles.searchSettings": "Buscar un ajuste o valor",
   "profiles.valuesHelp": "Nombres y valores originales del laminador. Los valores múltiples conservan el orden de filamentos o extrusores; no se deducen los ajustes ausentes.",
@@ -834,6 +835,7 @@
   "File type": "Tipo de archivo",
   "Slicer": "Laminador",
   "Revision": "Revisión",
+  "Not printed": "Sin imprimir",
   "Printed": "Impreso",
   "Print outcome": "Resultado de impresión",
   "Show fewer": "Mostrar menos",
@@ -4584,5 +4586,12 @@
   "profiles.closeEditor": "Cerrar editor de {name}",
   "profiles.closeEditorLabel": "Cerrar editor",
   "profiles.browseHelp": "Abre un perfil para consultar sus configuraciones del laminador o editar sus datos.",
-  "profiles.settingsTitle": "Configuraciones del laminador"
+  "profiles.settingsTitle": "Configuraciones del laminador",
+  "modelHashes.title": "Hashes de archivos",
+  "modelHashes.file": "SHA-256 del archivo",
+  "modelHashes.geometry": "SHA-256 geométrico",
+  "modelHashes.geometryHelp": "Huella de la malla completa a escala física. Una huella coincidente por sí sola no demuestra que la geometría sea idéntica.",
+  "modelHashes.copy": "Copiar {kind} de {filename}",
+  "modelHashes.copied": "SHA-256 copiado",
+  "modelHashes.copyFailed": "No se ha podido copiar el SHA-256."
 }

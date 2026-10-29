@@ -7,7 +7,6 @@
  * preflight and the model is **still there** afterwards — a half-applied batch would
  * leave a library in a state nobody asked for and no way to tell which half went.
  */
-import { libraryTool, openLibraryTools } from "./util";
 import { test, expect, authBundleFor, authedContext } from "./helpers";
 import { createCollectionViaVault, modelCard, uploadModel } from "./util";
 
@@ -31,9 +30,16 @@ test.describe("batch actions", () => {
     await expect(modelCard(page, m1)).toBeVisible();
     await expect(modelCard(page, m2)).toBeVisible();
 
-    // Enter select mode, select both (scoped to this collection), open the toolbar.
-    await openLibraryTools(page);
-    await libraryTool(page, "Select").click();
+    // The first card starts selection directly, without a separate mode control.
+    await expect(page.getByRole("button", { name: "Select", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveCount(0);
+    const firstChoice = page.getByRole("checkbox", { name: `Select ${m1}`, exact: true });
+    await page.mouse.move(0, 0);
+    await expect(firstChoice.locator("..")).toHaveCSS("opacity", "0");
+    await modelCard(page, m1).hover();
+    await expect(firstChoice.locator("..")).toHaveCSS("opacity", "1");
+    await firstChoice.click();
+    await expect(page).toHaveURL(new RegExp(`c=${col}`));
     await page.getByRole("button", { name: /Select all on screen \(2\)/ }).click();
     // Both the grid header and the floating toolbar say "2 selected" — either proves it.
     await expect(page.getByText("2 selected").first()).toBeVisible();
@@ -52,8 +58,8 @@ test.describe("batch actions", () => {
     await expect(modelCard(page, m1).getByText(tag, { exact: false })).toBeVisible();
 
     // Batch delete → both move to trash, collection empties.
-    await openLibraryTools(page);
-    await libraryTool(page, "Select").click();
+    await modelCard(page, m1).hover();
+    await page.getByRole("checkbox", { name: `Select ${m1}`, exact: true }).click();
     await page.getByRole("button", { name: /Select all on screen \(2\)/ }).click();
     // Scope to the floating toolbar — "Delete" otherwise also matches the sidebar's
     // "Delete collection" button (substring match).
@@ -91,8 +97,8 @@ test.describe("batch actions", () => {
 
     await page.goto(`/?c=${source}`);
     await expect(modelCard(page, model)).toBeVisible();
-    await openLibraryTools(page);
-    await libraryTool(page, "Select").click();
+    await modelCard(page, model).hover();
+    await page.getByRole("checkbox", { name: `Select ${model}`, exact: true }).click();
     await page.getByRole("button", { name: /Select all on screen \(1\)/ }).click();
 
     await page.locator("div.fixed.bottom-4").getByRole("button", { name: "Move" }).click();
@@ -197,8 +203,8 @@ test.describe("batch actions", () => {
     try {
       await viewerPage.goto(`/?c=${col}`);
       await expect(modelCard(viewerPage, model)).toBeVisible();
-      await openLibraryTools(viewerPage);
-      await libraryTool(viewerPage, "Select").click();
+      await modelCard(viewerPage, model).hover();
+      await viewerPage.getByRole("checkbox", { name: `Select ${model}`, exact: true }).click();
       await viewerPage.getByRole("button", { name: /Select all on screen \(1\)/ }).click();
       await viewerPage
         .locator("div.fixed.bottom-4")

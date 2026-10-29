@@ -19,7 +19,7 @@
  */
 
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -317,25 +317,147 @@ describe("StructuredFilters", () => {
 });
 
 describe("StructuredFilters inline", () => {
-  it("places pending feedback alongside usable controls", async () => {
-    const user = userEvent.setup();
-    const { onChange } = renderFilters({
-      layout: "inline",
-      facets: undefined,
-      loading: true,
-      active: { file_type: ["3mf"] },
-      uploadedAfter: "2026-01-01",
+  function StatefulFilters({
+    facets = FACETS,
+    active = {},
+    uploadedAfter,
+    uploadedBefore,
+    history = {},
+    ...props
+  }: Partial<Props>) {
+    const [selected, setSelected] = useState(active);
+    const [dates, setDates] = useState({
+      uploaded_after: uploadedAfter,
+      uploaded_before: uploadedBefore,
+      ...history,
     });
-    const controls = within(screen.getByRole("group", { name: "Model filters" }));
-    expect(controls.getByRole("status", { name: "Loading filter values…" })).toBeVisible();
-    expect(controls.getByRole("checkbox", { name: "3MF" })).toBeChecked();
-    expect(controls.getByRole("button", { name: "Uploaded" })).toBeEnabled();
-    expect(screen.getByLabelText("After")).toHaveValue("2026-01-01");
-    await user.click(controls.getByRole("checkbox", { name: "3MF" }));
-    expect(onChange).toHaveBeenCalledWith("file_type", []);
+    return (
+      <StructuredFilters
+        layout="inline"
+        facets={facets}
+        active={selected}
+        uploadedAfter={dates.uploaded_after}
+        uploadedBefore={dates.uploaded_before}
+        history={dates}
+        onChange={(key, values) => setSelected((current) => ({ ...current, [key]: values }))}
+        onDateChange={(key, value) => setDates((current) => ({ ...current, [key]: value }))}
+        {...props}
+      />
+    );
+  }
+
+  it("keeps restored date filters closed until requested", () => {
+    render(
+      <StatefulFilters uploadedAfter="2026-01-01" history={{ printed_after: "2026-01-01" }} />,
+    );
+    expect(screen.getByRole("button", { name: "Uploaded" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Print history" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByLabelText("After")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("retains available selections when pending counts become ready", () => {
+  it("restores the upload range inside its dropdown", async () => {
+    render(<StatefulFilters uploadedAfter="2026-01-01" uploadedBefore="2026-02-01" />);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Uploaded" }));
+    const panel = within(screen.getByRole("dialog", { name: "Uploaded" }));
+    expect(panel.getByLabelText("After")).toHaveValue("2026-01-01");
+    expect(panel.getByLabelText("Before")).toHaveValue("2026-02-01");
+    expect(panel.getByLabelText("After")).toHaveAttribute("type", "date");
+    expect(panel.getByLabelText("Before")).toHaveAttribute("type", "date");
+  });
+
+  it("offers calendar dates alongside print durations", async () => {
+    render(
+      <StatefulFilters
+        history={{
+          printed_after: "2026-01-01",
+          printed_before: "2026-02-01",
+          print_duration_min_s: 60,
+        }}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Print history" }));
+    const panel = within(screen.getByRole("dialog", { name: "Print history" }));
+    expect(panel.getByLabelText(/Finished on or after/)).toHaveAttribute("type", "date");
+    expect(panel.getByLabelText(/Finished before/)).toHaveAttribute("type", "date");
+    expect(panel.getByLabelText(/Finished on or after/)).toHaveValue("2026-01-01");
+    expect(panel.getByLabelText(/Finished before/)).toHaveValue("2026-02-01");
+    expect(panel.getByLabelText(/Actual duration ≥/)).toHaveValue(60);
+  });
+
+  it("preserves a saved timestamp until the user edits its date", async () => {
+    const { onDateChange } = renderFilters({
+      layout: "inline",
+      history: { printed_after: "2026-01-01T12:30:00Z" },
+    });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Print history" }));
+    expect(screen.getByLabelText(/Finished on or after/)).toHaveValue("2026-01-01");
+    expect(screen.getByLabelText(/Finished on or after/)).toHaveAttribute(
+      "title",
+      "2026-01-01T12:30:00Z",
+    );
+    expect(onDateChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: "upload start", menu: "Uploaded", field: "After" },
+    { label: "upload end", menu: "Uploaded", field: "Before" },
+    { label: "print start", menu: "Print history", field: "Finished on or after" },
+    { label: "print end", menu: "Print history", field: "Finished before" },
+  ])("updates the $label date without closing its dropdown", async ({ menu, field }) => {
+    render(<StatefulFilters />);
+    await userEvent.setup().click(screen.getByRole("button", { name: menu }));
+    fireEvent.change(screen.getByLabelText(field), { target: { value: "2026-02-01" } });
+    expect(screen.getByLabelText(field)).toHaveValue("2026-02-01");
+    expect(screen.getByRole("dialog", { name: menu })).toBeVisible();
+  });
+
+  it("clears a date without closing its dropdown", async () => {
+    render(<StatefulFilters history={{ printed_after: "2026-01-01" }} />);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Print history" }));
+    fireEvent.change(screen.getByLabelText("Finished on or after"), { target: { value: "" } });
+    expect(screen.getByLabelText("Finished on or after")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Print history" })).toHaveTextContent(
+      /^Print history$/,
+    );
+  });
+
+  it("keeps multiple file types selected in the dropdown", async () => {
+    const user = userEvent.setup();
+    render(<StatefulFilters />);
+    await user.click(screen.getByRole("button", { name: "File type" }));
+    await user.click(screen.getByRole("checkbox", { name: "STL" }));
+    await user.click(screen.getByRole("checkbox", { name: "G-code" }));
+    expect(screen.getByRole("checkbox", { name: "STL" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "G-code" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "File type" })).toHaveTextContent("File type(2)");
+    expect(screen.getByRole("button", { name: "File type" })).not.toHaveTextContent("STL");
+    expect(within(screen.getByRole("dialog", { name: "File type" })).getByText("12")).toBeVisible();
+  });
+
+  it("allows removing an active value before its facet count arrives", async () => {
+    const user = userEvent.setup();
+    render(
+      <StatefulFilters
+        facets={{ ...FACETS, file_type: [] }}
+        active={{ file_type: ["3mf"] }}
+        loading
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "File type" }));
+    expect(screen.getByRole("checkbox", { name: "3MF" })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "3MF" }));
+    expect(screen.queryByRole("button", { name: "File type" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading filter values…" })).toBeVisible();
+  });
+
+  it("retains available selections when pending counts become ready", async () => {
     const onChange = vi.fn<Props["onChange"]>();
     const view = renderFilters({
       layout: "inline",
@@ -344,6 +466,7 @@ describe("StructuredFilters inline", () => {
       active: { file_type: ["3mf"] },
       onChange,
     });
+    await userEvent.setup().click(screen.getByRole("button", { name: "File type" }));
     view.rerender(
       <StructuredFilters
         layout="inline"
@@ -366,103 +489,120 @@ describe("StructuredFilters inline", () => {
 
   it("keeps loaded values interactive during a refresh", async () => {
     const user = userEvent.setup();
-    const { onChange } = renderFilters({ layout: "inline", loading: true });
+    render(<StatefulFilters loading />);
+    await user.click(screen.getByRole("button", { name: "File type" }));
     await user.click(screen.getByRole("checkbox", { name: "STL" }));
-    expect(onChange).toHaveBeenCalledWith("file_type", ["stl"]);
+    expect(screen.getByRole("checkbox", { name: "STL" })).toBeChecked();
     expect(screen.getByRole("button", { name: "Material" })).toBeEnabled();
   });
 
-  function StatefulFilters({ facets = FACETS, active = {}, ...props }: Partial<Props>) {
-    const [selected, setSelected] = useState(active);
-    return (
-      <StructuredFilters
-        layout="inline"
-        facets={facets}
-        active={selected}
-        onChange={(key, values) => setSelected((current) => ({ ...current, [key]: values }))}
-        {...props}
-      />
-    );
-  }
-
-  it("keeps multiple file types selected in the visible controls", async () => {
-    const user = userEvent.setup();
-    render(<StatefulFilters />);
-    await user.click(screen.getByRole("checkbox", { name: "STL" }));
-    await user.click(screen.getByRole("checkbox", { name: "G-code" }));
-    expect(screen.getByRole("checkbox", { name: "STL" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "G-code" })).toBeChecked();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("allows removing an active value before its facet count arrives", async () => {
-    const user = userEvent.setup();
-    render(
-      <StatefulFilters
-        facets={{ ...FACETS, file_type: [] }}
-        active={{ file_type: ["3mf"] }}
-        loading
-      />,
-    );
-    await user.click(screen.getByRole("checkbox", { name: "3MF" }));
-    expect(screen.queryByRole("group", { name: "File type" })).not.toBeInTheDocument();
-  });
-
-  it("restores active upload dates as inline fields", () => {
-    render(<StatefulFilters uploadedAfter="2026-01-01" uploadedBefore="2026-02-01" />);
-    expect(screen.getByLabelText("After")).toHaveValue("2026-01-01");
-    expect(screen.getByLabelText("Before")).toHaveValue("2026-02-01");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("reveals inactive upload dates without a floating panel", async () => {
-    render(<StatefulFilters />);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Uploaded" }));
-    expect(screen.getByLabelText("After")).toBeVisible();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("restores active print history fields", () => {
-    render(<StatefulFilters history={{ printed_after: "2026-01-01", print_duration_min_s: 60 }} />);
-    expect(screen.getByLabelText(/Finished on or after/)).toHaveValue("2026-01-01");
-    expect(screen.getByLabelText(/Actual duration ≥/)).toHaveValue(60);
-  });
-
-  it("replaces the printed status without requiring a menu", async () => {
+  it("replaces the printed status with an exclusive selection", async () => {
     const user = userEvent.setup();
     render(
       <StatefulFilters
         facets={{
           ...FACETS,
           printed: [
-            { value: "yes", count: 2 },
+            { value: "yes", count: 0 },
             { value: "no", count: 4 },
           ],
         }}
       />,
     );
-    await user.click(screen.getByRole("button", { name: /Yes/ }));
-    await user.click(screen.getByRole("button", { name: /No/ }));
-    expect(screen.getByRole("button", { name: /Yes/ })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: /No/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Printed" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "All",
+      }),
+    ).toBeChecked();
+    expect(within(screen.getByRole("dialog", { name: "Printed" })).getByText("0")).toBeVisible();
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Printed",
+      }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Not printed",
+      }),
+    );
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Printed",
+      }),
+    ).not.toBeChecked();
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Not printed",
+      }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: "Printed", expanded: true })).toHaveTextContent(
+      "Printed(1)",
+    );
   });
 
-  it("clears the printed status by deselecting its segment", async () => {
+  it("clears the printed status with All when its count is unavailable", async () => {
     const user = userEvent.setup();
     render(<StatefulFilters active={{ printed: ["no"] }} />);
-    await user.click(screen.getByRole("button", { name: "No" }));
-    expect(screen.queryByRole("group", { name: "Printed" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Printed" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "Not printed",
+      }),
+    ).toBeChecked();
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Printed" })).getByRole("checkbox", {
+        name: "All",
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Printed" })).not.toBeInTheDocument();
   });
 
-  it("returns keyboard focus to the facet picker on Escape", async () => {
+  it("clears the active printed choice directly", async () => {
+    const user = userEvent.setup();
+    render(
+      <StatefulFilters
+        active={{ printed: ["no"] }}
+        facets={{
+          ...FACETS,
+          printed: [
+            { value: "yes", count: 0 },
+            { value: "no", count: 4 },
+          ],
+        }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Printed" }));
+    const menu = screen.getByRole("dialog", { name: "Printed" });
+    await user.click(within(menu).getByRole("checkbox", { name: "Not printed" }));
+    expect(within(menu).getByRole("checkbox", { name: "All" })).toBeChecked();
+    expect(within(menu).getByRole("checkbox", { name: "Not printed" })).not.toBeChecked();
+  });
+
+  it.each(["Uploaded", "Print history", "File type", "Material"])(
+    "returns keyboard focus to %s on Escape",
+    async (name) => {
+      const user = userEvent.setup();
+      render(<StatefulFilters />);
+      const trigger = screen.getByRole("button", { name });
+      await user.click(trigger);
+      await user.tab();
+      await user.keyboard("{Escape}");
+      expect(trigger).toHaveFocus();
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    },
+  );
+
+  it("dismisses a date dropdown on an outside click", async () => {
     const user = userEvent.setup();
     render(<StatefulFilters />);
-    const trigger = screen.getByRole("button", { name: "Material" });
-    await user.click(trigger);
-    await user.tab();
-    await user.keyboard("{Escape}");
-    expect(trigger).toHaveFocus();
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await user.click(screen.getByRole("button", { name: "Uploaded" }));
+    await user.click(screen.getByRole("checkbox", { name: "Has similar candidates" }));
+    expect(screen.getByRole("button", { name: "Uploaded" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

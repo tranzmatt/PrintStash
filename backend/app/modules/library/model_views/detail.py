@@ -215,7 +215,7 @@ def detail(session: Session, model_id: int, user: User) -> ModelRead | None:
         thumbnail_url=thumb_url(m),
         created_at=m.created_at,
         updated_at=m.updated_at,
-        files=_file_reads_with_revisions(session, files_with_meta),
+        files=_file_reads_with_revisions(session, files_with_meta, model_id),
         trashed_source_files=[
             TrashedSourceFileRead(id=file.id, original_filename=file.original_filename)
             for file in trashed_sources

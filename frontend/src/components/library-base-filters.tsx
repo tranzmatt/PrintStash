@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { LibraryFilterMenu } from "@/components/library-filter-menu";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { LibraryFilterChoice } from "@/components/library-filter-choice";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 import { FILTER_INPUT } from "@/lib/filter-input";
@@ -39,44 +38,29 @@ export function LibraryBaseFilters({
           label={t("Printer")}
           count={Number(selectedPrinterId !== null || selectedPrinterPresence !== null)}
         >
-          <div className="space-y-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={selectedPrinterId === null && selectedPrinterPresence === null}
-              className={`w-full justify-start ${selectedPrinterId === null && selectedPrinterPresence === null ? "bg-accent text-accent-foreground" : ""}`}
-              onClick={() => onPrinterChange(null)}
-            >
-              {t("Any location")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={`w-full justify-start ${selectedPrinterPresence === "any" ? "bg-accent text-accent-foreground" : ""}`}
-              onClick={() => onPrinterPresenceChange("any")}
-            >
-              {t("On a printer")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={`w-full justify-start ${selectedPrinterPresence === "none" ? "bg-accent text-accent-foreground" : ""}`}
-              onClick={() => onPrinterPresenceChange("none")}
-            >
-              {t("Vault only")}
-            </Button>
-            {printers.map((printer) => (
-              <Button
-                key={printer.id}
-                variant="ghost"
-                size="sm"
-                className={`w-full justify-start ${selectedPrinterId === printer.id ? "bg-accent text-accent-foreground" : ""}`}
-                onClick={() => onPrinterChange(printer.id)}
-              >
-                <span className="truncate">{printer.name}</span>
-              </Button>
-            ))}
-          </div>
+          <LibraryFilterChoice
+            label={t("Any location")}
+            checked={selectedPrinterId === null && selectedPrinterPresence === null}
+            onChange={() => onPrinterChange(null)}
+          />
+          <LibraryFilterChoice
+            label={t("On a printer")}
+            checked={selectedPrinterPresence === "any"}
+            onChange={(checked) => onPrinterPresenceChange(checked ? "any" : null)}
+          />
+          <LibraryFilterChoice
+            label={t("Vault only")}
+            checked={selectedPrinterPresence === "none"}
+            onChange={(checked) => onPrinterPresenceChange(checked ? "none" : null)}
+          />
+          {printers.map((printer) => (
+            <LibraryFilterChoice
+              key={printer.id}
+              label={printer.name}
+              checked={selectedPrinterId === printer.id}
+              onChange={(checked) => onPrinterChange(checked ? printer.id : null)}
+            />
+          ))}
         </LibraryFilterMenu>
       )}
       {(tags.length > 0 || selectedTags.length > 0) && (
@@ -88,28 +72,21 @@ export function LibraryBaseFilters({
             onChange={(event) => setQuery(event.target.value)}
             className={FILTER_INPUT}
           />
-          <div className="mt-2 space-y-1">
+          <div className="mt-2">
             {visibleTags.map((tag) => (
-              <label
+              <LibraryFilterChoice
                 key={tag.id}
-                className="flex cursor-action items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
-              >
-                <Checkbox
-                  ariaLabel={tag.name}
-                  checked={selectedTags.includes(tag.slug)}
-                  onChange={(checked) =>
-                    onTagsChange(
-                      checked
-                        ? [...selectedTags, tag.slug]
-                        : selectedTags.filter((slug) => slug !== tag.slug),
-                    )
-                  }
-                />
-                <span className="min-w-0 flex-1 truncate">{tag.name}</span>
-                <span className="text-muted-foreground">
-                  {tag.model_count + (tag.multipart_model_count ?? 0)}
-                </span>
-              </label>
+                label={tag.name}
+                count={tag.model_count + (tag.multipart_model_count ?? 0)}
+                checked={selectedTags.includes(tag.slug)}
+                onChange={(checked) =>
+                  onTagsChange(
+                    checked
+                      ? [...selectedTags, tag.slug]
+                      : selectedTags.filter((slug) => slug !== tag.slug),
+                  )
+                }
+              />
             ))}
             {visibleTags.length === 0 && (
               <p className="px-2 py-1 text-xs text-muted-foreground">{t("No matching tags.")}</p>

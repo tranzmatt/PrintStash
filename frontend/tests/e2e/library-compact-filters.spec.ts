@@ -1,14 +1,91 @@
 /**
  * Desktop filters share the browsing surface with the expanded tree and results.
- * Date fields must not cover chips or push the first model below a 1080p screen.
+ * Date dropdowns must not move the toolbar or results when opened.
  */
 import { expect, test } from "@playwright/test";
+import { aPrinter } from "../../src/test-support/factories";
 import { collectPageProblems, useMockApi } from "./_setup";
 
 useMockApi();
 
 test.describe("compact Library filters", () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test("uses shared checkbox choices for Printer", async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem("printstash.theme", "dark"));
+    await page.route("**/api/v1/printers", (route) =>
+      route.fulfill({ json: [aPrinter({ id: 7, name: "Workshop printer" })] }),
+    );
+    await page.goto("/");
+    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
+    const filters = page.getByRole("main").getByRole("region", { name: "Filters", exact: true });
+    await filters.getByRole("button", { name: "Printer", exact: true }).click();
+    const menu = page.getByRole("dialog", { name: "Printer", exact: true });
+    await menu.getByRole("checkbox", { name: "Vault only", exact: true }).click();
+    await expect(page).toHaveURL(/printer_presence=none/);
+    await expect(menu.getByRole("checkbox", { name: "Vault only", exact: true })).toBeChecked();
+    await menu.getByRole("checkbox", { name: "Workshop printer", exact: true }).click();
+    await expect(page).toHaveURL(/printer_id=7/);
+    await expect(page).not.toHaveURL(/printer_presence=/);
+    await expect(
+      menu.getByRole("checkbox", { name: "Workshop printer", exact: true }),
+    ).toBeChecked();
+    await expect(menu.getByRole("checkbox", { checked: true })).toHaveCount(1);
+    await expect(menu).toHaveCSS("opacity", "1");
+    await menu.screenshot({
+      path: testInfo.outputPath("printer-shared-choices.png"),
+      animations: "disabled",
+    });
+    await menu.getByRole("checkbox", { name: "On a printer", exact: true }).click();
+    await expect(page).toHaveURL(/printer_presence=any/);
+    await expect(page).not.toHaveURL(/printer_id=/);
+    await expect(menu.getByRole("checkbox", { name: "On a printer", exact: true })).toBeChecked();
+    await menu.getByRole("checkbox", { name: "On a printer", exact: true }).click();
+    await expect(page).not.toHaveURL(/printer_presence=/);
+    await expect(menu.getByRole("checkbox", { name: "Any location", exact: true })).toBeChecked();
+  });
+
+  test("uses the same checkbox choices for printed status", async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem("printstash.theme", "dark"));
+    await page.route("**/api/v1/models/facets**", (route) =>
+      route.fulfill({
+        json: {
+          file_type: [],
+          material_type: [],
+          slicer_name: [],
+          printer_model: [],
+          revision_status: [],
+          print_outcome: [],
+          storage: [],
+          printed: [
+            { value: "yes", count: 0 },
+            { value: "no", count: 3 },
+          ],
+        },
+      }),
+    );
+    await page.goto("/?printed=no");
+    await expect(page.getByRole("main")).toHaveAttribute("aria-busy", "false");
+    const filters = page.getByRole("main").getByRole("region", { name: "Filters", exact: true });
+    await filters.getByRole("button", { name: "Printed", exact: true }).click();
+    const menu = page.getByRole("dialog", { name: "Printed", exact: true });
+    await expect(menu.getByRole("checkbox", { name: "Not printed", exact: true })).toBeChecked();
+    await expect(menu.getByText("0", { exact: true })).toBeVisible();
+    await expect(menu).toHaveCSS("opacity", "1");
+    await page.screenshot({
+      path: testInfo.outputPath("printed-checkbox.png"),
+      animations: "disabled",
+      clip: { x: 220, y: 140, width: 1150, height: 450 },
+    });
+    await menu.getByRole("checkbox", { name: "Printed", exact: true }).click();
+    await expect(page).toHaveURL(/printed=yes/);
+    await expect(
+      menu.getByRole("checkbox", { name: "Not printed", exact: true }),
+    ).not.toBeChecked();
+    await expect(menu.getByRole("checkbox", { name: "Printed", exact: true })).toBeChecked();
+    await menu.getByRole("checkbox", { name: "All", exact: true }).click();
+    await expect(page).not.toHaveURL(/printed=/);
+  });
 
   test("keeps loading feedback in the existing filter row", async ({ page }) => {
     const pending = Promise.withResolvers<void>();
@@ -33,7 +110,9 @@ test.describe("compact Library filters", () => {
       const loading = filters.getByRole("status", { name: "Loading filter values…" });
       const uploaded = filters.getByRole("button", { name: "Uploaded", exact: true });
       await expect(loading).toBeVisible();
-      await expect(filters.getByRole("checkbox", { name: "3MF", exact: true })).toBeChecked();
+      await expect(filters.getByRole("button", { name: "File type", exact: true })).toContainText(
+        "(1)",
+      );
       await expect(uploaded).toBeEnabled();
       await expect(page.getByTitle("Remove File type: 3MF", { exact: true })).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
@@ -59,7 +138,9 @@ test.describe("compact Library filters", () => {
       await page.mouse.up();
       await expect(similar).toBeChecked();
       await expect(page).toHaveURL(/has_similar_candidates=yes/);
-      await expect(filters.getByRole("checkbox", { name: "3MF", exact: true })).toBeChecked();
+      await expect(filters.getByRole("button", { name: "File type", exact: true })).toContainText(
+        "(1)",
+      );
       expect((await uploaded.boundingBox())!.y).toBe(before!.y);
       expect((await filters.boundingBox())!.height).toBe(panel!.height);
     } finally {
@@ -67,7 +148,7 @@ test.describe("compact Library filters", () => {
     }
   });
 
-  test("keeps expanded dates alongside the open tree on 1080p", async ({ page }) => {
+  test("keeps date dropdowns above a stable browsing surface on 1080p", async ({ page }) => {
     const problems = await collectPageProblems(page);
     await page.goto(
       "/?file_type=3mf&printed=no&storage=vault&uploaded_after=2026-01-01&uploaded_before=2026-12-31",
@@ -75,14 +156,22 @@ test.describe("compact Library filters", () => {
     const main = page.getByRole("main");
     const filters = main.getByRole("region", { name: "Filters", exact: true });
     await expect(main).toHaveAttribute("aria-busy", "false");
-    await expect(filters.getByRole("checkbox", { name: "3MF", exact: true })).toBeVisible();
-    await expect(
-      filters
-        .getByRole("group", { name: "Printed", exact: true })
-        .getByRole("button", { name: "No", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await expect(filters.getByLabel("After", { exact: true })).toHaveValue("2026-01-01");
-    await expect(filters.getByLabel("Before", { exact: true })).toHaveValue("2026-12-31");
+    await expect(filters.getByRole("button", { name: "File type", exact: true })).toContainText(
+      "(1)",
+    );
+    await expect(filters.getByRole("button", { name: "Printed", exact: true })).toContainText(
+      "(1)",
+    );
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const closedHeight = (await filters.boundingBox())!.height;
+    const uploaded = filters.getByRole("button", { name: "Uploaded", exact: true });
+    await uploaded.click();
+    const dates = page.getByRole("dialog", { name: "Uploaded", exact: true });
+    await expect(dates.getByLabel("After", { exact: true })).toHaveValue("2026-01-01");
+    await expect(dates.getByLabel("Before", { exact: true })).toHaveValue("2026-12-31");
+    expect((await filters.boundingBox())!.height).toBe(closedHeight);
+    await page.keyboard.press("Escape");
+    await expect(uploaded).toBeFocused();
     await expect(
       page.locator("aside").getByRole("button", { name: "All Models", exact: true }),
     ).toBeVisible();
@@ -119,6 +208,14 @@ test.describe("compact Library filters", () => {
       );
     });
     await page.screenshot({ path: "../reports/desktop-compact-filters-1080p.png" });
+    await uploaded.click();
+    await expect(dates).toHaveCSS("opacity", "1");
+    await page.screenshot({
+      path: "../reports/library-date-dropdown.png",
+      animations: "disabled",
+      clip: { x: 220, y: 180, width: 1150, height: 240 },
+    });
+    await page.keyboard.press("Escape");
     expect(problems).toEqual([]);
   });
 
@@ -127,7 +224,7 @@ test.describe("compact Library filters", () => {
     const filters = page.getByRole("main").getByRole("region", { name: "Filters", exact: true });
     await expect(filters).toBeVisible();
     await page
-      .getByRole("button", { name: "Filters", exact: true })
+      .getByRole("button", { name: /^Filters(?: \d+)?$/ })
       .filter({ visible: true })
       .click();
     await expect(filters).toHaveCount(0);
@@ -135,12 +232,21 @@ test.describe("compact Library filters", () => {
     await expect(page).toHaveURL(/file_type=3mf/);
   });
 
-  test("wraps inline fields within a narrow desktop surface", async ({ page }) => {
+  test("fits date dropdowns within a narrow desktop surface", async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.goto("/?file_type=3mf&uploaded_after=2026-01-01&printed_after=2026-01-01");
     const filters = page.getByRole("main").getByRole("region", { name: "Filters", exact: true });
-    await expect(filters.getByLabel("After", { exact: true })).toBeVisible();
-    await expect(filters.getByLabel(/Finished on or after/)).toBeVisible();
+    await filters.getByRole("button", { name: "Uploaded", exact: true }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Uploaded" }).getByLabel("After", { exact: true }),
+    ).toBeVisible();
+    await filters.getByRole("button", { name: "Print history", exact: true }).click();
+    const history = page.getByRole("dialog", { name: "Print history" });
+    await expect(history.getByLabel(/Finished on or after/)).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Uploaded" })).toHaveCount(0);
+    const box = (await history.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(1024);
     expect(await filters.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
@@ -154,7 +260,7 @@ test.describe("compact Library filters", () => {
     await page.goto("/");
     await page
       .getByRole("main")
-      .getByRole("button", { name: "Filters", exact: true })
+      .getByRole("button", { name: /^Filters(?: \d+)?$/ })
       .filter({ visible: true })
       .click();
     const drawer = page.getByRole("dialog", { name: "Filters", exact: true });

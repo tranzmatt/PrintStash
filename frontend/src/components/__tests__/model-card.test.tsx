@@ -77,6 +77,23 @@ function CardLocation() {
 }
 
 describe("ModelCard", () => {
+  it("selects from the checkbox without opening the Model", async () => {
+    const user = userEvent.setup();
+    const onToggleSelect = vi.fn<(id: number, range?: boolean) => void>();
+    renderApp(
+      <>
+        <ModelCard model={model} onToggleSelect={onToggleSelect} />
+        <CardLocation />
+      </>,
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: "Select Cam Holder v4" }));
+    expect(onToggleSelect).toHaveBeenCalledWith(1);
+    expect(screen.getByLabelText("Current card location")).toHaveTextContent(/^\/$/);
+    await user.click(screen.getByRole("link", { name: /Cam Holder v4/ }));
+    expect(screen.getByLabelText("Current card location")).toHaveTextContent("/models/1");
+  });
+
   it("opens the Model detail from its card", async () => {
     const user = userEvent.setup();
     renderApp(

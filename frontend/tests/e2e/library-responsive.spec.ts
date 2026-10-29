@@ -231,7 +231,10 @@ test.describe("Library responsive layout", () => {
       await expect(toolbar.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
       await expect(actions.getByRole("link", { name: "Similar models" })).toBeVisible();
       await expect(actions.getByRole("button", { name: "New collection" })).toBeVisible();
-      await expect(actions.getByRole("button", { name: "Select", exact: true })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "Select", exact: true })).toHaveCount(0);
+      await expect(
+        page.getByRole("checkbox", { name: "Select Responsive bracket 1", exact: true }),
+      ).toBeVisible();
       const bounds = await toolbar.boundingBox();
       expect(bounds).not.toBeNull();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -251,7 +254,6 @@ test.describe("Library responsive layout", () => {
       filters.boundingBox(),
       actions.getByRole("link", { name: "Similar models" }).boundingBox(),
       actions.getByRole("button", { name: "New collection" }).boundingBox(),
-      actions.getByRole("button", { name: "Select", exact: true }).boundingBox(),
     ]);
     expect(boxes.every((box) => box !== null)).toBe(true);
     expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1);
@@ -276,23 +278,28 @@ test.describe("Library responsive layout", () => {
     await expect(main.getByRole("link", { name: "Similar models", exact: true })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(main.getByRole("button", { name: "New collection", exact: true })).toBeFocused();
-    await page.keyboard.press("Tab");
-    await expect(main.getByRole("button", { name: "Select", exact: true })).toBeFocused();
   });
 
-  test("shows library actions in the phone toolbar", async ({ page }) => {
+  test("selects directly from a card using the keyboard on a phone", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.goto("/");
-    const actions = page.getByRole("main").getByRole("group", { name: "Library tools" });
-    await expect(actions.getByRole("button", { name: "Select", exact: true })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-
-    await actions.getByRole("button", { name: "Select", exact: true }).click();
-
+    const checkbox = page.getByRole("checkbox", {
+      name: "Select Responsive bracket 1",
+      exact: true,
+    });
+    await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveCount(0);
+    await checkbox.focus();
+    await page.keyboard.press("Space");
+    await expect(checkbox).toBeChecked();
+    await expect(page).toHaveURL((url) => url.pathname === "/");
     await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
-    await expect(page.getByRole("dialog", { name: "Filters", exact: true })).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath("direct-selection-phone.png"),
+      animations: "disabled",
+    });
+    await checkbox.press("Space");
+    await expect(checkbox).not.toBeChecked();
+    await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveCount(0);
   });
 
   test("starts collection creation from the phone toolbar", async ({ page }) => {

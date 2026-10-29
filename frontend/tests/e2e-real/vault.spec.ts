@@ -54,7 +54,7 @@ test.describe("vault", () => {
     const menu = page.getByRole("menu").last();
     await expect(menu.getByRole("menuitemcheckbox", { name: "Favorites" })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: /Saved views/ })).toBeVisible();
-    await expect(menu.getByRole("menuitemcheckbox", { name: "Select" })).toBeVisible();
+    await expect(menu.getByRole("menuitemcheckbox", { name: "Select" })).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "Display" })).toBeVisible();
     await menu.getByRole("menuitem", { name: "Display" }).click();
     await page.getByRole("menuitem", { name: "List View" }).click();

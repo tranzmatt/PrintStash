@@ -27,6 +27,15 @@ Artifact bytes. Historical release archives are checked separately by the
 - Vite on `:3310` with `VITE_API_URL` pointed at that backend.
 - The standalone Moonraker/Spoolman emulator used by fleet scenarios.
 
+The former Model Overview caption editor flow is replaced by the hash display;
+caption conflict handling remains covered by the caption API and component suites.
+
+`model-hashes.spec.ts` verifies the uploaded file SHA-256, runs real geometry analysis, and checks the compact hash controls in desktop and mobile Overview layouts, including complete file and geometric SHA-256 values copied to the clipboard.
+
+`batch.spec.ts` reveals a Model checkbox on hover before starting selection and applying real tags, deletes and moves, including undo and viewer permission checks.
+
+`library-filters.spec.ts` filters a real uploaded Model through file-type, printed-status and calendar dropdowns, restores the range after reload, and clears a print-history date to recover the result.
+
 Library navigation covers desktop grid and phone list reading positions through
 detail, Back and Forward with 101 Models spanning several pages. A controlled
 real revision change starts from an already paged view and holds its next cursor

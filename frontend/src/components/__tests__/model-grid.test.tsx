@@ -303,7 +303,8 @@ describe("ModelBrowser", () => {
 
       expect(within(actions).getByRole("link", { name: "Similar models" })).toBeVisible();
       expect(within(actions).getByRole("button", { name: "New collection" })).toBeVisible();
-      expect(within(actions).getByRole("button", { name: "Select" })).toBeVisible();
+      expect(within(actions).queryByRole("button", { name: "Select" })).not.toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: "Select Benchy" })).toBeVisible();
       expect(screen.queryByRole("button", { name: "Library tools" })).not.toBeInTheDocument();
       expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     });
@@ -325,31 +326,16 @@ describe("ModelBrowser", () => {
       await user.click(screen.getByRole("menuitem", { name: "New multipart set" }));
       expect(screen.getByRole("dialog", { name: "New multipart set" })).toBeVisible();
     });
-    it("reflects selection state in the toolbar", async () => {
-      const user = userEvent.setup();
-      renderVault();
-      const actions = screen.getByRole("group", { name: "Library tools" });
-      const select = within(actions).getByRole("button", { name: "Select" });
-      expect(select).toHaveAttribute("aria-pressed", "false");
-
-      await user.click(select);
-
-      expect(select).toHaveAttribute("aria-pressed", "true");
-      await user.click(select);
-      expect(select).toHaveAttribute("aria-pressed", "false");
-    });
-    it("preserves the keyboard selection shortcut", async () => {
+    it("supports the keyboard selection lifecycle", async () => {
       const user = userEvent.setup();
       renderVault({ models: [aModelListItem({ name: "Benchy" })] });
       await screen.findByText("Benchy");
-      const actions = screen.getByRole("group", { name: "Library tools" });
 
       await user.keyboard("s");
-
-      expect(within(actions).getByRole("button", { name: "Select" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(screen.getByRole("button", { name: "Done" })).toBeVisible();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: "Select Benchy" })).not.toBeChecked();
     });
     it("hides selection for signed-out readers", async () => {
       renderVault({ auth: signedOutSession(), models: [aModelListItem({ name: "Benchy" })] });
@@ -358,6 +344,7 @@ describe("ModelBrowser", () => {
 
       expect(within(actions).queryByRole("button", { name: "Select" })).not.toBeInTheDocument();
       expect(within(actions).getByRole("button", { name: "New collection" })).toBeDisabled();
+      expect(screen.queryByRole("checkbox", { name: "Select Benchy" })).not.toBeInTheDocument();
     });
     it("keeps Favorites in quick access", async () => {
       const user = userEvent.setup();
@@ -830,7 +817,6 @@ describe("ModelBrowser", () => {
       });
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
       await user.click(screen.getByRole("checkbox", { name: "Select Benchy" }));
       expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
 
@@ -1313,7 +1299,7 @@ describe("ModelBrowser", () => {
       const { requests } = renderVault({ at: "/?c=parts", collections: PARTS_TREE });
       await screen.findByRole("heading", { name: "Parts" });
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
+      await user.keyboard("s");
 
       await user.hover(await folderCard("parts/brackets"));
 
@@ -1682,21 +1668,43 @@ describe("ModelBrowser", () => {
       renderVault();
 
       await waitForLibraryActions();
-      await screen.findByRole("button", { name: "Select" });
       expect(uploadButton()).toBeEnabled();
     });
   });
 
   describe("selection", () => {
-    it("enters select mode on request", async () => {
+    it.each(["grid", "list"])("starts batch actions from a %s checkbox", async (view) => {
       const user = userEvent.setup();
+      window.localStorage.setItem("ps-vault-view", view);
       renderVault({ models: [aModelListItem({ name: "Benchy" })] });
-      await screen.findByText("Benchy");
+      const checkbox = await screen.findByRole("checkbox", { name: "Select Benchy" });
+      expect(checkbox).not.toBeChecked();
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
 
-      await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
+      await user.click(checkbox);
 
-      expect(screen.getByRole("button", { name: /Done/ })).toBeInTheDocument();
+      expect(checkbox).toBeChecked();
+      expect(screen.getByRole("button", { name: "Done" })).toBeVisible();
+      expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
+      await user.click(checkbox);
+      expect(checkbox).not.toBeChecked();
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Select all matching models" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it.each(["grid", "list"])("selects a folder directly in %s view", async (view) => {
+      const user = userEvent.setup();
+      window.localStorage.setItem("ps-vault-view", view);
+      renderVault({ collections: [aCollection({ name: "Parts", path: "parts" })] });
+      const checkbox = await screen.findByRole("checkbox", { name: "Select folder Parts" });
+      await user.click(checkbox);
+      expect(checkbox).toBeChecked();
+      expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
+      await user.keyboard("{Escape}");
+      expect(checkbox).not.toBeChecked();
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
     });
 
     it("counts what the user selected", async () => {
@@ -1709,7 +1717,6 @@ describe("ModelBrowser", () => {
       });
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
 
       await user.click(screen.getByRole("checkbox", { name: "Select Benchy" }));
 
@@ -1889,7 +1896,7 @@ describe("ModelBrowser", () => {
     async function selectBoth(user: ReturnType<typeof userEvent.setup>) {
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
+      await user.keyboard("s");
       await user.click(screen.getByRole("button", { name: /Select all on screen/ }));
     }
 
@@ -1951,8 +1958,8 @@ describe("ModelBrowser", () => {
     });
 
     it("leaves select mode when the user is done", async () => {
-      // Leaving the mode has to take the checkboxes with it, or the grid stays
-      // in a state the user thought they had left.
+      // Done clears the choices and restores browsing; the checkboxes remain
+      // available for starting another selection directly.
       const user = userEvent.setup();
       renderVault({
         models: [
@@ -1962,11 +1969,12 @@ describe("ModelBrowser", () => {
       });
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
+      await user.click(screen.getByRole("checkbox", { name: "Select Benchy" }));
 
       await user.click(screen.getByRole("button", { name: "Done" }));
 
-      expect(screen.queryAllByRole("checkbox", { name: /^Select / })).toHaveLength(0);
+      expect(screen.getByRole("checkbox", { name: "Select Benchy" })).not.toBeChecked();
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
     });
 
     it.each([
@@ -2008,7 +2016,7 @@ describe("ModelBrowser", () => {
       });
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
+      await user.keyboard("s");
       selecting = true;
       await user.click(screen.getByRole("button", { name: /Select all matching models/ }));
 
@@ -2454,7 +2462,7 @@ describe("ModelBrowser", () => {
     async function selectFolder(user: ReturnType<typeof userEvent.setup>, name = "Parts") {
       await screen.findAllByText(name);
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
+      await user.keyboard("s");
       await user.click(screen.getByLabelText(`Select folder ${name}`));
     }
 
@@ -2562,7 +2570,6 @@ describe("ModelBrowser", () => {
     async function selectOneModel(user: ReturnType<typeof userEvent.setup>) {
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
       await user.click(screen.getByRole("checkbox", { name: "Select Benchy" }));
     }
 
@@ -4049,7 +4056,6 @@ describe("ModelBrowser", () => {
       });
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
       await user.click(screen.getByRole("checkbox", { name: "Select Benchy" }));
       await user.click(screen.getByRole("button", { name: "Tag" }));
       const editor = await screen.findByRole("dialog");
@@ -4090,7 +4096,6 @@ describe("ModelBrowser", () => {
       });
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
       await user.click(screen.getByRole("checkbox", { name: "Select Benchy" }));
       await user.click(screen.getByRole("button", { name: "Tag" }));
       const dialog = await screen.findByRole("dialog");
@@ -4119,7 +4124,6 @@ describe("ModelBrowser", () => {
       });
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
       await user.click(screen.getByRole("checkbox", { name: "Select Benchy" }));
       await user.click(screen.getByRole("button", { name: "Tag" }));
       const dialog = await screen.findByRole("dialog");
@@ -4391,7 +4395,6 @@ describe("ModelBrowser", () => {
     async function selectAndMove(user: ReturnType<typeof userEvent.setup>) {
       await screen.findByText("Benchy");
       await waitForLibraryActions();
-      await user.click(screen.getByRole("button", { name: "Select" }));
       await user.click(screen.getByLabelText("Select Benchy"));
       await user.click(await screen.findByRole("button", { name: /Move/ }));
       const dialog = await screen.findByRole("dialog");

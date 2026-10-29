@@ -9,10 +9,13 @@ export function PrintHistoryFields({
   value,
   onChange,
   compact = false,
+  datePicker = false,
   layout = "default",
 }: {
   /** The filters panel's narrow column: one field per row, the panel's dense inputs. */
   compact?: boolean;
+  /** Library dropdowns select dates; search can still edit precise timestamps. */
+  datePicker?: boolean;
   layout?: "default" | "inline";
   value: Pick<SavedViewFilters, (typeof historyKeys)[number]>;
   onChange: (key: (typeof historyKeys)[number], value: string) => void;
@@ -34,15 +37,20 @@ export function PrintHistoryFields({
           {t(`aiSearch.filter.${key}`)}
           {key.includes("duration") && ` (${t("aiSearch.seconds")})`}
           <Input
-            type={key.includes("duration") ? "number" : "text"}
-            min={key === "print_duration_max_s" ? 1 : 0}
-            max={2147483647}
+            type={key.includes("duration") ? "number" : datePicker ? "date" : "text"}
+            min={key.includes("duration") ? (key === "print_duration_max_s" ? 1 : 0) : undefined}
+            max={key.includes("duration") ? 2147483647 : undefined}
             step={1}
             placeholder={
               key.includes("duration") ? t("aiSearch.seconds") : t("aiSearch.dateExample")
             }
             className={compact || layout === "inline" ? FILTER_INPUT : undefined}
-            value={value[key] ?? ""}
+            value={
+              datePicker && !key.includes("duration")
+                ? String(value[key] ?? "").slice(0, 10)
+                : (value[key] ?? "")
+            }
+            title={datePicker && !key.includes("duration") ? String(value[key] ?? "") : undefined}
             onChange={(event) => onChange(key, event.target.value)}
           />
         </label>

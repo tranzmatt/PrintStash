@@ -27,16 +27,18 @@ export function LibraryFilterMenu({
         <Button
           data-menu-trigger
           type="button"
-          variant={count > 0 ? "ghost" : "outline"}
+          variant="outline"
           size="xs"
-          className={count > 0 ? "h-8 bg-accent text-accent-foreground" : "h-8"}
+          className="h-8"
           aria-label={label}
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
           {label}
-          {count > 0 && <span className="font-mono tabular-nums">{count}</span>}
+          {count > 0 && (
+            <span className="font-normal tabular-nums text-muted-foreground">({count})</span>
+          )}
           <ChevronDown className="h-3.5 w-3.5" aria-hidden />
         </Button>
       }
