@@ -4,7 +4,9 @@ Run from backend: uv run python -m tests.fakes.similarity_pipeline_benchmark --r
 The corpus mixes byte-distinct copies, a mirror, a rescale and multi-body STL
 parts of repository designs, so the expected Candidate set is known and checked.
 ``--corpus wide`` adds benchy variants and a remeshed, rotated and copied Thingi10K
-part; its Candidate set is recorded, not asserted. Every verification unit is
+part; its Candidate set is recorded, not asserted. ``--corpus synthetic`` and
+``--corpus crowded`` plant transformed copies in ``--count`` procedural designs
+and report how many of them were found. Every verification unit is
 logged with the two fingerprints it compared, so pair fan-out is visible.
 """
 
@@ -128,11 +130,55 @@ def _synthetic(count: int):
     return corpus[:count], expected
 
 
+def _crowded(count: int):
+    """Look-alike families: descriptors alone rank many variants past 20.
+
+    Variants are subdivided, jittered, rotated and rescaled. Boxes of near-equal
+    sides are the hard family: their descriptor neighbours are other boxes.
+    """
+    import numpy as np
+    import trimesh
+
+    rng = np.random.default_rng(7)
+    makers = (
+        lambda: trimesh.creation.box(rng.uniform(0.8, 1.2, size=3)),
+        lambda: trimesh.creation.cylinder(
+            radius=float(rng.uniform(0.8, 1.0)),
+            height=float(rng.uniform(1.5, 2.0)),
+            sections=int(rng.integers(24, 64)),
+        ),
+        lambda: trimesh.convex.convex_hull(
+            rng.normal(size=(int(rng.integers(20, 40)), 3))
+        ),
+        lambda: trimesh.creation.capsule(
+            height=float(rng.uniform(1, 1.5)), radius=float(rng.uniform(0.5, 0.7))
+        ),
+    )
+    corpus, expected = [], set()
+    for index in range(count * 10 // 11):
+        mesh = makers[index % len(makers)]()
+        mesh.apply_scale(rng.uniform(0.9, 1.1, size=3))
+        while len(mesh.faces) < 400:
+            mesh = mesh.subdivide()
+        name = f"design-{index:04d}"
+        corpus.append((name, mesh))
+        if index % 10 == 0 and len(corpus) < count:
+            variant = mesh.subdivide()
+            variant.vertices += rng.normal(scale=0.002, size=variant.vertices.shape)
+            variant.apply_transform(
+                trimesh.transformations.random_rotation_matrix(rng.random(3))
+            )
+            variant.apply_scale(float(rng.choice([1.0, 2.0, 25.4])))
+            corpus.append((f"{name}-variant", variant))
+            expected.add((name, f"{name}-variant"))
+    return corpus[:count], expected
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument(
-        "--corpus", choices=("small", "wide", "synthetic"), default="small"
+        "--corpus", choices=("small", "wide", "synthetic", "crowded"), default="small"
     )
     parser.add_argument("--count", type=int, default=200)
     args = parser.parse_args()
@@ -167,6 +213,8 @@ def main() -> None:
     expected = None
     if args.corpus == "synthetic":
         corpus, expected = _synthetic(args.count)
+    elif args.corpus == "crowded":
+        corpus, expected = _crowded(args.count)
     else:
         corpus = _corpus(
             args.corpus,

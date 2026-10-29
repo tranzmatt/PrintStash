@@ -267,7 +267,14 @@ class SimilarityProcessor:
         if pairs:
             try:
                 self._verify_pair(
-                    session, run, token, actor, config, pairs[0], counters
+                    session,
+                    run,
+                    token,
+                    actor,
+                    config,
+                    pairs[0],
+                    counters,
+                    cloud_cleared=pairs[0][1] in progress.get("cloud_cleared", ()),
                 )
             finally:
                 session.commit()
@@ -316,6 +323,7 @@ class SimilarityProcessor:
         progress.update(
             fingerprint_id=row.id,
             pending_pairs=[[row.id, target] for target in shortlist.fingerprint_ids],
+            cloud_cleared=sorted(shortlist.cloud_cleared),
         )
         counters["shortlisted"] = counters.get("shortlisted", 0) + len(
             shortlist.fingerprint_ids
@@ -323,6 +331,10 @@ class SimilarityProcessor:
         counters["skipped_by_budget"] = (
             counters.get("skipped_by_budget", 0) + shortlist.skipped_by_budget
         )
+        if shortlist.rejected_by_cloud:
+            counters["rejected_by_cloud"] = (
+                counters.get("rejected_by_cloud", 0) + shortlist.rejected_by_cloud
+            )
         runs.checkpoint(session, run, token, progress=progress, counters=counters)
 
     def _verify_pair(
@@ -334,6 +346,8 @@ class SimilarityProcessor:
         config: SimilaritySettings,
         pair: list[int],
         counters: dict,
+        *,
+        cloud_cleared: bool,
     ) -> None:
         first, second = (session.get(GeometryFingerprint, value) for value in pair)
         if first is None or second is None:
@@ -363,8 +377,10 @@ class SimilarityProcessor:
         ):
             counters["verification_cached"] = counters.get("verification_cached", 0) + 1
             return
+        # Retrieval already measured a cleared pair; learned proposals were not.
         if (
-            first.cloud_blob is not None
+            not cloud_cleared
+            and first.cloud_blob is not None
             and second.cloud_blob is not None
             and cloud.rejects(
                 cloud.SurfaceCloud.decode(first.cloud_blob),

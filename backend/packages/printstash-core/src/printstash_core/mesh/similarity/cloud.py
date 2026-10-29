@@ -1,4 +1,4 @@
-"""Compact surface clouds that reject clearly different pairs before verification.
+"""Compact surface clouds that order candidates and reject clearly different pairs.
 
 Verification loads both meshes and refines an alignment against the full
 triangle surface: seconds per pair, and most shortlisted pairs in a large
@@ -14,6 +14,10 @@ the verifier accepted in a 200-design synthetic library at most 1.13; in both,
 no pair scoring above that produced evidence. The rejection score leaves a
 margin above the larger. A pair below it is verified exactly as before, so a
 cloud never creates or changes evidence.
+
+``rank_score`` is a cheaper approximation used only to order a shortlist: it
+decides which candidates are measured with ``alignment_score``, never which are
+rejected.
 """
 
 from __future__ import annotations
@@ -40,6 +44,8 @@ _STARTS_PER_PARITY = 3
 _ICP_STEPS = 12
 _CONVERGED = 1e-4
 _RANK_STRIDE = 4
+_RANK_POINT_STRIDE = 2
+_RANK_ICP_STEPS = 6
 _MIN_SPACING = 1e-6
 _FLOATS = CLOUD_POINTS * 3 + 9 + 1
 CLOUD_BYTES = _FLOATS * 4
@@ -119,30 +125,68 @@ def _kabsch(source: FloatArray, target: FloatArray) -> tuple[FloatArray, FloatAr
 
 def alignment_score(left: SurfaceCloud, right: SurfaceCloud) -> float:
     """Best aligned symmetric distance, in units of the clouds' own spacing."""
+    return _align(
+        left,
+        right,
+        stride=1,
+        starts=_STARTS_PER_PARITY,
+        steps=_ICP_STEPS,
+        symmetric=True,
+    )
+
+
+def rank_score(left: SurfaceCloud, right: SurfaceCloud) -> float:
+    """A quarter-cost approximation of ``alignment_score`` that only orders.
+
+    Half the right cloud, one refined start per parity and fewer steps. It can
+    overestimate a matching pair, so it never rejects one; it chooses which
+    candidates earn an exact ``alignment_score``.
+    """
+    return _align(
+        left,
+        right,
+        stride=_RANK_POINT_STRIDE,
+        starts=1,
+        steps=_RANK_ICP_STEPS,
+        symmetric=False,
+    )
+
+
+def _align(
+    left: SurfaceCloud,
+    right: SurfaceCloud,
+    *,
+    stride: int,
+    starts: int,
+    steps: int,
+    symmetric: bool,
+) -> float:
     import numpy as np
     from scipy.spatial import KDTree  # pyright: ignore[reportMissingTypeStubs]
 
     # A score needs distances only, never tie-exact indices, so the plain index
     # suffices; one native thread keeps the caller's admission accounting.
-    left_index, right_index = KDTree(left.points), KDTree(right.points)
+    left_index = KDTree(left.points)
+    right_index = KDTree(right.points) if symmetric else None
     hypotheses = _hypotheses(left, right)
     probe = right.points[::_RANK_STRIDE]
+    points = right.points[::stride]
     ranked = sorted(
         (float(left_index.query(probe @ hypothesis, workers=1)[0].mean()), order)
         for order, hypothesis in enumerate(hypotheses)
     )
     best = np.inf
     for parity in (1.0, -1.0):
-        starts = [
+        chosen = [
             hypotheses[order]
             for _, order in ranked
             if np.sign(np.linalg.det(hypotheses[order])) == parity
-        ][:_STARTS_PER_PARITY]
-        for start in starts:
+        ][:starts]
+        for start in chosen:
             rotation, offset = start, np.zeros(3)
             previous = np.inf
-            for _ in range(_ICP_STEPS):
-                moved = right.points @ rotation + offset
+            for _ in range(steps):
+                moved = points @ rotation + offset
                 distances, nearest = left_index.query(moved, workers=1)
                 error = float(distances.mean())
                 if error >= previous * (1 - _CONVERGED):
@@ -150,8 +194,11 @@ def alignment_score(left: SurfaceCloud, right: SurfaceCloud) -> float:
                 previous = error
                 step, shift = _kabsch(moved, left.points[nearest])
                 rotation, offset = rotation @ step, offset @ step + shift
-            moved = right.points @ rotation + offset
+            moved = points @ rotation + offset
             forward = left_index.query(moved, workers=1)[0].mean()
+            if right_index is None:
+                best = min(best, float(forward))
+                continue
             # Left points in the right cloud's frame: the inverse rigid motion.
             backward = right_index.query(
                 (left.points - offset) @ rotation.T, workers=1

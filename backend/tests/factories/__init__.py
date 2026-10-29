@@ -202,6 +202,7 @@ from tests.factories.similarity import (
     build_similarity_decision,
     build_similarity_observation,
     build_similarity_run,
+    surface_cloud_blob,
 )
 from tests.factories.storage import (
     build_owned_storage_object,
@@ -343,6 +344,7 @@ __all__ += [
     "build_similarity_decision",
     "build_similarity_observation",
     "build_similarity_run",
+    "surface_cloud_blob",
 ]
 
 __all__ += [

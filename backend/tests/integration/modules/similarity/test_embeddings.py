@@ -355,3 +355,34 @@ class TestLearnedRetrievalFallback:
         )
         assert result.hash_hits == (999,)
         assert result.examined == 2
+
+    def test_keeps_cloud_clearance_of_interleaved_geometric_proposals(
+        self,
+        db_session,
+        embedding_unit,
+        make_file,
+        make_model,
+        make_passage_vector,
+        make_geometry_fingerprint,
+    ):
+        from app.db.models import IndexGeneration
+        from app.modules.similarity.learned_retrieval import extend
+        from app.modules.similarity.retrieval import Shortlist
+
+        actor, file, fp, _provider, generation_id, _run = embedding_unit
+        generation = db_session.get(IndexGeneration, generation_id)
+        make_passage_vector(generation, file)
+        other = make_file(make_model())
+        make_passage_vector(generation, other)
+        make_geometry_fingerprint(other, state="ready")
+        geometric = Shortlist(
+            (998, 999), 2, 0, cloud_cleared=frozenset({998, 999}), rejected_by_cloud=3
+        )
+
+        result = extend(db_session, get_session_factory(), actor, fp, geometric, 2)
+
+        # The learned proposal displaces 999 from the two-pair budget.
+        assert (result.cloud_cleared, result.rejected_by_cloud) == (
+            frozenset({998}),
+            3,
+        )

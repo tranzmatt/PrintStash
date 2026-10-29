@@ -529,6 +529,94 @@ class TestPairFanOut:
         db_session.refresh(run)
         assert json.loads(run.counters_json)["verified"] == 1
 
+    def test_counts_candidates_the_shortlist_rejects_by_cloud(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(tetrahedron())
+        stored_mesh(trimesh.creation.box((10, 20, 2)))
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        # Indistinguishable descriptors: only the clouds tell the shapes apart.
+        whole = [row for row in rows if row.component_index == 0]
+        for row in whole:
+            row.d2_blob, row.sh_blob, row.view_blob = (
+                whole[0].d2_blob,
+                whole[0].sh_blob,
+                whole[0].view_blob,
+            )
+            row.normalized_area = whole[0].normalized_area
+            db_session.add(row)
+        db_session.commit()
+        queue(db_session, run, [])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters["rejected_by_cloud"], counters["shortlisted"]) == (1, 0)
+
+    def test_queues_cloud_confirmed_targets_as_cleared(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(trimesh.creation.annulus(r_min=8, r_max=12, height=3, sections=96))
+        stored_mesh(
+            trimesh.creation.annulus(r_min=8.6, r_max=12, height=3, sections=96)
+        )
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        queue(db_session, run, [])
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        first, second = (row.id for row in rows if row.component_index == 0)
+        progress = json.loads(run.checkpoint_json)
+        assert (progress["pending_pairs"], progress["cloud_cleared"]) == (
+            [[first, second]],
+            [second],
+        )
+
+    def test_verifies_a_cleared_pair_without_measuring_its_clouds_again(
+        self, db_session, make_user, stored_mesh
+    ):
+        import trimesh
+
+        actor = make_user(superuser=True)
+        configuration.update_settings(
+            db_session, actor, {"enabled": True, "sample_points": 256}
+        )
+        stored_mesh(tetrahedron())
+        stored_mesh(trimesh.creation.box((10, 20, 2)))
+        worker = SimilarityProcessor(get_session_factory(), get_backend())
+        run, rows = fingerprinted(db_session, actor, worker)
+        first, second = (row.id for row in rows if row.component_index == 0)
+        db_session.refresh(run)
+        run.phase = "candidates"
+        # These clouds would reject the pair; retrieval vouched for it already.
+        run.checkpoint_json = json.dumps(
+            {"pending_pairs": [[first, second]], "cloud_cleared": [second]}
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        assert advance_oldest_run(worker)
+
+        db_session.refresh(run)
+        counters = json.loads(run.counters_json)
+        assert (counters.get("rejected_by_cloud", 0), counters["verified"]) == (0, 1)
+
     def test_records_no_empty_outcome_for_published_evidence(
         self, db_session, local_pair
     ):

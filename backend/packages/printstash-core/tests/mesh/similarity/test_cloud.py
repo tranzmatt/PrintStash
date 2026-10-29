@@ -143,3 +143,28 @@ class TestRejection:
         surface = surface_of(*subdivide(*tetra, levels=2))
 
         assert cloud.alignment_score(surface, surface) == pytest.approx(0, abs=1e-9)
+
+
+class TestRankScore:
+    @pytest.mark.parametrize(
+        "transform",
+        [
+            lambda v: v @ rotation(0.7, [0.2, 0.3, 1]).T + [13, -4, 2],
+            lambda v: (v * [-2, 2, 2]) @ rotation(1.9, [1, 0, 0.4]).T,
+        ],
+        ids=["rigid", "rescaled-mirrored-rotated"],
+    )
+    def test_orders_a_transformed_copy_before_other_proportions(
+        self, subdivide, box, transform
+    ):
+        vertices, faces = subdivide(*box(10, 12, 14), levels=2)
+        source = surface_of(vertices, faces)
+        copy = surface_of(transform(vertices), faces)
+        other = surface_of(*subdivide(*box(10, 12, 9), levels=2))
+
+        assert cloud.rank_score(source, copy) < cloud.rank_score(source, other)
+
+    def test_scores_a_cloud_against_itself_as_zero(self, subdivide, tetra):
+        surface = surface_of(*subdivide(*tetra, levels=2))
+
+        assert cloud.rank_score(surface, surface) == pytest.approx(0, abs=1e-9)

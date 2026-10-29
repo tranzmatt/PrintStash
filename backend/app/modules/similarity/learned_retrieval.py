@@ -96,6 +96,8 @@ def extend(
             shortlist.examined + neighbors.scanned,
             skipped,
             shortlist.hash_hits,
+            shortlist.cloud_cleared & frozenset(combined[:limit]),
+            shortlist.rejected_by_cloud,
         )
     except EmbeddingError:
         return shortlist

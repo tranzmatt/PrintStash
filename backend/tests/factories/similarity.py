@@ -32,15 +32,19 @@ from app.modules.similarity.fingerprints import encode_json
 from tests.factories._support import nth, save, unique_hash
 
 
-@cache
-def _surface_cloud() -> bytes:
+def surface_cloud_blob(mesh: Any) -> bytes:
+    """The stored surface cloud of a trimesh, as fingerprinting computes it."""
     from printstash_core.mesh.similarity.cloud import surface_cloud
     from printstash_core.mesh.similarity.geometry import prepare_surface
 
+    return surface_cloud(prepare_surface(mesh.vertices, mesh.faces)).encode()
+
+
+@cache
+def _surface_cloud() -> bytes:
     from tests.factories.geometry import tetrahedron
 
-    mesh = tetrahedron()
-    return surface_cloud(prepare_surface(mesh.vertices, mesh.faces)).encode()
+    return surface_cloud_blob(tetrahedron())
 
 
 def build_geometry_fingerprint(

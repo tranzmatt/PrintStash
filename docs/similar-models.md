@@ -78,6 +78,14 @@ is verified exactly as before, so the cloud never creates or changes evidence.
 Fingerprints made by an earlier version gain their cloud the next time an
 analysis reaches them, which recomputes them once.
 
+The clouds also choose which candidates fill the shortlist. Of the closest
+candidates by shape descriptor, five times the shortlist size are ordered by a
+quick cloud alignment, the best are aligned exactly, and the ones that align
+closely are verified first. In a library of many look-alike designs this
+finds copies that the descriptors alone rank past the shortlist. Exact-key
+matches always come first, and a candidate without a cloud keeps its descriptor
+rank.
+
 The repository Benchy and Spatula use complete geometry at the default limits.
 An existing explicit lower cap remains unchanged; increase it before a manual
 retry. See [the mesh pipeline](mesh-pipeline.md) for resource limits.
