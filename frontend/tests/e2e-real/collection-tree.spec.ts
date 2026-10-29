@@ -52,7 +52,7 @@ test.describe("collection tree", () => {
 
       await modelCard(page, model).hover();
       await page.getByRole("checkbox", { name: `Select ${model}` }).check();
-      await page.locator("div.fixed.bottom-4").getByRole("button", { name: "Move" }).click();
+      await page.getByRole("button", { name: "Move", exact: true }).click();
       const moveDialog = page.getByRole("dialog", { name: /^Move \d+ item/ });
       await moveDialog.getByPlaceholder("Find destination").fill(child);
       await moveDialog.getByRole("option", { name: new RegExp(`^${parent}/${child} `) }).click();
