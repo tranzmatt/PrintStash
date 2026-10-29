@@ -37,14 +37,16 @@ def _write(tmp_path: Path, data: bytes) -> Path:
     return path
 
 
-def _replace_member(data: bytes, name: str, content: bytes) -> bytes:
+def _replace_member(
+    data: bytes, name: str, content: bytes, *, compression: int = zipfile.ZIP_STORED
+) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(data))
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         for info in source.infolist():
             if info.filename != name:
                 archive.writestr(info, source.read(info))
-        archive.writestr(name, content)
+        archive.writestr(name, content, compress_type=compression)
     return output.getvalue()
 
 
@@ -245,6 +247,131 @@ class TestReadLayout:
 
         assert raised.value.failure is PlateLayoutFailure.MALFORMED
 
+    @pytest.mark.parametrize("unit", [None, "inch"], ids=["default-mm", "inches"])
+    def test_places_objects_using_the_models_length_unit(self, tmp_path, unit):
+        data = build_multi_plate_project(
+            placements=((5.0, 5.0), (17.0, 5.0))
+            if unit == "inch"
+            else ((128.0, 128.0), (435.2, 128.0))
+        )
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            model = archive.read("3D/3dmodel.model")
+        model = model.replace(
+            b' unit="millimeter"', b' unit="inch"' if unit == "inch" else b""
+        )
+        path = _write(tmp_path, _replace_member(data, "3D/3dmodel.model", model))
+
+        layout = read_layout(path)
+
+        assert layout is not None
+        assert [plate.object_count for plate in layout.plates] == [1, 1]
+        assert layout.plates[1].region == PlateRegion(307.2, 0.0, 563.2, 256.0)
+
+    def test_places_an_untransformed_object_at_the_origin(self, tmp_path):
+        data = build_multi_plate_project(names=("Origin",), placements=((0, 0),))
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            model = archive.read("3D/3dmodel.model")
+        model = model.replace(b' transform="1 0 0 0 1 0 0 0 1 0 0 0"', b"")
+        path = _write(tmp_path, _replace_member(data, "3D/3dmodel.model", model))
+
+        layout = read_layout(path)
+
+        assert layout is not None
+        assert layout.plates[0].object_count == 1
+        assert layout.plates[0].region == PlateRegion(0.0, 0.0, 256.0, 256.0)
+
+    @pytest.mark.parametrize(
+        ("original", "replacement"),
+        [
+            (b'unit="millimeter"', b'unit="unknown"'),
+            (b'objectid="1"', b""),
+            (b'objectid="1"', b'objectid="0"'),
+            (b"1 0 0 0 1 0 0 0 1 128.0 128.0 0", b"1 0 0"),
+            (b"128.0 128.0 0", b"bad 128.0 0"),
+            (b"128.0 128.0 0", b"nan 128.0 0"),
+            (b"128.0 128.0 0", b"128.0 inf 0"),
+            (b"<model unit=", b"<!DOCTYPE model><model unit="),
+        ],
+        ids=[
+            "unknown-unit",
+            "missing-object-id",
+            "zero-object-id",
+            "short-transform",
+            "non-numeric-position",
+            "nan-x",
+            "infinite-y",
+            "dtd",
+        ],
+    )
+    def test_refuses_malformed_build_placements(self, tmp_path, original, replacement):
+        data = build_multi_plate_project()
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            model = archive.read("3D/3dmodel.model")
+        path = _write(
+            tmp_path,
+            _replace_member(
+                data, "3D/3dmodel.model", model.replace(original, replacement)
+            ),
+        )
+
+        with pytest.raises(PlateLayoutError) as raised:
+            read_layout(path)
+
+        assert raised.value.failure is PlateLayoutFailure.MALFORMED
+
+    @pytest.mark.parametrize(
+        "settings", [b"{", b"[]"], ids=["invalid-json", "not-object"]
+    )
+    def test_refuses_invalid_project_settings(self, tmp_path, settings):
+        data = _replace_member(
+            build_multi_plate_project(), "Metadata/project_settings.config", settings
+        )
+        path = _write(tmp_path, data)
+
+        with pytest.raises(PlateLayoutError) as raised:
+            read_layout(path)
+
+        assert raised.value.failure is (
+            PlateLayoutFailure.MALFORMED
+            if settings == b"{"
+            else PlateLayoutFailure.BED_UNKNOWN
+        )
+
+    def test_refuses_more_than_sixty_four_plates(self, tmp_path):
+        settings = (
+            "<config>"
+            + "".join(
+                f'<plate><metadata key="plater_id" value="{number}"/></plate>'
+                for number in range(1, 66)
+            )
+            + "</config>"
+        )
+        path = _write(tmp_path, build_multi_plate_project(model_settings=settings))
+
+        with pytest.raises(PlateLayoutError) as raised:
+            read_layout(path)
+
+        assert raised.value.failure is PlateLayoutFailure.LIMITS
+
+    @pytest.mark.parametrize(
+        ("size", "compression"),
+        [(16 * 1024 * 1024 + 1, zipfile.ZIP_STORED), (64 * 1024, zipfile.ZIP_DEFLATED)],
+        ids=["oversized", "compression-ratio"],
+    )
+    def test_bounds_settings_before_reading_them(self, tmp_path, size, compression):
+        data = _replace_member(
+            build_multi_plate_project(),
+            "Metadata/model_settings.config",
+            b" " * size,
+            compression=compression,
+        )
+        path = _write(tmp_path, data)
+
+        with pytest.raises(PlateLayoutError) as raised:
+            read_layout(path)
+
+        assert raised.value.failure is PlateLayoutFailure.LIMITS
+
 
 class TestReadImage:
     def test_returns_the_plates_preview(self, tmp_path):
@@ -276,6 +403,35 @@ class TestReadImage:
 
     def test_refuses_a_missing_preview(self, tmp_path):
         path = _write(tmp_path, build_multi_plate_project(images=False))
+
+        with pytest.raises(PlateLayoutError) as raised:
+            read_image(path, "Metadata/plate_1.png")
+
+        assert raised.value.failure is PlateLayoutFailure.MALFORMED
+
+    @pytest.mark.parametrize(
+        ("size", "compression"),
+        [(8 * 1024 * 1024 + 1, zipfile.ZIP_STORED), (64 * 1024, zipfile.ZIP_DEFLATED)],
+        ids=["oversized", "compression-ratio"],
+    )
+    def test_bounds_preview_bytes_before_reading_them(
+        self, tmp_path, size, compression
+    ):
+        data = _replace_member(
+            build_multi_plate_project(),
+            "Metadata/plate_1.png",
+            b"\x89PNG\r\n\x1a\n" + b" " * (size - 8),
+            compression=compression,
+        )
+        path = _write(tmp_path, data)
+
+        with pytest.raises(PlateLayoutError) as raised:
+            read_image(path, "Metadata/plate_1.png")
+
+        assert raised.value.failure is PlateLayoutFailure.LIMITS
+
+    def test_refuses_a_preview_from_a_corrupt_archive(self, tmp_path):
+        path = _write(tmp_path, b"not a zip")
 
         with pytest.raises(PlateLayoutError) as raised:
             read_image(path, "Metadata/plate_1.png")
