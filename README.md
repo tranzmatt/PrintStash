@@ -128,23 +128,16 @@ for setup, firmware limits, and unsupported actions.
 
 ## Project Status & Roadmap
 
-**Preparing 0.15.1.** The [pending release notes](CHANGELOG.md#0151)
-cover multi-plate 3MF browsing, additional model and archive formats, clearer
-library and multipart workflows, and preview recovery on older NAS kernels.
-Publication is pending; [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases)
-is the source for available images.
+**PrintStash 0.15.1** includes multi-plate 3MF browsing, additional model and
+archive formats, clearer library and multipart workflows, and preview
+recovery on older NAS kernels. See the [release notes](CHANGELOG.md#0151)
+for details and [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases)
+for available images.
 
 **Stable today:** the library, G-code revisions with known-good tagging, backups and restore,
 and the one-container Docker deploy on SQLite. **Beta:** the printer integrations marked Beta
 in [Printer Compatibility](#printer-compatibility), meaning Bambu LAN, PrusaLink, OctoPrint and
 the Elegoo Centauri Carbon models.
-
-**Releases:** 0.12.0 (19 August 2026), 0.12.1 (20 August), 0.13.0 (4 September),
-0.14.0 (29 September) and 0.15.0 (22 October), all published from this repository's CI.
-
-Run **one API server process per library**. The web app needs a running server.
-See [known limitations](https://www.printstash.org/en/docs/reference/known-limitations/)
-and the [roadmap](https://www.printstash.org/en/roadmap/).
 
 **Upgrading to 0.15.1:** take a verified backup, stop all API and worker
 processes, and upgrade them together after the image is published. Allow
