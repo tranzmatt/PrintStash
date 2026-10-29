@@ -10,14 +10,14 @@ Issues are better for confirmed bugs or scoped implementation work.
 
 ## Preparing 0.15.1
 
-The [Unreleased changelog](../CHANGELOG.md#unreleased) records the scope being
+The [0.15.1 changelog](../CHANGELOG.md#0151) records the scope being
 prepared for 0.15.1: multi-plate 3MF browsing, additional model and archive
 formats, library and multipart workflow improvements, and preview recovery on
 older NAS kernels. These changes are on `main` and await release publication.
 
 Read the [0.15.1 upgrade notes](../UPGRADE.md#0151-notes) before updating.
 Download published builds from [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases).
-The final release will promote the pending changelog when its image is ready.
+The 0.15.1 changelog is prepared; image publication is still pending.
 
 SQLite plus local filesystem storage remain the default path; PostgreSQL,
 remote storage, cloud backups, and provider adapters are optional.

@@ -9,7 +9,7 @@
 name: printstash
 services:
   printstash:
-    image: ghcr.io/xiao-villamor/printstash:0.15.0
+    image: ghcr.io/xiao-villamor/printstash:0.15.1
     restart: unless-stopped
     stop_grace_period: 60s
     network_mode: bridge
@@ -133,17 +133,19 @@ x-casaos:
   index: /
   scheme: http
   port_map: "3378"
-  version: "0.15.0"
-  update_at: "2026-10-22"
+  version: "0.15.1"
+  update_at: "2026-10-29"
   release_notes:
     en_US: |-
-      - PrintStash 0.15.0 improves library browsing and native processing.
-      - Back up before upgrading: every model file will be re-derived in the background, which can take hours on a large library. Rolling back requires restoring the pre-upgrade backup.
-      - Stop all API and worker processes before upgrading them together. See the 0.15.0 upgrade notes for details.
+      - PrintStash 0.15.1 adds multi-plate 3MF browsing, more model formats, and 7z, RAR and TAR imports.
+      - Library and multipart workflows are clearer, similar-model analysis is faster, and previews recover on older NAS kernels.
+      - Back up before upgrading and stop all API and worker processes before upgrading them together. Updated metadata, previews and similarity fingerprints refresh in the background. Rollback requires the pre-upgrade backup.
+      - See https://github.com/xiao-villamor/PrintStash/blob/main/UPGRADE.md#0151-notes for upgrade instructions.
     es_ES: |-
-      - PrintStash 0.15.0 mejora la navegación de la biblioteca y el procesamiento nativo.
-      - Haz una copia de seguridad antes de actualizar: todos los archivos de modelos se procesarán de nuevo en segundo plano, lo que puede tardar horas en una biblioteca grande. Para volver atrás hay que restaurar la copia anterior a la actualización.
-      - Detén todos los procesos de API y de trabajo antes de actualizarlos juntos. Consulta las notas de actualización de la versión 0.15.0 para más detalles.
+      - PrintStash 0.15.1 permite explorar las placas de proyectos 3MF, añade más formatos de modelos e importa archivos 7z, RAR y TAR.
+      - Mejora los flujos de biblioteca y modelos multipieza, acelera el análisis de modelos similares y recupera las vistas previas en NAS con kernels antiguos.
+      - Haz una copia de seguridad y detén todos los procesos de API y de trabajo antes de actualizarlos juntos. Los metadatos, las vistas previas y las huellas de similitud se actualizan en segundo plano. Para volver atrás necesitas la copia anterior a la actualización.
+      - Consulta https://github.com/xiao-villamor/PrintStash/blob/main/UPGRADE.md#0151-notes para las instrucciones de actualización.
   website: https://printstash.org
   repo: https://github.com/xiao-villamor/PrintStash
   support: https://github.com/xiao-villamor/PrintStash/issues

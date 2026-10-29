@@ -15,7 +15,9 @@ Redis/queues/cloud. `AGENTS.md` (layout, commands, hard rules) is binding.
 Latest shipped: v0.15.0 (faster library browsing and native processing),
 merged to `main`, tagged, and published for amd64 and arm64. Next: gather upgrade
 and hardware feedback. `CHANGELOG.md` `Unreleased` is the canonical summary of
-work not yet shipped; a branch name or roadmap entry is not a release.
+work not yet assigned to a release; a branch name or roadmap entry is not a release.
+Version 0.15.1 metadata and changelogs are prepared in PR #588; its tag and
+images have not been published. The 0.15.1 changelog records that pending scope.
 
 Private plans live in `reports/`. They are local-only: never commit, publish,
 or quote them. Older long-range plans may not exist in every checkout; when

@@ -4,7 +4,7 @@ storage:
   dataRoot: data
 category: files
 name: PrintStash
-version: "0.15.0"
+version: "0.15.1"
 tagline: A self-hosted library for 3D models and the G-code that prints them
 description: >-
   Sign in with the username and password Umbrel shows for this app, then choose
@@ -27,20 +27,24 @@ description: >-
   - Send prints and follow jobs on Klipper/Moonraker, with beta support for
   OctoPrint, PrusaLink, Bambu Lab (LAN) and Elegoo printers.
 releaseNotes: >-
-  Back up before upgrading. Every model file is re-derived in the background;
-  a large library on a 4 GB NAS can keep the CPU busy for hours. Rollback requires
-  restoring the pre-upgrade backup. Stop all API and workers and upgrade them
-  together for DBOS 3.3.0. Source installs require Python 3.14 or newer.
+  Version 0.15.1 adds multi-plate 3MF browsing, GLB/glTF, PLY, Rhino 3DM and FBX
+  models, and 7z, RAR and TAR archive imports.
 
 
-  Version 0.15.0 adds paginated library browsing, editable Library sources,
-  previews during ZIP imports, configurable worker concurrency, faster 3MF and
-  STEP processing, multi-material G-code fixes, and optional GPU support.
-  CPU-only installs and GPU access on Unraid are corrected.
+  Library and multipart workflows have clearer selection, filters and recovery.
+  Similar-model analysis reuses results and verifies pairs in parallel within
+  the configured CPU and memory budgets. Previews work again on older NAS kernels.
 
 
-  See https://github.com/xiao-villamor/PrintStash/releases/tag/v0.15.0
-  and UPGRADE.md for the full notes and upgrade instructions.
+  Back up before upgrading. Stop all API and worker processes and upgrade them
+  together. Changed recipes refresh metadata and previews in the background;
+  Similar Models recomputes fingerprints on its next analysis. Rollback requires
+  restoring the pre-upgrade backup.
+
+
+  See https://github.com/xiao-villamor/PrintStash/blob/main/CHANGELOG.md#0151
+  and https://github.com/xiao-villamor/PrintStash/blob/main/UPGRADE.md#0151-notes
+  for the full notes and upgrade instructions.
 developer: PrintStash contributors
 website: https://www.printstash.org
 dependencies: []

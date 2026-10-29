@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.15.1
+
+**Back up before upgrading and restart every API and worker process on the same
+image. Changed recipes refresh metadata and previews in the background; Similar
+Models recomputes fingerprints on its next analysis. Rollback requires the
+pre-upgrade backup.** See [0.15.1 upgrade notes](UPGRADE.md#0151-notes).
+
 ### Added
 
 - **Multi-plate 3MF projects show their plates.** A Bambu Studio, OrcaSlicer or Creality Print project lists each plate on the model page with the slicer's number, name, object count and saved preview. Choosing a plate shows only that plate's parts in the 3D viewer; All plates shows the whole build. Existing 3MF files are read in the background.

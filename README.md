@@ -128,7 +128,7 @@ for setup, firmware limits, and unsupported actions.
 
 ## Project Status & Roadmap
 
-**Preparing 0.15.1.** The [pending release notes](CHANGELOG.md#unreleased)
+**Preparing 0.15.1.** The [pending release notes](CHANGELOG.md#0151)
 cover multi-plate 3MF browsing, additional model and archive formats, clearer
 library and multipart workflows, and preview recovery on older NAS kernels.
 Publication is pending; [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases)

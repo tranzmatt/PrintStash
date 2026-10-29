@@ -5,7 +5,7 @@
 Version 0.15.1 is being prepared. Wait for its image to appear in
 [GitHub Releases](https://github.com/xiao-villamor/PrintStash/releases) before
 changing a running installation to that tag. The
-[pending changelog](CHANGELOG.md#unreleased) records the included changes.
+[pending changelog](CHANGELOG.md#0151) records the included changes.
 
 - Create and verify a backup of the database and managed files. Back up
   Library source originals separately, and retain the previous image.
@@ -13,6 +13,8 @@ changing a running installation to that tag. The
   on the same image. Never use `docker compose down -v`.
 - Allow background work to refresh metadata and previews whose processing
   recipes changed, including plate information for existing 3MF projects.
+  Similar Models recomputes existing fingerprints on its next analysis to add
+  surface-cloud data; allow extra time for that first run.
 - Verify sign-in, library browsing, a model upload, previews, any configured
   Library source, and backup creation and verification after startup.
 - For rollback, stop all processes and restore the pre-upgrade database and

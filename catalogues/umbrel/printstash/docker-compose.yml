@@ -18,8 +18,8 @@ services:
       PROXY_AUTH_WHITELIST: "/api/*"
 
   web:
-    # Release source: add the published 0.15.0 index digest before store submission.
-    image: ghcr.io/xiao-villamor/printstash:0.15.0
+    # Release source: add the published 0.15.1 index digest before store submission.
+    image: ghcr.io/xiao-villamor/printstash:0.15.1
     # Not on-failure: a restart requested from Settings is a graceful SIGTERM,
     # which can exit with status 0 and would not be relaunched.
     restart: unless-stopped
