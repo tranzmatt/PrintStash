@@ -14,6 +14,24 @@ test.describe("Library filter dropdowns", () => {
         .filter({ visible: true })
         .click();
       const filters = page.getByRole("main").getByRole("region", { name: "Filters", exact: true });
+      // ── Printer location shares the same checkbox choices ──
+      await filters.getByRole("button", { name: "Printer", exact: true }).click();
+      const printer = page.getByRole("dialog", { name: "Printer", exact: true });
+      await printer.getByRole("checkbox", { name: "Vault only", exact: true }).click();
+      await expect(page).toHaveURL(/printer_presence=none/);
+      await expect(
+        printer.getByRole("checkbox", { name: "Vault only", exact: true }),
+      ).toBeChecked();
+      await expect(modelCard(page, name)).toBeVisible();
+      await printer.getByRole("checkbox", { name: "On a printer", exact: true }).click();
+      await expect(page).toHaveURL(/printer_presence=any/);
+      await expect(page.getByRole("main")).toHaveAttribute("aria-busy", "false");
+      await expect(modelCard(page, name)).toHaveCount(0);
+      await printer.getByRole("checkbox", { name: "Any location", exact: true }).click();
+      await expect(page).not.toHaveURL(/printer_presence=/);
+      await expect(modelCard(page, name)).toBeVisible();
+      await page.keyboard.press("Escape");
+
       // ── File type and printed status ──
       await filters.getByRole("button", { name: "File type", exact: true }).click();
       await page

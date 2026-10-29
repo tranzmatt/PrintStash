@@ -4,7 +4,7 @@
 
 ### Added
 
-- Library filters use compact dropdowns for upload dates, print history, file types and printed status. Date fields offer calendar pickers, file formats support multiple selections, and printed status offers All, Printed and Not printed using the same checkbox rows and count badges as the other facets. Neutral picker buttons show selection counts, while blue chips below show the active values.
+- Library filters use compact dropdowns for upload dates, print history, file types and printed status. Date fields offer calendar pickers, file formats support multiple selections, and printed status offers All, Printed and Not printed using the same checkbox rows and count badges as the other facets. Printer location and Tags share these rows, including single-choice location selection and searchable tag multiselect. Neutral picker buttons show selection counts, while blue chips below show the active values.
 
 - Filament and printer profiles use compact summaries and collapsible details with inline notes, an explicit editor and searchable slicer settings from G-code. Equal configurations are grouped with their source files, different presets and values remain separate variants, and print settings stay with each source file. Existing files are refreshed in the background. These are observed print settings, not restorable slicer preset backups.
 - Builds is now reached from Multipart Models through Create build and Build history, keeping manufacturing out of general navigation while preserving existing runs and viewer access.

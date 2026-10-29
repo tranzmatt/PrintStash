@@ -3,12 +3,47 @@
  * Date dropdowns must not move the toolbar or results when opened.
  */
 import { expect, test } from "@playwright/test";
+import { aPrinter } from "../../src/test-support/factories";
 import { collectPageProblems, useMockApi } from "./_setup";
 
 useMockApi();
 
 test.describe("compact Library filters", () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test("uses shared checkbox choices for Printer", async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem("printstash.theme", "dark"));
+    await page.route("**/api/v1/printers", (route) =>
+      route.fulfill({ json: [aPrinter({ id: 7, name: "Workshop printer" })] }),
+    );
+    await page.goto("/");
+    await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
+    const filters = page.getByRole("main").getByRole("region", { name: "Filters", exact: true });
+    await filters.getByRole("button", { name: "Printer", exact: true }).click();
+    const menu = page.getByRole("dialog", { name: "Printer", exact: true });
+    await menu.getByRole("checkbox", { name: "Vault only", exact: true }).click();
+    await expect(page).toHaveURL(/printer_presence=none/);
+    await expect(menu.getByRole("checkbox", { name: "Vault only", exact: true })).toBeChecked();
+    await menu.getByRole("checkbox", { name: "Workshop printer", exact: true }).click();
+    await expect(page).toHaveURL(/printer_id=7/);
+    await expect(page).not.toHaveURL(/printer_presence=/);
+    await expect(
+      menu.getByRole("checkbox", { name: "Workshop printer", exact: true }),
+    ).toBeChecked();
+    await expect(menu.getByRole("checkbox", { checked: true })).toHaveCount(1);
+    await expect(menu).toHaveCSS("opacity", "1");
+    await menu.screenshot({
+      path: testInfo.outputPath("printer-shared-choices.png"),
+      animations: "disabled",
+    });
+    await menu.getByRole("checkbox", { name: "On a printer", exact: true }).click();
+    await expect(page).toHaveURL(/printer_presence=any/);
+    await expect(page).not.toHaveURL(/printer_id=/);
+    await expect(menu.getByRole("checkbox", { name: "On a printer", exact: true })).toBeChecked();
+    await menu.getByRole("checkbox", { name: "On a printer", exact: true }).click();
+    await expect(page).not.toHaveURL(/printer_presence=/);
+    await expect(menu.getByRole("checkbox", { name: "Any location", exact: true })).toBeChecked();
+  });
 
   test("uses the same checkbox choices for printed status", async ({ page }, testInfo) => {
     await page.addInitScript(() => localStorage.setItem("printstash.theme", "dark"));
